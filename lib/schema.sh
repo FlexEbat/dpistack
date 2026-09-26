@@ -34,6 +34,11 @@ SCHEMA_NOT_YET_SUPPORTED["METRICS_BACKEND_RUNTIME=docker"]=1
 SCHEMA_NOT_YET_SUPPORTED["SURICATA_MODE=ips"]=1
 SCHEMA_NOT_YET_SUPPORTED["METRICS_BACKEND=victoriametrics"]=1
 SCHEMA_NOT_YET_SUPPORTED["METRICS_BACKEND=prometheus"]=1
+# Temporary for slice 2 only: source builds and nDPI ship in slice 4,
+# which is expected to remove these two lines (tech.md, slice 2 note:
+# "тесты идут с --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no").
+SCHEMA_NOT_YET_SUPPORTED["SURICATA_SOURCE=source"]=1
+SCHEMA_NOT_YET_SUPPORTED["NDPI_ENABLE=yes"]=1
 
 _schema_add() {
 	# _schema_add <row as documented above>

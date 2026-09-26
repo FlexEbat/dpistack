@@ -225,11 +225,15 @@ run_apply() {
 		if ! "step_${name}_apply"; then
 			die 1 "шаг $name упал, продолжить: install.sh install --only $name"
 		fi
-		if ! "step_${name}_check"; then
-			die 1 "шаг $name не прошёл проверку после применения"
+		if "step_${name}_check"; then
+			state_set_step_done "$name"
+			echo "[$i/$total] $name ... готово"
+		else
+			# A step can legitimately still report drift after a clean
+			# apply (5.4: a manually edited file is left alone with a
+			# notice, not overwritten) - that isn't a failed apply.
+			echo "[$i/$total] $name ... применено частично, см. заметки выше"
 		fi
-		state_set_step_done "$name"
-		echo "[$i/$total] $name ... готово"
 	done
 }
 
@@ -255,7 +259,9 @@ cmd_install() {
 		config_write_secrets "$(path_secrets)"
 	fi
 
-	step_preflight_check || true
+	if ! step_preflight_check; then
+		exit 3
+	fi
 
 	run_plan
 	local pending=$?

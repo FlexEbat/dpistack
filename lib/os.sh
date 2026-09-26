@@ -66,20 +66,29 @@ pkg_install() {
 }
 
 pkg_repo_add() {
-	# pkg_repo_add <name> <url-or-descriptor>
-	# Real repository handling ships with the steps that need one
-	# (slice 2 onward); slice 1 only needs the dispatch point to exist.
-	log "INFO" "pkg_repo_add stub called for family=$OS_FAMILY name=$1"
+	# pkg_repo_add <name>
+	# Only "oisf" exists as a named repo so far (tech.md 4.3
+	# SURICATA_SOURCE=oisf); more get added as their slice needs one.
+	local name="$1"
+	case "$OS_FAMILY:$name" in
+	apt:oisf)
+		run add-apt-repository -y ppa:oisf/suricata-stable
+		run apt-get update
+		;;
+	*)
+		die 3 "pkg_repo_add: неизвестная комбинация family=$OS_FAMILY repo=$name"
+		;;
+	esac
 }
 
 pkg_pin() {
-	# pkg_pin <package> <version>
+	# pkg_pin <package>
 	case "$OS_FAMILY" in
 	apt)
-		log "INFO" "pkg_pin (apt-mark hold) stub called for $1=$2"
+		run apt-mark hold "$1"
 		;;
 	dnf)
-		log "INFO" "pkg_pin (dnf versionlock) stub called for $1=$2"
+		log "INFO" "dnf versionlock stub called for $1 (dnf family not reachable past preflight yet)"
 		;;
 	esac
 }

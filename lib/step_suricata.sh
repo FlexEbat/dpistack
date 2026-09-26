@@ -1,18 +1,207 @@
 #!/usr/bin/env bash
-# Slice 1 scaffolding stub for the "suricata" step. Real check/apply
-# logic ships with the slice that owns this component (tech.md 17).
-# Every step is a (check, apply, plan) triple (tech.md section 5).
+# Suricata IDS: package install from distro/oisf, suricata.yaml and
+# logrotate rendering, systemd unit (tech.md slice 2). Source builds
+# and nDPI are schema.sh "пока не поддерживается" until slice 4.
+
+SURICATA_PACKAGE="suricata"
+SURICATA_UNIT="suricata.service"
+
+suricata_home_net_value() {
+	local v="${CONF[HOME_NET]:-}"
+	if [[ -z "$v" || "$v" == "auto" ]]; then
+		echo '[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]'
+	else
+		echo "$v"
+	fi
+}
+
+suricata_render_af_packet_block() {
+	local ifaces="${CONF[IFACES]:-}"
+	local bpf="${CONF[BPF_FILTER]:-}"
+	local iface cluster_id=99
+	local IFS=','
+	for iface in $ifaces; do
+		[[ -z "$iface" ]] && continue
+		echo "  - interface: ${iface}"
+		echo "    cluster-id: ${cluster_id}"
+		echo "    cluster-type: cluster_flow"
+		echo "    defrag: yes"
+		[[ -n "$bpf" ]] && echo "    bpf-filter: \"${bpf}\""
+		cluster_id=$((cluster_id + 1))
+	done
+	echo "  - interface: default"
+}
+
+suricata_render_eve_types_block() {
+	local types="${CONF[EVE_TYPES]:-alert,flow}"
+	local t
+	local IFS=','
+	echo "      types:"
+	for t in $types; do
+		[[ -z "$t" ]] && continue
+		echo "        - ${t}"
+	done
+}
+
+suricata_render_eve_log_block() {
+	echo "  - eve-log:"
+	echo "      enabled: yes"
+	echo "      filetype: regular"
+	echo "      filename: eve.json"
+	echo "      pcap-file: false"
+	echo "      community-id: false"
+	echo "      community-id-seed: 0"
+	echo "      xff:"
+	echo "        enabled: no"
+	echo "        mode: extra-data"
+	echo "        deployment: reverse"
+	echo "        header: X-Forwarded-For"
+	suricata_render_eve_types_block
+}
+
+# suricata_render_yaml -> full suricata.yaml on stdout
+suricata_render_yaml() {
+	local tpl="$SCRIPT_DIR/templates/suricata.yaml.tpl"
+	local home_net stats_interval
+	home_net=$(suricata_home_net_value)
+	stats_interval="${CONF[STATS_INTERVAL_SEC]:-30}"
+
+	awk -v home_net="$home_net" -v interval="$stats_interval" \
+		-v eve_block="$(suricata_render_eve_log_block)" \
+		-v af_block="$(suricata_render_af_packet_block)" '
+		{
+			gsub(/%%DPISTACK_HOME_NET%%/, home_net)
+			gsub(/%%DPISTACK_STATS_INTERVAL%%/, interval)
+		}
+		$0 == "%%DPISTACK_EVE_LOG_BLOCK%%" { print eve_block; next }
+		$0 == "%%DPISTACK_AF_PACKET_BLOCK%%" { print af_block; next }
+		{ print }
+	' "$tpl"
+}
+
+suricata_rotate_directive() {
+	case "${CONF[EVE_ROTATE]:-daily}" in
+	weekly) echo "weekly" ;;
+	size) echo "size ${CONF[EVE_MAX_SIZE_MB]:-100}M" ;;
+	*) echo "daily" ;;
+	esac
+}
+
+# suricata_render_logrotate -> full logrotate stanza on stdout
+suricata_render_logrotate() {
+	local tpl="$SCRIPT_DIR/templates/logrotate.tpl"
+	awk -v path="$(path_suricata_eve_json)" -v rotate="$(suricata_rotate_directive)" \
+		-v keep="${CONF[EVE_KEEP]:-14}" '
+		{
+			gsub(/%%DPISTACK_EVE_JSON_PATH%%/, path)
+			gsub(/%%DPISTACK_ROTATE_DIRECTIVE%%/, rotate)
+			gsub(/%%DPISTACK_EVE_KEEP%%/, keep)
+			print
+		}
+	' "$tpl"
+}
+
+# suricata_run_write_file <path> - atomic_write that also honours --dry-run
+suricata_run_write_file() {
+	local path="$1"
+	if [[ "${DRY_RUN:-0}" == "1" ]]; then
+		printf '+ render %s\n' "$path"
+		cat >/dev/null
+		return 0
+	fi
+	atomic_write "$path"
+}
+
+# suricata_write_rendered <path> <content>
+# Applies the 5.4 manual-edit guard: if the file exists, differs from
+# our last recorded render hash, and we are not --force, it is left
+# alone with a notice instead of being silently overwritten.
+suricata_write_rendered() {
+	local path="$1" content="$2"
+	local new_hash
+	new_hash=$(printf '%s\n' "$content" | state_hash_content)
+
+	if [[ -f "$path" ]]; then
+		local on_disk_hash last_hash
+		on_disk_hash=$(state_hash_content <"$path")
+		last_hash=$(state_file_hash "$path")
+		if [[ -n "$last_hash" && "$on_disk_hash" != "$last_hash" && "${FORCE:-0}" != "1" ]]; then
+			echo "  $path изменён вручную, оставляю как есть (нужен --force)" >&2
+			return 0
+		fi
+		if [[ "$on_disk_hash" == "$new_hash" ]]; then
+			return 0
+		fi
+		if [[ "${FORCE:-0}" == "1" ]]; then
+			backup "$path"
+		fi
+	fi
+
+	printf '%s\n' "$content" | suricata_run_write_file "$path"
+	state_set_file_hash "$path" "$new_hash"
+}
+
+suricata_installed_version() {
+	dpkg-query -W -f='${Version}' "$SURICATA_PACKAGE" 2>/dev/null
+}
 
 step_suricata_check() {
-	# Nothing to configure yet, so the step is always already satisfied.
+	[[ "${CONF[SURICATA_SOURCE]:-}" =~ ^(distro|oisf)$ ]] || return 1
+
+	command -v suricata >/dev/null 2>&1 || return 1
+	[[ -n "$(suricata_installed_version)" ]] || return 1
+
+	local yaml_path logrotate_path
+	yaml_path=$(path_suricata_yaml)
+	logrotate_path=$(path_suricata_logrotate)
+
+	[[ -f "$yaml_path" ]] || return 1
+	local expected_yaml_hash actual_yaml_hash
+	expected_yaml_hash=$(suricata_render_yaml | state_hash_content)
+	actual_yaml_hash=$(state_hash_content <"$yaml_path")
+	[[ "$expected_yaml_hash" == "$actual_yaml_hash" ]] || return 1
+
+	[[ -f "$logrotate_path" ]] || return 1
+	local expected_lr_hash actual_lr_hash
+	expected_lr_hash=$(suricata_render_logrotate | state_hash_content)
+	actual_lr_hash=$(state_hash_content <"$logrotate_path")
+	[[ "$expected_lr_hash" == "$actual_lr_hash" ]] || return 1
+
+	systemctl is-active --quiet "$SURICATA_UNIT" || return 1
+
 	return 0
 }
 
 step_suricata_apply() {
-	log "INFO" "suricata: stub apply, nothing to do yet"
+	if [[ "${CONF[SURICATA_SOURCE]}" == "oisf" ]]; then
+		pkg_repo_add oisf
+	fi
+	if ! command -v suricata >/dev/null 2>&1 || [[ -z "$(suricata_installed_version)" ]]; then
+		pkg_install "$SURICATA_PACKAGE"
+	fi
+
+	local yaml_path logrotate_path
+	yaml_path=$(path_suricata_yaml)
+	logrotate_path=$(path_suricata_logrotate)
+
+	suricata_write_rendered "$yaml_path" "$(suricata_render_yaml)"
+	suricata_write_rendered "$logrotate_path" "$(suricata_render_logrotate)"
+
+	run systemctl enable --now "$SURICATA_UNIT"
+	local eve_json
+	eve_json=$(path_suricata_eve_json)
+	[[ -f "$eve_json" ]] && run chmod 0640 "$eve_json"
+
+	if [[ "${CONF[PIN_VERSIONS]:-no}" == "yes" ]]; then
+		pkg_pin "$SURICATA_PACKAGE"
+	fi
+
 	return 0
 }
 
 step_suricata_plan() {
-	echo "suricata: без изменений"
+	echo "suricata: установка/обновление пакета ($OS_FAMILY, источник ${CONF[SURICATA_SOURCE]:-distro})"
+	echo "suricata: рендер $(path_suricata_yaml) для интерфейсов ${CONF[IFACES]:-}"
+	echo "suricata: рендер $(path_suricata_logrotate)"
+	echo "suricata: systemctl enable --now $SURICATA_UNIT"
 }
