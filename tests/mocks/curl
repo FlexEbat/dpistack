@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Mock for bats tests (tech.md 11): records the call and exits with
+# MOCK_EXIT (default 0), so steps never touch the real system in CI.
+if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
+	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+fi
+exit "${MOCK_EXIT:-0}"

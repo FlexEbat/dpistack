@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Mock ip(8): "ip link show <iface>" succeeds only for interfaces
+# listed in MOCK_IP_EXISTING_IFACES (comma separated). Anything else
+# (including other subcommands) behaves like the generic mock.
+if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
+	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+fi
+
+if [[ "$1" == "link" && "$2" == "show" && -n "${3:-}" ]]; then
+	iface="$3"
+	IFS=',' read -ra existing <<<"${MOCK_IP_EXISTING_IFACES:-}"
+	for e in "${existing[@]}"; do
+		[[ "$e" == "$iface" ]] && exit 0
+	done
+	exit 1
+fi
+
+exit "${MOCK_EXIT:-0}"

@@ -1,0 +1,75 @@
+# dpistack.conf example - every key dpistack.conf accepts, with its
+# default value (tech.md 4.3). One KEY=value per line, no quotes, no
+# shell substitution. Unknown keys or values outside their documented
+# options stop the installer.
+#
+# Secrets (ALERT_TG_TOKEN, ALERT_SMTP_URL, METRICS_TOKEN) do not go in
+# this file: they live only in /etc/dpistack/secrets.conf (0600).
+#
+# "auto"/empty values mean "computed at install/apply time"; see the
+# key's row in tech.md 4.3 for what "auto" resolves to.
+
+ACCESS_MODE=localhost
+ALERT_CHANNELS=panel,log
+ALERT_MAIL_FROM=
+ALERT_MAIL_TO=
+ALERT_TG_CHAT_ID=
+BPF_FILTER=
+EVEBOX_DB=sqlite
+EVEBOX_ES_URL=
+EVEBOX_PORT=5636
+EVEBOX_RETENTION_DAYS=30
+EVEBOX_RUNTIME=native
+EVE_FILE=yes
+EVE_KEEP=14
+EVE_MAX_SIZE_MB=
+EVE_REDIS=
+EVE_ROTATE=daily
+EVE_SYSLOG=no
+EVE_TYPES=alert,flow,dns,tls,http,stats
+FIREWALL_MANAGE=no
+HOME_NET=auto
+IFACES=enp2s0
+IPS_METHOD=nfq
+IPS_NFQ_CHAINS=INPUT,OUTPUT,FORWARD
+LAN_CIDR=auto
+METRICS_BACKEND=none
+METRICS_BACKEND_PORT=
+METRICS_BACKEND_RUNTIME=native
+METRICS_EXPORT=yes
+METRICS_RETENTION=30d
+NDPI_ENABLE=yes
+NDPI_SOURCE=source
+NGINX_CERT=
+NGINX_KEY=
+NGINX_MANAGE=snippet
+NGINX_TLS=none
+NTOPNG_IFACES=enp2s0
+NTOPNG_PORT=3000
+NTOPNG_RUNTIME=native
+PANEL_PORT=9800
+PANEL_SOURCE=build
+PIN_VERSIONS=no
+RULES_GROUPS=emerging-p2p,emerging-policy
+RULES_SOURCES=et/open
+RULES_UPDATE=on
+RULES_UPDATE_CALENDAR=weekly
+RULES_URLS=
+STATS_INTERVAL_SEC=30
+SURICATA_MODE=ids
+SURICATA_RUNTIME=native
+SURICATA_SOURCE=source
+TEST_BT_LIVE=no
+TEST_HTTPS_URL=https://example.com
+TEST_ON_INSTALL=yes
+WATCH_AUTORESTART=no
+WATCH_DISK_CRIT_PCT=5
+WATCH_DISK_WARN_PCT=15
+WATCH_DROP_CRIT_PCT=5
+WATCH_DROP_WARN_PCT=1
+WATCH_ENABLE=yes
+WATCH_EVE_STALE_SEC=300
+WATCH_INTERVAL_SEC=60
+WATCH_REPEAT_MIN=60
+WATCH_RULES_CRIT_DAYS=30
+WATCH_RULES_WARN_DAYS=10
