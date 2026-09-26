@@ -101,46 +101,6 @@ suricata_render_logrotate() {
 	' "$tpl"
 }
 
-# suricata_run_write_file <path> - atomic_write that also honours --dry-run
-suricata_run_write_file() {
-	local path="$1"
-	if [[ "${DRY_RUN:-0}" == "1" ]]; then
-		printf '+ render %s\n' "$path"
-		cat >/dev/null
-		return 0
-	fi
-	atomic_write "$path"
-}
-
-# suricata_write_rendered <path> <content>
-# Applies the 5.4 manual-edit guard: if the file exists, differs from
-# our last recorded render hash, and we are not --force, it is left
-# alone with a notice instead of being silently overwritten.
-suricata_write_rendered() {
-	local path="$1" content="$2"
-	local new_hash
-	new_hash=$(printf '%s\n' "$content" | state_hash_content)
-
-	if [[ -f "$path" ]]; then
-		local on_disk_hash last_hash
-		on_disk_hash=$(state_hash_content <"$path")
-		last_hash=$(state_file_hash "$path")
-		if [[ -n "$last_hash" && "$on_disk_hash" != "$last_hash" && "${FORCE:-0}" != "1" ]]; then
-			echo "  $path изменён вручную, оставляю как есть (нужен --force)" >&2
-			return 0
-		fi
-		if [[ "$on_disk_hash" == "$new_hash" ]]; then
-			return 0
-		fi
-		if [[ "${FORCE:-0}" == "1" ]]; then
-			backup "$path"
-		fi
-	fi
-
-	printf '%s\n' "$content" | suricata_run_write_file "$path"
-	state_set_file_hash "$path" "$new_hash"
-}
-
 suricata_installed_version() {
 	dpkg-query -W -f='${Version}' "$SURICATA_PACKAGE" 2>/dev/null
 }
@@ -184,8 +144,8 @@ step_suricata_apply() {
 	yaml_path=$(path_suricata_yaml)
 	logrotate_path=$(path_suricata_logrotate)
 
-	suricata_write_rendered "$yaml_path" "$(suricata_render_yaml)"
-	suricata_write_rendered "$logrotate_path" "$(suricata_render_logrotate)"
+	write_rendered_file "$yaml_path" "$(suricata_render_yaml)"
+	write_rendered_file "$logrotate_path" "$(suricata_render_logrotate)"
 
 	run systemctl enable --now "$SURICATA_UNIT"
 	local eve_json

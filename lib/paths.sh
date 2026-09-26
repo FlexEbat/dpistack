@@ -44,6 +44,8 @@ path_suricata_local_rules() { echo "${DPISTACK_ROOT}/etc/suricata/rules/local.ru
 path_suricata_ruleset() { echo "${DPISTACK_ROOT}/var/lib/suricata/rules/suricata.rules"; }
 path_suricata_eve_json() { echo "${DPISTACK_ROOT}/var/log/suricata/eve.json"; }
 path_suricata_logrotate() { echo "${DPISTACK_ROOT}/etc/logrotate.d/suricata"; }
+path_rules_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-rules.service"; }
+path_rules_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-rules.timer"; }
 path_suricata_socket() { echo "${DPISTACK_ROOT}/run/suricata/suricata-command.socket"; }
 
 path_evebox_yaml() { echo "${DPISTACK_ROOT}/etc/evebox/evebox.yaml"; }
