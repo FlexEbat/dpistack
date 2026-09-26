@@ -47,6 +47,8 @@ run() {
 lock_acquire() {
 	# Takes an flock on the dpistack lock file. A second concurrent
 	# instance must exit 1 immediately (5.1, tested by tests/lock.bats).
+	# The OS releases the flock on process exit, so there is no
+	# matching lock_release: nothing else would ever call it.
 	local lock_file
 	lock_file=$(path_lock_file)
 	mkdir -p "$(dirname "$lock_file")" 2>/dev/null || true
@@ -54,10 +56,6 @@ lock_acquire() {
 	if ! flock -n "$DPISTACK_LOCK_FD"; then
 		die 1 "another dpistack instance is running (lock: $lock_file)"
 	fi
-}
-
-lock_release() {
-	eval "exec ${DPISTACK_LOCK_FD}>&-" 2>/dev/null || true
 }
 
 atomic_write() {

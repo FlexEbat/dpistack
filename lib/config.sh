@@ -5,10 +5,12 @@
 # configs for `reconfigure` (tech.md 5.1, 5.3, 4.3).
 
 declare -A CONF SECRETS
+ACCESS_CONFIRM=""
 
 config_reset() {
 	CONF=()
 	SECRETS=()
+	ACCESS_CONFIRM=""
 }
 
 config_set_kv() {
@@ -62,7 +64,15 @@ config_apply_set() {
 		echo "неверный --set, ожидался KEY=VALUE: $kv"
 		return 1
 	fi
-	config_set_kv "${kv%%=*}" "${kv#*=}"
+	local key="${kv%%=*}" value="${kv#*=}"
+	if [[ "$key" == "ACCESS_CONFIRM" ]]; then
+		# Documented in 4.3's cross-checks, not in the key table: it
+		# confirms ACCESS_MODE != localhost non-interactively and is
+		# never written to dpistack.conf.
+		ACCESS_CONFIRM="$value"
+		return 0
+	fi
+	config_set_kv "$key" "$value"
 }
 
 # config_ask_basic [advanced]
@@ -123,7 +133,7 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
-	if [[ "${CONF[ACCESS_MODE]:-}" != "localhost" && "${CONF[ACCESS_CONFIRM]:-}" != "yes" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
+	if [[ "${CONF[ACCESS_MODE]:-}" != "localhost" && "${ACCESS_CONFIRM:-}" != "yes" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
 		echo "ACCESS_MODE=${CONF[ACCESS_MODE]} в неинтерактивном режиме требует --set ACCESS_CONFIRM=yes"
 		errors=$((errors + 1))
 	fi
@@ -131,9 +141,14 @@ config_validate() {
 	return "$errors"
 }
 
+METRICS_TOKEN_JUST_GENERATED=0
+
 config_generate_metrics_token_if_needed() {
+	METRICS_TOKEN_JUST_GENERATED=0
 	if [[ "${CONF[METRICS_EXPORT]:-}" == "yes" && -z "${SECRETS[METRICS_TOKEN]:-}" ]]; then
 		SECRETS[METRICS_TOKEN]=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+		# shellcheck disable=SC2034 # read by install.sh right after this call
+		METRICS_TOKEN_JUST_GENERATED=1
 	fi
 }
 

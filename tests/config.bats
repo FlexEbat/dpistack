@@ -65,6 +65,21 @@ run_install() {
 	[[ "$output" == *"пока не поддерживается"* ]]
 }
 
+@test "ACCESS_MODE=lan without confirmation exits 2 in non-interactive mode" {
+	run_install --set ACCESS_MODE=lan
+	[ "$status" -eq 2 ]
+	[[ "$output" == *"ACCESS_CONFIRM"* ]]
+}
+
+@test "ACCESS_MODE=lan with --set ACCESS_CONFIRM=yes passes and is never persisted" {
+	run bash "$REPO_DIR/install.sh" install -y --set ACCESS_MODE=lan --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 0 ]
+	conf_file="$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+	[ -f "$conf_file" ]
+	run grep -c "ACCESS_CONFIRM" "$conf_file"
+	[ "$output" = "0" ]
+}
+
 @test "secret from --set goes to secrets.conf, not dpistack.conf or stdout" {
 	run bash "$REPO_DIR/install.sh" install -y --set ALERT_TG_TOKEN=super-secret-token
 	[ "$status" -eq 0 ]

@@ -72,7 +72,7 @@ schema_init() {
 	_schema_add 'HOME_NET|free|auto||advanced|capture|suricata|light|no'
 	_schema_add 'IPS_METHOD|enum|nfq|nfq,afpacket|advanced|capture|suricata|light|no'
 	_schema_add 'IPS_NFQ_CHAINS|free|INPUT,OUTPUT,FORWARD||advanced|capture|suricata|light|no'
-	_schema_add 'NTOPNG_IFACES|free|enp2s0||advanced|capture|ntopng|light|no'
+	_schema_add 'NTOPNG_IFACES|free|enp2s0||advanced|capture|ntopng access|light|no'
 
 	_schema_add 'EVE_FILE|enum|yes|yes,no|advanced|eve|suricata watch|light|no'
 	_schema_add 'EVE_TYPES|free|alert,flow,dns,tls,http,stats||basic|eve|suricata watch|light|no'
@@ -89,10 +89,10 @@ schema_init() {
 	_schema_add 'RULES_UPDATE|enum|on|on,off|advanced|rules|rules|light|no'
 	_schema_add 'RULES_UPDATE_CALENDAR|free|weekly||advanced|rules|rules|light|no'
 
-	_schema_add 'EVEBOX_DB|enum|sqlite|sqlite,elasticsearch|advanced|eve|evebox|light|no'
-	_schema_add 'EVEBOX_ES_URL|free|||advanced|eve|evebox|light|no'
+	_schema_add 'EVEBOX_DB|enum|sqlite|sqlite,elasticsearch|advanced|eve|evebox|heavy|no'
+	_schema_add 'EVEBOX_ES_URL|free|||advanced|eve|evebox access|light|no'
 	_schema_add 'EVEBOX_PORT|int|5636|1..65535|advanced|eve|evebox access|light|no'
-	_schema_add 'EVEBOX_RETENTION_DAYS|int|30|0..36500|advanced|eve|evebox|light|no'
+	_schema_add 'EVEBOX_RETENTION_DAYS|int|30|0..36500|advanced|eve|evebox access|light|no'
 
 	_schema_add 'ACCESS_MODE|enum|localhost|localhost,lan,nginx|basic|access|access panel|light|no'
 	_schema_add 'LAN_CIDR|free|auto||advanced|access|access panel|light|no'

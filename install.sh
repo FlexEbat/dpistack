@@ -20,10 +20,6 @@ source "$LIB_DIR/state.sh"
 source "$LIB_DIR/schema.sh"
 # shellcheck source=lib/config.sh
 source "$LIB_DIR/config.sh"
-# shellcheck source=lib/runtime_native.sh
-source "$LIB_DIR/runtime_native.sh"
-# shellcheck source=lib/runtime_docker.sh
-source "$LIB_DIR/runtime_docker.sh"
 
 STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics access panel watch verify)
 for _step in "${STEPS_ORDER[@]}"; do
@@ -250,6 +246,9 @@ cmd_install() {
 
 	echo "Итоговый конфиг:"
 	config_print_summary
+	if [[ "$METRICS_TOKEN_JUST_GENERATED" == "1" ]]; then
+		echo "Создан METRICS_TOKEN (сохраните — больше нигде не показывается и не восстанавливается): ${SECRETS[METRICS_TOKEN]}"
+	fi
 
 	if [[ "$DRY_RUN" != "1" ]]; then
 		config_write_conf "$(path_conf)"
