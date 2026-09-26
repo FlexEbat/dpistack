@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Watchdog entry point, run by dpistack-watch.timer (tech.md section 8).
+# Slice 1 only scaffolds the entry point; the actual checks ship with
+# the watchdog slices.
+set -uo pipefail
+
+echo "dpistack-watch: пока не реализовано" >&2
+exit 4
