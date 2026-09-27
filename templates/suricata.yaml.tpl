@@ -67,6 +67,7 @@ stats:
 
 # Plugins -- Experimental -- specify the filename for each plugin shared object
 plugins:
+%%DPISTACK_PLUGINS_BLOCK%%
 #   - /path/to/plugin.so
 
 # Configure the type of alert (and other) logging you would like.

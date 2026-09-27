@@ -43,6 +43,12 @@ suricata_render_eve_types_block() {
 	done
 }
 
+suricata_render_plugins_block() {
+	if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
+		echo "  - $(path_suricata_ndpi_plugin)"
+	fi
+}
+
 suricata_render_eve_log_block() {
 	echo "  - eve-log:"
 	echo "      enabled: yes"
@@ -68,13 +74,15 @@ suricata_render_yaml() {
 
 	awk -v home_net="$home_net" -v interval="$stats_interval" \
 		-v eve_block="$(suricata_render_eve_log_block)" \
-		-v af_block="$(suricata_render_af_packet_block)" '
+		-v af_block="$(suricata_render_af_packet_block)" \
+		-v plugins_block="$(suricata_render_plugins_block)" '
 		{
 			gsub(/%%DPISTACK_HOME_NET%%/, home_net)
 			gsub(/%%DPISTACK_STATS_INTERVAL%%/, interval)
 		}
 		$0 == "%%DPISTACK_EVE_LOG_BLOCK%%" { print eve_block; next }
 		$0 == "%%DPISTACK_AF_PACKET_BLOCK%%" { print af_block; next }
+		$0 == "%%DPISTACK_PLUGINS_BLOCK%%" { print plugins_block; next }
 		{ print }
 	' "$tpl"
 }
@@ -105,11 +113,85 @@ suricata_installed_version() {
 	dpkg-query -W -f='${Version}' "$SURICATA_PACKAGE" 2>/dev/null
 }
 
-step_suricata_check() {
-	[[ "${CONF[SURICATA_SOURCE]:-}" =~ ^(distro|oisf)$ ]] || return 1
+SURICATA_REPO_URL="https://github.com/OISF/suricata.git"
+SURICATA_BUILT_REF_STATE_KEY="suricata.built_ref"
 
-	command -v suricata >/dev/null 2>&1 || return 1
-	[[ -n "$(suricata_installed_version)" ]] || return 1
+suricata_source_binary_present() {
+	command -v suricata >/dev/null 2>&1 && [[ "$(command -v suricata)" == "${DPISTACK_ROOT}/usr/local/bin/suricata" ]]
+}
+
+suricata_build_from_source() {
+	local src_dir ref
+	src_dir=$(path_suricata_src_dir)
+	ref="${CONF[SURICATA_VERSION]:-}"
+
+	if [[ ! -d "$src_dir/.git" ]]; then
+		run git clone "$SURICATA_REPO_URL" "$src_dir"
+		run git -C "$src_dir" submodule update --init --recursive
+	else
+		run git -C "$src_dir" fetch --tags origin
+	fi
+
+	if [[ -n "$ref" ]]; then
+		run git -C "$src_dir" checkout "$ref"
+	else
+		run git -C "$src_dir" checkout HEAD
+	fi
+	local resolved_ref
+	resolved_ref=$(git -C "$src_dir" rev-parse HEAD 2>/dev/null)
+
+	local configure_args=(--prefix=/usr/local --sysconfdir="${DPISTACK_ROOT}/etc"
+		--localstatedir="${DPISTACK_ROOT}/var" --disable-gccmarch-native)
+	if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
+		configure_args+=(--enable-ndpi --with-ndpi="$(path_ndpi_src_dir)")
+	fi
+
+	(
+		cd "$src_dir" || exit 1
+		run ./autogen.sh &&
+			run ./configure "${configure_args[@]}" &&
+			run make -j"$(nproc)" &&
+			run make install
+	)
+	local rc=$?
+	if [[ "$rc" -ne 0 ]]; then
+		echo "suricata: сборка из исходников упала (autogen/configure/make)" >&2
+		return 1
+	fi
+
+	[[ "${DRY_RUN:-0}" != "1" ]] && run ldconfig
+	[[ -n "$resolved_ref" ]] && state_write_value "$SURICATA_BUILT_REF_STATE_KEY" "$resolved_ref"
+	return 0
+}
+
+suricata_render_service_unit() {
+	local tpl="$SCRIPT_DIR/templates/suricata.service.tpl"
+	local rundir sysconfdir
+	rundir="${DPISTACK_ROOT}/run/"
+	sysconfdir="${DPISTACK_ROOT}/etc/suricata/"
+	awk -v rundir="$rundir" -v sysconfdir="$sysconfdir" '
+		{
+			gsub(/%%DPISTACK_RUNDIR%%/, rundir)
+			gsub(/%%DPISTACK_SYSCONFDIR%%/, sysconfdir)
+			print
+		}
+	' "$tpl"
+}
+
+step_suricata_check() {
+	local source="${CONF[SURICATA_SOURCE]:-}"
+	[[ "$source" =~ ^(distro|oisf|source)$ ]] || return 1
+
+	if [[ "$source" == "source" ]]; then
+		suricata_source_binary_present || return 1
+		local wanted have
+		wanted="${CONF[SURICATA_VERSION]:-}"
+		have=$(state_read_value "$SURICATA_BUILT_REF_STATE_KEY")
+		[[ -z "$wanted" || "$wanted" == "$have" ]] || return 1
+	else
+		command -v suricata >/dev/null 2>&1 || return 1
+		[[ -n "$(suricata_installed_version)" ]] || return 1
+	fi
 
 	local yaml_path logrotate_path
 	yaml_path=$(path_suricata_yaml)
@@ -127,18 +209,38 @@ step_suricata_check() {
 	actual_lr_hash=$(state_hash_content <"$logrotate_path")
 	[[ "$expected_lr_hash" == "$actual_lr_hash" ]] || return 1
 
+	if [[ "$source" == "source" ]]; then
+		local service_path
+		service_path=$(path_suricata_service_unit)
+		[[ -f "$service_path" ]] || return 1
+		local expected_svc_hash actual_svc_hash
+		expected_svc_hash=$(suricata_render_service_unit | state_hash_content)
+		actual_svc_hash=$(state_hash_content <"$service_path")
+		[[ "$expected_svc_hash" == "$actual_svc_hash" ]] || return 1
+	fi
+
 	systemctl is-active --quiet "$SURICATA_UNIT" || return 1
 
 	return 0
 }
 
 step_suricata_apply() {
-	if [[ "${CONF[SURICATA_SOURCE]}" == "oisf" ]]; then
+	case "${CONF[SURICATA_SOURCE]}" in
+	oisf)
 		pkg_repo_add oisf
-	fi
-	if ! command -v suricata >/dev/null 2>&1 || [[ -z "$(suricata_installed_version)" ]]; then
-		pkg_install "$SURICATA_PACKAGE"
-	fi
+		if ! command -v suricata >/dev/null 2>&1 || [[ -z "$(suricata_installed_version)" ]]; then
+			pkg_install "$SURICATA_PACKAGE"
+		fi
+		;;
+	distro)
+		if ! command -v suricata >/dev/null 2>&1 || [[ -z "$(suricata_installed_version)" ]]; then
+			pkg_install "$SURICATA_PACKAGE"
+		fi
+		;;
+	source)
+		suricata_build_from_source || return 1
+		;;
+	esac
 
 	local yaml_path logrotate_path
 	yaml_path=$(path_suricata_yaml)
@@ -147,12 +249,17 @@ step_suricata_apply() {
 	write_rendered_file "$yaml_path" "$(suricata_render_yaml)"
 	write_rendered_file "$logrotate_path" "$(suricata_render_logrotate)"
 
+	if [[ "${CONF[SURICATA_SOURCE]}" == "source" ]]; then
+		write_rendered_file "$(path_suricata_service_unit)" "$(suricata_render_service_unit)"
+		run systemctl daemon-reload
+	fi
+
 	run systemctl enable --now "$SURICATA_UNIT"
 	local eve_json
 	eve_json=$(path_suricata_eve_json)
 	[[ -f "$eve_json" ]] && run chmod 0640 "$eve_json"
 
-	if [[ "${CONF[PIN_VERSIONS]:-no}" == "yes" ]]; then
+	if [[ "${CONF[PIN_VERSIONS]:-no}" == "yes" && "${CONF[SURICATA_SOURCE]}" != "source" ]]; then
 		pkg_pin "$SURICATA_PACKAGE"
 	fi
 
@@ -160,7 +267,11 @@ step_suricata_apply() {
 }
 
 step_suricata_plan() {
-	echo "suricata: установка/обновление пакета ($OS_FAMILY, источник ${CONF[SURICATA_SOURCE]:-distro})"
+	if [[ "${CONF[SURICATA_SOURCE]:-}" == "source" ]]; then
+		echo "suricata: сборка из исходников ($SURICATA_REPO_URL, ref=${CONF[SURICATA_VERSION]:-HEAD}, nDPI=${CONF[NDPI_ENABLE]:-no})"
+	else
+		echo "suricata: установка/обновление пакета ($OS_FAMILY, источник ${CONF[SURICATA_SOURCE]:-distro})"
+	fi
 	echo "suricata: рендер $(path_suricata_yaml) для интерфейсов ${CONF[IFACES]:-}"
 	echo "suricata: рендер $(path_suricata_logrotate)"
 	echo "suricata: systemctl enable --now $SURICATA_UNIT"

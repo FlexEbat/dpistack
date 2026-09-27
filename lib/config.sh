@@ -138,6 +138,12 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
+	if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" && "${CONF[SURICATA_SOURCE]:-}" != "source" &&
+		! -f "$(path_suricata_ndpi_plugin)" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
+		echo "NDPI_ENABLE=yes с SURICATA_SOURCE=${CONF[SURICATA_SOURCE]:-} не даёт ndpi.so; используйте SURICATA_SOURCE=source или соберите плагин заранее"
+		errors=$((errors + 1))
+	fi
+
 	return "$errors"
 }
 
