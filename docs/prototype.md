@@ -198,3 +198,27 @@ CONTRACT GAP
 ```
 
 Полная сборка Suricata с реально работающим `ndpi.so` (критерии 1, 2 — `suricata --build-info`, срабатывание правила на живом TLS-трафике) не проверена мной вживую из-за блокера с Rust — нужен реальный стенд с Rust ≥1.85 (например, через `rustup`, либо более новый дистрибутив).
+
+
+---
+
+## Слайс 6 (EveBox): что подтверждено и что требует решения владельца
+
+**Подтверждено по официальной документации evebox.org** (страницы install/debian, server/configuration, server/environment-variables), не запуском бинарника:
+
+- Репозиторий: ключ `https://evebox.org/files/evebox.asc` в `/etc/apt/keyrings/evebox.asc`, источник `deb [signed-by=...] https://evebox.org/files/debian stable main`, пакет `evebox`, юнит `evebox` из пакета.
+- Конфиг `/etc/evebox/evebox.yaml`, ключи `http.host`, `http.port`, `http.tls.enabled`, `authentication.required`, `database.type`, `database.elasticsearch.url`, `database.retention.days`, `input.enabled`, `input.paths`. Отрендеренный YAML разобран настоящим PyYAML в обоих режимах БД.
+- Пользователю `evebox` нужен доступ на чтение к логам Suricata (`usermod -a -G suricata evebox`).
+- Допущение A9 закрыто: `database.retention.days` встроен, `0` отключает, **только для SQLite**. Для Elasticsearch `EVEBOX_RETENTION_DAYS` не действует, шаг печатает об этом предупреждение.
+
+**Не проверено:** сам бинарник EveBox запустить не удалось (`evebox.org` закрыт для bash-сети, у GitHub-релизов нет ассетов, пакета в Ubuntu нет). Поэтому критерий 1 (алерт виден в интерфейсе) и проверка retention на старых метках времени (критерий 4) остаются за реальным стендом.
+
+**Решение по безопасности, принятое мной:** с версии 0.18 EveBox по умолчанию включает TLS и аутентификацию (случайный пароль admin в stdout при первом запуске). В `evebox.yaml` они выключены (`tls.enabled: false`, `authentication.required: false`), потому что в этом слайсе EveBox слушает только `127.0.0.1`, а «аутентификация EveBox» в разделе «Не делать». Если в слайсе 7 режим `lan` откроет EveBox без аутентификации, ограничением остаётся только `LAN_CIDR` на firewall.
+
+```
+CONTRACT GAP
+Что нужно: способ подтверждения критерия 3 слайса 6 (EVE_FILE=no при EVEBOX_DB=sqlite «требует подтверждения») в неинтерактивном режиме
+Зачем: критерий 3 требует подтверждения, а для -y в 4.3/4.4 определён механизм только для ACCESS_MODE (--set ACCESS_CONFIRM=yes)
+Предлагаемая форма: пока не нужна, если подтверждение не требуется вовсе; иначе транзитный флаг по образцу ACCESS_CONFIRM
+Что делаю пока: комбинация отклоняется кодом 2 с объяснением (включить EVE_FILE=yes или взять EVEBOX_DB=elasticsearch), новых ключей и флагов не добавлял
+```
