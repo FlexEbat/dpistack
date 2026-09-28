@@ -35,24 +35,14 @@ evebox_input_enabled() {
 }
 
 evebox_render_conf() {
-	local tpl="$SCRIPT_DIR/templates/evebox.yaml.tpl"
-	awk -v port="${CONF[EVEBOX_PORT]:-5636}" \
-		-v db_type="${CONF[EVEBOX_DB]:-sqlite}" \
-		-v retention="${CONF[EVEBOX_RETENTION_DAYS]:-30}" \
-		-v input_enabled="$(evebox_input_enabled)" \
-		-v es_block="$(evebox_render_es_block)" \
-		-v input_paths="$(evebox_render_input_paths)" '
-		{
-			gsub(/%%DPISTACK_EVEBOX_HOST%%/, "127.0.0.1")
-			gsub(/%%DPISTACK_EVEBOX_PORT%%/, port)
-			gsub(/%%DPISTACK_EVEBOX_DB_TYPE%%/, db_type)
-			gsub(/%%DPISTACK_EVEBOX_RETENTION_DAYS%%/, retention)
-			gsub(/%%DPISTACK_EVEBOX_INPUT_ENABLED%%/, input_enabled)
-		}
-		$0 == "%%DPISTACK_EVEBOX_ES_BLOCK%%" { if (es_block != "") print es_block; next }
-		$0 == "%%DPISTACK_EVEBOX_INPUT_PATHS%%" { print input_paths; next }
-		{ print }
-	' "$tpl"
+	render_template "$SCRIPT_DIR/templates/evebox.yaml.tpl" \
+		"EVEBOX_HOST=127.0.0.1" \
+		"EVEBOX_PORT=${CONF[EVEBOX_PORT]:-5636}" \
+		"EVEBOX_DB_TYPE=${CONF[EVEBOX_DB]:-sqlite}" \
+		"EVEBOX_RETENTION_DAYS=${CONF[EVEBOX_RETENTION_DAYS]:-30}" \
+		"EVEBOX_INPUT_ENABLED=$(evebox_input_enabled)" \
+		"EVEBOX_ES_BLOCK=$(evebox_render_es_block)" \
+		"EVEBOX_INPUT_PATHS=$(evebox_render_input_paths)"
 }
 
 evebox_repo_add() {

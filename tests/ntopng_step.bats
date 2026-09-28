@@ -28,6 +28,7 @@ load_ntopng() {
 		source "'"$REPO_DIR"'/lib/common.sh"
 		source "'"$REPO_DIR"'/lib/schema.sh"
 		source "'"$REPO_DIR"'/lib/config.sh"
+		source "'"$REPO_DIR"'/lib/render.sh"
 		config_reset
 		config_load_defaults
 		'"$1"'

@@ -67,24 +67,12 @@ suricata_render_eve_log_block() {
 
 # suricata_render_yaml -> full suricata.yaml on stdout
 suricata_render_yaml() {
-	local tpl="$SCRIPT_DIR/templates/suricata.yaml.tpl"
-	local home_net stats_interval
-	home_net=$(suricata_home_net_value)
-	stats_interval="${CONF[STATS_INTERVAL_SEC]:-30}"
-
-	awk -v home_net="$home_net" -v interval="$stats_interval" \
-		-v eve_block="$(suricata_render_eve_log_block)" \
-		-v af_block="$(suricata_render_af_packet_block)" \
-		-v plugins_block="$(suricata_render_plugins_block)" '
-		{
-			gsub(/%%DPISTACK_HOME_NET%%/, home_net)
-			gsub(/%%DPISTACK_STATS_INTERVAL%%/, interval)
-		}
-		$0 == "%%DPISTACK_EVE_LOG_BLOCK%%" { print eve_block; next }
-		$0 == "%%DPISTACK_AF_PACKET_BLOCK%%" { print af_block; next }
-		$0 == "%%DPISTACK_PLUGINS_BLOCK%%" { print plugins_block; next }
-		{ print }
-	' "$tpl"
+	render_template "$SCRIPT_DIR/templates/suricata.yaml.tpl" \
+		"HOME_NET=$(suricata_home_net_value)" \
+		"STATS_INTERVAL=${CONF[STATS_INTERVAL_SEC]:-30}" \
+		"EVE_LOG_BLOCK=$(suricata_render_eve_log_block)" \
+		"AF_PACKET_BLOCK=$(suricata_render_af_packet_block)" \
+		"PLUGINS_BLOCK=$(suricata_render_plugins_block)"
 }
 
 suricata_rotate_directive() {
@@ -97,16 +85,10 @@ suricata_rotate_directive() {
 
 # suricata_render_logrotate -> full logrotate stanza on stdout
 suricata_render_logrotate() {
-	local tpl="$SCRIPT_DIR/templates/logrotate.tpl"
-	awk -v path="$(path_suricata_eve_json)" -v rotate="$(suricata_rotate_directive)" \
-		-v keep="${CONF[EVE_KEEP]:-14}" '
-		{
-			gsub(/%%DPISTACK_EVE_JSON_PATH%%/, path)
-			gsub(/%%DPISTACK_ROTATE_DIRECTIVE%%/, rotate)
-			gsub(/%%DPISTACK_EVE_KEEP%%/, keep)
-			print
-		}
-	' "$tpl"
+	render_template "$SCRIPT_DIR/templates/logrotate.tpl" \
+		"EVE_JSON_PATH=$(path_suricata_eve_json)" \
+		"ROTATE_DIRECTIVE=$(suricata_rotate_directive)" \
+		"EVE_KEEP=${CONF[EVE_KEEP]:-14}"
 }
 
 suricata_installed_version() {
@@ -165,17 +147,9 @@ suricata_build_from_source() {
 }
 
 suricata_render_service_unit() {
-	local tpl="$SCRIPT_DIR/templates/suricata.service.tpl"
-	local rundir sysconfdir
-	rundir="${DPISTACK_ROOT}/run/"
-	sysconfdir="${DPISTACK_ROOT}/etc/suricata/"
-	awk -v rundir="$rundir" -v sysconfdir="$sysconfdir" '
-		{
-			gsub(/%%DPISTACK_RUNDIR%%/, rundir)
-			gsub(/%%DPISTACK_SYSCONFDIR%%/, sysconfdir)
-			print
-		}
-	' "$tpl"
+	render_template "$SCRIPT_DIR/templates/suricata.service.tpl" \
+		"RUNDIR=${DPISTACK_ROOT}/run/" \
+		"SYSCONFDIR=${DPISTACK_ROOT}/etc/suricata/"
 }
 
 step_suricata_check() {

@@ -5,8 +5,8 @@
 # access is restricted at the network level (localhost, LAN_CIDR via
 # firewall, or nginx), and EveBox auth is out of scope for dpistack.
 http:
-  host: "%%DPISTACK_EVEBOX_HOST%%"
-  port: %%DPISTACK_EVEBOX_PORT%%
+  host: "@@EVEBOX_HOST@@"
+  port: @@EVEBOX_PORT@@
   tls:
     enabled: false
 
@@ -14,12 +14,12 @@ authentication:
   required: false
 
 database:
-  type: %%DPISTACK_EVEBOX_DB_TYPE%%
-%%DPISTACK_EVEBOX_ES_BLOCK%%
+  type: @@EVEBOX_DB_TYPE@@
+@@EVEBOX_ES_BLOCK@@
   retention:
-    days: %%DPISTACK_EVEBOX_RETENTION_DAYS%%
+    days: @@EVEBOX_RETENTION_DAYS@@
 
 input:
-  enabled: %%DPISTACK_EVEBOX_INPUT_ENABLED%%
+  enabled: @@EVEBOX_INPUT_ENABLED@@
   paths:
-%%DPISTACK_EVEBOX_INPUT_PATHS%%
+@@EVEBOX_INPUT_PATHS@@

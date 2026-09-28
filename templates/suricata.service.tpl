@@ -9,8 +9,8 @@ Description=Suricata Intrusion Detection Service (built from source by dpistack)
 After=syslog.target network-online.target
 
 [Service]
-ExecStartPre=/bin/rm -f %%DPISTACK_RUNDIR%%suricata.pid
-ExecStart=/usr/local/bin/suricata -c %%DPISTACK_SYSCONFDIR%%suricata.yaml --pidfile %%DPISTACK_RUNDIR%%suricata.pid
+ExecStartPre=/bin/rm -f @@RUNDIR@@suricata.pid
+ExecStart=/usr/local/bin/suricata -c @@SYSCONFDIR@@suricata.yaml --pidfile @@RUNDIR@@suricata.pid
 ExecReload=/bin/kill -USR2 $MAINPID
 Restart=on-failure
 

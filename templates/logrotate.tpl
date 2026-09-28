@@ -1,6 +1,6 @@
-%%DPISTACK_EVE_JSON_PATH%% {
-    %%DPISTACK_ROTATE_DIRECTIVE%%
-    rotate %%DPISTACK_EVE_KEEP%%
+@@EVE_JSON_PATH@@ {
+    @@ROTATE_DIRECTIVE@@
+    rotate @@EVE_KEEP@@
     missingok
     notifempty
     compress

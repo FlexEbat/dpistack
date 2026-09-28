@@ -31,18 +31,10 @@ ntopng_render_interfaces_block() {
 }
 
 ntopng_render_conf() {
-	local tpl="$SCRIPT_DIR/templates/ntopng.conf.tpl"
-	local port="${CONF[NTOPNG_PORT]:-3000}"
-	awk -v ifaces_block="$(ntopng_render_interfaces_block)" \
-		-v bind="127.0.0.1:${port}" \
-		-v pidfile="$(path_ntopng_pidfile)" '
-		{
-			gsub(/%%DPISTACK_NTOPNG_BIND%%/, bind)
-			gsub(/%%DPISTACK_NTOPNG_PIDFILE%%/, pidfile)
-		}
-		$0 == "%%DPISTACK_NTOPNG_INTERFACES%%" { print ifaces_block; next }
-		{ print }
-	' "$tpl"
+	render_template "$SCRIPT_DIR/templates/ntopng.conf.tpl" \
+		"NTOPNG_INTERFACES=$(ntopng_render_interfaces_block)" \
+		"NTOPNG_BIND=127.0.0.1:${CONF[NTOPNG_PORT]:-3000}" \
+		"NTOPNG_PIDFILE=$(path_ntopng_pidfile)"
 }
 
 ntopng_repo_add() {
