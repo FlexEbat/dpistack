@@ -1,18 +1,29 @@
 #!/usr/bin/env bash
-# Slice 1 scaffolding stub for the "redis" step. Real check/apply
-# logic ships with the slice that owns this component (tech.md 17).
-# Every step is a (check, apply, plan) triple (tech.md section 5).
+# Redis: ntopng's own state/preferences store (admin password hash,
+# host stats cache), independent of any EVE_REDIS suricata setting
+# (tech.md slice 5). Plain distro package, default config, always on.
+
+REDIS_PACKAGE="redis-server"
+REDIS_UNIT="redis-server.service"
+
+REDIS_STATE_KEY="step.redis.status"
 
 step_redis_check() {
-	# Nothing to configure yet, so the step is always already satisfied.
+	command -v redis-server >/dev/null 2>&1 || return 1
+	systemctl is-active --quiet "$REDIS_UNIT" || return 1
+	[[ "$(state_read_value "$REDIS_STATE_KEY")" == "done" ]] || return 1
 	return 0
 }
 
 step_redis_apply() {
-	log "INFO" "redis: stub apply, nothing to do yet"
+	if ! command -v redis-server >/dev/null 2>&1; then
+		pkg_install "$REDIS_PACKAGE"
+	fi
+	run systemctl enable --now "$REDIS_UNIT"
+	state_write_value "$REDIS_STATE_KEY" "done"
 	return 0
 }
 
 step_redis_plan() {
-	echo "redis: без изменений"
+	echo "redis: установка $REDIS_PACKAGE, systemctl enable --now $REDIS_UNIT"
 }

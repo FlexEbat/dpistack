@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Mock for bats tests (tech.md 11): records the call, creates an empty
+# output file if -O/-o is given (so callers that then `apt-get install
+# ./file.deb` on it don't choke on a missing path), exits MOCK_EXIT.
+if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
+	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+fi
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+	if [[ "${args[$i]}" == "-O" || "${args[$i]}" == "-qO" ]]; then
+		touch "${args[$((i + 1))]}" 2>/dev/null
+	fi
+done
+exit "${MOCK_EXIT:-0}"
