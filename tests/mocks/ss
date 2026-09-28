@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Mock for bats tests (tech.md 11): records the call and exits with
-# MOCK_EXIT (default 0), so steps never touch the real system in CI.
+# Mock ss(8) for bats tests: "ss -ltn" prints one LISTEN line per port
+# in MOCK_SS_LISTEN (comma separated), using ss's real column layout
+# (State Recv-Q Send-Q Local:Port Peer:Port).
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
 fi
+echo "State  Recv-Q Send-Q Local Address:Port Peer Address:Port"
+IFS=',' read -ra ports <<<"${MOCK_SS_LISTEN:-}"
+for p in "${ports[@]}"; do
+	[[ -n "$p" ]] && echo "LISTEN 0      128    127.0.0.1:${p}   0.0.0.0:*"
+done
 exit "${MOCK_EXIT:-0}"

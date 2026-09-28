@@ -53,6 +53,8 @@ path_rules_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-rul
 path_suricata_socket() { echo "${DPISTACK_ROOT}/run/suricata/suricata-command.socket"; }
 
 path_evebox_yaml() { echo "${DPISTACK_ROOT}/etc/evebox/evebox.yaml"; }
+path_evebox_keyring() { echo "${DPISTACK_ROOT}/etc/apt/keyrings/evebox.asc"; }
+path_evebox_apt_list() { echo "${DPISTACK_ROOT}/etc/apt/sources.list.d/evebox.list"; }
 path_ntopng_conf() { echo "${DPISTACK_ROOT}/etc/ntopng/ntopng.conf"; }
 path_ntopng_pidfile() { echo "${DPISTACK_ROOT}/run/ntopng.pid"; }
 path_compose_yaml() { echo "${DPISTACK_ROOT}/opt/dpistack/compose/compose.yaml"; }
