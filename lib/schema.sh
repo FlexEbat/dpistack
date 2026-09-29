@@ -34,11 +34,6 @@ SCHEMA_NOT_YET_SUPPORTED["METRICS_BACKEND_RUNTIME=docker"]=1
 SCHEMA_NOT_YET_SUPPORTED["SURICATA_MODE=ips"]=1
 SCHEMA_NOT_YET_SUPPORTED["METRICS_BACKEND=victoriametrics"]=1
 SCHEMA_NOT_YET_SUPPORTED["METRICS_BACKEND=prometheus"]=1
-# Temporary for slice 2 only: source builds and nDPI ship in slice 4,
-# which is expected to remove these two lines (tech.md, slice 2 note:
-# "тесты идут с --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no").
-SCHEMA_NOT_YET_SUPPORTED["SURICATA_SOURCE=source"]=1
-SCHEMA_NOT_YET_SUPPORTED["NDPI_ENABLE=yes"]=1
 
 _schema_add() {
 	# _schema_add <row as documented above>
@@ -77,7 +72,7 @@ schema_init() {
 	_schema_add 'HOME_NET|free|auto||advanced|capture|suricata|light|no'
 	_schema_add 'IPS_METHOD|enum|nfq|nfq,afpacket|advanced|capture|suricata|light|no'
 	_schema_add 'IPS_NFQ_CHAINS|free|INPUT,OUTPUT,FORWARD||advanced|capture|suricata|light|no'
-	_schema_add 'NTOPNG_IFACES|free|enp2s0||advanced|capture|ntopng access|light|no'
+	_schema_add 'NTOPNG_IFACES|free|||advanced|capture|ntopng access|light|no'
 
 	_schema_add 'EVE_FILE|enum|yes|yes,no|advanced|eve|suricata watch|light|no'
 	_schema_add 'EVE_TYPES|free|alert,flow,dns,tls,http,stats||basic|eve|suricata watch|light|no'

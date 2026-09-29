@@ -15,7 +15,7 @@ suricata-version: "7.0"
 vars:
   # more specific is better for alert accuracy and performance
   address-groups:
-    HOME_NET: "%%DPISTACK_HOME_NET%%"
+    HOME_NET: "@@HOME_NET@@"
     #HOME_NET: "[192.168.0.0/16]"
     #HOME_NET: "[10.0.0.0/8]"
     #HOME_NET: "[172.16.0.0/12]"
@@ -63,10 +63,11 @@ default-log-dir: /var/log/suricata/
 # Global stats configuration
 stats:
   enabled: yes
-  interval: %%DPISTACK_STATS_INTERVAL%%
+  interval: @@STATS_INTERVAL@@
 
 # Plugins -- Experimental -- specify the filename for each plugin shared object
 plugins:
+@@PLUGINS_BLOCK@@
 #   - /path/to/plugin.so
 
 # Configure the type of alert (and other) logging you would like.
@@ -79,7 +80,7 @@ outputs:
       #filetype: regular # 'regular', 'unix_stream' or 'unix_dgram'
 
   # Extensible Event Format (nicknamed EVE) event log in JSON format
-%%DPISTACK_EVE_LOG_BLOCK%%
+@@EVE_LOG_BLOCK@@
   - http-log:
       enabled: no
       filename: http.log
@@ -361,7 +362,7 @@ logging:
 
 # Linux high speed capture support
 af-packet:
-%%DPISTACK_AF_PACKET_BLOCK%%
+@@AF_PACKET_BLOCK@@
 # Linux high speed af-xdp capture support
 af-xdp:
   - interface: default

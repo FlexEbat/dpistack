@@ -27,14 +27,19 @@ teardown() {
 	run bash "$REPO_DIR/install.sh" install --dry-run -y \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
-	for step in selfinstall ndpi rules redis ntopng evebox metrics access panel watch verify; do
+	for step in selfinstall ndpi metrics panel watch verify; do
 		[[ "$output" == *"$step ... без изменений"* ]]
 	done
-	# suricata has real check/apply logic since slice 2: a fresh root
-	# has nothing installed yet, so it correctly plans work instead of
-	# claiming "без изменений" - dry-run's job is to not touch disk,
-	# not to pretend there is nothing to do.
+	# suricata, rules, redis, ntopng, evebox, access have real check/apply logic by now
+	# (slices 2-7): a fresh root has nothing installed yet, so they
+	# correctly plan work instead of claiming "без изменений" - dry-run's
+	# job is to not touch disk, not to pretend there is nothing to do.
 	[[ "$output" == *"suricata ... нужно применить"* ]]
+	[[ "$output" == *"rules ... нужно применить"* ]]
+	[[ "$output" == *"redis ... нужно применить"* ]]
+	[[ "$output" == *"ntopng ... нужно применить"* ]]
+	[[ "$output" == *"evebox ... нужно применить"* ]]
+	[[ "$output" == *"access ... нужно применить"* ]]
 	[ ! -e "$CONF_FILE" ]
 	[ ! -e "$DPISTACK_ROOT/var/lib/dpistack/state" ]
 	[ ! -e "$DPISTACK_ROOT/etc/suricata/suricata.yaml" ]

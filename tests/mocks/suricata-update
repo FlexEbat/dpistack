@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Smarter mock for bats tests (tech.md 11): a plain pass-through mock
+# can't exercise criteria 3 (rollback) or 5 (custom source ends up in
+# the set), so this one tracks calls via MOCK_CALLS_LOG (already
+# logging add-source/enable-source) and, on a plain "update" run,
+# writes a ruleset reflecting whatever was registered so far - unless
+# MOCK_SURICATA_UPDATE_FAIL is set, which simulates a failed
+# `suricata -T` on the new ruleset: exit 1, existing file untouched.
+if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
+	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+fi
+
+is_subcommand_run=0
+out_dir=""
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+	case "${args[$i]}" in
+	add-source | enable-source | disable-source | remove-source | list-sources | list-enabled-sources | update-sources | check-versions)
+		is_subcommand_run=1
+		;;
+	-o)
+		out_dir="${args[$((i + 1))]}"
+		;;
+	esac
+done
+
+if [[ "$is_subcommand_run" == "1" ]]; then
+	exit "${MOCK_EXIT:-0}"
+fi
+
+if [[ "${MOCK_SURICATA_UPDATE_FAIL:-0}" == "1" ]]; then
+	echo "mock suricata-update: suricata -T failed on the new ruleset, keeping the old one" >&2
+	exit 1
+fi
+
+if [[ -n "$out_dir" ]]; then
+	mkdir -p "$out_dir"
+	{
+		echo "# mock-generated suricata.rules"
+		grep -E 'add-source|enable-source' "${MOCK_CALLS_LOG:-/dev/null}" 2>/dev/null | sed 's/^/# source-call: /'
+	} >"$out_dir/suricata.rules"
+fi
+
+exit "${MOCK_EXIT:-0}"

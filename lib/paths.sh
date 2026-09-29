@@ -44,8 +44,21 @@ path_suricata_local_rules() { echo "${DPISTACK_ROOT}/etc/suricata/rules/local.ru
 path_suricata_ruleset() { echo "${DPISTACK_ROOT}/var/lib/suricata/rules/suricata.rules"; }
 path_suricata_eve_json() { echo "${DPISTACK_ROOT}/var/log/suricata/eve.json"; }
 path_suricata_logrotate() { echo "${DPISTACK_ROOT}/etc/logrotate.d/suricata"; }
+path_ndpi_src_dir() { echo "${DPISTACK_ROOT}/usr/local/src/dpistack-ndpi"; }
+path_suricata_ndpi_plugin() { echo "${DPISTACK_ROOT}/usr/lib/suricata/ndpi.so"; }
+path_suricata_src_dir() { echo "${DPISTACK_ROOT}/usr/local/src/dpistack-suricata"; }
+path_suricata_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/suricata.service"; }
+path_rules_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-rules.service"; }
+path_rules_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-rules.timer"; }
 path_suricata_socket() { echo "${DPISTACK_ROOT}/run/suricata/suricata-command.socket"; }
 
 path_evebox_yaml() { echo "${DPISTACK_ROOT}/etc/evebox/evebox.yaml"; }
+path_evebox_keyring() { echo "${DPISTACK_ROOT}/etc/apt/keyrings/evebox.asc"; }
+path_evebox_apt_list() { echo "${DPISTACK_ROOT}/etc/apt/sources.list.d/evebox.list"; }
 path_ntopng_conf() { echo "${DPISTACK_ROOT}/etc/ntopng/ntopng.conf"; }
+path_ntopng_pidfile() { echo "${DPISTACK_ROOT}/run/ntopng.pid"; }
+path_nginx_snippet_dir() { echo "$(path_state_dir)/nginx"; }
+path_nginx_snippet() { echo "$(path_nginx_snippet_dir)/dpistack.conf"; }
+path_nginx_tls_dir() { echo "$(path_nginx_snippet_dir)/tls"; }
+path_nginx_confd() { echo "${DPISTACK_ROOT}/etc/nginx/conf.d/dpistack.conf"; }
 path_compose_yaml() { echo "${DPISTACK_ROOT}/opt/dpistack/compose/compose.yaml"; }

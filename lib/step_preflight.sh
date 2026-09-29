@@ -55,10 +55,28 @@ step_preflight_reasons() {
 		fi
 	fi
 
-	local port_key port
+	if [[ "${CONF[EVEBOX_DB]:-sqlite}" == "elasticsearch" ]]; then
+		if ! curl -fsS --max-time 5 -o /dev/null "${CONF[EVEBOX_ES_URL]:-}"; then
+			reasons+=("Elasticsearch из EVEBOX_ES_URL (${CONF[EVEBOX_ES_URL]:-}) недоступен")
+		fi
+	fi
+
+	# A port held by a service dpistack already installed is not a
+	# conflict on a repeat run, so ports whose step is already applied
+	# are skipped.
+	local port_key port owner_step
 	for port_key in NTOPNG_PORT EVEBOX_PORT PANEL_PORT METRICS_BACKEND_PORT; do
 		port="${CONF[$port_key]:-}"
 		[[ -z "$port" ]] && continue
+		case "$port_key" in
+		NTOPNG_PORT) owner_step=ntopng ;;
+		EVEBOX_PORT) owner_step=evebox ;;
+		PANEL_PORT) owner_step=panel ;;
+		METRICS_BACKEND_PORT) owner_step=metrics ;;
+		esac
+		if "step_${owner_step}_check"; then
+			continue
+		fi
 		if ss -ltn 2>/dev/null | awk '{print $4}' | grep -q ":${port}\$"; then
 			reasons+=("порт $port ($port_key) уже занят")
 		fi

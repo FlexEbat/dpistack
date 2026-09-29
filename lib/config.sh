@@ -138,6 +138,22 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
+	if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" && "${CONF[SURICATA_SOURCE]:-}" != "source" &&
+		! -f "$(path_suricata_ndpi_plugin)" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
+		echo "NDPI_ENABLE=yes с SURICATA_SOURCE=${CONF[SURICATA_SOURCE]:-} не даёт ndpi.so; используйте SURICATA_SOURCE=source или соберите плагин заранее"
+		errors=$((errors + 1))
+	fi
+
+	if [[ "${CONF[NGINX_TLS]:-none}" == "existing" && (-z "${CONF[NGINX_CERT]:-}" || -z "${CONF[NGINX_KEY]:-}") ]]; then
+		echo "NGINX_TLS=existing требует NGINX_CERT и NGINX_KEY"
+		errors=$((errors + 1))
+	fi
+
+	if [[ "${CONF[EVE_FILE]:-yes}" == "no" && "${CONF[EVEBOX_DB]:-sqlite}" == "sqlite" ]]; then
+		echo "EVE_FILE=no при EVEBOX_DB=sqlite: EveBox не сможет читать события (eve.json не пишется). Включите EVE_FILE=yes или выберите EVEBOX_DB=elasticsearch"
+		errors=$((errors + 1))
+	fi
+
 	return "$errors"
 }
 

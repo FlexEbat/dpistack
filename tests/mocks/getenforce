@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Mock getenforce: prints MOCK_GETENFORCE (default Disabled).
+echo "${MOCK_GETENFORCE:-Disabled}"

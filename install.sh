@@ -20,6 +20,8 @@ source "$LIB_DIR/state.sh"
 source "$LIB_DIR/schema.sh"
 # shellcheck source=lib/config.sh
 source "$LIB_DIR/config.sh"
+# shellcheck source=lib/render.sh
+source "$LIB_DIR/render.sh"
 
 STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics access panel watch verify)
 for _step in "${STEPS_ORDER[@]}"; do
