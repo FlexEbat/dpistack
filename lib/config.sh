@@ -144,6 +144,11 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
+	if [[ "${CONF[NGINX_TLS]:-none}" == "existing" && (-z "${CONF[NGINX_CERT]:-}" || -z "${CONF[NGINX_KEY]:-}") ]]; then
+		echo "NGINX_TLS=existing требует NGINX_CERT и NGINX_KEY"
+		errors=$((errors + 1))
+	fi
+
 	if [[ "${CONF[EVE_FILE]:-yes}" == "no" && "${CONF[EVEBOX_DB]:-sqlite}" == "sqlite" ]]; then
 		echo "EVE_FILE=no при EVEBOX_DB=sqlite: EveBox не сможет читать события (eve.json не пишется). Включите EVE_FILE=yes или выберите EVEBOX_DB=elasticsearch"
 		errors=$((errors + 1))

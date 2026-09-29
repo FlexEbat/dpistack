@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # EveBox: official apt repo (evebox.org/docs/install/debian), package,
 # evebox.yaml from templates/evebox.yaml.tpl (tech.md slice 6). Bound to
-# 127.0.0.1 until slice 7. The package ships the evebox.service unit and
+# Bind address comes from access_effective_bind_host (slice 7). The
+# package ships the evebox.service unit and
 # EveBox's built-in database.retention.days handles retention (A9,
 # SQLite only; 0 disables).
 
@@ -36,7 +37,7 @@ evebox_input_enabled() {
 
 evebox_render_conf() {
 	render_template "$SCRIPT_DIR/templates/evebox.yaml.tpl" \
-		"EVEBOX_HOST=127.0.0.1" \
+		"EVEBOX_HOST=$(access_effective_bind_host)" \
 		"EVEBOX_PORT=${CONF[EVEBOX_PORT]:-5636}" \
 		"EVEBOX_DB_TYPE=${CONF[EVEBOX_DB]:-sqlite}" \
 		"EVEBOX_RETENTION_DAYS=${CONF[EVEBOX_RETENTION_DAYS]:-30}" \
@@ -86,11 +87,11 @@ step_evebox_apply() {
 	if [[ "${CONF[EVEBOX_DB]:-sqlite}" == "elasticsearch" ]]; then
 		echo "evebox: EVEBOX_RETENTION_DAYS работает только с SQLite, для Elasticsearch удаление старых событий настраивается на стороне Elasticsearch." >&2
 	fi
-	echo "evebox: слушает только на 127.0.0.1:${CONF[EVEBOX_PORT]:-5636}; встроенные TLS и аутентификация EveBox отключены, доступ ограничивается сетью (слайс 7)." >&2
+	echo "evebox: слушает на $(access_effective_bind_host):${CONF[EVEBOX_PORT]:-5636}; встроенные TLS и аутентификация EveBox отключены, доступ ограничивается сетью (ACCESS_MODE/firewall)." >&2
 	return 0
 }
 
 step_evebox_plan() {
-	echo "evebox: репозиторий evebox.org, пакет $EVEBOX_PACKAGE, база ${CONF[EVEBOX_DB]:-sqlite}, порт ${CONF[EVEBOX_PORT]:-5636} (только 127.0.0.1)"
+	echo "evebox: репозиторий evebox.org, пакет $EVEBOX_PACKAGE, база ${CONF[EVEBOX_DB]:-sqlite}, порт ${CONF[EVEBOX_PORT]:-5636}, bind $(access_effective_bind_host)"
 	echo "evebox: рендер $(path_evebox_yaml)"
 }

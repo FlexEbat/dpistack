@@ -57,4 +57,8 @@ path_evebox_keyring() { echo "${DPISTACK_ROOT}/etc/apt/keyrings/evebox.asc"; }
 path_evebox_apt_list() { echo "${DPISTACK_ROOT}/etc/apt/sources.list.d/evebox.list"; }
 path_ntopng_conf() { echo "${DPISTACK_ROOT}/etc/ntopng/ntopng.conf"; }
 path_ntopng_pidfile() { echo "${DPISTACK_ROOT}/run/ntopng.pid"; }
+path_nginx_snippet_dir() { echo "$(path_state_dir)/nginx"; }
+path_nginx_snippet() { echo "$(path_nginx_snippet_dir)/dpistack.conf"; }
+path_nginx_tls_dir() { echo "$(path_nginx_snippet_dir)/tls"; }
+path_nginx_confd() { echo "${DPISTACK_ROOT}/etc/nginx/conf.d/dpistack.conf"; }
 path_compose_yaml() { echo "${DPISTACK_ROOT}/opt/dpistack/compose/compose.yaml"; }

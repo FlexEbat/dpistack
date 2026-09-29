@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ntopng: ntop.org apt repo, ntopng package, ntopng.conf rendered from
-# NTOPNG_IFACES/NTOPNG_PORT (tech.md slice 5). Bound to 127.0.0.1 no
-# matter what ACCESS_MODE says - real network exposure is slice 7's
-# job, not this one's.
+# NTOPNG_IFACES/NTOPNG_PORT. Bind address comes from
+# access_effective_bind_host (lib/step_access.sh, slice 7): 127.0.0.1
+# for localhost/nginx modes, 0.0.0.0 for lan.
 
 NTOPNG_PACKAGE="ntopng"
 NTOPNG_UNIT="ntopng.service"
@@ -33,7 +33,7 @@ ntopng_render_interfaces_block() {
 ntopng_render_conf() {
 	render_template "$SCRIPT_DIR/templates/ntopng.conf.tpl" \
 		"NTOPNG_INTERFACES=$(ntopng_render_interfaces_block)" \
-		"NTOPNG_BIND=127.0.0.1:${CONF[NTOPNG_PORT]:-3000}" \
+		"NTOPNG_BIND=$(access_effective_bind_host):${CONF[NTOPNG_PORT]:-3000}" \
 		"NTOPNG_PIDFILE=$(path_ntopng_pidfile)"
 }
 
@@ -78,16 +78,16 @@ step_ntopng_apply() {
 
 	run systemctl enable --now "$NTOPNG_UNIT"
 
-	# criterion 3 (A4): bound to 127.0.0.1 in this slice regardless of
-	# ACCESS_MODE, so the only safe thing to do about the default
-	# admin/admin credential is to say so loudly - there is no
-	# dpistack.conf key yet to set a real password from here.
-	echo "ntopng: слушает только на 127.0.0.1:${CONF[NTOPNG_PORT]:-3000}, логин/пароль по умолчанию admin/admin - смените его в веб-интерфейсе перед тем, как открывать доступ шире (слайс 7)." >&2
+	# A4: there is no dpistack.conf key to set a real ntopng password
+	# from here, so the default admin/admin credential is only ever
+	# safe when access_effective_bind_host keeps this on 127.0.0.1;
+	# step_access.sh prints its own louder warning for lan/nginx modes.
+	echo "ntopng: логин/пароль по умолчанию admin/admin, слушает на $(access_effective_bind_host):${CONF[NTOPNG_PORT]:-3000} - смените пароль в веб-интерфейсе." >&2
 
 	return 0
 }
 
 step_ntopng_plan() {
-	echo "ntopng: интерфейсы $(ntopng_effective_ifaces), порт ${CONF[NTOPNG_PORT]:-3000} (только 127.0.0.1)"
+	echo "ntopng: интерфейсы $(ntopng_effective_ifaces), порт ${CONF[NTOPNG_PORT]:-3000}, bind $(access_effective_bind_host)"
 	echo "ntopng: рендер $(path_ntopng_conf)"
 }
