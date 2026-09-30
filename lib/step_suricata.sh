@@ -95,6 +95,25 @@ suricata_installed_version() {
 	dpkg-query -W -f='${Version}' "$SURICATA_PACKAGE" 2>/dev/null
 }
 
+# suricata_validate_render <rendered-yaml-content>
+# Runs the real `suricata -T` against a temp copy, never against the
+# live suricata.yaml (tech.md 5.3 step 5: a failed check must leave
+# the old file and the old dpistack.conf alone). Prints suricata's own
+# output and returns its exit code.
+suricata_validate_render() {
+	local content="$1"
+	command -v suricata >/dev/null 2>&1 || return 0
+	local tmp
+	tmp=$(mktemp --suffix=.yaml)
+	printf '%s\n' "$content" >"$tmp"
+	local out rc
+	out=$(suricata -T -c "$tmp" -l /tmp 2>&1)
+	rc=$?
+	rm -f "$tmp"
+	[[ "$rc" -ne 0 ]] && echo "$out" >&2
+	return "$rc"
+}
+
 SURICATA_REPO_URL="https://github.com/OISF/suricata.git"
 SURICATA_BUILT_REF_STATE_KEY="suricata.built_ref"
 
