@@ -219,11 +219,14 @@ config_print_summary() {
 CONFIG_CHANGE_WEIGHT="none"
 # shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure after calling config_diff_and_steps
 CONFIG_CHANGED_KEYS=()
+# shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure after calling config_diff_and_steps
+CONFIG_AFFECTED_STEPS=()
 
 config_diff_and_steps() {
 	local old_file="$1"
 	CONFIG_CHANGE_WEIGHT="none"
 	CONFIG_CHANGED_KEYS=()
+	CONFIG_AFFECTED_STEPS=()
 	declare -A OLD
 	local line key value
 	while IFS= read -r line || [[ -n "$line" ]]; do
@@ -266,6 +269,8 @@ config_diff_and_steps() {
 	done
 	# shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure
 	CONFIG_CHANGE_WEIGHT="$overall_weight"
+	# shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure
+	CONFIG_AFFECTED_STEPS=("${!steps_seen[@]}")
 
 	echo "Затронутые шаги:"
 	for step in "${!steps_seen[@]}"; do

@@ -298,6 +298,7 @@ cmd_reconfigure() {
 	config_diff_and_steps "$(path_conf)"
 
 	if [[ "$CONFIG_CHANGE_WEIGHT" == "none" ]]; then
+		echo "изменений нет"
 		return 0
 	fi
 
@@ -305,13 +306,132 @@ cmd_reconfigure() {
 		return 0
 	fi
 
-	if [[ "$CONFIG_CHANGE_WEIGHT" == "heavy" && "$NON_INTERACTIVE" == "1" && "$FORCE" != "1" ]]; then
-		die 3 "тяжёлые изменения в неинтерактивном режиме требуют --force"
+	if [[ "$CONFIG_CHANGE_WEIGHT" == "heavy" ]]; then
+		if [[ "$NON_INTERACTIVE" == "1" ]]; then
+			if [[ "$FORCE" != "1" ]]; then
+				die 3 "тяжёлые изменения в неинтерактивном режиме требуют --force"
+			fi
+		else
+			if ! have_input_source; then
+				die 3 "тяжёлые изменения требуют подтверждения, нет терминала для вопроса"
+			fi
+			echo "Тяжёлые изменения затронут шаги: ${CONFIG_AFFECTED_STEPS[*]} (пакеты/сборка будут переустановлены)"
+			local input answer
+			input="${DPISTACK_INPUT:-/dev/tty}"
+			printf 'Продолжить? [y/N] ' >&2
+			IFS= read -r answer <"$input" || answer=""
+			if [[ ! "$answer" =~ ^[yYдД] ]]; then
+				echo "отменено"
+				return 0
+			fi
+		fi
 	fi
+
+	# criterion 4: validate the new suricata.yaml with a real
+	# `suricata -T` before touching anything on disk, so a failed check
+	# leaves both the old suricata.yaml and the old dpistack.conf alone.
+	local step
+	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
+		if [[ "$step" == "suricata" ]]; then
+			if ! suricata_validate_render "$(suricata_render_yaml)"; then
+				die 1 "suricata -T упал на новом suricata.yaml, изменения не применены (см. вывод выше)"
+			fi
+		fi
+	done
 
 	config_write_conf "$(path_conf)"
 	config_write_secrets "$(path_secrets)"
+
+	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
+		step_selected "$step" || continue
+		if ! "step_${step}_apply"; then
+			die 1 "шаг $step упал при reconfigure"
+		fi
+	done
+
 	echo "конфиг применён"
+	return 0
+}
+
+cmd_upgrade() {
+	lock_acquire
+	os_detect
+	if [[ ! -f "$(path_conf)" ]]; then
+		die 2 "конфиг не найден, сначала выполните: install.sh install"
+	fi
+	layer_config_common
+
+	local -a packages=()
+	case "${CONF[SURICATA_SOURCE]:-}" in
+	distro | oisf) packages+=("$SURICATA_PACKAGE") ;;
+	esac
+	command -v redis-server >/dev/null 2>&1 && packages+=("$REDIS_PACKAGE")
+	command -v ntopng >/dev/null 2>&1 && packages+=("$NTOPNG_PACKAGE")
+	command -v evebox >/dev/null 2>&1 && packages+=("$EVEBOX_PACKAGE")
+
+	if [[ "${#packages[@]}" -eq 0 ]]; then
+		echo "нечего обновлять"
+		return 0
+	fi
+
+	if [[ "${CONF[PIN_VERSIONS]:-no}" == "yes" ]]; then
+		echo "upgrade: PIN_VERSIONS=yes - apt сам пропустит закреплённые пакеты (apt-mark hold): ${packages[*]}"
+	fi
+	run apt-get install --only-upgrade -y "${packages[@]}"
+	return 0
+}
+
+# uninstall removes only what dpistack itself created (its own units,
+# its own rendered nginx snippet, its own conf/state). It never stops,
+# disables, or removes the underlying Suricata/Redis/ntopng/EveBox
+# packages or services - "оставляет данные и конфиги" (5.7) reads most
+# safely as "leave the working stack alone", not as "tear down a
+# production IDS because its manager was uninstalled". --purge extends
+# this to those components' own rendered configs/data, but still never
+# touches packages (5.7's exemption for pre-existing packages is hard
+# to honour precisely without real install-provenance tracking, so the
+# conservative reading - never remove packages at all - was chosen).
+cmd_uninstall() {
+	lock_acquire
+	os_detect
+
+	if [[ ! -f "$(path_conf)" ]]; then
+		echo "нечего удалять"
+		return 0
+	fi
+
+	layer_config_common
+
+	run systemctl disable --now "$RULES_TIMER" 2>/dev/null || true
+	rm -f "$(path_rules_timer_unit)" "$(path_rules_service_unit)"
+	run systemctl daemon-reload
+
+	if [[ "${CONF[SURICATA_SOURCE]:-}" == "source" ]]; then
+		run systemctl disable --now "$SURICATA_UNIT" 2>/dev/null || true
+		rm -f "$(path_suricata_service_unit)"
+		run systemctl daemon-reload
+	fi
+
+	if [[ "${CONF[ACCESS_MODE]:-}" == "nginx" && "${CONF[NGINX_MANAGE]:-}" == "yes" ]]; then
+		rm -f "$(path_nginx_confd)"
+		run systemctl reload "$NGINX_UNIT" 2>/dev/null || true
+	fi
+	rm -f "$(path_nginx_snippet)"
+
+	if [[ "$PURGE" == "1" ]]; then
+		rm -f "$(path_suricata_yaml)" "$(path_suricata_logrotate)" \
+			"$(path_suricata_enable_conf)" "$(path_suricata_disable_conf)" \
+			"$(path_suricata_modify_conf)" "$(path_suricata_drop_conf)"
+		rm -rf "$(dirname "$(path_suricata_ruleset)")"
+		rm -f "$(path_ntopng_conf)" "$(path_evebox_yaml)"
+		rm -rf "$(access_tls_dir)" 2>/dev/null || true
+		echo "uninstall --purge: конфиги и данные компонентов удалены (пакеты не трогал)"
+	fi
+
+	rm -f "$(path_conf)" "$(path_conf_draft)" "$(path_secrets)"
+	rm -rf "$(path_state_dir)"
+
+	echo "готово"
 	return 0
 }
 
@@ -337,12 +457,14 @@ main() {
 	reconfigure)
 		cmd_reconfigure
 		;;
+	upgrade)
+		cmd_upgrade
+		;;
+	uninstall)
+		cmd_uninstall
+		;;
 	status)
 		cmd_status
-		;;
-	upgrade | uninstall)
-		echo "$COMMAND: пока не поддерживается" >&2
-		exit 2
 		;;
 	test | logs)
 		echo "$COMMAND доступна только через dpistack после установки, не через $BIN_NAME" >&2
