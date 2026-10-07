@@ -34,6 +34,7 @@ path_watch_bin() { echo "$(path_sbin_dir)/dpistack-watch"; }
 path_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib/dpistack"; }
 path_installer_copy_dir() { echo "$(path_lib_dir)/installer"; }
 path_panel_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/dpistack-panel"; }
+path_sudoers() { echo "${DPISTACK_ROOT}/etc/sudoers.d/dpistack"; }
 
 path_suricata_yaml() { echo "${DPISTACK_ROOT}/etc/suricata/suricata.yaml"; }
 path_suricata_enable_conf() { echo "${DPISTACK_ROOT}/etc/suricata/enable.conf"; }
