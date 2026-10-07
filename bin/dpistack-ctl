@@ -8,14 +8,14 @@
 # absent, 5 name outside the allowed list.
 set -uo pipefail
 
-DPISTACK_VERSION="0.2.0"
-
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 # Repo checkout: bin/../lib. Installed copy: /usr/local/sbin/../lib/dpistack/installer/lib.
 for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
-	if [[ -r "$_lib/paths.sh" ]]; then
+	if [[ -r "$_lib/paths.sh" && -r "$_lib/common.sh" ]]; then
 		# shellcheck source=lib/paths.sh
 		source "$_lib/paths.sh"
+		# shellcheck source=lib/common.sh
+		source "$_lib/common.sh"
 		break
 	fi
 done

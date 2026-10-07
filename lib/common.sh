@@ -2,6 +2,11 @@
 # Shared primitives every step and lib file uses instead of calling
 # system commands or writing files directly (tech.md section 3, 5.6).
 
+# Single source of the program version; the menu header, usage and
+# dpistack-ctl version all print it.
+# shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack-ctl
+DPISTACK_VERSION="0.2.0"
+
 : "${DRY_RUN:=0}"
 : "${DPISTACK_LOCK_FD:=200}"
 

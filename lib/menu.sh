@@ -463,7 +463,7 @@ menu_load_from_file_screen() {
 menu_main_screen() {
 	while true; do
 		echo >&2
-		echo "$(menu_bold "dpistack") | $OS_ID ${OS_VERSION_ID:-}, $(uname -m) | systemd: $(command -v systemctl >/dev/null && echo да || echo нет)" >&2
+		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}") | $OS_ID ${OS_VERSION_ID:-}, $(uname -m) | systemd: $(command -v systemctl >/dev/null && echo да || echo нет)" >&2
 		echo "Установка. Конфиг: $(path_conf) (не создан)" >&2
 		echo >&2
 		echo "  1) Быстрая установка" >&2
@@ -526,7 +526,7 @@ menu_main_screen() {
 menu_found_install_screen() {
 	while true; do
 		echo >&2
-		menu_bold "Найдена установка" >&2
+		menu_bold "dpistack v${DPISTACK_VERSION} | Найдена установка" >&2
 		echo >&2
 		echo "  1) Настроить   2) Применить текущий конфиг заново   3) Меню управления   4) Выйти" >&2
 		local choice
@@ -643,7 +643,7 @@ menu_diff_screen() {
 menu_reconfigure_screen() {
 	while true; do
 		echo >&2
-		menu_bold "dpistack" >&2
+		menu_bold "dpistack v${DPISTACK_VERSION}" >&2
 		echo " | Настройка существующей установки" >&2
 		echo "Конфиг: $(path_conf)" >&2
 		echo >&2

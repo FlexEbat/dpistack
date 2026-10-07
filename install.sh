@@ -47,6 +47,7 @@ CLI_NO_COLOR=0
 COMMAND=""
 
 usage() {
+	echo "dpistack v${DPISTACK_VERSION}"
 	cat <<'EOF'
 Использование: install.sh <команда> [опции]
 
