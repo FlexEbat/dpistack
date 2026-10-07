@@ -75,35 +75,6 @@ config_apply_set() {
 	config_set_kv "$key" "$value"
 }
 
-# config_ask_basic [advanced]
-# Linear question flow over basic keys (or basic+advanced), current
-# value shown as the default, Enter keeps it (tech.md 5.0 semantics,
-# without the full-screen menu that ships in a later slice).
-config_ask_basic() {
-	local include_advanced="${1:-no}"
-	local input="${DPISTACK_INPUT:-/dev/tty}"
-	local key current answer
-	# Open once and read sequential lines; re-redirecting a fresh `read`
-	# onto the file on every question would rewind it back to line 1.
-	exec 9<"$input"
-	for key in "${SCHEMA_KEYS[@]}"; do
-		if [[ "$include_advanced" != "yes" ]] && ! schema_is_basic "$key"; then
-			continue
-		fi
-		if schema_is_secret "$key"; then
-			current="${SECRETS[$key]:-}"
-		else
-			current="${CONF[$key]:-}"
-		fi
-		printf '%s [%s]: ' "$key" "$current" >&2
-		if ! IFS= read -r answer <&9; then
-			answer=""
-		fi
-		[[ -n "$answer" ]] && config_set_kv "$key" "$answer"
-	done
-	exec 9<&-
-}
-
 # config_validate
 # Prints every problem found (schema + cross-field, tech.md 4.3) and
 # returns the number of errors.

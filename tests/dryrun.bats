@@ -45,28 +45,8 @@ teardown() {
 	[ ! -e "$DPISTACK_ROOT/etc/suricata/suricata.yaml" ]
 }
 
-@test "interactive answers are saved, and a repeat -y run gives the same config" {
-	input_file="$(mktemp)"
-	# 11 basic questions in schema order: SURICATA_RUNTIME, EVEBOX_RUNTIME,
-	# NTOPNG_RUNTIME, SURICATA_SOURCE, NDPI_ENABLE, PIN_VERSIONS, IFACES,
-	# EVE_TYPES, ACCESS_MODE, METRICS_BACKEND, ALERT_CHANNELS.
-	printf '\n\n\noisf\nno\nyes\nenp7s0\n\n\n\n\n' >"$input_file"
-	MOCK_IP_EXISTING_IFACES="enp7s0"
-	run env DPISTACK_INPUT="$input_file" MOCK_IP_EXISTING_IFACES="enp7s0" \
-		bash "$REPO_DIR/install.sh" install
-	[ "$status" -eq 0 ]
-	[ -f "$CONF_FILE" ]
-	grep -q '^IFACES=enp7s0$' "$CONF_FILE"
-	grep -q '^PIN_VERSIONS=yes$' "$CONF_FILE"
-
-	first_sum=$(sha256sum "$CONF_FILE" | cut -d' ' -f1)
-
-	run env MOCK_IP_EXISTING_IFACES="enp7s0" bash "$REPO_DIR/install.sh" install -y
-	[ "$status" -eq 0 ]
-	second_sum=$(sha256sum "$CONF_FILE" | cut -d' ' -f1)
-	[ "$first_sum" = "$second_sum" ]
-	rm -f "$input_file"
-}
+# The interactive flow is the real menu as of slice 9 - its save/
+# replay behaviour is covered in tests/menu.bats instead.
 
 @test "reconfigure --dry-run shows the key diff and affected steps, changes nothing" {
 	run bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no

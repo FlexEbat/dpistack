@@ -92,9 +92,9 @@ install_base() {
 	[ "$status" -eq 0 ]
 	before_sum=$(sha256sum "$CONF_FILE" | cut -d' ' -f1)
 	input_file="$(mktemp)"
-	# 11 blank answers for the basic-key questions (keep --set values),
-	# then "n" for the heavy-change confirmation prompt itself.
-	printf '\n\n\n\n\n\n\n\n\n\n\nn\n' >"$input_file"
+	# 'a' (apply) triggers the heavy-change confirmation prompt itself,
+	# then "n" declines it.
+	printf 'a\nn\nq\ny\n' >"$input_file"
 
 	run env DPISTACK_INPUT="$input_file" bash "$REPO_DIR/install.sh" reconfigure \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set PIN_VERSIONS=yes
