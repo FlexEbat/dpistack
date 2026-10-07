@@ -22,6 +22,8 @@ source "$LIB_DIR/schema.sh"
 source "$LIB_DIR/config.sh"
 # shellcheck source=lib/render.sh
 source "$LIB_DIR/render.sh"
+# shellcheck source=lib/menu.sh
+source "$LIB_DIR/menu.sh"
 
 STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics access panel watch verify)
 for _step in "${STEPS_ORDER[@]}"; do
@@ -41,7 +43,7 @@ ONLY_STEPS=""
 SKIP_STEPS=""
 FORCE=0
 PURGE=0
-NO_COLOR=0
+CLI_NO_COLOR=0
 COMMAND=""
 
 usage() {
@@ -110,8 +112,7 @@ parse_args() {
 			shift
 			;;
 		--no-color)
-			# shellcheck disable=SC2034 # consumed by lib/menu.sh's slice
-			NO_COLOR=1
+			CLI_NO_COLOR=1
 			shift
 			;;
 		-h | --help)
@@ -176,14 +177,26 @@ layer_config_common() {
 	done
 }
 
-maybe_ask_questions() {
+maybe_run_install_menu() {
 	if [[ "$NON_INTERACTIVE" == "1" ]]; then
 		return 0
 	fi
 	if ! have_input_source; then
-		die 2 "нет терминала для вопросов, используйте -y или DPISTACK_INPUT"
+		die 2 "нет терминала для меню, используйте -y или DPISTACK_INPUT"
 	fi
-	config_ask_basic "$([[ "$ADVANCED" == "1" ]] && echo yes || echo no)"
+	MENU_SHOW_ADVANCED=$([[ "$ADVANCED" == "1" ]] && echo 1 || echo 0)
+	menu_run_install
+}
+
+maybe_run_reconfigure_menu() {
+	if [[ "$NON_INTERACTIVE" == "1" ]]; then
+		return 0
+	fi
+	if ! have_input_source; then
+		die 2 "нет терминала для меню, используйте -y или DPISTACK_INPUT"
+	fi
+	MENU_SHOW_ADVANCED=$([[ "$ADVANCED" == "1" ]] && echo 1 || echo 0)
+	menu_run_reconfigure
 }
 
 validate_or_die() {
@@ -246,7 +259,8 @@ cmd_install() {
 	os_detect
 
 	layer_config_common
-	maybe_ask_questions
+	maybe_run_install_menu
+	panel_password_apply
 	config_generate_metrics_token_if_needed
 	validate_or_die
 
@@ -291,7 +305,7 @@ cmd_reconfigure() {
 	fi
 
 	layer_config_common
-	maybe_ask_questions
+	maybe_run_reconfigure_menu
 	config_generate_metrics_token_if_needed
 	validate_or_die
 
@@ -306,39 +320,37 @@ cmd_reconfigure() {
 		return 0
 	fi
 
-	if [[ "$CONFIG_CHANGE_WEIGHT" == "heavy" ]]; then
-		if [[ "$NON_INTERACTIVE" == "1" ]]; then
-			if [[ "$FORCE" != "1" ]]; then
-				die 3 "тяжёлые изменения в неинтерактивном режиме требуют --force"
-			fi
-		else
-			if ! have_input_source; then
+	# The interactive menu (lib/menu.sh) already ran this exact
+	# confirmation and suricata -T check from inside its own input loop
+	# before returning - redoing it here would both duplicate the
+	# prompt and reread DPISTACK_INPUT from byte 0 (the menu's fd 8 is
+	# already closed by now), landing on the wrong line.
+	if [[ "$MENU_ALREADY_CONFIRMED" != "1" ]]; then
+		if [[ "$CONFIG_CHANGE_WEIGHT" == "heavy" ]]; then
+			if [[ "$NON_INTERACTIVE" == "1" ]]; then
+				if [[ "$FORCE" != "1" ]]; then
+					die 3 "тяжёлые изменения в неинтерактивном режиме требуют --force"
+				fi
+			else
 				die 3 "тяжёлые изменения требуют подтверждения, нет терминала для вопроса"
 			fi
-			echo "Тяжёлые изменения затронут шаги: ${CONFIG_AFFECTED_STEPS[*]} (пакеты/сборка будут переустановлены)"
-			local input answer
-			input="${DPISTACK_INPUT:-/dev/tty}"
-			printf 'Продолжить? [y/N] ' >&2
-			IFS= read -r answer <"$input" || answer=""
-			if [[ ! "$answer" =~ ^[yYдД] ]]; then
-				echo "отменено"
-				return 0
-			fi
 		fi
+
+		# criterion 4 (slice 8): validate the new suricata.yaml with a
+		# real `suricata -T` before touching anything on disk, so a
+		# failed check leaves the old suricata.yaml and dpistack.conf
+		# alone. (Non-interactive -y path only now; see above.)
+		local step
+		for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
+			if [[ "$step" == "suricata" ]]; then
+				if ! suricata_validate_render "$(suricata_render_yaml)"; then
+					die 1 "suricata -T упал на новом suricata.yaml, изменения не применены (см. вывод выше)"
+				fi
+			fi
+		done
 	fi
 
-	# criterion 4: validate the new suricata.yaml with a real
-	# `suricata -T` before touching anything on disk, so a failed check
-	# leaves both the old suricata.yaml and the old dpistack.conf alone.
-	local step
-	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
-		if [[ "$step" == "suricata" ]]; then
-			if ! suricata_validate_render "$(suricata_render_yaml)"; then
-				die 1 "suricata -T упал на новом suricata.yaml, изменения не применены (см. вывод выше)"
-			fi
-		fi
-	done
-
+	panel_password_apply
 	config_write_conf "$(path_conf)"
 	config_write_secrets "$(path_secrets)"
 

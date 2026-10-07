@@ -91,7 +91,7 @@ schema_init() {
 
 	_schema_add 'EVEBOX_DB|enum|sqlite|sqlite,elasticsearch|advanced|eve|evebox|heavy|no'
 	_schema_add 'EVEBOX_ES_URL|free|||advanced|eve|evebox access|light|no'
-	_schema_add 'EVEBOX_PORT|int|5636|1..65535|advanced|eve|evebox access|light|no'
+	_schema_add 'EVEBOX_PORT|int|5636|1..65535|advanced|access|evebox access|light|no'
 	_schema_add 'EVEBOX_RETENTION_DAYS|int|30|0..36500|advanced|eve|evebox access|light|no'
 
 	_schema_add 'ACCESS_MODE|enum|localhost|localhost,lan,nginx|basic|access|access panel|light|no'

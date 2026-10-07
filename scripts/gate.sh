@@ -10,8 +10,13 @@ if ! shfmt -d install.sh lib bin scripts tests; then
 fi
 
 echo "== shellcheck =="
+# LANG/LC_ALL=C.utf8: under the POSIX locale, shellcheck's Haskell
+# runtime unreliably crashes (commitBuffer/openBinaryFile: invalid
+# argument) on scripts with enough Cyrillic text - a real environment
+# bug, not a script problem; lib/menu.sh is the first file dense
+# enough in Russian strings to hit it consistently.
 # shellcheck disable=SC2046
-if ! shellcheck -x install.sh lib/*.sh bin/dpistack-ctl bin/dpistack-watch scripts/*.sh; then
+if ! LANG=C.utf8 LC_ALL=C.utf8 shellcheck -x install.sh lib/*.sh bin/dpistack-ctl bin/dpistack-watch scripts/*.sh; then
 	status=1
 fi
 
