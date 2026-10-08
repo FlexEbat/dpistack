@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Privileged helper invoked by the panel and watchdog via `sudo -n`
-# (tech.md 4.5). Slices 10-11 implement everything except mode,
-# mode-confirm, test and health, which ship with the slices that own
-# them.
+# (tech.md 4.5). Slices 10-12 implement everything except mode,
+# mode-confirm and health, which ship with the slices that own them.
 #
 # Exit codes: 0 ok, 1 error, 2 usage, 3 check failed, 4 component
 # absent, 5 name outside the allowed list.
@@ -22,8 +21,12 @@ for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
 		source "$_lib/schema.sh"
 		# shellcheck source=lib/config.sh
 		source "$_lib/config.sh"
+		# shellcheck source=lib/render.sh
+		source "$_lib/render.sh"
 		# shellcheck source=lib/step_rules.sh
 		source "$_lib/step_rules.sh"
+		# shellcheck source=lib/step_verify.sh
+		source "$_lib/step_verify.sh"
 		INSTALLER="$_lib/../install.sh"
 		break
 	fi
@@ -39,7 +42,7 @@ LOGS_MAX=1000
 LOGS_DEFAULT=100
 
 # Commands of the 4.5 table that later slices implement.
-PLANNED_COMMANDS=(mode mode-confirm test health)
+PLANNED_COMMANDS=(mode mode-confirm health)
 
 RULES_SEARCH_MAX=50
 
@@ -62,6 +65,7 @@ usage() {
   rules-search <запрос>              до 50 правил по sid или msg
   iface list|add|remove [имя]        интерфейсы захвата
   panel-passwd                       пароль панели со stdin
+  test bittorrent|https|all [--json] проверочные тесты (раздел 10)
   version                            версия набора
 
 Имена конфигов: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
@@ -679,6 +683,27 @@ cmd_rules_update() {
 	return 0
 }
 
+# ------------------------------------------------------------------ test
+
+cmd_test() {
+	[[ $# -ge 1 && $# -le 2 ]] || fail 2 "test: bittorrent|https|all [--json]"
+	local which="$1" json=0
+	if [[ $# -eq 2 ]]; then
+		[[ "$2" == "--json" ]] || fail 2 "test: неизвестный аргумент: $2"
+		json=1
+	fi
+	local -a names
+	case "$which" in
+	bittorrent | https) names=("$which") ;;
+	all) names=("${VERIFY_TESTS[@]}") ;;
+	*) fail 5 "неизвестный тест: $which" ;;
+	esac
+	VERIFY_HTTPS_URL=$(conf_get TEST_HTTPS_URL https://example.com)
+	VERIFY_BT_LIVE=$(conf_get TEST_BT_LIVE no)
+	VERIFY_IFACES=$(conf_get IFACES enp2s0)
+	verify_run "$json" "${names[@]}" || exit 1
+}
+
 # ----------------------------------------------------------- panel-passwd
 
 cmd_panel_passwd() {
@@ -721,6 +746,7 @@ main() {
 	rules-search) cmd_rules_search "$@" ;;
 	iface) cmd_iface "$@" ;;
 	panel-passwd) cmd_panel_passwd "$@" ;;
+	test) cmd_test "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
 	*)
 		if in_list "$cmd" "${PLANNED_COMMANDS[@]}"; then

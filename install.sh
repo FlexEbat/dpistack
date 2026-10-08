@@ -292,6 +292,7 @@ cmd_install() {
 	if [[ "$pending" -ne 0 ]]; then
 		run_apply
 	fi
+	verify_final_report
 	echo "установка завершена"
 	return 0
 }
