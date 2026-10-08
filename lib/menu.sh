@@ -112,11 +112,8 @@ PANEL_PASSWORD_JUST_GENERATED=0
 PANEL_PASSWORD_GENERATED_VALUE=""
 
 # panel_password_apply - called from cmd_install/cmd_reconfigure after
-# validation. Hashing here is a placeholder until the panel's own auth
-# (a later slice) defines the real algorithm it expects; sha256 keeps
-# the plaintext out of dpistack.conf/secrets.conf/logs in the meantime,
-# which is this slice's actual requirement (5.0/5.1: never store it in
-# the clear, never show it again after entry).
+# validation. The hash is argon2id (4.5 panel-passwd, 9), so the
+# plaintext never reaches dpistack.conf, secrets.conf or the logs.
 panel_password_apply() {
 	local plaintext=""
 	if [[ "$MENU_PANEL_PASSWORD_SET" == "1" ]]; then
@@ -135,10 +132,8 @@ panel_password_apply() {
 		return 0
 	fi
 
-	local hash
-	hash=$(printf '%s' "$plaintext" | sha256sum | cut -d' ' -f1)
-	printf '%s\n' "$hash" | atomic_write "$(path_panel_auth)"
-	chmod 0600 "$(path_panel_auth)"
+	command -v argon2 >/dev/null 2>&1 || pkg_install argon2
+	panel_auth_write "$plaintext" || die 1 "не удалось записать хэш пароля панели (argon2)"
 	MENU_PANEL_PASSWORD=""
 }
 

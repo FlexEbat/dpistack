@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Mock argon2(1): consumes the password on stdin, prints a fixed PHC
+# string. Only the arguments are logged; the password never is.
+if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
+	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+fi
+cat >/dev/null
+echo '$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHRzYWx0$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2g'

@@ -35,6 +35,11 @@ step_panel_apply() {
 		run usermod -a -G suricata "$PANEL_USER" || return 1
 	fi
 
+	# panel.auth is written before this step, when the group is missing.
+	if [[ -f "$(path_panel_auth)" ]]; then
+		run chown root:dpistack "$(path_panel_auth)" || return 1
+	fi
+
 	# A broken sudoers file locks sudo out, so visudo checks a temp copy
 	# before anything lands in /etc/sudoers.d.
 	local content tmp

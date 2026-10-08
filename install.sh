@@ -273,6 +273,7 @@ cmd_install() {
 
 	if [[ "$DRY_RUN" != "1" ]]; then
 		config_write_conf "$(path_conf)"
+		config_snapshot_applied
 		config_write_secrets "$(path_secrets)"
 	fi
 
@@ -353,6 +354,7 @@ cmd_reconfigure() {
 
 	panel_password_apply
 	config_write_conf "$(path_conf)"
+	config_snapshot_applied
 	config_write_secrets "$(path_secrets)"
 
 	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do

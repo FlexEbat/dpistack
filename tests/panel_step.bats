@@ -68,3 +68,17 @@ install_base() {
 	run grep -c "^useradd\|^visudo" "$MOCK_CALLS_LOG"
 	[ "$output" = "0" ]
 }
+
+@test "install -y writes the panel password as argon2id, 0640, group set once the user exists" {
+	run install_base
+	[ "$status" -eq 0 ]
+	auth="$DPISTACK_ROOT/etc/dpistack/panel.auth"
+	[[ "$(cat "$auth")" == '$argon2id$'* ]]
+	[ "$(stat -c %a "$auth")" = "640" ]
+	grep -q "^chown root:dpistack $auth" "$MOCK_CALLS_LOG"
+
+	# A second run keeps the existing hash.
+	before="$(cat "$auth")"
+	run install_base
+	[ "$(cat "$auth")" = "$before" ]
+}

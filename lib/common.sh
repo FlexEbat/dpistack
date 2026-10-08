@@ -126,5 +126,34 @@ backup() {
 	mkdir -p "$backups_dir"
 	local ts
 	ts=$(date -u +"%Y%m%dT%H%M%SZ")
-	cp -p "$src" "${backups_dir}/$(basename "$src").${ts}"
+	local dest n=1
+	dest="${backups_dir}/$(basename "$src").${ts}"
+	# Two backups in one second must not collide: config-revert takes
+	# the newest by `sort -V`, so a counter suffix keeps the order.
+	while [[ -e "$dest" ]]; do
+		dest="${backups_dir}/$(basename "$src").${ts}.${n}"
+		n=$((n + 1))
+	done
+	cp -p "$src" "$dest"
+}
+
+# panel_auth_write <plaintext> - writes an argon2id hash (PHC string,
+# the format golang.org/x/crypto/argon2 users parse) into panel.auth.
+# The password goes to argon2 on stdin, never as an argument.
+# 0640 root:dpistack (4.2); before the panel step creates the user the
+# group is missing, and step_panel_apply fixes the group afterwards.
+panel_auth_write() {
+	local plaintext="$1"
+	command -v argon2 >/dev/null 2>&1 || return 2
+	local salt hash
+	salt=$(head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
+	hash=$(printf '%s' "$plaintext" | argon2 "$salt" -id -t 3 -m 16 -p 4 -l 32 -e) || return 1
+	# shellcheck disable=SC2016 # literal PHC prefix, not an expansion
+	[[ "$hash" == '$argon2id$'* ]] || return 1
+	printf '%s\n' "$hash" | atomic_write "$(path_panel_auth)"
+	chmod 0640 "$(path_panel_auth)"
+	if getent group dpistack >/dev/null 2>&1; then
+		chown root:dpistack "$(path_panel_auth)" || return 1
+	fi
+	return 0
 }
