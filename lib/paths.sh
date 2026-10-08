@@ -30,6 +30,9 @@ path_sbin_dir() { echo "${DPISTACK_ROOT}/usr/local/sbin"; }
 path_dpistack_bin() { echo "$(path_sbin_dir)/dpistack"; }
 path_ctl_bin() { echo "$(path_sbin_dir)/dpistack-ctl"; }
 path_watch_bin() { echo "$(path_sbin_dir)/dpistack-watch"; }
+path_watch_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.service"; }
+path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.timer"; }
+path_evebox_data_dir() { echo "${DPISTACK_ROOT}/var/lib/evebox"; }
 
 path_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib/dpistack"; }
 path_installer_copy_dir() { echo "$(path_lib_dir)/installer"; }

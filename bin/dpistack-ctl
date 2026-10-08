@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Privileged helper invoked by the panel and watchdog via `sudo -n`
-# (tech.md 4.5). Slices 10-12 implement everything except mode,
-# mode-confirm and health, which ship with the slices that own them.
+# (tech.md 4.5). Slices 10-13 implement everything except mode and
+# mode-confirm, which ship with the slices that own them.
 #
 # Exit codes: 0 ok, 1 error, 2 usage, 3 check failed, 4 component
 # absent, 5 name outside the allowed list.
@@ -42,7 +42,7 @@ LOGS_MAX=1000
 LOGS_DEFAULT=100
 
 # Commands of the 4.5 table that later slices implement.
-PLANNED_COMMANDS=(mode mode-confirm health)
+PLANNED_COMMANDS=(mode mode-confirm)
 
 RULES_SEARCH_MAX=50
 
@@ -66,6 +66,7 @@ usage() {
   iface list|add|remove [имя]        интерфейсы захвата
   panel-passwd                       пароль панели со stdin
   test bittorrent|https|all [--json] проверочные тесты (раздел 10)
+  health [--json]                    один прогон watchdog
   version                            версия набора
 
 Имена конфигов: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
@@ -81,18 +82,6 @@ fail() {
 	shift
 	echo "dpistack-ctl: $*" >&2
 	exit "$code"
-}
-
-# conf_get <KEY> <default> - reads one key straight from dpistack.conf.
-# The helper stays independent of the installer's schema loader.
-conf_get() {
-	local key="$1" default="$2" value=""
-	local file
-	file=$(path_conf)
-	[[ -r "$file" ]] && value=$(grep -m1 "^${key}=" "$file" | cut -d= -f2-)
-	value="${value%\"}"
-	value="${value#\"}"
-	echo "${value:-$default}"
 }
 
 in_list() {
@@ -704,6 +693,30 @@ cmd_test() {
 	verify_run "$json" "${names[@]}" || exit 1
 }
 
+# ---------------------------------------------------------------- health
+
+# cmd_health - one watchdog run, then the same JSON it wrote.
+cmd_health() {
+	local json=0
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "health: неизвестный аргумент" ;;
+	esac
+	[[ $# -le 1 ]] || fail 2 "health: лишние аргументы"
+	local watch="$SCRIPT_DIR/dpistack-watch"
+	[[ -x "$watch" ]] || fail 4 "dpistack-watch не установлен"
+	"$watch" || fail 1 "health: dpistack-watch завершился с ошибкой"
+	local file
+	file=$(path_health_json)
+	[[ -f "$file" ]] || fail 1 "health: $file не создан"
+	if ((json)); then
+		cat "$file"
+	else
+		jq -r '"overall: \(.overall)  (\(.ts))", (.checks[] | "\(.id)\t\(.status)\t\(.value)\t\(.detail)")' "$file" || fail 1 "health: нужен jq"
+	fi
+}
+
 # ----------------------------------------------------------- panel-passwd
 
 cmd_panel_passwd() {
@@ -747,6 +760,7 @@ main() {
 	iface) cmd_iface "$@" ;;
 	panel-passwd) cmd_panel_passwd "$@" ;;
 	test) cmd_test "$@" ;;
+	health) cmd_health "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
 	*)
 		if in_list "$cmd" "${PLANNED_COMMANDS[@]}"; then

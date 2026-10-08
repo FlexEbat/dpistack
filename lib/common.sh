@@ -157,3 +157,15 @@ panel_auth_write() {
 	fi
 	return 0
 }
+
+# conf_get <KEY> <default> - reads one key straight from dpistack.conf.
+# The helper stays independent of the installer's schema loader.
+conf_get() {
+	local key="$1" default="$2" value=""
+	local file
+	file=$(path_conf)
+	[[ -r "$file" ]] && value=$(grep -m1 "^${key}=" "$file" | cut -d= -f2-)
+	value="${value%\"}"
+	value="${value#\"}"
+	echo "${value:-$default}"
+}

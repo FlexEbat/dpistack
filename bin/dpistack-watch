@@ -1,8 +1,340 @@
 #!/usr/bin/env bash
-# Watchdog entry point, run by dpistack-watch.timer (tech.md section 8).
-# Slice 1 only scaffolds the entry point; the actual checks ship with
-# the watchdog slices.
+# dpistack watchdog (tech.md 8): one run per call, started by
+# dpistack-watch.timer or by `dpistack-ctl health`. It writes
+# health.json atomically and a line to events.jsonl for every status
+# change. It repairs nothing unless WATCH_AUTORESTART=yes.
+#
+# Ready-made parts instead of new code: jq builds and reads the JSON,
+# flock keeps two runs apart, `dpistack-ctl status --json` gives the
+# component state through the runtime, and the schema supplies every
+# default threshold.
 set -uo pipefail
 
-echo "dpistack-watch: пока не реализовано" >&2
-exit 4
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
+	if [[ -r "$_lib/paths.sh" && -r "$_lib/common.sh" ]]; then
+		# shellcheck source=lib/paths.sh
+		source "$_lib/paths.sh"
+		# shellcheck source=lib/common.sh
+		source "$_lib/common.sh"
+		# shellcheck source=lib/state.sh
+		source "$_lib/state.sh"
+		# shellcheck source=lib/schema.sh
+		source "$_lib/schema.sh"
+		# shellcheck source=lib/config.sh
+		source "$_lib/config.sh"
+		break
+	fi
+done
+unset _lib
+if ! declare -F path_conf >/dev/null; then
+	echo "dpistack-watch: не найден lib/paths.sh" >&2
+	exit 1
+fi
+command -v jq >/dev/null 2>&1 || {
+	echo "dpistack-watch: не установлен jq" >&2
+	exit 1
+}
+
+CTL="$SCRIPT_DIR/dpistack-ctl"
+RESTARTS_PER_HOUR=3
+PORT_CRIT_AFTER_MISSES=3 # missing for more than two runs in a row
+
+# DPISTACK_NOW pins the clock for tests.
+now() { echo "${DPISTACK_NOW:-$(date +%s)}"; }
+iso() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
+
+CHECK_IDS=()
+declare -A C_STATUS C_VALUE C_DETAIL
+
+# record <id> <status> <value> <detail>
+record() {
+	CHECK_IDS+=("$1")
+	C_STATUS[$1]="$2"
+	C_VALUE[$1]="$3"
+	C_DETAIL[$1]="$4"
+}
+
+# ge/le <number> <threshold>: at the threshold itself the worse status
+# wins, the same way for every check (4.6 note).
+ge() { awk -v a="$1" -v b="$2" 'BEGIN{exit !(a >= b)}'; }
+le() { awk -v a="$1" -v b="$2" 'BEGIN{exit !(a <= b)}'; }
+
+eve_checks_apply() {
+	[[ "${CONF[EVE_FILE]}" == "yes" && ",${CONF[EVE_TYPES]}," == *",stats,"* ]]
+}
+
+declare -A COMP_STATE
+
+load_component_states() {
+	local out
+	out=$("$CTL" status --json 2>/dev/null) || return 0
+	while IFS=$'\t' read -r id state; do
+		COMP_STATE[$id]="$state"
+	done < <(jq -r '.components[] | [.id, .state] | @tsv' <<<"$out" 2>/dev/null)
+}
+
+check_process() {
+	local id="$1" state="${COMP_STATE[$1]:-absent}"
+	case "$state" in
+	active) record "$id.process" ok "$state" "" ;;
+	absent) record "$id.process" na "$state" "компонент не установлен" ;;
+	*) record "$id.process" crit "$state" "$id: $state" ;;
+	esac
+}
+
+# component_port <id> - empty when the component has no port to check.
+component_port() {
+	case "$1" in
+	evebox) echo "${CONF[EVEBOX_PORT]}" ;;
+	ntopng) echo "${CONF[NTOPNG_PORT]}" ;;
+	redis) echo 6379 ;;
+	panel) echo "${CONF[PANEL_PORT]}" ;;
+	victoriametrics | prometheus) echo "${CONF[METRICS_BACKEND_PORT]}" ;;
+	esac
+}
+
+check_port() {
+	local id="$1" port misses key
+	port=$(component_port "$id")
+	if [[ "${COMP_STATE[$id]:-absent}" == "absent" || -z "$port" ]]; then
+		record "$id.port" na "" "компонент не установлен"
+		return
+	fi
+	key="watch.miss.$id"
+	if ss -ltn 2>/dev/null | awk -v p=":$port\$" '$4 ~ p {f=1} END{exit !f}'; then
+		state_write_value "$key" 0
+		record "$id.port" ok "$port" ""
+		return
+	fi
+	misses=$(state_read_value "$key")
+	misses=$((${misses:-0} + 1))
+	state_write_value "$key" "$misses"
+	if ((misses >= PORT_CRIT_AFTER_MISSES)); then
+		record "$id.port" crit "$port" "порт $port не слушается $misses прогонов подряд"
+	else
+		record "$id.port" warn "$port" "порт $port не слушается"
+	fi
+}
+
+check_eve_fresh() {
+	if ! eve_checks_apply; then
+		record suricata.eve_fresh na "" "EVE_FILE=no или нет stats в EVE_TYPES"
+		return
+	fi
+	local eve mtime age
+	eve=$(path_suricata_eve_json)
+	if [[ ! -f "$eve" ]]; then
+		record suricata.eve_fresh warn "" "eve.json не найден"
+		return
+	fi
+	mtime=$(stat -c %Y "$eve")
+	age=$(($(now) - mtime))
+	if ge "$age" "${CONF[WATCH_EVE_STALE_SEC]}"; then
+		record suricata.eve_fresh crit "$age" "новых событий нет $age с"
+	else
+		record suricata.eve_fresh ok "$age" ""
+	fi
+}
+
+check_drop_rate() {
+	if ! eve_checks_apply; then
+		record suricata.drop_rate na "" "EVE_FILE=no или нет stats в EVE_TYPES"
+		return
+	fi
+	local eve
+	eve=$(path_suricata_eve_json)
+	if [[ ! -f "$eve" ]]; then
+		record suricata.drop_rate na "" "eve.json не найден"
+		return
+	fi
+	# Only the tail is read, never the whole file (9: eve.json is not parsed whole).
+	local rows p0 d0 p1 d1
+	rows=$(tail -c 4194304 "$eve" | grep -F '"event_type":"stats"' | tail -n 2 |
+		jq -r '[.stats.capture.kernel_packets, .stats.capture.kernel_drops] | select(all(. != null)) | @tsv' 2>/dev/null)
+	if [[ $(wc -l <<<"$rows") -lt 2 ]]; then
+		record suricata.drop_rate na "" "нет двух событий stats"
+		return
+	fi
+	read -r p0 d0 < <(sed -n 1p <<<"$rows")
+	read -r p1 d1 < <(sed -n 2p <<<"$rows")
+	if ((p1 < p0 || d1 < d0)); then
+		record suricata.drop_rate ok "" "счётчики сброшены, интервал пропущен"
+		return
+	fi
+	# Thresholds are compared as integers (drops*100 against pct*packets),
+	# so a value just under a threshold is never rounded up onto it.
+	local dp=$((p1 - p0)) dd=$((d1 - d0)) pct=0.00
+	local crit_pct="${CONF[WATCH_DROP_CRIT_PCT]}" warn_pct="${CONF[WATCH_DROP_WARN_PCT]}"
+	((dp > 0)) && pct=$(awk -v dp="$dp" -v dd="$dd" 'BEGIN{printf "%.2f", dd * 100 / dp}')
+	if ((dp > 0)) && ge "$((dd * 100))" "$((crit_pct * dp))"; then
+		record suricata.drop_rate crit "$pct" "drops $pct%"
+	elif ((dp > 0)) && ge "$((dd * 100))" "$((warn_pct * dp))"; then
+		record suricata.drop_rate warn "$pct" "drops $pct%"
+	else
+		record suricata.drop_rate ok "$pct" ""
+	fi
+}
+
+check_disk_free() {
+	local -a paths=()
+	paths+=("$(dirname "$(path_suricata_eve_json)")")
+	[[ "${CONF[EVEBOX_DB]}" == "sqlite" ]] && paths+=("$(path_evebox_data_dir)")
+	local p total avail worst_total="" worst_avail="" worst_path=""
+	for p in "${paths[@]}"; do
+		[[ -d "$p" ]] || continue
+		read -r total avail < <(df -P "$p" 2>/dev/null | awk 'NR==2 && $2 > 0 {print $2, $4}')
+		[[ -n "${total:-}" ]] || continue
+		# The smallest free share wins: avail/total, cross-multiplied.
+		if [[ -z "$worst_total" ]] || awk -v a="$avail" -v t="$total" -v wa="$worst_avail" -v wt="$worst_total" 'BEGIN{exit !(a * wt <= wa * t)}'; then
+			worst_total="$total"
+			worst_avail="$avail"
+			worst_path="$p"
+		fi
+	done
+	if [[ -z "$worst_total" ]]; then
+		record disk.free na "" "нет каталогов для проверки"
+		return
+	fi
+	local pct detail
+	pct=$(awk -v a="$worst_avail" -v t="$worst_total" 'BEGIN{printf "%.2f", a * 100 / t}')
+	detail="$worst_path: свободно $pct%"
+	if awk -v a="$worst_avail" -v t="$worst_total" -v c="${CONF[WATCH_DISK_CRIT_PCT]}" 'BEGIN{exit !(a * 100 <= c * t)}'; then
+		record disk.free crit "$pct" "$detail"
+	elif awk -v a="$worst_avail" -v t="$worst_total" -v c="${CONF[WATCH_DISK_WARN_PCT]}" 'BEGIN{exit !(a * 100 <= c * t)}'; then
+		record disk.free warn "$pct" "$detail"
+	else
+		record disk.free ok "$pct" "$detail"
+	fi
+}
+
+check_rules_age() {
+	if [[ "${CONF[RULES_UPDATE]}" == "off" || "${COMP_STATE[suricata]:-absent}" == "absent" ]]; then
+		record rules.age na "" "обновление правил выключено или Suricata не установлена"
+		return
+	fi
+	local rules mtime age_sec age_days crit_days="${CONF[WATCH_RULES_CRIT_DAYS]}" warn_days="${CONF[WATCH_RULES_WARN_DAYS]}"
+	rules=$(path_suricata_ruleset)
+	if [[ ! -f "$rules" ]]; then
+		record rules.age warn "" "suricata.rules не найден"
+		return
+	fi
+	mtime=$(stat -c %Y "$rules")
+	age_sec=$(($(now) - mtime))
+	age_days=$(awk -v s="$age_sec" 'BEGIN{printf "%.2f", s / 86400}')
+	if ge "$age_sec" "$((crit_days * 86400))"; then
+		record rules.age crit "$age_days" "правилам $age_days дн."
+	elif ge "$age_sec" "$((warn_days * 86400))"; then
+		record rules.age warn "$age_days" "правилам $age_days дн."
+	else
+		record rules.age ok "$age_days" ""
+	fi
+}
+
+rank() {
+	case "$1" in
+	ok) echo 0 ;;
+	warn) echo 1 ;;
+	crit) echo 2 ;;
+	*) echo -1 ;;
+	esac
+}
+
+# write_health - `since` stays while a status is unchanged; a change
+# also appends one line to events.jsonl.
+write_health() {
+	local health events prev_status prev_since since overall="ok" worst=0 r ts
+	ts=$(iso "$(now)")
+	health=$(path_health_json)
+	events=$(path_events_jsonl)
+	mkdir -p "$(dirname "$health")"
+
+	local lines="" id line
+	for id in "${CHECK_IDS[@]}"; do
+		prev_status="" prev_since=""
+		if [[ -f "$health" ]]; then
+			IFS=$'\t' read -r prev_status prev_since < <(
+				jq -r --arg id "$id" '.checks[]? | select(.id == $id) | [.status, .since] | @tsv' "$health" 2>/dev/null
+			)
+		fi
+		if [[ "$prev_status" == "${C_STATUS[$id]}" && -n "$prev_since" ]]; then
+			since="$prev_since"
+		else
+			since="$ts"
+			# A first sighting that is ok or na is not news.
+			if [[ -n "$prev_status" || ("${C_STATUS[$id]}" != "ok" && "${C_STATUS[$id]}" != "na") ]]; then
+				jq -nc --arg ts "$ts" --arg check "$id" --arg from "${prev_status:-na}" \
+					--arg to "${C_STATUS[$id]}" --arg detail "${C_DETAIL[$id]}" \
+					'{ts: $ts, check: $check, from: $from, to: $to, detail: $detail}' >>"$events"
+				chmod 0644 "$events"
+			fi
+		fi
+		r=$(rank "${C_STATUS[$id]}")
+		((r > worst)) && worst=$r
+		line=$(jq -nc --arg id "$id" --arg status "${C_STATUS[$id]}" --arg value "${C_VALUE[$id]}" \
+			--arg detail "${C_DETAIL[$id]}" --arg since "$since" \
+			'{id: $id, status: $status, value: $value, detail: $detail, since: $since}')
+		lines+="$line"$'\n'
+	done
+	case "$worst" in
+	1) overall=warn ;;
+	2) overall=crit ;;
+	esac
+	printf '%s' "$lines" | jq -s --arg ts "$ts" --arg overall "$overall" \
+		'{ts: $ts, overall: $overall, checks: .}' | atomic_write "$health"
+	chmod 0644 "$health"
+}
+
+# autorestart: at most 3 restarts per component per hour.
+autorestart() {
+	[[ "${CONF[WATCH_AUTORESTART]}" == "yes" ]] || return 0
+	local id key stamps t now_s kept
+	now_s=$(now)
+	for id in "${CHECK_IDS[@]}"; do
+		[[ "$id" == *.process && "${C_STATUS[$id]}" == "crit" ]] || continue
+		id="${id%.process}"
+		key="watch.restarts.$id"
+		kept=()
+		for t in $(state_read_value "$key"); do
+			((now_s - t < 3600)) && kept+=("$t")
+		done
+		if ((${#kept[@]} >= RESTARTS_PER_HOUR)); then
+			echo "dpistack-watch: $id: лимит перезапусков ($RESTARTS_PER_HOUR в час) исчерпан" >&2
+			stamps="${kept[*]}"
+		else
+			echo "dpistack-watch: перезапуск $id" >&2
+			"$CTL" restart "$id" >/dev/null 2>&1 || echo "dpistack-watch: перезапуск $id не удался" >&2
+			kept+=("$now_s")
+			stamps="${kept[*]}"
+		fi
+		state_write_value "$key" "$stamps"
+	done
+}
+
+main() {
+	mkdir -p "$(path_state_dir)"
+	exec 9>"$(path_state_dir)/.watch.lock"
+	flock -n 9 || exit 0
+
+	config_reset
+	config_load_defaults
+	[[ -r "$(path_conf)" ]] && config_load_kv_file "$(path_conf)"
+
+	load_component_states
+	local id
+	for id in suricata evebox ntopng redis panel victoriametrics prometheus; do
+		# Backends are listed by `ctl status` only when selected.
+		[[ -n "${COMP_STATE[$id]:-}" ]] || continue
+		check_process "$id"
+		[[ "$id" == "suricata" ]] || check_port "$id"
+	done
+	check_eve_fresh
+	check_drop_rate
+	check_disk_free
+	check_rules_age
+
+	write_health
+	autorestart
+}
+
+main "$@"
