@@ -44,3 +44,29 @@ setup() {
 	[ -n "$code" ]
 	[ "$code" = "$doc" ]
 }
+
+@test "every action is pinned to a full commit SHA, not a movable tag" {
+	run grep -hoE 'uses: [^ ]+' "$WF"/*.yml
+	[ "$status" -eq 0 ]
+	while read -r _ action; do
+		[[ "${action##*@}" =~ ^[0-9a-f]{40}$ ]] || {
+			echo "not pinned by SHA: $action"
+			return 1
+		}
+	done <<<"$output"
+}
+
+@test "no workflow pipes a download into a shell" {
+	! grep -nE '(curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba)?sh' "$WF"/*.yml
+	! grep -nE 'bash <\((curl|wget)' "$WF"/*.yml
+}
+
+@test "a release tag must be on main" {
+	grep -q 'merge-base --is-ancestor' "$WF/release.yml"
+}
+
+@test "files the release archive copies exist" {
+	for f in README.md LICENSE dpistack.conf.example install.sh lib templates bin tests/data; do
+		[ -e "$REPO_DIR/$f" ]
+	done
+}
