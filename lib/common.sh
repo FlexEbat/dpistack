@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack-ctl version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack-ctl
-DPISTACK_VERSION="0.3.0"
+DPISTACK_VERSION="0.3.1"
 
 : "${DRY_RUN:=0}"
 
@@ -41,8 +41,11 @@ run() {
 		return 0
 	fi
 	log "RUN" "$*"
-	if ! "$@"; then
-		local rc=$?
+	# The status is read straight after the command: inside `if ! cmd`
+	# $? is the negated result, so a failing command used to look like 0.
+	"$@"
+	local rc=$?
+	if ((rc != 0)); then
 		log "ERROR" "command failed (rc=$rc): $*"
 		return "$rc"
 	fi
@@ -73,8 +76,12 @@ atomic_write() {
 	mkdir -p "$dir"
 	local tmp
 	tmp=$(mktemp "${dir}/.tmp.XXXXXX")
-	cat >"$tmp"
-	mv -f "$tmp" "$target"
+	# A failed write (disk full) must not replace the target with a
+	# truncated file.
+	if ! cat >"$tmp" || ! mv -f "$tmp" "$target"; then
+		rm -f "$tmp"
+		return 1
+	fi
 }
 
 # dry_run_write <path> - atomic_write that also honours --dry-run,

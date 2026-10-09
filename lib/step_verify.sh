@@ -171,7 +171,8 @@ verify_test_https() {
 
 	offset=$(verify_eve_size)
 	# --max-time keeps a hung network from blocking the panel request.
-	cerr=$(curl -sS --max-time 15 -o /dev/null "$url" 2>&1)
+	# `--` so a URL can never be read as an option.
+	cerr=$(curl -sS --max-time 15 -o /dev/null -- "$url" 2>&1)
 	rc=$?
 	if ((rc != 0)); then
 		verify_set fail "curl не прошёл (код $rc): $(printf '%s' "$cerr" | head -1)"

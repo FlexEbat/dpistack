@@ -8,22 +8,28 @@ state_read_value() {
 	local f
 	f=$(path_state_file)
 	[[ -f "$f" ]] || return 0
-	grep -m1 "^${key}=" "$f" | cut -d= -f2-
+	awk -F= -v k="$key" '$1 == k {print substr($0, length(k) + 2); exit}' "$f"
 }
 
 state_write_value() {
 	# state_write_value <key> <value>
 	local key="$1" value="$2"
-	local f
+	local f lock_fd tmp
 	f=$(path_state_file)
-	local tmp
+	mkdir -p "$(dirname "$f")"
+	# The installer and the watchdog both rewrite this file; without a
+	# lock one of them could overwrite the other's change.
+	exec {lock_fd}>"${f}.lock"
+	flock -x "$lock_fd"
 	tmp=$(mktemp)
 	if [[ -f "$f" ]]; then
-		grep -v "^${key}=" "$f" >"$tmp" || true
+		# awk compares the key as text; grep would read its dots as regex.
+		awk -F= -v k="$key" '$1 != k' "$f" >"$tmp" || true
 	fi
 	echo "${key}=${value}" >>"$tmp"
 	atomic_write "$f" <"$tmp"
 	rm -f "$tmp"
+	exec {lock_fd}>&-
 }
 
 state_set_step_done() {

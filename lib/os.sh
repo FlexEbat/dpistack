@@ -7,8 +7,6 @@ OS_ID_LIKE=""
 OS_VERSION_ID=""
 OS_FAMILY=""
 
-os_release_file() { echo "${DPISTACK_ROOT}/etc/os-release"; }
-
 # Family for a given (id, id_like) pair. ID wins; ID_LIKE is consulted
 # for derivatives that do not use their upstream name as ID (tests
 # exercise this through stub os-release files).
@@ -29,7 +27,7 @@ os_family_for() {
 
 os_detect() {
 	local f
-	f=$(os_release_file)
+	f=$(path_os_release)
 	if [[ ! -r "$f" ]]; then
 		die 3 "cannot read $f, unsupported or broken system"
 	fi
@@ -48,6 +46,11 @@ os_detect() {
 	fi
 
 	log "INFO" "detected $OS_ID $OS_VERSION_ID, family=$OS_FAMILY"
+	# apt must never stop on a debconf or needrestart question: the
+	# installer may run with no terminal (-y, a timer, a pipe).
+	if [[ "$OS_FAMILY" == "apt" ]]; then
+		export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+	fi
 }
 
 pkg_install() {
@@ -62,6 +65,21 @@ pkg_install() {
 	*)
 		die 3 "pkg_install called before os_detect (family=$OS_FAMILY)"
 		;;
+	esac
+}
+
+# pkg_spec <package> [version] - the argument that pins a package to a
+# version (NTOPNG_VERSION, EVEBOX_VERSION); no version means the latest.
+pkg_spec() {
+	local pkg="$1" version="${2:-}"
+	if [[ -z "$version" ]]; then
+		echo "$pkg"
+		return
+	fi
+	case "$OS_FAMILY" in
+	apt) echo "${pkg}=${version}" ;;
+	dnf) echo "${pkg}-${version}" ;;
+	*) echo "$pkg" ;;
 	esac
 }
 

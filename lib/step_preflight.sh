@@ -56,7 +56,7 @@ step_preflight_reasons() {
 	fi
 
 	if [[ "${CONF[EVEBOX_DB]:-sqlite}" == "elasticsearch" ]]; then
-		if ! curl -fsS --max-time 5 -o /dev/null "${CONF[EVEBOX_ES_URL]:-}"; then
+		if ! curl -fsS --max-time 5 -o /dev/null -- "${CONF[EVEBOX_ES_URL]:-}"; then
 			reasons+=("Elasticsearch из EVEBOX_ES_URL (${CONF[EVEBOX_ES_URL]:-}) недоступен")
 		fi
 	fi

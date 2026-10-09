@@ -44,7 +44,7 @@ ntopng_repo_add() {
 	run add-apt-repository -y universe
 	local version_id
 	# shellcheck disable=SC1090
-	version_id=$(. "$(os_release_file)" && echo "${VERSION_ID:-}")
+	version_id=$(. "$(path_os_release)" && echo "${VERSION_ID:-}")
 	local deb_tmp
 	deb_tmp="$(mktemp --suffix=.deb)"
 	run wget -qO "$deb_tmp" "${NTOP_REPO_DEB_URL_APT}/${version_id}/all/apt-ntop.deb"
@@ -71,7 +71,7 @@ step_ntopng_check() {
 step_ntopng_apply() {
 	if ! command -v ntopng >/dev/null 2>&1; then
 		ntopng_repo_add
-		pkg_install "$NTOPNG_PACKAGE"
+		pkg_install "$(pkg_spec "$NTOPNG_PACKAGE" "${CONF[NTOPNG_VERSION]:-}")"
 	fi
 
 	write_rendered_file "$(path_ntopng_conf)" "$(ntopng_render_conf)"

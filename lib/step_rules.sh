@@ -8,8 +8,6 @@
 
 RULES_TIMER="dpistack-rules.timer"
 
-rules_data_dir() { echo "${DPISTACK_ROOT}/var/lib/suricata"; }
-
 # rules_update_command -> the exact suricata-update invocation used
 # both for a one-off apply and inside the timer's service unit, so the
 # two never drift apart.
@@ -19,7 +17,7 @@ RULES_UPDATE_ARGV=()
 # array and nothing needs eval.
 rules_update_argv() {
 	RULES_UPDATE_ARGV=(suricata-update
-		-D "$(rules_data_dir)"
+		-D "$(path_rules_data_dir)"
 		--suricata-conf "$(path_suricata_yaml)"
 		--enable-conf "$(path_suricata_enable_conf)"
 		--disable-conf "$(path_suricata_disable_conf)"
@@ -54,7 +52,7 @@ rules_custom_source_name() {
 
 rules_register_sources() {
 	local data_dir
-	data_dir=$(rules_data_dir)
+	data_dir=$(path_rules_data_dir)
 
 	local name
 	local IFS=','
