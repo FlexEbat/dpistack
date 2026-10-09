@@ -36,6 +36,9 @@ command -v jq >/dev/null 2>&1 || {
 	exit 1
 }
 
+# awk prints decimals by the locale; "5,00" would break the JSON values.
+export LC_NUMERIC=C
+
 CTL="$SCRIPT_DIR/dpistack-ctl"
 RESTARTS_PER_HOUR=3
 PORT_CRIT_AFTER_MISSES=3 # missing for more than two runs in a row
@@ -266,6 +269,7 @@ curl_cfg_escape() {
 	t="${t//\\/\\\\}"
 	t="${t//\"/\\\"}"
 	t="${t//$'\n'/ }"
+	t="${t//$'\r'/ }"
 	printf '%s' "$t"
 }
 
@@ -281,7 +285,7 @@ alert_tg() {
 		return 1
 	fi
 	printf 'url = "https://api.telegram.org/bot%s/sendMessage"\ndata-urlencode = "chat_id=%s"\ndata-urlencode = "text=%s"\n' \
-		"$token" "$(curl_cfg_escape "$chat")" "$(curl_cfg_escape "$msg")" |
+		"$(curl_cfg_escape "$token")" "$(curl_cfg_escape "$chat")" "$(curl_cfg_escape "$msg")" |
 		curl -sS --fail --max-time 10 -o /dev/null -K - 2>/dev/null || {
 		channel_error tg "отправка не удалась"
 		return 1
@@ -302,7 +306,10 @@ alert_mail() {
 		"$from" "$to" "$subject" "$msg" >"$body"
 	cfg=$(printf 'url = "%s"\nmail-from = "%s"\nupload-file = "%s"\n' \
 		"$(curl_cfg_escape "$url")" "$(curl_cfg_escape "$from")" "$body")
-	for rcpt in ${to//,/ }; do
+	local -a rcpts=()
+	# read -a, not an unquoted expansion: no globbing of the address list.
+	IFS=, read -ra rcpts <<<"$to"
+	for rcpt in "${rcpts[@]}"; do
 		cfg+=$'\n'"mail-rcpt = \"$(curl_cfg_escape "$rcpt")\""
 	done
 	printf '%s\n' "$cfg" | curl -sS --fail --max-time 20 -o /dev/null -K - 2>/dev/null

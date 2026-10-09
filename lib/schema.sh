@@ -26,6 +26,46 @@ SCHEMA_KEYS=()
 # (tech.md 4.3: "docker", "ips", METRICS_BACKEND other than "none").
 # Present as valid enum members so the schema does not reject them
 # outright, but installer rejects them with "пока не поддерживается".
+# Shape of every free-text key. These values end up in YAML, nginx and
+# systemd files, in curl and suricata-update arguments, all of them run
+# or read by root, and `dpistack-ctl config-write` lets the panel change
+# them. Anything outside the shape is rejected before it is written
+# anywhere: no quotes, backslashes, `$`, backticks, `;`, braces, pipes
+# (except in BPF) and no leading `-` that a command would read as an option.
+declare -A SCHEMA_PATTERN
+_url='[A-Za-z0-9._~:/?#@%+=,&!*()-]+'
+_cidr='[0-9A-Fa-f:.]+/[0-9]{1,3}'
+_word='[A-Za-z0-9_][A-Za-z0-9._-]*'
+SCHEMA_PATTERN[SURICATA_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
+SCHEMA_PATTERN[NDPI_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
+SCHEMA_PATTERN[NTOPNG_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
+SCHEMA_PATTERN[EVEBOX_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
+SCHEMA_PATTERN[IFACES]="^${_word}(,${_word})*\$"
+SCHEMA_PATTERN[NTOPNG_IFACES]="^${_word}(,${_word})*\$"
+SCHEMA_PATTERN[BPF_FILTER]='^[]A-Za-z0-9 .,:/()!&|<>=+*%_[-]*$'
+SCHEMA_PATTERN[HOME_NET]="^(auto|[0-9A-Fa-f:.]+(/[0-9]{1,3})?(,[0-9A-Fa-f:.]+(/[0-9]{1,3})?)*)\$"
+SCHEMA_PATTERN[IPS_NFQ_CHAINS]='^[A-Z]+(,[A-Z]+)*$'
+SCHEMA_PATTERN[EVE_TYPES]='^[a-z0-9_]+(,[a-z0-9_]+)*$'
+SCHEMA_PATTERN[EVE_REDIS]='^[A-Za-z0-9_/][A-Za-z0-9._:/@-]*$'
+SCHEMA_PATTERN[RULES_SOURCES]="^[A-Za-z0-9_][A-Za-z0-9._/-]*( [A-Za-z0-9_][A-Za-z0-9._/-]*)*\$"
+SCHEMA_PATTERN[RULES_URLS]="^https?://${_url}( https?://${_url})*\$"
+SCHEMA_PATTERN[RULES_GROUPS]="^${_word}(,${_word})*\$"
+SCHEMA_PATTERN[RULES_UPDATE_CALENDAR]='^[A-Za-z0-9*:/,. -]+$'
+SCHEMA_PATTERN[EVEBOX_ES_URL]="^https?://${_url}\$"
+SCHEMA_PATTERN[TEST_HTTPS_URL]="^https?://${_url}\$"
+SCHEMA_PATTERN[LAN_CIDR]="^(auto|${_cidr})\$"
+SCHEMA_PATTERN[NGINX_CERT]='^/[A-Za-z0-9._/@+-]+$'
+SCHEMA_PATTERN[NGINX_KEY]='^/[A-Za-z0-9._/@+-]+$'
+SCHEMA_PATTERN[METRICS_RETENTION]='^[0-9]+[dhwmy]?$'
+SCHEMA_PATTERN[ALERT_CHANNELS]='^[a-z]+(,[a-z]+)*$'
+SCHEMA_PATTERN[ALERT_TG_CHAT_ID]='^(-?[0-9]+|@[A-Za-z0-9_]+)$'
+SCHEMA_PATTERN[ALERT_MAIL_TO]='^[A-Za-z0-9._%+@-]+(,[A-Za-z0-9._%+@-]+)*$'
+SCHEMA_PATTERN[ALERT_MAIL_FROM]='^[A-Za-z0-9._%+@-]+$'
+SCHEMA_PATTERN[ALERT_TG_TOKEN]='^[0-9A-Za-z:_-]+$'
+SCHEMA_PATTERN[ALERT_SMTP_URL]="^smtps?://${_url}\$"
+SCHEMA_PATTERN[METRICS_TOKEN]='^[A-Za-z0-9._~-]+$'
+unset _url _cidr _word
+
 declare -A SCHEMA_NOT_YET_SUPPORTED
 SCHEMA_NOT_YET_SUPPORTED["SURICATA_RUNTIME=docker"]=1
 SCHEMA_NOT_YET_SUPPORTED["EVEBOX_RUNTIME=docker"]=1
@@ -198,7 +238,18 @@ schema_validate_one() {
 			fi
 		fi
 		;;
-	free) ;;
+	free)
+		local pattern="${SCHEMA_PATTERN[$key]:-}"
+		if [[ -n "$pattern" && ! "$value" =~ $pattern ]]; then
+			# A secret is never echoed back, not even in an error.
+			if schema_is_secret "$key"; then
+				echo "$key: недопустимый формат значения"
+			else
+				echo "$key=$value: недопустимые символы или формат"
+			fi
+			return 1
+		fi
+		;;
 	*)
 		echo "$key: неизвестный тип схемы $type"
 		return 1

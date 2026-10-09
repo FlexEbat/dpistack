@@ -276,7 +276,9 @@ cmd_logs() {
 		*) fail 2 "logs: неизвестный аргумент: $1" ;;
 		esac
 	done
-	[[ "$n" =~ ^[0-9]+$ ]] || fail 2 "logs: N должно быть числом"
+	[[ "$n" =~ ^[0-9]{1,6}$ ]] || fail 2 "logs: N должно быть числом"
+	# 10#: a leading zero is not octal ("08" is eight, "01750" is 1750).
+	n=$((10#$n))
 	((n >= 1 && n <= LOGS_MAX)) || fail 2 "logs: N от 1 до $LOGS_MAX"
 
 	local unit
@@ -307,6 +309,23 @@ config_path() {
 	esac
 }
 
+# ctl_lock / ctl_unlock - the installer's own lock, so a config file is
+# never replaced while `install.sh` renders from it. Waits up to 30 s;
+# it must not be held while the installer is started (reconfigure).
+ctl_lock() {
+	local lock_file
+	lock_file=$(path_lock_file)
+	mkdir -p "$(dirname "$lock_file")"
+	exec {CTL_LOCK_FD}>"$lock_file"
+	if ! flock -w 30 "$CTL_LOCK_FD"; then
+		fail 1 "установщик занят (блокировка $lock_file), повторите позже"
+	fi
+}
+
+ctl_unlock() {
+	exec {CTL_LOCK_FD}>&-
+}
+
 # config_commit <name> <staged-file> - backup, then atomic replace.
 # Deliberately leaves the render hash in state alone: a file changed
 # here counts as edited by hand, so the installer will not overwrite
@@ -314,10 +333,12 @@ config_path() {
 config_commit() {
 	local name="$1" staged="$2" path mode
 	path=$(config_path "$name")
+	ctl_lock
 	mode=$(stat -c %a "$path" 2>/dev/null || echo 644)
 	backup "$path"
 	atomic_write "$path" <"$staged"
 	chmod "$mode" "$path"
+	ctl_unlock
 }
 
 # suricata_check_set <name> <staged-file>
@@ -354,6 +375,16 @@ config_validate_staged() {
 	local name="$1" staged="$2"
 	case "$name" in
 	dpistack.conf)
+		# Secrets live in secrets.conf; in dpistack.conf (0644) they would
+		# be readable by everyone.
+		local line key
+		while IFS= read -r line || [[ -n "$line" ]]; do
+			key="${line%%=*}"
+			if [[ "$line" == *=* && "$line" != \#* ]] && schema_is_secret "$key" 2>/dev/null; then
+				echo "$key: секрет хранится в secrets.conf, через config-write его менять нельзя"
+				return 3
+			fi
+		done <"$staged"
 		# Schema and cross-field checks of 4.3.
 		config_reset
 		config_load_defaults
@@ -442,9 +473,11 @@ cmd_config_revert() {
 	latest=$(printf '%s\n' "$(path_backups_dir)/$(basename "$path")".* | sort -V | tail -1)
 	[[ -e "$latest" ]] || latest=""
 	[[ -n "$latest" ]] || fail 1 "нет бэкапа для $name"
+	ctl_lock
 	mode=$(stat -c %a "$path" 2>/dev/null || echo 644)
 	atomic_write "$path" <"$latest"
 	chmod "$mode" "$path"
+	ctl_unlock
 	echo "восстановлено из $latest"
 }
 
@@ -596,7 +629,7 @@ cmd_rules_sources() {
 	[[ $# -ge 1 ]] || fail 2 "rules-sources: list|enable|disable|add-url|remove"
 	local sub="$1" data_dir
 	shift
-	data_dir=$(rules_data_dir)
+	data_dir=$(path_rules_data_dir)
 	command -v suricata-update >/dev/null 2>&1 || fail 4 "suricata-update не установлен"
 	case "$sub" in
 	list)
