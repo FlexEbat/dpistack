@@ -655,9 +655,13 @@ cmd_rules_update() {
 	fi
 
 	local ok=1
-	bash -c "$(rules_update_command)" || ok=0
+	rules_update_argv
+	"${RULES_UPDATE_ARGV[@]}" || ok=0
 	if ((ok)) && command -v suricata >/dev/null 2>&1; then
-		suricata -T -c "$(path_suricata_yaml)" -l /tmp >/dev/null 2>&1 || ok=0
+		local check_dir
+		check_dir=$(mktemp -d)
+		suricata -T -c "$(path_suricata_yaml)" -l "$check_dir" >/dev/null 2>&1 || ok=0
+		rm -rf "$check_dir"
 	fi
 	if ((ok)); then
 		suricatasc -c ruleset-reload-nonblocking "$(path_suricata_socket)" || ok=0

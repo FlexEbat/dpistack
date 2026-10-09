@@ -8,7 +8,6 @@
 DPISTACK_VERSION="0.3.0"
 
 : "${DRY_RUN:=0}"
-: "${DPISTACK_LOCK_FD:=200}"
 
 log() {
 	# log <level> <message>
@@ -57,8 +56,11 @@ lock_acquire() {
 	local lock_file
 	lock_file=$(path_lock_file)
 	mkdir -p "$(dirname "$lock_file")" 2>/dev/null || true
-	eval "exec ${DPISTACK_LOCK_FD}>\"$lock_file\""
-	if ! flock -n "$DPISTACK_LOCK_FD"; then
+	# {fd} picks a free descriptor; no eval, so odd characters in the
+	# path cannot become code.
+	local fd
+	exec {fd}>"$lock_file"
+	if ! flock -n "$fd"; then
 		die 1 "another dpistack instance is running (lock: $lock_file)"
 	fi
 }

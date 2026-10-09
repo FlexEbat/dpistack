@@ -13,15 +13,28 @@ rules_data_dir() { echo "${DPISTACK_ROOT}/var/lib/suricata"; }
 # rules_update_command -> the exact suricata-update invocation used
 # both for a one-off apply and inside the timer's service unit, so the
 # two never drift apart.
+RULES_UPDATE_ARGV=()
+
+# rules_update_argv - fills RULES_UPDATE_ARGV, so callers run it as an
+# array and nothing needs eval.
+rules_update_argv() {
+	RULES_UPDATE_ARGV=(suricata-update
+		-D "$(rules_data_dir)"
+		--suricata-conf "$(path_suricata_yaml)"
+		--enable-conf "$(path_suricata_enable_conf)"
+		--disable-conf "$(path_suricata_disable_conf)"
+		--modify-conf "$(path_suricata_modify_conf)"
+		--drop-conf "$(path_suricata_drop_conf)"
+		-o "$(dirname "$(path_suricata_ruleset)")")
+}
+
+# rules_update_command - the same invocation as one shell-quoted line,
+# for logs, dry-run output and the systemd unit.
 rules_update_command() {
-	printf '%s' "suricata-update"
-	printf ' -D %q' "$(rules_data_dir)"
-	printf ' --suricata-conf %q' "$(path_suricata_yaml)"
-	printf ' --enable-conf %q' "$(path_suricata_enable_conf)"
-	printf ' --disable-conf %q' "$(path_suricata_disable_conf)"
-	printf ' --modify-conf %q' "$(path_suricata_modify_conf)"
-	printf ' --drop-conf %q' "$(path_suricata_drop_conf)"
-	printf ' -o %q' "$(dirname "$(path_suricata_ruleset)")"
+	rules_update_argv
+	local line
+	line=$(printf '%q ' "${RULES_UPDATE_ARGV[@]}")
+	printf '%s' "${line% }"
 }
 
 rules_render_enable_conf() {
@@ -124,13 +137,13 @@ step_rules_apply() {
 
 	write_rendered_file "$(path_suricata_enable_conf)" "$(rules_render_enable_conf)"
 
-	local cmd
-	cmd=$(rules_update_command)
+	# Not inside $(...): the array has to be set in this shell.
+	rules_update_argv
 	if [[ "${DRY_RUN:-0}" == "1" ]]; then
-		printf '+ %s\n' "$cmd"
+		printf '+ %s\n' "$(rules_update_command)"
 	else
-		log "RUN" "$cmd"
-		if ! eval "$cmd"; then
+		log "RUN" "$(rules_update_command)"
+		if ! "${RULES_UPDATE_ARGV[@]}"; then
 			echo "suricata-update завершился с ошибкой, прежний набор правил сохранён" >&2
 			return 1
 		fi
