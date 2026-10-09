@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# "watch" step: the dpistack-watch binary, its systemd service and timer
-# (tech.md 8). jq is a hard dependency of the watchdog, so the step
-# installs it. The service skips its run until the installer copy exists
-# (step selfinstall), see the ConditionPathExists lines in the template.
+# "watch" step: the systemd service and timer of dpistack-watch (tech.md
+# 8). The binary itself is placed by the selfinstall step, which runs
+# before this one. jq is a hard dependency of the watchdog, so the step
+# installs it. The service skips its run while the installer copy is
+# missing, see the ConditionPathExists lines in the template.
 
 WATCH_TIMER="dpistack-watch.timer"
 
@@ -34,7 +35,7 @@ step_watch_check() {
 		return
 	fi
 	command -v jq >/dev/null 2>&1 || return 1
-	cmp -s "$SCRIPT_DIR/bin/dpistack-watch" "$(path_watch_bin)" || return 1
+	[[ -x "$(path_watch_bin)" ]] || return 1
 	watch_file_matches "$(path_watch_service_unit)" "$(watch_render_service)" || return 1
 	watch_file_matches "$(path_watch_timer_unit)" "$(watch_render_timer)" || return 1
 	return 0
@@ -51,7 +52,6 @@ step_watch_apply() {
 	fi
 
 	command -v jq >/dev/null 2>&1 || pkg_install jq
-	run install -D -m 0755 "$SCRIPT_DIR/bin/dpistack-watch" "$(path_watch_bin)" || return 1
 	write_rendered_file "$(path_watch_service_unit)" "$(watch_render_service)"
 	write_rendered_file "$(path_watch_timer_unit)" "$(watch_render_timer)"
 	run systemctl daemon-reload || return 1

@@ -530,10 +530,7 @@ menu_found_install_screen() {
 		case "$choice" in
 		1) return 10 ;; # caller switches to the reconfigure menu
 		2) return 11 ;; # idempotent re-apply, no questions
-		3)
-			echo "  меню управления появится в слайсе 15, пока недоступно" >&2
-			continue
-			;;
+		3) return 12 ;; # caller opens the management menu
 		4 | q)
 			menu_close_input
 			exit 0
@@ -557,6 +554,10 @@ menu_run_install() {
 			NON_INTERACTIVE=1 # "apply current config again" asks nothing
 			menu_close_input
 			return 0
+		fi
+		if [[ "$rc" == "12" ]]; then
+			menu_run_manage
+			exit 0
 		fi
 		# rc=10 (настроить) falls through to the reconfigure menu below.
 	elif [[ -f "$(path_conf_draft)" ]]; then
@@ -650,7 +651,7 @@ menu_reconfigure_screen() {
 		printf '  %2d) %-30s %s\n' "$i" "Пароль панели" "сменить" >&2
 		echo >&2
 		echo "  d) Изменения (diff)   a) Применить   r) Отменить правки" >&2
-		echo "  s) Сохранить в файл   l) Загрузить из файла   q) Выйти" >&2
+		echo "  s) Сохранить в файл   l) Загрузить из файла   q) Выйти$([[ "$MENU_BACK_ENABLED" == "1" ]] && echo "   b) Назад")" >&2
 		local changed=0 key
 		for key in "${!CONF[@]}"; do
 			[[ "${CONF[$key]}" != "${MENU_OLD_CONF[$key]:-}" ]] && changed=$((changed + 1))
@@ -684,6 +685,12 @@ menu_reconfigure_screen() {
 			;;
 		s) menu_save_to_file_screen ;;
 		l) menu_load_from_file_screen ;;
+		b)
+			if [[ "$MENU_BACK_ENABLED" == "1" ]]; then
+				return 20
+			fi
+			echo "  непонятный пункт: $choice" >&2
+			;;
 		q) menu_quit_confirm && {
 			menu_close_input
 			exit 0
@@ -708,7 +715,194 @@ menu_run_reconfigure() {
 	menu_open_input
 	for key in "${!CONF[@]}"; do MENU_OLD_CONF[$key]="${CONF[$key]}"; done
 	menu_reconfigure_screen
+	local rc=$?
 	menu_draft_delete
 	menu_close_input
-	return 0
+	return "$rc"
+}
+
+# ------------------------------------------------------------------
+# Management menu (tech.md 5.2): `dpistack` with an installed config.
+# Each action runs in a subshell, so its lock and `exit` calls end with
+# the action and the menu carries on.
+# ------------------------------------------------------------------
+
+# shellcheck disable=SC2034 # read by menu_reconfigure_screen
+MENU_BACK_ENABLED=0
+MANAGE_COMPONENTS=(suricata evebox ntopng redis panel)
+
+# manage_ctl - the installed dpistack-ctl, or the one next to install.sh
+# when run from a clone.
+manage_ctl() {
+	if [[ -x "$(path_ctl_bin)" ]]; then
+		path_ctl_bin
+	elif [[ -x "$SCRIPT_DIR/bin/dpistack-ctl" ]]; then
+		echo "$SCRIPT_DIR/bin/dpistack-ctl"
+	else
+		return 1
+	fi
+}
+
+# menu_manage_ctl <args...> - runs dpistack-ctl; an absent or failing
+# helper prints the reason and leaves the menu running.
+menu_manage_ctl() {
+	local ctl rc
+	if ! ctl=$(manage_ctl); then
+		echo "  dpistack-ctl не найден, проверьте установку (шаг selfinstall)" >&2
+		return 1
+	fi
+	"$ctl" "$@"
+	rc=$?
+	((rc == 0)) || echo "  dpistack-ctl вернул код $rc" >&2
+	return "$rc"
+}
+
+menu_manage_summary() {
+	local ctl out active total health="нет данных"
+	if ctl=$(manage_ctl) && out=$("$ctl" status --json 2>/dev/null) && command -v jq >/dev/null 2>&1; then
+		total=$(jq '[.components[] | select(.state != "absent")] | length' <<<"$out" 2>/dev/null)
+		active=$(jq '[.components[] | select(.state == "active")] | length' <<<"$out" 2>/dev/null)
+		printf 'компоненты: %s из %s активны' "${active:-?}" "${total:-?}"
+	else
+		printf 'компоненты: нет данных'
+	fi
+	if [[ -f "$(path_health_json)" ]] && command -v jq >/dev/null 2>&1; then
+		health=$(jq -r '.overall // "нет данных"' "$(path_health_json)" 2>/dev/null)
+	fi
+	printf '  |  health: %s' "$health"
+}
+
+menu_manage_logs() {
+	local i=1 id choice
+	for id in "${MANAGE_COMPONENTS[@]}"; do
+		printf '  %d) %s\n' "$i" "$id" >&2
+		i=$((i + 1))
+	done
+	menu_read choice "Компонент (номер, Enter - назад): "
+	menu_die_on_eof
+	[[ "$choice" =~ ^[0-9]+$ ]] || return 0
+	((choice >= 1 && choice <= ${#MANAGE_COMPONENTS[@]})) || {
+		echo "  нет такого номера" >&2
+		return 0
+	}
+	id="${MANAGE_COMPONENTS[$((choice - 1))]}"
+	menu_manage_ctl logs "$id" -n 200
+	menu_read choice "f - следить за журналом (Ctrl+C - выход), Enter - назад: "
+	if [[ "$choice" == "f" ]]; then
+		# A no-op handler, not "ignore": the child keeps the default
+		# Ctrl+C and stops, the menu itself stays.
+		trap 'true' INT
+		menu_manage_ctl logs "$id" -n 200 --follow
+		trap 'menu_on_interrupt' INT
+	fi
+}
+
+menu_manage_tests() {
+	local ctl out rc
+	ctl=$(manage_ctl) || {
+		echo "  dpistack-ctl не найден, проверьте установку (шаг selfinstall)" >&2
+		return 1
+	}
+	out=$("$ctl" test all --json 2>&1)
+	rc=$?
+	if command -v jq >/dev/null 2>&1 && jq -e . >/dev/null 2>&1 <<<"$out"; then
+		jq -r '.[] | "  \(.name): \(.status) (\(.duration_ms) мс) - \(.detail)"' <<<"$out"
+	else
+		printf '%s\n' "$out" >&2
+	fi
+	((rc == 0)) || echo "  есть непройденные тесты (код $rc)" >&2
+}
+
+menu_manage_password() {
+	local p1 p2 ctl
+	menu_read_secret p1 "Новый пароль панели: "
+	menu_die_on_eof
+	[[ -n "$p1" ]] || {
+		echo "  пустой пароль не принимается" >&2
+		return 0
+	}
+	menu_read_secret p2 "Повторите пароль: "
+	if [[ "$p1" != "$p2" ]]; then
+		echo "  пароли не совпадают, ничего не изменено" >&2
+		return 0
+	fi
+	ctl=$(manage_ctl) || {
+		echo "  dpistack-ctl не найден, проверьте установку (шаг selfinstall)" >&2
+		return 1
+	}
+	printf '%s\n' "$p1" | "$ctl" panel-passwd
+}
+
+# menu_manage_uninstall - returns 0 only when the stack was removed.
+menu_manage_uninstall() {
+	local word mode
+	menu_read word "Введите слово «удалить» для подтверждения: "
+	menu_die_on_eof
+	if [[ "$word" != "удалить" ]]; then
+		echo "  отменено" >&2
+		return 1
+	fi
+	echo "  1) обычное удаление   2) удаление с данными (--purge)" >&2
+	menu_read mode "> "
+	case "$mode" in
+	1) (cmd_uninstall) ;;
+	2) (PURGE=1 cmd_uninstall) ;;
+	*)
+		echo "  отменено" >&2
+		return 1
+		;;
+	esac
+}
+
+menu_run_manage() {
+	menu_open_input
+	local choice rc answer
+	while true; do
+		echo >&2
+		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}")  |  Управление установленным стендом" >&2
+		echo "Конфиг: $(path_conf)  |  $(menu_manage_summary)" >&2
+		echo >&2
+		echo "  1) Настроить                     разделы конфига, diff, применение" >&2
+		echo "  2) Статус компонентов" >&2
+		echo "  3) Логи" >&2
+		echo "  4) Запустить тесты" >&2
+		echo "  5) Обновить пакеты (upgrade)" >&2
+		echo "  6) Удалить (uninstall)" >&2
+		echo "  7) Пароль панели" >&2
+		echo >&2
+		echo "  q) Выйти" >&2
+		menu_read choice "> "
+		menu_die_on_eof
+		case "$choice" in
+		1)
+			(
+				MENU_BACK_ENABLED=1
+				cmd_reconfigure
+			)
+			rc=$?
+			((rc == 0)) || echo "  настройка завершилась с кодом $rc" >&2
+			;;
+		2) menu_manage_ctl status ;;
+		3) menu_manage_logs ;;
+		4) menu_manage_tests ;;
+		5)
+			menu_read answer "Обновить пакеты? [y/N] "
+			if [[ "$answer" =~ ^[yYдД] ]]; then
+				(cmd_upgrade) || echo "  upgrade завершился с ошибкой" >&2
+			fi
+			;;
+		6)
+			if menu_manage_uninstall; then
+				menu_close_input
+				return 0
+			fi
+			;;
+		7) menu_manage_password ;;
+		q | Q)
+			menu_close_input
+			return 0
+			;;
+		*) echo "  непонятный пункт: $choice" >&2 ;;
+		esac
+	done
 }
