@@ -240,13 +240,147 @@ rank() {
 	esac
 }
 
-# write_health - `since` stays while a status is unchanged; a change
-# also appends one line to events.jsonl.
+# ---------------------------------------------------------------- alerts
+# Channels are independent: a failing one writes its reason to stderr
+# (the journal of the oneshot unit) and never stops the others or the
+# events.jsonl line. Tokens and passwords travel to curl through
+# `-K -` on stdin, so they are not visible in `ps` and never printed.
+
+CHANNELS=()
+
+channel_on() {
+	local c
+	for c in "${CHANNELS[@]}"; do
+		[[ "$c" == "$1" ]] && return 0
+	done
+	return 1
+}
+
+channel_error() {
+	echo "dpistack-watch: канал $1: $2" >&2
+}
+
+# curl_cfg_escape <text> - a value inside quotes of a curl config line.
+curl_cfg_escape() {
+	local t="$1"
+	t="${t//\\/\\\\}"
+	t="${t//\"/\\\"}"
+	t="${t//$'\n'/ }"
+	printf '%s' "$t"
+}
+
+alert_log() {
+	local sev="$1" msg="$2"
+	logger -t dpistack-watch -p "daemon.$sev" -- "$msg" || channel_error log "logger завершился с ошибкой"
+}
+
+alert_tg() {
+	local msg="$1" token="${SECRETS[ALERT_TG_TOKEN]:-}" chat="${CONF[ALERT_TG_CHAT_ID]:-}"
+	if [[ -z "$token" || -z "$chat" ]]; then
+		channel_error tg "не заданы ALERT_TG_TOKEN или ALERT_TG_CHAT_ID"
+		return 1
+	fi
+	printf 'url = "https://api.telegram.org/bot%s/sendMessage"\ndata-urlencode = "chat_id=%s"\ndata-urlencode = "text=%s"\n' \
+		"$token" "$(curl_cfg_escape "$chat")" "$(curl_cfg_escape "$msg")" |
+		curl -sS --fail --max-time 10 -o /dev/null -K - 2>/dev/null || {
+		channel_error tg "отправка не удалась"
+		return 1
+	}
+}
+
+alert_mail() {
+	local subject="$1" msg="$2" url="${SECRETS[ALERT_SMTP_URL]:-}"
+	local to="${CONF[ALERT_MAIL_TO]:-}" from="${CONF[ALERT_MAIL_FROM]:-}"
+	if [[ -z "$url" || -z "$to" || -z "$from" ]]; then
+		channel_error mail "не заданы ALERT_SMTP_URL, ALERT_MAIL_TO или ALERT_MAIL_FROM"
+		return 1
+	fi
+	local body cfg rcpt rc
+	body=$(mktemp)
+	chmod 0600 "$body"
+	printf 'From: %s\nTo: %s\nSubject: %s\nMIME-Version: 1.0\nContent-Type: text/plain; charset=utf-8\n\n%s\n' \
+		"$from" "$to" "$subject" "$msg" >"$body"
+	cfg=$(printf 'url = "%s"\nmail-from = "%s"\nupload-file = "%s"\n' \
+		"$(curl_cfg_escape "$url")" "$(curl_cfg_escape "$from")" "$body")
+	for rcpt in ${to//,/ }; do
+		cfg+=$'\n'"mail-rcpt = \"$(curl_cfg_escape "$rcpt")\""
+	done
+	printf '%s\n' "$cfg" | curl -sS --fail --max-time 20 -o /dev/null -K - 2>/dev/null
+	rc=$?
+	rm -f "$body"
+	((rc == 0)) || {
+		channel_error mail "отправка не удалась"
+		return 1
+	}
+}
+
+# notify <id> <from> <to> <detail> <kind> <since>
+# kind: change | repeat | recovery. One message per channel.
+notify() {
+	local id="$1" from="$2" to="$3" detail="$4" kind="$5" since="$6" msg sev=warning host
+	host=$(hostname -s 2>/dev/null || echo host)
+	case "$kind" in
+	recovery)
+		msg="[dpistack] $host: $id восстановлено ($from -> $to)"
+		sev=notice
+		;;
+	repeat)
+		msg="[dpistack] $host: $id всё ещё $to: $detail (с $since)"
+		;;
+	*) msg="[dpistack] $host: $id $from -> $to: $detail" ;;
+	esac
+	[[ "$to" == "crit" ]] && sev=err
+
+	if channel_on panel; then
+		jq -nc --arg ts "$(iso "$(now)")" --arg check "$id" --arg from "$from" --arg to "$to" \
+			--arg detail "$detail" --arg kind "$kind" \
+			'{ts: $ts, check: $check, from: $from, to: $to, detail: $detail, kind: $kind}' >>"$(path_events_jsonl)"
+		chmod 0644 "$(path_events_jsonl)"
+	fi
+	channel_on log && alert_log "$sev" "$msg"
+	channel_on tg && { alert_tg "$msg" || true; }
+	channel_on mail && { alert_mail "dpistack: $id $to" "$msg" || true; }
+	return 0
+}
+
+# alert_for <id> <prev-status> <prev-since> <status> <since> <detail>
+# decides whether this run sends something and records the time.
+alert_for() {
+	local id="$1" prev="$2" status="$4" since="$5" detail="$6" key last now_s
+	key="watch.alerted.$id"
+	now_s=$(now)
+	if [[ "$prev" != "$status" ]]; then
+		case "$status" in
+		warn | crit)
+			notify "$id" "${prev:-na}" "$status" "$detail" change "$since"
+			state_write_value "$key" "$now_s"
+			;;
+		ok)
+			if [[ "$prev" == "warn" || "$prev" == "crit" ]]; then
+				notify "$id" "$prev" "$status" "$detail" recovery "$since"
+				state_write_value "$key" 0
+			fi
+			;;
+		esac
+		return 0
+	fi
+	[[ "$status" == "warn" || "$status" == "crit" ]] || return 0
+	local repeat_min="${CONF[WATCH_REPEAT_MIN]}" repeat_sec
+	repeat_sec=$((repeat_min * 60))
+	((repeat_sec > 0)) || return 0
+	last=$(state_read_value "$key")
+	if [[ -z "$last" ]] || ((now_s - last >= repeat_sec)); then
+		notify "$id" "$status" "$status" "$detail" repeat "$since"
+		state_write_value "$key" "$now_s"
+	fi
+}
+
+# write_health - `since` stays while a status is unchanged. Alerts go
+# out on a change and, while the status is not ok, every WATCH_REPEAT_MIN.
 write_health() {
-	local health events prev_status prev_since since overall="ok" worst=0 r ts
+	local health prev_status prev_since since overall="ok" worst=0 r ts
 	ts=$(iso "$(now)")
 	health=$(path_health_json)
-	events=$(path_events_jsonl)
 	mkdir -p "$(dirname "$health")"
 
 	local lines="" id line
@@ -261,14 +395,8 @@ write_health() {
 			since="$prev_since"
 		else
 			since="$ts"
-			# A first sighting that is ok or na is not news.
-			if [[ -n "$prev_status" || ("${C_STATUS[$id]}" != "ok" && "${C_STATUS[$id]}" != "na") ]]; then
-				jq -nc --arg ts "$ts" --arg check "$id" --arg from "${prev_status:-na}" \
-					--arg to "${C_STATUS[$id]}" --arg detail "${C_DETAIL[$id]}" \
-					'{ts: $ts, check: $check, from: $from, to: $to, detail: $detail}' >>"$events"
-				chmod 0644 "$events"
-			fi
 		fi
+		alert_for "$id" "$prev_status" "$prev_since" "${C_STATUS[$id]}" "$since" "${C_DETAIL[$id]}"
 		r=$(rank "${C_STATUS[$id]}")
 		((r > worst)) && worst=$r
 		line=$(jq -nc --arg id "$id" --arg status "${C_STATUS[$id]}" --arg value "${C_VALUE[$id]}" \
@@ -319,6 +447,8 @@ main() {
 	config_reset
 	config_load_defaults
 	[[ -r "$(path_conf)" ]] && config_load_kv_file "$(path_conf)"
+	[[ -r "$(path_secrets)" ]] && config_load_kv_file "$(path_secrets)"
+	IFS=',' read -ra CHANNELS <<<"${CONF[ALERT_CHANNELS]}"
 
 	load_component_states
 	local id

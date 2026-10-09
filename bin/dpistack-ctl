@@ -358,6 +358,8 @@ config_validate_staged() {
 		config_reset
 		config_load_defaults
 		config_load_kv_file "$staged"
+		# Secrets live in their own file; the cross-field checks need them.
+		[[ -r "$(path_secrets)" ]] && config_load_kv_file "$(path_secrets)"
 		config_validate && return 0
 		return 3
 		;;

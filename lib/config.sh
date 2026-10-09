@@ -125,6 +125,31 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
+	local channel
+	local -a channels=()
+	IFS=',' read -ra channels <<<"${CONF[ALERT_CHANNELS]:-}"
+	for channel in "${channels[@]}"; do
+		case "$channel" in
+		panel | log | tg | mail) ;;
+		*)
+			echo "ALERT_CHANNELS: неизвестный канал '$channel' (допустимы panel, log, tg, mail)"
+			errors=$((errors + 1))
+			;;
+		esac
+	done
+	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",tg,"* ]]; then
+		if [[ -z "${SECRETS[ALERT_TG_TOKEN]:-}" || -z "${CONF[ALERT_TG_CHAT_ID]:-}" ]]; then
+			echo "ALERT_CHANNELS содержит tg: нужны ALERT_TG_TOKEN и ALERT_TG_CHAT_ID"
+			errors=$((errors + 1))
+		fi
+	fi
+	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",mail,"* ]]; then
+		if [[ -z "${SECRETS[ALERT_SMTP_URL]:-}" || -z "${CONF[ALERT_MAIL_TO]:-}" || -z "${CONF[ALERT_MAIL_FROM]:-}" ]]; then
+			echo "ALERT_CHANNELS содержит mail: нужны ALERT_SMTP_URL, ALERT_MAIL_TO и ALERT_MAIL_FROM"
+			errors=$((errors + 1))
+		fi
+	fi
+
 	return "$errors"
 }
 

@@ -63,6 +63,7 @@ avail=5000
 echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
 echo "/dev/fake 10000 $((10000 - avail)) $avail 50% $dir"
 FAKE
+	printf '#!/usr/bin/env bash\nexit 0\n' >"$FAKE_BIN/logger"
 	chmod +x "$FAKE_BIN"/*
 	PATH="$FAKE_BIN:$PATH"
 	export PATH
