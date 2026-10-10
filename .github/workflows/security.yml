@@ -65,7 +65,7 @@ jobs:
           output: trivy.sarif
           # A finding fails the job itself; the upload below is best effort.
           exit-code: '1'
-      - uses: github/codeql-action/upload-sarif@9f759ee644a3e7c15c1390abf49868036c00067b # v3
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         # A pull request from a fork has a read-only token: no upload there.
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         # Code scanning needs GitHub Advanced Security on a private repo;
