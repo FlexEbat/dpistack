@@ -7,6 +7,12 @@ setup() {
 	WF="$REPO_DIR/.github/workflows"
 }
 
+# list_actions - the action of every `uses:` key. Anchored at the start of
+# the line: "statuses: write" also contains the text "uses: write".
+list_actions() {
+	sed -nE 's/^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]+([^ ]+).*/\2/p' "$WF"/*.yml
+}
+
 @test "every workflow is valid YAML and sets explicit permissions" {
 	for f in "$WF"/*.yml; do
 		python3 -c "import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); assert 'jobs' in d" "$f"
@@ -20,9 +26,9 @@ setup() {
 }
 
 @test "every third-party action is pinned to a version, not a branch" {
-	run grep -hoE 'uses: [^ ]+' "$WF"/*.yml
+	run list_actions
 	[ "$status" -eq 0 ]
-	while read -r _ action; do
+	while read -r action; do
 		[[ "$action" == *@* ]]
 		[[ "${action##*@}" != "main" && "${action##*@}" != "master" ]]
 	done <<<"$output"
@@ -46,9 +52,9 @@ setup() {
 }
 
 @test "every action is pinned to a full commit SHA, not a movable tag" {
-	run grep -hoE 'uses: [^ ]+' "$WF"/*.yml
+	run list_actions
 	[ "$status" -eq 0 ]
-	while read -r _ action; do
+	while read -r action; do
 		[[ "${action##*@}" =~ ^[0-9a-f]{40}$ ]] || {
 			echo "not pinned by SHA: $action"
 			return 1

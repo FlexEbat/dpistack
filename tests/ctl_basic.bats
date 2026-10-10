@@ -34,7 +34,9 @@ FAKE
 #!/usr/bin/env bash
 echo "journalctl $*" >>"$CALLS"
 if [[ " $* " == *" --follow "* ]]; then
-	while true; do echo "line"; sleep 0.05; done
+	# Stops on a failed write, like the real journalctl; SIGPIPE may be
+	# ignored (CI runners), then the failing echo is the only signal.
+	while echo "line" 2>/dev/null; do sleep 0.05; done
 fi
 FAKE
 	cat >"$FAKE_BIN/suricata" <<'FAKE'
