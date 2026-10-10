@@ -48,15 +48,15 @@ ndpi_build_from_source() {
 	ref=$(ndpi_target_ref)
 
 	if [[ ! -d "$src_dir/.git" ]]; then
-		run git clone "$NDPI_REPO_URL" "$src_dir"
+		run git clone "$NDPI_REPO_URL" "$src_dir" || return 1
 	else
-		run git -C "$src_dir" fetch --tags origin
+		run git -C "$src_dir" fetch --tags origin || return 1
 	fi
 
 	if [[ -n "$ref" ]]; then
-		run git -C "$src_dir" checkout "$ref"
+		run git -C "$src_dir" checkout "$ref" || return 1
 	else
-		run git -C "$src_dir" checkout HEAD
+		run git -C "$src_dir" checkout HEAD || return 1
 	fi
 
 	local resolved_ref
@@ -87,7 +87,7 @@ step_ndpi_apply() {
 
 	case "${CONF[NDPI_SOURCE]:-source}" in
 	pkg)
-		pkg_install "$NDPI_PACKAGE"
+		pkg_install "$NDPI_PACKAGE" || return 1
 		;;
 	source)
 		ndpi_build_from_source

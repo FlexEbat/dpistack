@@ -27,7 +27,7 @@ state_write_value() {
 		awk -F= -v k="$key" '$1 != k' "$f" >"$tmp" || true
 	fi
 	echo "${key}=${value}" >>"$tmp"
-	atomic_write "$f" <"$tmp"
+	atomic_write "$f" 0600 <"$tmp"
 	rm -f "$tmp"
 	exec {lock_fd}>&-
 }

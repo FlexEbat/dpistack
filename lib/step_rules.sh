@@ -128,7 +128,7 @@ step_rules_check() {
 
 step_rules_apply() {
 	if ! command -v suricata-update >/dev/null 2>&1; then
-		pkg_install suricata-update
+		pkg_install suricata-update || return 1
 	fi
 
 	rules_register_sources
@@ -150,8 +150,8 @@ step_rules_apply() {
 
 	if [[ "${CONF[RULES_UPDATE]:-on}" == "on" ]]; then
 		rules_write_timer_unit
-		run systemctl daemon-reload
-		run systemctl enable --now "$RULES_TIMER"
+		run systemctl daemon-reload || return 1
+		run systemctl enable --now "$RULES_TIMER" || return 1
 	else
 		rules_remove_timer_unit
 	fi

@@ -143,8 +143,7 @@ menu_draft_save() {
 		for key in $(printf '%s\n' "${!CONF[@]}" | sort); do
 			printf '%s=%s\n' "$key" "${CONF[$key]}"
 		done
-	} | atomic_write "$(path_conf_draft)"
-	chmod 0600 "$(path_conf_draft)"
+	} | atomic_write "$(path_conf_draft)" 0600
 }
 
 menu_draft_delete() { rm -f "$(path_conf_draft)"; }

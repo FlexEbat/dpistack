@@ -64,9 +64,9 @@ access_ensure_selfsigned_cert() {
 	cert=$(access_tls_cert_path "$name")
 	key=$(access_tls_key_path "$name")
 	[[ -f "$cert" && -f "$key" ]] && return 0
-	run mkdir -p "$(access_tls_dir)"
+	run mkdir -p "$(access_tls_dir)" || return 1
 	run openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
-		-keyout "$key" -out "$cert" -subj "/CN=dpistack-${name}"
+		-keyout "$key" -out "$cert" -subj "/CN=dpistack-${name}" || return 1
 }
 
 access_render_nginx_full() {
@@ -104,11 +104,11 @@ access_firewall_apply() {
 	local port
 	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
 		for port in "${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}"; do
-			run ufw allow from "$cidr" to any port "$port" proto tcp
+			run ufw allow from "$cidr" to any port "$port" proto tcp || return 1
 		done
 	elif [[ "${CONF[ACCESS_MODE]:-localhost}" == "lan" ]]; then
 		for port in "${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}"; do
-			run ufw allow from "$cidr" to any port "$port" proto tcp
+			run ufw allow from "$cidr" to any port "$port" proto tcp || return 1
 		done
 	fi
 }
@@ -149,7 +149,7 @@ step_access_apply() {
 		if [[ "${CONF[NGINX_TLS]:-none}" == "selfsigned" ]]; then
 			local name
 			for name in ntopng evebox panel; do
-				access_ensure_selfsigned_cert "$name"
+				access_ensure_selfsigned_cert "$name" || return 1
 			done
 		fi
 
@@ -157,14 +157,14 @@ step_access_apply() {
 		rendered=$(access_render_nginx_full)
 
 		if [[ "${CONF[NGINX_MANAGE]:-snippet}" == "yes" ]]; then
-			command -v nginx >/dev/null 2>&1 || pkg_install nginx
+			command -v nginx >/dev/null 2>&1 || pkg_install nginx || return 1
 			write_rendered_file "$(path_nginx_confd)" "$rendered"
 			if ! access_nginx_test_ok; then
 				echo "access: nginx -t упал на отрендеренном конфиге, изменения не применены" >&2
 				return 1
 			fi
-			run systemctl enable --now "$NGINX_UNIT"
-			run systemctl reload "$NGINX_UNIT"
+			run systemctl enable --now "$NGINX_UNIT" || return 1
+			run systemctl reload "$NGINX_UNIT" || return 1
 		else
 			# snippet: never touches the system nginx.conf or reloads
 			# nginx (criterion 3) - just leaves the file for the owner.
@@ -174,7 +174,7 @@ step_access_apply() {
 		fi
 	fi
 
-	access_firewall_apply
+	access_firewall_apply || return 1
 
 	state_write_value "step.access.status" "done"
 	return 0

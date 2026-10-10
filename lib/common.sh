@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack-ctl version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack-ctl
-DPISTACK_VERSION="0.3.1"
+DPISTACK_VERSION="0.3.2"
 
 : "${DRY_RUN:=0}"
 
@@ -69,40 +69,54 @@ lock_acquire() {
 }
 
 atomic_write() {
-	# atomic_write <target-path> < content-on-stdin
-	local target="$1"
+	# atomic_write <target-path> [mode] < content-on-stdin
+	# mktemp makes the temp file 0600, and the rename would hand that mode
+	# to the target: a rendered evebox.yaml became unreadable for the
+	# evebox user. An explicit mode wins (secrets pass it so they are
+	# never wider than intended, even for a moment); otherwise an existing
+	# target keeps its mode and owner and a new file gets 0644.
+	local target="$1" mode="${2:-}"
 	local dir
 	dir=$(dirname "$target")
 	mkdir -p "$dir"
 	local tmp
 	tmp=$(mktemp "${dir}/.tmp.XXXXXX")
+	local ok=0
+	if [[ -n "$mode" ]]; then
+		chmod "$mode" "$tmp" || ok=1
+	elif [[ -e "$target" ]]; then
+		chmod --reference="$target" "$tmp" || ok=1
+		chown --reference="$target" "$tmp" 2>/dev/null || true
+	else
+		chmod 0644 "$tmp" || ok=1
+	fi
 	# A failed write (disk full) must not replace the target with a
 	# truncated file.
-	if ! cat >"$tmp" || ! mv -f "$tmp" "$target"; then
+	if ((ok != 0)) || ! cat >"$tmp" || ! mv -f "$tmp" "$target"; then
 		rm -f "$tmp"
 		return 1
 	fi
 }
 
-# dry_run_write <path> - atomic_write that also honours --dry-run,
+# dry_run_write <path> [mode] - atomic_write that also honours --dry-run,
 # printing "+ render <path>" instead of writing (5.6).
 dry_run_write() {
-	local path="$1"
+	local path="$1" mode="${2:-}"
 	if [[ "${DRY_RUN:-0}" == "1" ]]; then
 		printf '+ render %s\n' "$path"
 		cat >/dev/null
 		return 0
 	fi
-	atomic_write "$path"
+	atomic_write "$path" "$mode"
 }
 
-# write_rendered_file <path> <content>
+# write_rendered_file <path> <content> [mode]
 # Any step that renders a config file uses this, not atomic_write
 # directly, so the 5.4 manual-edit guard is applied uniformly: a file
 # that was hand-edited since our last render is left alone with a
 # notice unless --force is given (which backs it up first).
 write_rendered_file() {
-	local path="$1" content="$2"
+	local path="$1" content="$2" mode="${3:-}"
 	local new_hash
 	new_hash=$(printf '%s\n' "$content" | state_hash_content)
 
@@ -120,7 +134,7 @@ write_rendered_file() {
 		[[ "${FORCE:-0}" == "1" ]] && backup "$path"
 	fi
 
-	printf '%s\n' "$content" | dry_run_write "$path"
+	printf '%s\n' "$content" | dry_run_write "$path" "$mode"
 	state_set_file_hash "$path" "$new_hash"
 }
 
@@ -159,8 +173,7 @@ panel_auth_write() {
 	hash=$(printf '%s' "$plaintext" | argon2 "$salt" -id -t 3 -m 16 -p 4 -l 32 -e) || return 1
 	# shellcheck disable=SC2016 # literal PHC prefix, not an expansion
 	[[ "$hash" == '$argon2id$'* ]] || return 1
-	printf '%s\n' "$hash" | atomic_write "$(path_panel_auth)"
-	chmod 0640 "$(path_panel_auth)"
+	printf '%s\n' "$hash" | atomic_write "$(path_panel_auth)" 0640 || return 1
 	if getent group dpistack >/dev/null 2>&1; then
 		chown root:dpistack "$(path_panel_auth)" || return 1
 	fi

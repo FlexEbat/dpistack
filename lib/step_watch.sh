@@ -51,7 +51,7 @@ step_watch_apply() {
 		return 0
 	fi
 
-	command -v jq >/dev/null 2>&1 || pkg_install jq
+	command -v jq >/dev/null 2>&1 || pkg_install jq || return 1
 	write_rendered_file "$(path_watch_service_unit)" "$(watch_render_service)"
 	write_rendered_file "$(path_watch_timer_unit)" "$(watch_render_timer)"
 	run systemctl daemon-reload || return 1
