@@ -19,7 +19,7 @@ ndpi_pkg_installed_version() {
 }
 
 ndpi_source_lib_present() {
-	[[ -f "${DPISTACK_ROOT}/usr/local/lib/libndpi.so" || -f "${DPISTACK_ROOT}/usr/local/lib/libndpi.a" ]]
+	[[ -f "$(path_ndpi_lib_dir)/libndpi.so" || -f "$(path_ndpi_lib_dir)/libndpi.a" ]]
 }
 
 step_ndpi_check() {

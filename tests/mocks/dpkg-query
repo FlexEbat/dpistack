@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Mock for bats tests (tech.md 11): reports every package as installed at 1.0,
+# so checks do not depend on what the host has installed.
+if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
+	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+fi
+printf 1.0

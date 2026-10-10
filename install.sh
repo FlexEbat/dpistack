@@ -5,7 +5,8 @@
 # an all-stub step pipeline; components fill in their steps later.
 set -uo pipefail
 
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+# readlink -f: `dpistack` is a symlink to the installed install.sh.
+SCRIPT_DIR=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" &>/dev/null && pwd)
 LIB_DIR="$SCRIPT_DIR/lib"
 
 # shellcheck source=lib/paths.sh
@@ -47,10 +48,12 @@ CLI_NO_COLOR=0
 COMMAND=""
 
 usage() {
+	echo "dpistack v${DPISTACK_VERSION}"
 	cat <<'EOF'
 Использование: install.sh <команда> [опции]
 
 команды:  install | reconfigure | upgrade | uninstall | status | test | logs
+dpistack без команды открывает меню: установки, если конфига нет, иначе управления.
 опции:
   --config FILE          путь к dpistack.conf (по умолчанию /etc/dpistack/dpistack.conf)
   --set KEY=VALUE        переопределить ключ, можно повторять
@@ -197,6 +200,8 @@ maybe_run_reconfigure_menu() {
 	fi
 	MENU_SHOW_ADVANCED=$([[ "$ADVANCED" == "1" ]] && echo 1 || echo 0)
 	menu_run_reconfigure
+	# "Назад" from the management menu: nothing to apply.
+	[[ $? -eq 20 ]] && exit 0
 }
 
 validate_or_die() {
@@ -272,6 +277,7 @@ cmd_install() {
 
 	if [[ "$DRY_RUN" != "1" ]]; then
 		config_write_conf "$(path_conf)"
+		config_snapshot_applied
 		config_write_secrets "$(path_secrets)"
 	fi
 
@@ -290,6 +296,7 @@ cmd_install() {
 	if [[ "$pending" -ne 0 ]]; then
 		run_apply
 	fi
+	verify_final_report
 	echo "установка завершена"
 	return 0
 }
@@ -352,6 +359,7 @@ cmd_reconfigure() {
 
 	panel_password_apply
 	config_write_conf "$(path_conf)"
+	config_snapshot_applied
 	config_write_secrets "$(path_secrets)"
 
 	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
@@ -440,8 +448,17 @@ cmd_uninstall() {
 		echo "uninstall --purge: конфиги и данные компонентов удалены (пакеты не трогал)"
 	fi
 
-	rm -f "$(path_conf)" "$(path_conf_draft)" "$(path_secrets)"
+	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
+	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_sudoers)"
+	run systemctl daemon-reload
+
+	rm -f "$(path_conf)" "$(path_conf_draft)" "$(path_secrets)" "$(path_panel_auth)"
+	rmdir "$(dirname "$(path_conf)")" 2>/dev/null || true
 	rm -rf "$(path_state_dir)"
+
+	# Last, because `dpistack uninstall` runs from the copy it removes.
+	rm -f "$(path_dpistack_bin)" "$(path_ctl_bin)" "$(path_watch_bin)"
+	rm -rf "$(path_installer_copy_dir)"
 
 	echo "готово"
 	return 0
@@ -460,7 +477,33 @@ cmd_status() {
 	done
 }
 
+# exec_ctl <args...> - `dpistack status|test|logs` are thin wrappers:
+# same arguments, output and exit code as dpistack-ctl (5.2).
+exec_ctl() {
+	local ctl
+	ctl=$(manage_ctl) || {
+		echo "dpistack-ctl не найден" >&2
+		exit 1
+	}
+	exec "$ctl" "$@"
+}
+
 main() {
+	if [[ "$BIN_NAME" == "dpistack" ]]; then
+		case "${1:-}" in
+		status | test | logs) exec_ctl "$@" ;;
+		esac
+	fi
+	# No command: the menu that fits the state. Without a terminal or
+	# DPISTACK_INPUT parse_args prints the usage as before.
+	if [[ $# -eq 0 ]] && have_input_source; then
+		if [[ "$BIN_NAME" == "dpistack" && -f "$(path_conf)" ]]; then
+			os_detect
+			menu_run_manage
+			exit 0
+		fi
+		set -- install
+	fi
 	parse_args "$@"
 	case "$COMMAND" in
 	install)

@@ -202,3 +202,35 @@ run_menu() {
 	rm -f "$f"
 	[[ "$output" != *$'\033['* ]]
 }
+
+@test "every menu screen header shows the program version, same as dpistack-ctl version" {
+	ver="$("$REPO_DIR/bin/dpistack-ctl" version)"
+	[[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+	run_menu "q\ny\n"
+	[[ "$output" == *"dpistack v$ver"* ]]
+
+	run bash "$REPO_DIR/install.sh" install -y \
+		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	[ "$status" -eq 0 ]
+
+	f="$(mktemp)"
+	printf 'q\n' >"$f"
+	run env DPISTACK_INPUT="$f" bash "$REPO_DIR/install.sh" reconfigure \
+		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	rm -f "$f"
+	[[ "$output" == *"dpistack v$ver | Настройка существующей установки"* ]]
+
+	f="$(mktemp)"
+	printf '4\n' >"$f"
+	run env DPISTACK_INPUT="$f" bash "$REPO_DIR/install.sh" install \
+		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	rm -f "$f"
+	[[ "$output" == *"dpistack v$ver | Найдена установка"* ]]
+}
+
+@test "usage prints the version on the first line" {
+	run bash "$REPO_DIR/install.sh" install --help
+	[ "$status" -eq 0 ]
+	[[ "${lines[0]}" == "dpistack v"* ]]
+}

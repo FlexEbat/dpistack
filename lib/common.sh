@@ -2,8 +2,12 @@
 # Shared primitives every step and lib file uses instead of calling
 # system commands or writing files directly (tech.md section 3, 5.6).
 
+# Single source of the program version; the menu header, usage and
+# dpistack-ctl version all print it.
+# shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack-ctl
+DPISTACK_VERSION="0.3.1"
+
 : "${DRY_RUN:=0}"
-: "${DPISTACK_LOCK_FD:=200}"
 
 log() {
 	# log <level> <message>
@@ -37,8 +41,11 @@ run() {
 		return 0
 	fi
 	log "RUN" "$*"
-	if ! "$@"; then
-		local rc=$?
+	# The status is read straight after the command: inside `if ! cmd`
+	# $? is the negated result, so a failing command used to look like 0.
+	"$@"
+	local rc=$?
+	if ((rc != 0)); then
 		log "ERROR" "command failed (rc=$rc): $*"
 		return "$rc"
 	fi
@@ -52,8 +59,11 @@ lock_acquire() {
 	local lock_file
 	lock_file=$(path_lock_file)
 	mkdir -p "$(dirname "$lock_file")" 2>/dev/null || true
-	eval "exec ${DPISTACK_LOCK_FD}>\"$lock_file\""
-	if ! flock -n "$DPISTACK_LOCK_FD"; then
+	# {fd} picks a free descriptor; no eval, so odd characters in the
+	# path cannot become code.
+	local fd
+	exec {fd}>"$lock_file"
+	if ! flock -n "$fd"; then
 		die 1 "another dpistack instance is running (lock: $lock_file)"
 	fi
 }
@@ -66,8 +76,12 @@ atomic_write() {
 	mkdir -p "$dir"
 	local tmp
 	tmp=$(mktemp "${dir}/.tmp.XXXXXX")
-	cat >"$tmp"
-	mv -f "$tmp" "$target"
+	# A failed write (disk full) must not replace the target with a
+	# truncated file.
+	if ! cat >"$tmp" || ! mv -f "$tmp" "$target"; then
+		rm -f "$tmp"
+		return 1
+	fi
 }
 
 # dry_run_write <path> - atomic_write that also honours --dry-run,
@@ -121,5 +135,46 @@ backup() {
 	mkdir -p "$backups_dir"
 	local ts
 	ts=$(date -u +"%Y%m%dT%H%M%SZ")
-	cp -p "$src" "${backups_dir}/$(basename "$src").${ts}"
+	local dest n=1
+	dest="${backups_dir}/$(basename "$src").${ts}"
+	# Two backups in one second must not collide: config-revert takes
+	# the newest by `sort -V`, so a counter suffix keeps the order.
+	while [[ -e "$dest" ]]; do
+		dest="${backups_dir}/$(basename "$src").${ts}.${n}"
+		n=$((n + 1))
+	done
+	cp -p "$src" "$dest"
+}
+
+# panel_auth_write <plaintext> - writes an argon2id hash (PHC string,
+# the format golang.org/x/crypto/argon2 users parse) into panel.auth.
+# The password goes to argon2 on stdin, never as an argument.
+# 0640 root:dpistack (4.2); before the panel step creates the user the
+# group is missing, and step_panel_apply fixes the group afterwards.
+panel_auth_write() {
+	local plaintext="$1"
+	command -v argon2 >/dev/null 2>&1 || return 2
+	local salt hash
+	salt=$(head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
+	hash=$(printf '%s' "$plaintext" | argon2 "$salt" -id -t 3 -m 16 -p 4 -l 32 -e) || return 1
+	# shellcheck disable=SC2016 # literal PHC prefix, not an expansion
+	[[ "$hash" == '$argon2id$'* ]] || return 1
+	printf '%s\n' "$hash" | atomic_write "$(path_panel_auth)"
+	chmod 0640 "$(path_panel_auth)"
+	if getent group dpistack >/dev/null 2>&1; then
+		chown root:dpistack "$(path_panel_auth)" || return 1
+	fi
+	return 0
+}
+
+# conf_get <KEY> <default> - reads one key straight from dpistack.conf.
+# The helper stays independent of the installer's schema loader.
+conf_get() {
+	local key="$1" default="$2" value=""
+	local file
+	file=$(path_conf)
+	[[ -r "$file" ]] && value=$(grep -m1 "^${key}=" "$file" | cut -d= -f2-)
+	value="${value%\"}"
+	value="${value#\"}"
+	echo "${value:-$default}"
 }

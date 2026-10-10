@@ -20,6 +20,11 @@ if ! LANG=C.utf8 LC_ALL=C.utf8 shellcheck -x install.sh lib/*.sh bin/dpistack-ct
 	status=1
 fi
 
+echo "== security =="
+if ! bash scripts/security.sh; then
+	status=1
+fi
+
 echo "== bats =="
 if ! bats tests; then
 	status=1

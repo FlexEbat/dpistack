@@ -1,17 +1,771 @@
 #!/usr/bin/env bash
 # Privileged helper invoked by the panel and watchdog via `sudo -n`
-# (tech.md 4.5). Slice 1 only scaffolds the entry point so gate.sh has
-# a real file to lint; each command in the 4.5 table ships with the
-# slice that owns the component it controls.
+# (tech.md 4.5). Slices 10-13 implement everything except mode and
+# mode-confirm, which ship with the slices that own them.
+#
+# Exit codes: 0 ok, 1 error, 2 usage, 3 check failed, 4 component
+# absent, 5 name outside the allowed list.
 set -uo pipefail
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+# Repo checkout: bin/../lib. Installed copy: /usr/local/sbin/../lib/dpistack/installer/lib.
+for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
+	if [[ -r "$_lib/paths.sh" && -r "$_lib/common.sh" ]]; then
+		# shellcheck source=lib/paths.sh
+		source "$_lib/paths.sh"
+		# shellcheck source=lib/common.sh
+		source "$_lib/common.sh"
+		# shellcheck source=lib/state.sh
+		source "$_lib/state.sh"
+		# shellcheck source=lib/schema.sh
+		source "$_lib/schema.sh"
+		# shellcheck source=lib/config.sh
+		source "$_lib/config.sh"
+		# shellcheck source=lib/render.sh
+		source "$_lib/render.sh"
+		# shellcheck source=lib/step_rules.sh
+		source "$_lib/step_rules.sh"
+		# shellcheck source=lib/step_verify.sh
+		source "$_lib/step_verify.sh"
+		INSTALLER="$_lib/../install.sh"
+		break
+	fi
+done
+unset _lib
+if ! declare -F path_conf >/dev/null; then
+	echo "dpistack-ctl: не найден lib/paths.sh" >&2
+	exit 1
+fi
+
+COMPONENTS=(suricata evebox ntopng redis victoriametrics prometheus panel watch rules)
+LOGS_MAX=1000
+LOGS_DEFAULT=100
+
+# Commands of the 4.5 table that later slices implement.
+PLANNED_COMMANDS=(mode mode-confirm)
+
+RULES_SEARCH_MAX=50
+
 usage() {
-	cat <<'EOF'
+	cat <<'USAGE'
 Использование: dpistack-ctl <команда> [аргументы]
 
-Команды появляются по мере реализации соответствующих компонентов
-(tech.md 4.5). Сейчас ни одна ещё не реализована.
-EOF
+  status [--json]                    состояние компонентов
+  start|stop|restart <id>            управление компонентом
+  reload suricata                    перечитать правила без остановки
+  logs <id> [-n N] [--follow]        журнал компонента, N до 1000
+  config-read <имя>                  печатает текущий файл
+  config-write <имя> [--apply]       новое содержимое со stdin
+  config-revert <имя>                возвращает последний бэкап
+  reconfigure [--dry-run]            применяет текущий dpistack.conf
+  rules-update                       обновить правила с откатом при ошибке
+  rules-sources list|enable|disable|add-url|remove [арг]
+  rules-group enable|disable <группа>
+  rules-sid enable|disable <sid>
+  rules-search <запрос>              до 50 правил по sid или msg
+  iface list|add|remove [имя]        интерфейсы захвата
+  panel-passwd                       пароль панели со stdin
+  test bittorrent|https|all [--json] проверочные тесты (раздел 10)
+  health [--json]                    один прогон watchdog
+  version                            версия набора
+
+Имена конфигов: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
+                enable.conf disable.conf modify.conf drop.conf
+
+Компоненты: suricata evebox ntopng redis victoriametrics prometheus panel watch rules
+USAGE
+}
+
+fail() {
+	# fail <code> <message>
+	local code="$1"
+	shift
+	echo "dpistack-ctl: $*" >&2
+	exit "$code"
+}
+
+in_list() {
+	# in_list <item> <list...>
+	local item="$1" x
+	shift
+	for x in "$@"; do
+		[[ "$x" == "$item" ]] && return 0
+	done
+	return 1
+}
+
+# Unit load state is the only portable "is it installed" test that
+# also covers units for source builds, which have no package.
+unit_loaded() {
+	local state
+	state=$(systemctl show -p LoadState --value "$1" 2>/dev/null)
+	[[ -n "$state" && "$state" != "not-found" ]]
+}
+
+# component_unit <id> - prints the unit that controls the component.
+component_unit() {
+	case "$1" in
+	suricata) echo "suricata.service" ;;
+	evebox) echo "evebox.service" ;;
+	ntopng) echo "ntopng.service" ;;
+	redis)
+		# redis.service on rpm, redis-server.service on deb.
+		if unit_loaded "redis-server.service"; then
+			echo "redis-server.service"
+		else
+			echo "redis.service"
+		fi
+		;;
+	victoriametrics) echo "dpistack-vm.service" ;;
+	prometheus) echo "prometheus.service" ;;
+	panel) echo "dpistack-panel.service" ;;
+	watch) echo "dpistack-watch.timer" ;;
+	rules) echo "dpistack-rules.timer" ;;
+	esac
+}
+
+# component_listed <id> - backend components exist only when selected.
+component_listed() {
+	case "$1" in
+	victoriametrics | prometheus)
+		[[ "$(conf_get METRICS_BACKEND none)" == "$1" ]]
+		;;
+	*) return 0 ;;
+	esac
+}
+
+component_runtime() {
+	case "$1" in
+	suricata) conf_get SURICATA_RUNTIME native ;;
+	evebox) conf_get EVEBOX_RUNTIME native ;;
+	ntopng | redis) conf_get NTOPNG_RUNTIME native ;;
+	victoriametrics | prometheus) conf_get METRICS_BACKEND_RUNTIME native ;;
+	*) echo native ;;
+	esac
+}
+
+component_version() {
+	local pkg=""
+	case "$1" in
+	suricata) pkg="suricata" ;;
+	evebox) pkg="evebox" ;;
+	ntopng) pkg="ntopng" ;;
+	redis) pkg="redis-server" ;;
+	*) return 0 ;;
+	esac
+	local v
+	v=$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null)
+	if [[ -z "$v" && "$1" == "suricata" ]] && command -v suricata >/dev/null 2>&1; then
+		# Source builds have no package; the binary reports its version.
+		v=$(suricata -V 2>/dev/null | sed -n 's/.*version \([0-9][^ ]*\).*/\1/p' | head -1)
+	fi
+	echo "$v"
+}
+
+component_state() {
+	# component_state <unit> -> active|inactive|failed|absent
+	local unit="$1"
+	if ! unit_loaded "$unit"; then
+		echo absent
+		return
+	fi
+	local s
+	s=$(systemctl is-active "$unit" 2>/dev/null)
+	case "$s" in
+	active | failed) echo "$s" ;;
+	*) echo inactive ;;
+	esac
+}
+
+json_escape() {
+	local s="$1"
+	s="${s//\\/\\\\}"
+	s="${s//\"/\\\"}"
+	printf '%s' "$s"
+}
+
+cmd_status() {
+	local json=0
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "status: неизвестный аргумент" ;;
+	esac
+	[[ $# -le 1 ]] || fail 2 "status: лишние аргументы"
+
+	local plugin=absent
+	[[ -e "$(path_suricata_ndpi_plugin)" ]] && plugin=loaded
+
+	local id unit runtime state enabled version first=1
+	((json)) && printf '{"components":['
+	for id in "${COMPONENTS[@]}"; do
+		component_listed "$id" || continue
+		unit=$(component_unit "$id")
+		runtime=$(component_runtime "$id")
+		state=$(component_state "$unit")
+		if [[ "$state" == "absent" ]]; then
+			enabled=false
+		elif systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+			enabled=true
+		else
+			enabled=false
+		fi
+		version=$(component_version "$id")
+		if ((json)); then
+			((first)) || printf ','
+			first=0
+			printf '{"id":"%s","runtime":"%s","state":"%s","enabled":%s,"version":"%s"}' \
+				"$id" "$runtime" "$state" "$enabled" "$(json_escape "$version")"
+		else
+			printf '%-16s %-7s %-9s enabled=%-5s %s\n' "$id" "$runtime" "$state" "$enabled" "$version"
+		fi
+	done
+	if ((json)); then
+		printf '],"ndpi_plugin":"%s"}\n' "$plugin"
+	else
+		echo "ndpi_plugin      $plugin"
+	fi
+}
+
+# resolve_component <id> - validates the id (5) and presence (4), then
+# prints the unit. Runtime other than native is not supported yet:
+# the schema rejects docker until slice 27.
+resolve_component() {
+	local id="$1"
+	in_list "$id" "${COMPONENTS[@]}" || fail 5 "неизвестный компонент: $id"
+	component_listed "$id" || fail 4 "компонент не установлен: $id"
+	local unit
+	unit=$(component_unit "$id")
+	[[ "$(component_state "$unit")" != "absent" ]] || fail 4 "компонент не установлен: $id"
+	echo "$unit"
+}
+
+cmd_control() {
+	local verb="$1"
+	shift
+	[[ $# -eq 1 ]] || fail 2 "$verb: нужен ровно один <id>"
+	local unit
+	unit=$(resolve_component "$1") || exit $?
+	systemctl "$verb" "$unit" || fail 1 "$verb $1: systemctl завершился с ошибкой"
+}
+
+cmd_reload() {
+	[[ $# -eq 1 ]] || fail 2 "reload: нужен аргумент suricata"
+	[[ "$1" == "suricata" ]] || fail 5 "reload: поддерживается только suricata"
+	resolve_component suricata >/dev/null || exit $?
+	suricatasc -c ruleset-reload-nonblocking "$(path_suricata_socket)" ||
+		fail 1 "reload suricata: suricatasc завершился с ошибкой"
+}
+
+cmd_logs() {
+	[[ $# -ge 1 ]] || fail 2 "logs: нужен <id>"
+	local id="$1"
+	shift
+	local n="$LOGS_DEFAULT" follow=0
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		-n)
+			[[ $# -ge 2 ]] || fail 2 "logs: после -n нужно число"
+			n="$2"
+			shift 2
+			;;
+		--follow)
+			follow=1
+			shift
+			;;
+		*) fail 2 "logs: неизвестный аргумент: $1" ;;
+		esac
+	done
+	[[ "$n" =~ ^[0-9]{1,6}$ ]] || fail 2 "logs: N должно быть числом"
+	# 10#: a leading zero is not octal ("08" is eight, "01750" is 1750).
+	n=$((10#$n))
+	((n >= 1 && n <= LOGS_MAX)) || fail 2 "logs: N от 1 до $LOGS_MAX"
+
+	local unit
+	unit=$(resolve_component "$id") || exit $?
+	if ((follow)); then
+		# No pipe trap: journalctl dies of SIGPIPE when the reader closes.
+		journalctl -u "$unit" -n "$n" --no-pager --follow
+	else
+		journalctl -u "$unit" -n "$n" --no-pager
+	fi
+}
+
+# ---------------------------------------------------------------- config
+
+# config_path <name> - prints the file behind a name from the 4.5 list.
+config_path() {
+	case "$1" in
+	suricata.yaml) path_suricata_yaml ;;
+	evebox.yaml) path_evebox_yaml ;;
+	ntopng.conf) path_ntopng_conf ;;
+	dpistack.conf) path_conf ;;
+	local.rules) path_suricata_local_rules ;;
+	enable.conf) path_suricata_enable_conf ;;
+	disable.conf) path_suricata_disable_conf ;;
+	modify.conf) path_suricata_modify_conf ;;
+	drop.conf) path_suricata_drop_conf ;;
+	*) return 1 ;;
+	esac
+}
+
+# ctl_lock / ctl_unlock - the installer's own lock, so a config file is
+# never replaced while `install.sh` renders from it. Waits up to 30 s;
+# it must not be held while the installer is started (reconfigure).
+ctl_lock() {
+	local lock_file
+	lock_file=$(path_lock_file)
+	mkdir -p "$(dirname "$lock_file")"
+	exec {CTL_LOCK_FD}>"$lock_file"
+	if ! flock -w 30 "$CTL_LOCK_FD"; then
+		fail 1 "установщик занят (блокировка $lock_file), повторите позже"
+	fi
+}
+
+ctl_unlock() {
+	exec {CTL_LOCK_FD}>&-
+}
+
+# config_commit <name> <staged-file> - backup, then atomic replace.
+# Deliberately leaves the render hash in state alone: a file changed
+# here counts as edited by hand, so the installer will not overwrite
+# it without --force (5.4).
+config_commit() {
+	local name="$1" staged="$2" path mode
+	path=$(config_path "$name")
+	ctl_lock
+	mode=$(stat -c %a "$path" 2>/dev/null || echo 644)
+	backup "$path"
+	atomic_write "$path" <"$staged"
+	chmod "$mode" "$path"
+	ctl_unlock
+}
+
+# suricata_check_set <name> <staged-file>
+# `suricata -T` on a temporary copy of the set: the live ruleset plus
+# the candidate local.rules, with the candidate suricata.yaml when that
+# is what changes. Nothing outside the temp dir is touched.
+suricata_check_set() {
+	local name="$1" staged="$2" tmp yaml rc
+	command -v suricata >/dev/null 2>&1 || {
+		echo "suricata не установлен" >&2
+		return 4
+	}
+	tmp=$(mktemp -d)
+	mkdir -p "$tmp/rules"
+	if [[ -f "$(path_suricata_ruleset)" ]]; then
+		cp "$(path_suricata_ruleset)" "$tmp/rules/suricata.rules"
+	else
+		: >"$tmp/rules/suricata.rules"
+	fi
+	[[ "$name" == "local.rules" ]] && cat "$staged" >>"$tmp/rules/suricata.rules"
+	yaml="$(path_suricata_yaml)"
+	[[ "$name" == "suricata.yaml" ]] && yaml="$staged"
+	sed "s#^default-rule-path:.*#default-rule-path: $tmp/rules#" "$yaml" >"$tmp/suricata.yaml" 2>/dev/null
+	suricata -T -c "$tmp/suricata.yaml" -l "$tmp" 2>&1
+	rc=$?
+	rm -rf "$tmp"
+	((rc == 0)) || return 3
+	return 0
+}
+
+# config_validate_staged <name> <staged-file> - output on stdout,
+# returns 0 ok, 3 check failed, 4 component absent.
+config_validate_staged() {
+	local name="$1" staged="$2"
+	case "$name" in
+	dpistack.conf)
+		# Secrets live in secrets.conf; in dpistack.conf (0644) they would
+		# be readable by everyone.
+		local line key
+		while IFS= read -r line || [[ -n "$line" ]]; do
+			key="${line%%=*}"
+			if [[ "$line" == *=* && "$line" != \#* ]] && schema_is_secret "$key" 2>/dev/null; then
+				echo "$key: секрет хранится в secrets.conf, через config-write его менять нельзя"
+				return 3
+			fi
+		done <"$staged"
+		# Schema and cross-field checks of 4.3.
+		config_reset
+		config_load_defaults
+		config_load_kv_file "$staged"
+		# Secrets live in their own file; the cross-field checks need them.
+		[[ -r "$(path_secrets)" ]] && config_load_kv_file "$(path_secrets)"
+		config_validate && return 0
+		return 3
+		;;
+	evebox.yaml | ntopng.conf)
+		# A8: neither component has a config-test mode we can rely on,
+		# so the only check is that the file is not empty.
+		[[ -s "$staged" ]] && return 0
+		echo "$name: файл пустой"
+		return 3
+		;;
+	*) suricata_check_set "$name" "$staged" ;;
+	esac
+}
+
+cmd_config_read() {
+	[[ $# -eq 1 ]] || fail 2 "config-read: нужно имя файла"
+	local path
+	path=$(config_path "$1") || fail 5 "неизвестное имя файла: $1"
+	[[ -f "$path" ]] || fail 4 "файл отсутствует: $1"
+	cat "$path"
+}
+
+# apply_config <name> - reloads whatever reads the file.
+apply_config() {
+	case "$1" in
+	dpistack.conf) cmd_reconfigure ;;
+	suricata.yaml)
+		resolve_component suricata >/dev/null || exit $?
+		systemctl restart suricata.service || fail 1 "restart suricata не удался"
+		;;
+	evebox.yaml)
+		resolve_component evebox >/dev/null || exit $?
+		systemctl restart evebox.service || fail 1 "restart evebox не удался"
+		;;
+	ntopng.conf)
+		resolve_component ntopng >/dev/null || exit $?
+		systemctl restart ntopng.service || fail 1 "restart ntopng не удался"
+		;;
+	*) cmd_rules_update ;;
+	esac
+}
+
+cmd_config_write() {
+	[[ $# -ge 1 && $# -le 2 ]] || fail 2 "config-write: <имя> [--apply]"
+	local name="$1" apply=0
+	config_path "$name" >/dev/null || fail 5 "неизвестное имя файла: $name"
+	if [[ $# -eq 2 ]]; then
+		[[ "$2" == "--apply" ]] || fail 2 "config-write: неизвестный аргумент: $2"
+		apply=1
+	fi
+
+	local staging staged out rc
+	staging=$(path_staging_dir)
+	mkdir -p "$staging"
+	chmod 0700 "$staging"
+	staged="$staging/$name"
+	(umask 077 && cat >"$staged")
+
+	out=$(config_validate_staged "$name" "$staged")
+	rc=$?
+	if ((rc != 0)); then
+		rm -f "$staged"
+		[[ -n "$out" ]] && echo "$out"
+		((rc == 4)) && fail 4 "компонент отсутствует"
+		fail 3 "$name: проверка не пройдена, файл не изменён"
+	fi
+
+	config_commit "$name" "$staged"
+	rm -f "$staged"
+	if ((apply)); then
+		apply_config "$name" || return $?
+	fi
+	return 0
+}
+
+cmd_config_revert() {
+	[[ $# -eq 1 ]] || fail 2 "config-revert: нужно имя файла"
+	local name="$1" path latest mode
+	path=$(config_path "$name") || fail 5 "неизвестное имя файла: $name"
+	latest=$(printf '%s\n' "$(path_backups_dir)/$(basename "$path")".* | sort -V | tail -1)
+	[[ -e "$latest" ]] || latest=""
+	[[ -n "$latest" ]] || fail 1 "нет бэкапа для $name"
+	ctl_lock
+	mode=$(stat -c %a "$path" 2>/dev/null || echo 644)
+	atomic_write "$path" <"$latest"
+	chmod "$mode" "$path"
+	ctl_unlock
+	echo "восстановлено из $latest"
+}
+
+# cmd_reconfigure [--dry-run] - the installer does the diff, the step
+# selection and the re-render; it never installs packages here, because
+# --force is not passed and a heavy change stops with code 3.
+cmd_reconfigure() {
+	[[ $# -le 1 ]] || fail 2 "reconfigure: лишние аргументы"
+	local -a args=(reconfigure -y)
+	case "${1:-}" in
+	"") ;;
+	--dry-run) args+=(--dry-run) ;;
+	*) fail 2 "reconfigure: неизвестный аргумент: $1" ;;
+	esac
+	[[ -r "${INSTALLER:-}" ]] || fail 1 "не найден install.sh"
+
+	# -y asks for an explicit ACCESS_CONFIRM when the access mode is not
+	# localhost. An unchanged mode is already confirmed; a changed one
+	# must go through install.sh reconfigure.
+	local applied_access
+	applied_access=$(state_read_value "applied.ACCESS_MODE")
+	if [[ -n "$applied_access" && "$applied_access" == "$(conf_get ACCESS_MODE localhost)" ]]; then
+		args+=(--set ACCESS_CONFIRM=yes)
+	fi
+
+	bash "$INSTALLER" "${args[@]}"
+	local rc=$?
+	if ((rc == 3)); then
+		echo "dpistack-ctl: изменение требует переустановки или пересборки, выполните: install.sh reconfigure" >&2
+	fi
+	return "$rc"
+}
+
+# ----------------------------------------------------------------- iface
+
+# iface_set_list <comma-list> - writes IFACES into dpistack.conf and
+# applies it; a failed apply puts the previous file back.
+iface_set_list() {
+	local list="$1" staging staged out rc
+	staging=$(path_staging_dir)
+	mkdir -p "$staging"
+	chmod 0700 "$staging"
+	staged="$staging/dpistack.conf"
+	awk -v v="$list" 'BEGIN{done=0} /^IFACES=/{print "IFACES=" v; done=1; next} {print} END{if(!done) print "IFACES=" v}' \
+		"$(path_conf)" >"$staged"
+
+	out=$(config_validate_staged dpistack.conf "$staged")
+	rc=$?
+	if ((rc != 0)); then
+		rm -f "$staged"
+		[[ -n "$out" ]] && echo "$out"
+		fail 3 "IFACES: проверка не пройдена, файл не изменён"
+	fi
+	config_commit dpistack.conf "$staged"
+	rm -f "$staged"
+	if ! cmd_reconfigure; then
+		cmd_config_revert dpistack.conf >/dev/null
+		fail 1 "reconfigure не удался, dpistack.conf возвращён"
+	fi
+}
+
+cmd_iface() {
+	[[ $# -ge 1 ]] || fail 2 "iface: list|add|remove"
+	local sub="$1"
+	shift
+	local -a current=()
+	IFS=',' read -ra current <<<"$(conf_get IFACES enp2s0)"
+
+	case "$sub" in
+	list)
+		[[ $# -eq 0 ]] || fail 2 "iface list: без аргументов"
+		printf '%s\n' "${current[@]}"
+		;;
+	add)
+		[[ $# -eq 1 ]] || fail 2 "iface add: нужно имя интерфейса"
+		if [[ ! "$1" =~ ^[A-Za-z0-9._-]{1,15}$ ]] || ! ip link show "$1" >/dev/null 2>&1; then
+			fail 5 "интерфейса нет в системе: $1"
+		fi
+		if in_list "$1" "${current[@]}"; then
+			echo "уже в списке: $1"
+			return 0
+		fi
+		current+=("$1")
+		iface_set_list "$(
+			IFS=,
+			echo "${current[*]}"
+		)"
+		;;
+	remove)
+		[[ $# -eq 1 ]] || fail 2 "iface remove: нужно имя интерфейса"
+		in_list "$1" "${current[@]}" || fail 5 "интерфейса нет в IFACES: $1"
+		((${#current[@]} > 1)) || fail 3 "нельзя удалить последний интерфейс"
+		local -a rest=() i
+		for i in "${current[@]}"; do
+			[[ "$i" == "$1" ]] || rest+=("$i")
+		done
+		iface_set_list "$(
+			IFS=,
+			echo "${rest[*]}"
+		)"
+		;;
+	*) fail 2 "iface: неизвестная подкоманда: $sub" ;;
+	esac
+}
+
+# ----------------------------------------------------------------- rules
+
+# rules_edit_line <name> add|remove <line> - one exact line in a
+# suricata-update input file, through the same backup and atomic
+# replace as config-write.
+rules_edit_line() {
+	local name="$1" op="$2" line="$3" path staging staged
+	path=$(config_path "$name")
+	staging=$(path_staging_dir)
+	mkdir -p "$staging"
+	chmod 0700 "$staging"
+	staged="$staging/$name"
+	if [[ -f "$path" ]]; then
+		grep -vxF -- "$line" "$path" >"$staged" || true
+	else
+		: >"$staged"
+	fi
+	[[ "$op" == "add" ]] && printf '%s\n' "$line" >>"$staged"
+	config_commit "$name" "$staged"
+	rm -f "$staged"
+}
+
+cmd_rules_group() {
+	[[ $# -eq 2 ]] || fail 2 "rules-group: enable|disable <группа>"
+	[[ "$2" =~ ^[A-Za-z0-9._-]+$ ]] || fail 5 "недопустимое имя группы"
+	case "$1" in
+	enable) rules_edit_line enable.conf add "group:$2.rules" ;;
+	disable) rules_edit_line enable.conf remove "group:$2.rules" ;;
+	*) fail 2 "rules-group: enable|disable" ;;
+	esac
+}
+
+cmd_rules_sid() {
+	[[ $# -eq 2 ]] || fail 2 "rules-sid: enable|disable <sid>"
+	[[ "$2" =~ ^[0-9]+$ ]] || fail 5 "sid должен быть числом"
+	case "$1" in
+	disable) rules_edit_line disable.conf add "$2" ;;
+	enable) rules_edit_line disable.conf remove "$2" ;;
+	*) fail 2 "rules-sid: enable|disable" ;;
+	esac
+}
+
+cmd_rules_sources() {
+	[[ $# -ge 1 ]] || fail 2 "rules-sources: list|enable|disable|add-url|remove"
+	local sub="$1" data_dir
+	shift
+	data_dir=$(path_rules_data_dir)
+	command -v suricata-update >/dev/null 2>&1 || fail 4 "suricata-update не установлен"
+	case "$sub" in
+	list)
+		[[ $# -eq 0 ]] || fail 2 "rules-sources list: без аргументов"
+		suricata-update list-sources -D "$data_dir"
+		;;
+	enable | disable | remove)
+		[[ $# -eq 1 ]] || fail 2 "rules-sources $sub: нужно имя источника"
+		[[ "$1" =~ ^[A-Za-z0-9._/-]+$ ]] || fail 5 "недопустимое имя источника"
+		suricata-update "$sub-source" -D "$data_dir" "$1"
+		;;
+	add-url)
+		[[ $# -eq 1 ]] || fail 2 "rules-sources add-url: нужен URL"
+		[[ "$1" =~ ^https?://[A-Za-z0-9._:/@+,=-]+$ ]] || fail 5 "недопустимый URL"
+		suricata-update add-source -D "$data_dir" \
+			"dpistack-custom-$(printf '%s' "$1" | sha256sum | cut -c1-8)" "$1"
+		;;
+	*) fail 2 "rules-sources: неизвестная подкоманда: $sub" ;;
+	esac
+}
+
+cmd_rules_search() {
+	[[ $# -eq 1 && -n "$1" ]] || fail 2 "rules-search: нужен один запрос"
+	local ruleset
+	ruleset=$(path_suricata_ruleset)
+	[[ -f "$ruleset" ]] || fail 4 "набор правил отсутствует"
+	# A number matches the sid exactly, anything else matches msg text.
+	RULES_Q="$1" awk -v max="$RULES_SEARCH_MAX" '
+		BEGIN { q = tolower(ENVIRON["RULES_Q"]); num = (q ~ /^[0-9]+$/) }
+		/^[ \t]*#/ { next }
+		{
+			sid = ""; msg = ""
+			if (match($0, /sid: *[0-9]+/)) { sid = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", sid) }
+			if (match($0, /msg: *"[^"]*"/)) { msg = substr($0, RSTART, RLENGTH); sub(/^msg: *"/, "", msg); sub(/"$/, "", msg) }
+			if (sid == "") next
+			if (num ? (sid == q) : (index(tolower(msg), q) > 0)) {
+				print sid "\t" msg
+				if (++n >= max) exit
+			}
+		}' "$ruleset"
+}
+
+# cmd_rules_update - snapshot, suricata-update, suricata -T, reload;
+# any failure puts the previous ruleset back.
+cmd_rules_update() {
+	[[ $# -eq 0 ]] || fail 2 "rules-update: без аргументов"
+	command -v suricata-update >/dev/null 2>&1 || fail 4 "suricata-update не установлен"
+	local ruleset snap
+	ruleset=$(path_suricata_ruleset)
+	snap=$(mktemp)
+	if [[ -f "$ruleset" ]]; then
+		cp -p "$ruleset" "$snap"
+	else
+		rm -f "$snap"
+		snap=""
+	fi
+
+	local ok=1
+	rules_update_argv
+	"${RULES_UPDATE_ARGV[@]}" || ok=0
+	if ((ok)) && command -v suricata >/dev/null 2>&1; then
+		local check_dir
+		check_dir=$(mktemp -d)
+		suricata -T -c "$(path_suricata_yaml)" -l "$check_dir" >/dev/null 2>&1 || ok=0
+		rm -rf "$check_dir"
+	fi
+	if ((ok)); then
+		suricatasc -c ruleset-reload-nonblocking "$(path_suricata_socket)" || ok=0
+	fi
+
+	if ((!ok)); then
+		if [[ -n "$snap" ]]; then
+			cp -p "$snap" "$ruleset"
+			rm -f "$snap"
+		fi
+		fail 1 "rules-update не удался, прежний набор правил возвращён"
+	fi
+	[[ -n "$snap" ]] && rm -f "$snap"
+	return 0
+}
+
+# ------------------------------------------------------------------ test
+
+cmd_test() {
+	[[ $# -ge 1 && $# -le 2 ]] || fail 2 "test: bittorrent|https|all [--json]"
+	local which="$1" json=0
+	if [[ $# -eq 2 ]]; then
+		[[ "$2" == "--json" ]] || fail 2 "test: неизвестный аргумент: $2"
+		json=1
+	fi
+	local -a names
+	case "$which" in
+	bittorrent | https) names=("$which") ;;
+	all) names=("${VERIFY_TESTS[@]}") ;;
+	*) fail 5 "неизвестный тест: $which" ;;
+	esac
+	VERIFY_HTTPS_URL=$(conf_get TEST_HTTPS_URL https://example.com)
+	VERIFY_BT_LIVE=$(conf_get TEST_BT_LIVE no)
+	VERIFY_IFACES=$(conf_get IFACES enp2s0)
+	verify_run "$json" "${names[@]}" || exit 1
+}
+
+# ---------------------------------------------------------------- health
+
+# cmd_health - one watchdog run, then the same JSON it wrote.
+cmd_health() {
+	local json=0
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "health: неизвестный аргумент" ;;
+	esac
+	[[ $# -le 1 ]] || fail 2 "health: лишние аргументы"
+	local watch="$SCRIPT_DIR/dpistack-watch"
+	[[ -x "$watch" ]] || fail 4 "dpistack-watch не установлен"
+	"$watch" || fail 1 "health: dpistack-watch завершился с ошибкой"
+	local file
+	file=$(path_health_json)
+	[[ -f "$file" ]] || fail 1 "health: $file не создан"
+	if ((json)); then
+		cat "$file"
+	else
+		jq -r '"overall: \(.overall)  (\(.ts))", (.checks[] | "\(.id)\t\(.status)\t\(.value)\t\(.detail)")' "$file" || fail 1 "health: нужен jq"
+	fi
+}
+
+# ----------------------------------------------------------- panel-passwd
+
+cmd_panel_passwd() {
+	[[ $# -eq 0 ]] || fail 2 "panel-passwd: пароль читается со stdin"
+	local pw=""
+	IFS= read -r pw || true
+	[[ -n "$pw" ]] || fail 2 "panel-passwd: пустой пароль"
+	command -v argon2 >/dev/null 2>&1 || fail 1 "не установлен пакет argon2"
+	panel_auth_write "$pw" || fail 1 "не удалось записать хэш пароля"
+	echo "пароль панели обновлён"
 }
 
 main() {
@@ -19,8 +773,42 @@ main() {
 		usage
 		exit 2
 	fi
-	echo "dpistack-ctl $1: пока не реализовано" >&2
-	exit 4
+
+	# Every argument is checked before any command runs (4.5).
+	local arg
+	for arg in "$@"; do
+		[[ "$arg" =~ ^[A-Za-z0-9._:=/@+,\ -]*$ ]] || fail 5 "недопустимые символы в аргументе"
+	done
+
+	local cmd="$1"
+	shift
+	case "$cmd" in
+	status) cmd_status "$@" ;;
+	start | stop | restart) cmd_control "$cmd" "$@" ;;
+	reload) cmd_reload "$@" ;;
+	logs) cmd_logs "$@" ;;
+	config-read) cmd_config_read "$@" ;;
+	config-write) cmd_config_write "$@" ;;
+	config-revert) cmd_config_revert "$@" ;;
+	reconfigure) cmd_reconfigure "$@" ;;
+	rules-update) cmd_rules_update "$@" ;;
+	rules-sources) cmd_rules_sources "$@" ;;
+	rules-group) cmd_rules_group "$@" ;;
+	rules-sid) cmd_rules_sid "$@" ;;
+	rules-search) cmd_rules_search "$@" ;;
+	iface) cmd_iface "$@" ;;
+	panel-passwd) cmd_panel_passwd "$@" ;;
+	test) cmd_test "$@" ;;
+	health) cmd_health "$@" ;;
+	version) echo "$DPISTACK_VERSION" ;;
+	*)
+		if in_list "$cmd" "${PLANNED_COMMANDS[@]}"; then
+			fail 4 "$cmd: пока не реализовано"
+		fi
+		usage >&2
+		exit 2
+		;;
+	esac
 }
 
 main "$@"

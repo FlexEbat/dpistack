@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+# Least privilege: CI only reads the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      statuses: write # names failing checks, see "Report failing checks"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck shfmt jq util-linux
+      - name: Gate (shfmt, shellcheck, bats, security)
+        # The installer refuses to run without root (preflight), so the gate
+        # that exercises it must run as root too; the runner user is not.
+        # root also needs git to accept the checkout, owned by the runner.
+        run: |
+          sudo git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          set -o pipefail
+          sudo -E env "PATH=$PATH" bash scripts/gate.sh 2>&1 | tee "$RUNNER_TEMP/gate.log"
+      # Job logs are not readable from outside, so a red gate names its
+      # failing checks in commit statuses (one per failure, at most six).
+      - name: Report failing checks
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OS_NAME: ${{ matrix.os }}
+        run: |
+          n=0
+          grep -E '^(not ok|FAIL:|.*error:)' "$RUNNER_TEMP/gate.log" | head -6 | while IFS= read -r line; do
+            n=$((n + 1))
+            gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+              -f state=failure -f context="gate $OS_NAME #$n" -f description="${line:0:130}" >/dev/null
+          done
+
+  workflows:
+    name: lint workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # The published image instead of a downloaded script piped to bash.
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:1.7.7 -color

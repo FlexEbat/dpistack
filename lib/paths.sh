@@ -30,10 +30,14 @@ path_sbin_dir() { echo "${DPISTACK_ROOT}/usr/local/sbin"; }
 path_dpistack_bin() { echo "$(path_sbin_dir)/dpistack"; }
 path_ctl_bin() { echo "$(path_sbin_dir)/dpistack-ctl"; }
 path_watch_bin() { echo "$(path_sbin_dir)/dpistack-watch"; }
+path_watch_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.service"; }
+path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.timer"; }
+path_evebox_data_dir() { echo "${DPISTACK_ROOT}/var/lib/evebox"; }
 
 path_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib/dpistack"; }
 path_installer_copy_dir() { echo "$(path_lib_dir)/installer"; }
 path_panel_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/dpistack-panel"; }
+path_sudoers() { echo "${DPISTACK_ROOT}/etc/sudoers.d/dpistack"; }
 
 path_suricata_yaml() { echo "${DPISTACK_ROOT}/etc/suricata/suricata.yaml"; }
 path_suricata_enable_conf() { echo "${DPISTACK_ROOT}/etc/suricata/enable.conf"; }
@@ -62,3 +66,6 @@ path_nginx_snippet() { echo "$(path_nginx_snippet_dir)/dpistack.conf"; }
 path_nginx_tls_dir() { echo "$(path_nginx_snippet_dir)/tls"; }
 path_nginx_confd() { echo "${DPISTACK_ROOT}/etc/nginx/conf.d/dpistack.conf"; }
 path_compose_yaml() { echo "${DPISTACK_ROOT}/opt/dpistack/compose/compose.yaml"; }
+path_os_release() { echo "${DPISTACK_ROOT}/etc/os-release"; }
+path_rules_data_dir() { echo "${DPISTACK_ROOT}/var/lib/suricata"; }
+path_ndpi_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib"; }

@@ -125,6 +125,31 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
+	local channel
+	local -a channels=()
+	IFS=',' read -ra channels <<<"${CONF[ALERT_CHANNELS]:-}"
+	for channel in "${channels[@]}"; do
+		case "$channel" in
+		panel | log | tg | mail) ;;
+		*)
+			echo "ALERT_CHANNELS: неизвестный канал '$channel' (допустимы panel, log, tg, mail)"
+			errors=$((errors + 1))
+			;;
+		esac
+	done
+	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",tg,"* ]]; then
+		if [[ -z "${SECRETS[ALERT_TG_TOKEN]:-}" || -z "${CONF[ALERT_TG_CHAT_ID]:-}" ]]; then
+			echo "ALERT_CHANNELS содержит tg: нужны ALERT_TG_TOKEN и ALERT_TG_CHAT_ID"
+			errors=$((errors + 1))
+		fi
+	fi
+	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",mail,"* ]]; then
+		if [[ -z "${SECRETS[ALERT_SMTP_URL]:-}" || -z "${CONF[ALERT_MAIL_TO]:-}" || -z "${CONF[ALERT_MAIL_FROM]:-}" ]]; then
+			echo "ALERT_CHANNELS содержит mail: нужны ALERT_SMTP_URL, ALERT_MAIL_TO и ALERT_MAIL_FROM"
+			errors=$((errors + 1))
+		fi
+	fi
+
 	return "$errors"
 }
 
@@ -151,6 +176,23 @@ config_write_conf() {
 		done
 	} | atomic_write "$path"
 	chmod 0644 "$path"
+}
+
+# The applied config lives in state as applied.<KEY>=<value>, so a
+# later `dpistack-ctl reconfigure` can diff dpistack.conf (already
+# edited by config-write) against what the system was last built from.
+config_snapshot_applied() {
+	local f tmp key
+	f=$(path_state_file)
+	tmp=$(mktemp)
+	if [[ -f "$f" ]]; then
+		grep -v '^applied\.' "$f" >"$tmp" || true
+	fi
+	for key in $(printf '%s\n' "${!CONF[@]}" | sort); do
+		printf 'applied.%s=%s\n' "$key" "${CONF[$key]}" >>"$tmp"
+	done
+	atomic_write "$f" <"$tmp"
+	rm -f "$tmp"
 }
 
 config_write_secrets() {
@@ -195,6 +237,13 @@ CONFIG_AFFECTED_STEPS=()
 
 config_diff_and_steps() {
 	local old_file="$1"
+	# Old side = the applied snapshot when there is one, else the file.
+	local snapshot_file=""
+	if grep -q '^applied\.' "$(path_state_file)" 2>/dev/null; then
+		snapshot_file=$(mktemp)
+		grep '^applied\.' "$(path_state_file)" | sed 's/^applied\.//' >"$snapshot_file"
+		old_file="$snapshot_file"
+	fi
 	CONFIG_CHANGE_WEIGHT="none"
 	CONFIG_CHANGED_KEYS=()
 	CONFIG_AFFECTED_STEPS=()
@@ -207,6 +256,7 @@ config_diff_and_steps() {
 		value="${line#*=}"
 		OLD["$key"]="$value"
 	done <"$old_file"
+	[[ -n "$snapshot_file" ]] && rm -f "$snapshot_file"
 
 	local -a changed=()
 	for key in "${!CONF[@]}"; do

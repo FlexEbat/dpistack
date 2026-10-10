@@ -72,7 +72,7 @@ step_evebox_check() {
 step_evebox_apply() {
 	if ! command -v evebox >/dev/null 2>&1; then
 		evebox_repo_add
-		pkg_install "$EVEBOX_PACKAGE"
+		pkg_install "$(pkg_spec "$EVEBOX_PACKAGE" "${CONF[EVEBOX_VERSION]:-}")"
 	fi
 
 	write_rendered_file "$(path_evebox_yaml)" "$(evebox_render_conf)"
