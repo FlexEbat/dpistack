@@ -233,6 +233,26 @@ run_plan() {
 	return "$any_pending"
 }
 
+# prepare_packages - the package index and the base tools come first, so
+# every later step finds its packages. A component whose package does not
+# exist here falls back to a source build, and the changed source is saved
+# to dpistack.conf and checked against the preflight again (a build needs
+# more disk than a package).
+prepare_packages() {
+	pkg_update_once || die 1 "apt-get update не прошёл"
+	pkg_install_base || die 1 "не удалось поставить базовые пакеты"
+	local fallback=0
+	suricata_resolve_source && fallback=1
+	ndpi_resolve_source && fallback=1
+	if [[ "$fallback" == "1" ]]; then
+		if [[ "$DRY_RUN" != "1" ]]; then
+			config_write_conf "$(path_conf)"
+			config_snapshot_applied
+		fi
+		step_preflight_check || exit 3
+	fi
+}
+
 run_apply() {
 	local total=${#STEPS_ORDER[@]}
 	local i=0
@@ -284,6 +304,8 @@ cmd_install() {
 	if ! step_preflight_check; then
 		exit 3
 	fi
+
+	prepare_packages
 
 	run_plan
 	local pending=$?
@@ -362,6 +384,10 @@ cmd_reconfigure() {
 	config_snapshot_applied
 	config_write_secrets "$(path_secrets)"
 
+	# A changed key can make a step install a package (nginx, a new version).
+	if [[ "${#CONFIG_AFFECTED_STEPS[@]}" -gt 0 ]]; then
+		pkg_update_once || die 1 "apt-get update не прошёл"
+	fi
 	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
 		step_selected "$step" || continue
 		if ! "step_${step}_apply"; then
@@ -397,7 +423,9 @@ cmd_upgrade() {
 	if [[ "${CONF[PIN_VERSIONS]:-no}" == "yes" ]]; then
 		echo "upgrade: PIN_VERSIONS=yes - apt сам пропустит закреплённые пакеты (apt-mark hold): ${packages[*]}"
 	fi
-	run apt-get install --only-upgrade -y "${packages[@]}"
+	# Without a fresh index --only-upgrade never sees a newer version.
+	pkg_update_once || die 1 "apt-get update не прошёл"
+	run apt-get install --only-upgrade -y "${packages[@]}" || die 1 "apt-get install --only-upgrade не прошёл"
 	return 0
 }
 

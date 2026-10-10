@@ -87,3 +87,10 @@ list_actions() {
 		}
 	done <<<"$output"
 }
+
+@test "gitleaks runs as a binary pinned by SHA-256, not through gitleaks-action" {
+	run grep -c 'gitleaks/gitleaks-action' "$WF/security.yml"
+	[ "$output" = "0" ]
+	grep -qE 'GITLEAKS_SHA256: [0-9a-f]{64}$' "$WF/security.yml"
+	grep -q 'sha256sum -c' "$WF/security.yml"
+}

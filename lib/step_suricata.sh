@@ -124,9 +124,32 @@ suricata_source_binary_present() {
 	command -v suricata >/dev/null 2>&1 && [[ "$(command -v suricata)" == "${DPISTACK_ROOT}/usr/local/bin/suricata" ]]
 }
 
+# suricata_resolve_source - when the chosen package source cannot supply
+# Suricata (no such package, or the OISF PPA on a non-Ubuntu system), the
+# run switches to a source build instead of failing in the middle of the
+# install. Returns 0 when it changed SURICATA_SOURCE.
+suricata_resolve_source() {
+	local source="${CONF[SURICATA_SOURCE]:-}" reason
+	[[ "$source" == "distro" || "$source" == "oisf" ]] || return 1
+	if command -v suricata >/dev/null 2>&1 && [[ -n "$(suricata_installed_version)" ]]; then
+		return 1
+	fi
+	if [[ "$source" == "oisf" && "$OS_ID" != "ubuntu" ]]; then
+		reason="PPA OISF существует только для Ubuntu"
+	elif [[ "$source" == "distro" ]] && ! pkg_available "$SURICATA_PACKAGE"; then
+		reason="пакета $SURICATA_PACKAGE нет в репозиториях"
+	else
+		return 1
+	fi
+	echo "suricata: $reason, SURICATA_SOURCE=$source заменён на source (сборка из исходников)" >&2
+	CONF[SURICATA_SOURCE]=source
+}
+
 suricata_build_from_source() {
 	local src_dir ref
 	src_dir=$(path_suricata_src_dir)
+	pkg_build_deps suricata || return 1
+	pkg_select_rust || return 1
 	ref="${CONF[SURICATA_VERSION]:-}"
 
 	if [[ ! -d "$src_dir/.git" ]]; then

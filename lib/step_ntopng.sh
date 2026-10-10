@@ -45,9 +45,19 @@ ntopng_repo_add() {
 	if [[ "$OS_ID" == "ubuntu" ]]; then
 		run add-apt-repository -y universe || return 1
 	fi
+	# ntop.org names the Ubuntu repos by version (apt/24.04) and the
+	# Debian ones by release name (apt/bookworm); apt/12 does not exist.
 	local version_id
 	# shellcheck disable=SC1090
-	version_id=$(. "$(path_os_release)" && echo "${VERSION_ID:-}")
+	if [[ "$OS_ID" == "ubuntu" ]]; then
+		version_id=$(. "$(path_os_release)" && echo "${VERSION_ID:-}")
+	else
+		version_id=$(. "$(path_os_release)" && echo "${VERSION_CODENAME:-}")
+	fi
+	if [[ -z "$version_id" ]]; then
+		log "ERROR" "ntopng: в os-release нет версии или имени релиза для репозитория ntop.org"
+		return 1
+	fi
 	local deb_tmp
 	deb_tmp="$(mktemp --suffix=.deb)"
 	if ! run wget -qO "$deb_tmp" "${NTOP_REPO_DEB_URL_APT}/${version_id}/all/apt-ntop.deb" ||
