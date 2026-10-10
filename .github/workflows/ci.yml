@@ -29,7 +29,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bats shellcheck shfmt jq util-linux
       - name: Gate (shfmt, shellcheck, bats, security)
-        run: bash scripts/gate.sh
+        # The installer refuses to run without root (preflight), so the gate
+        # that exercises it must run as root too; the runner user is not.
+        run: sudo -E env "PATH=$PATH" bash scripts/gate.sh
 
   workflows:
     name: lint workflows

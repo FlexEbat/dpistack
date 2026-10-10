@@ -70,3 +70,14 @@ setup() {
 		[ -e "$REPO_DIR/$f" ]
 	done
 }
+
+@test "the gate runs as root in every workflow: the installer refuses to run otherwise" {
+	run grep -n 'scripts/gate.sh' "$WF"/ci.yml "$WF"/release.yml
+	[ "$status" -eq 0 ]
+	while IFS= read -r line; do
+		[[ "$line" == *"sudo -E env"* ]] || {
+			echo "gate not run through sudo: $line"
+			return 1
+		}
+	done <<<"$output"
+}
