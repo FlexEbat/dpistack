@@ -9,6 +9,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 status=0
 CODE=(install.sh lib bin scripts)
 
+# The secret and CRLF scans read the tracked files. When git cannot list
+# them (a repo owned by another user makes it refuse as root), an empty
+# list would make both scans pass without looking at anything.
+if ! tracked_count=$(git ls-files -z | tr -cd '\0' | wc -c) || ((tracked_count == 0)); then
+	echo "FAIL: git ls-files returned no files; the secret and CRLF scans cannot run"
+	echo "  (as root in a repo owned by someone else: git config --global --add safe.directory \"\$PWD\")"
+	exit 1
+fi
+
 # fail <title> <matches...> - prints the matches and marks the run failed.
 fail() {
 	echo "FAIL: $1"

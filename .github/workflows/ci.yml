@@ -18,6 +18,9 @@ jobs:
     name: gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    permissions:
+      contents: read
+      statuses: write # names failing checks, see "Report failing checks"
     strategy:
       fail-fast: false
       matrix:
@@ -31,7 +34,25 @@ jobs:
       - name: Gate (shfmt, shellcheck, bats, security)
         # The installer refuses to run without root (preflight), so the gate
         # that exercises it must run as root too; the runner user is not.
-        run: sudo -E env "PATH=$PATH" bash scripts/gate.sh
+        # root also needs git to accept the checkout, owned by the runner.
+        run: |
+          sudo git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          set -o pipefail
+          sudo -E env "PATH=$PATH" bash scripts/gate.sh 2>&1 | tee "$RUNNER_TEMP/gate.log"
+      # Job logs are not readable from outside, so a red gate names its
+      # failing checks in commit statuses (one per failure, at most six).
+      - name: Report failing checks
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OS_NAME: ${{ matrix.os }}
+        run: |
+          n=0
+          grep -E '^(not ok|FAIL:|.*error:)' "$RUNNER_TEMP/gate.log" | head -6 | while IFS= read -r line; do
+            n=$((n + 1))
+            gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+              -f state=failure -f context="gate $OS_NAME #$n" -f description="${line:0:130}" >/dev/null
+          done
 
   workflows:
     name: lint workflows

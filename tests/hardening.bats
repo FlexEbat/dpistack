@@ -209,3 +209,15 @@ teardown() {
 	grep -q "apt-get install -y evebox=0.19.1" "$calls"
 	rm -rf "$mocks" "$calls"
 }
+
+@test "security.sh fails when git cannot list the files, instead of scanning nothing" {
+	work="$(mktemp -d)"
+	mkdir -p "$work/scripts" "$work/lib" "$work/bin"
+	cp "$REPO_DIR/scripts/security.sh" "$work/scripts/"
+	echo '#!/usr/bin/env bash' >"$work/install.sh"
+	# Not a git repository: git ls-files fails, which used to mean "no files, all clear".
+	run env GIT_CEILING_DIRECTORIES="$work/.." bash "$work/scripts/security.sh"
+	rm -rf "$work"
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"git ls-files returned no files"* ]]
+}
