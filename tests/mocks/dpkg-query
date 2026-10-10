@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Mock for bats tests (tech.md 11): reports every package as installed at 1.0,
-# so checks do not depend on what the host has installed.
+# so checks do not depend on what the host has installed, except the
+# ones named in MOCK_DPKG_ABSENT.
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+fi
+# MOCK_DPKG_ABSENT lists packages that are not installed (the last argument).
+if [[ " ${MOCK_DPKG_ABSENT:-} " == *" ${*: -1} "* ]]; then
+	exit 1
 fi
 printf 1.0

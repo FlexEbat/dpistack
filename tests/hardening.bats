@@ -195,7 +195,7 @@ teardown() {
 
 @test "NTOPNG_VERSION and EVEBOX_VERSION pin the package that gets installed" {
 	mkdir -p "$DPISTACK_ROOT/etc"
-	printf 'ID=ubuntu\nID_LIKE=debian\n' >"$DPISTACK_ROOT/etc/os-release"
+	printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID="24.04"\n' >"$DPISTACK_ROOT/etc/os-release"
 	# The mocks include ntopng and evebox binaries, which would make the
 	# steps skip the install; leave those two out.
 	mocks="$(mktemp -d)"
@@ -284,14 +284,17 @@ EOF_FAKE
 	[ "$output" != "done" ]
 }
 
-@test "ntopng repo setup asks for universe only on Ubuntu" {
+@test "ntopng repo setup: universe and the version path on Ubuntu, release name on Debian" {
 	mkdir -p "$DPISTACK_ROOT/etc"
 	mocks="$(mktemp -d)"
 	cp "$REPO_DIR"/tests/mocks/* "$mocks/"
 	rm -f "$mocks/ntopng"
 	for id in ubuntu debian; do
-		printf 'ID=%s\nVERSION_ID=12\n' "$id" >"$DPISTACK_ROOT/etc/os-release"
-		[ "$id" = debian ] && printf 'ID=debian\nID_LIKE=\nVERSION_ID=12\n' >"$DPISTACK_ROOT/etc/os-release"
+		if [ "$id" = ubuntu ]; then
+			printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID="24.04"\nVERSION_CODENAME=noble\n' >"$DPISTACK_ROOT/etc/os-release"
+		else
+			printf 'ID=debian\nVERSION_ID="12"\nVERSION_CODENAME=bookworm\n' >"$DPISTACK_ROOT/etc/os-release"
+		fi
 		calls="$(mktemp)"
 		PATH="$mocks:$PATH" MOCK_CALLS_LOG="$calls" bash -c "
 			source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'
@@ -299,13 +302,29 @@ EOF_FAKE
 			os_detect >/dev/null 2>&1; ntopng_repo_add >/dev/null 2>&1"
 		if [ "$id" = ubuntu ]; then
 			grep -q "add-apt-repository -y universe" "$calls"
+			grep -q "packages.ntop.org/apt/24.04/all/apt-ntop.deb" "$calls"
 		else
 			run grep -c "add-apt-repository" "$calls"
 			[ "$output" = "0" ]
+			grep -q "packages.ntop.org/apt/bookworm/all/apt-ntop.deb" "$calls"
 		fi
 		rm -f "$calls"
 	done
 	rm -rf "$mocks"
+}
+
+@test "ntopng repo setup stops when os-release names no release" {
+	mkdir -p "$DPISTACK_ROOT/etc"
+	printf 'ID=debian\n' >"$DPISTACK_ROOT/etc/os-release"
+	calls="$(mktemp)"
+	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$calls" bash -c "
+		source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'
+		source '$REPO_DIR/lib/os.sh'; source '$REPO_DIR/lib/step_ntopng.sh'
+		os_detect >/dev/null 2>&1; ntopng_repo_add"
+	[ "$status" -eq 1 ]
+	run grep -c "wget" "$calls"
+	[ "$output" = "0" ]
+	rm -f "$calls"
 }
 
 @test "config_snapshot_applied waits for the state lock like state_write_value" {
@@ -319,4 +338,111 @@ EOF_FAKE
 	kill "$holder" 2>/dev/null || true
 	wait "$holder" 2>/dev/null || true
 	[ "$status" -eq 124 ]
+}
+
+ubuntu_root() {
+	mkdir -p "$DPISTACK_ROOT/etc"
+	printf 'ID=ubuntu\nID_LIKE=debian\nVERSION_ID="24.04"\nVERSION_CODENAME=noble\n' >"$DPISTACK_ROOT/etc/os-release"
+	CALLS="$(mktemp)"
+	export CALLS
+}
+
+inst() {
+	PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" MOCK_IP_EXISTING_IFACES=enp2s0 \
+		bash "$REPO_DIR/install.sh" "$@"
+}
+
+@test "install refreshes the package index once, before the first install, and installs the base tools" {
+	ubuntu_root
+	inst install -y --set SURICATA_SOURCE=distro --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no >/dev/null 2>&1 || true
+	first="$(grep '^apt-get' "$CALLS" | head -n 1)"
+	[ "$first" = "apt-get update" ]
+	update_line="$(grep -n '^apt-get update' "$CALLS" | head -n 1 | cut -d: -f1)"
+	install_line="$(grep -n '^apt-get install' "$CALLS" | head -n 1 | cut -d: -f1)"
+	[ "$update_line" -lt "$install_line" ]
+	grep -q '^apt-get install -y ca-certificates curl wget gnupg jq git openssl logrotate software-properties-common$' "$CALLS"
+}
+
+@test "a missing suricata package switches the run to a source build and saves it" {
+	ubuntu_root
+	MOCK_DPKG_ABSENT="suricata" MOCK_APT_MISSING="suricata" run inst install -y --dry-run --set SURICATA_SOURCE=distro --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"пакета suricata нет в репозиториях"* ]]
+	[[ "$output" == *"suricata: сборка из исходников"* ]]
+}
+
+@test "the source switch is written to dpistack.conf outside dry-run" {
+	ubuntu_root
+	MOCK_DPKG_ABSENT="suricata" MOCK_APT_MISSING="suricata" inst install -y --set SURICATA_SOURCE=distro --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no >/dev/null 2>&1 || true
+	grep -q '^SURICATA_SOURCE=source$' "$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+	grep -q '^apt-get install -y build-essential git autoconf' "$CALLS"
+}
+
+@test "oisf on Debian switches to a source build instead of failing on add-apt-repository" {
+	mkdir -p "$DPISTACK_ROOT/etc"
+	printf 'ID=debian\nVERSION_ID="12"\nVERSION_CODENAME=bookworm\n' >"$DPISTACK_ROOT/etc/os-release"
+	CALLS="$(mktemp)"
+	MOCK_DPKG_ABSENT="suricata" run inst install -y --dry-run --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no
+	[[ "$output" == *"PPA OISF существует только для Ubuntu"* ]]
+	[[ "$output" != *"add-apt-repository -y ppa:oisf"* ]]
+}
+
+@test "a missing libndpi-dev switches NDPI_SOURCE=pkg to a source build" {
+	ubuntu_root
+	MOCK_DPKG_ABSENT="libndpi-dev" MOCK_APT_MISSING="libndpi-dev" run inst install -y --dry-run --set SURICATA_SOURCE=source \
+		--set NDPI_ENABLE=yes --set NDPI_SOURCE=pkg --set TEST_ON_INSTALL=no
+	[[ "$output" == *"пакета libndpi-dev нет в репозиториях"* ]]
+	[[ "$output" == *"ndpi: сборка из исходников"* ]]
+}
+
+@test "a present package keeps the chosen source" {
+	ubuntu_root
+	run inst install -y --dry-run --set SURICATA_SOURCE=distro --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no
+	[[ "$output" != *"заменён на source"* ]]
+	[[ "$output" == *"suricata: установка/обновление пакета"* ]]
+}
+
+@test "the source build picks a versioned rustc when the default one is too old" {
+	ubuntu_root
+	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" MOCK_APT_RUSTC="83 85 89" bash -c "
+		source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'
+		source '$REPO_DIR/lib/os.sh'; os_detect >/dev/null 2>&1
+		pkg_select_rust && echo \"RUSTC=\$RUSTC CARGO=\$CARGO\""
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"RUSTC=rustc-1.85 CARGO=cargo-1.85"* ]]
+	grep -q 'apt-get install -y rustc-1.85 cargo-1.85' "$CALLS"
+}
+
+@test "no newer rustc package: a warning, nothing installed, the build is left to configure" {
+	ubuntu_root
+	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" bash -c "
+		source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'
+		source '$REPO_DIR/lib/os.sh'; os_detect >/dev/null 2>&1
+		pkg_select_rust"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"старше 1.85"* ]]
+	run grep -c 'apt-get install' "$CALLS"
+	[ "$output" = "0" ]
+}
+
+@test "a current rustc is used as it is" {
+	ubuntu_root
+	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" MOCK_RUSTC_VERSION=1.90.0 MOCK_APT_RUSTC="85" bash -c "
+		source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'
+		source '$REPO_DIR/lib/os.sh'; os_detect >/dev/null 2>&1
+		pkg_select_rust"
+	[ "$status" -eq 0 ]
+	run grep -c 'apt-get install' "$CALLS"
+	[ "$output" = "0" ]
+}
+
+@test "upgrade refreshes the package index before --only-upgrade and fails when apt fails" {
+	ubuntu_root
+	inst install -y --set SURICATA_SOURCE=distro --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no >/dev/null 2>&1 || true
+	: >"$CALLS"
+	inst upgrade >/dev/null 2>&1
+	[ "$(grep '^apt-get' "$CALLS" | head -n 1)" = "apt-get update" ]
+	grep -q 'apt-get install --only-upgrade' "$CALLS"
+	MOCK_EXIT=100 run inst upgrade
+	[ "$status" -eq 1 ]
 }

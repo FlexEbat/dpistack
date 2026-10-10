@@ -42,9 +42,20 @@ step_ndpi_check() {
 	esac
 }
 
+# ndpi_resolve_source - NDPI_SOURCE=pkg without a libndpi-dev candidate
+# switches this run to a source build. Returns 0 when it changed the value.
+ndpi_resolve_source() {
+	[[ "${CONF[NDPI_ENABLE]:-no}" == "yes" && "${CONF[NDPI_SOURCE]:-source}" == "pkg" ]] || return 1
+	[[ -z "$(ndpi_pkg_installed_version)" ]] || return 1
+	pkg_available "$NDPI_PACKAGE" && return 1
+	echo "ndpi: пакета $NDPI_PACKAGE нет в репозиториях, NDPI_SOURCE=pkg заменён на source (сборка из исходников)" >&2
+	CONF[NDPI_SOURCE]=source
+}
+
 ndpi_build_from_source() {
 	local src_dir ref
 	src_dir=$(path_ndpi_src_dir)
+	pkg_build_deps ndpi || return 1
 	ref=$(ndpi_target_ref)
 
 	if [[ ! -d "$src_dir/.git" ]]; then
