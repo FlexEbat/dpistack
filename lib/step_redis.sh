@@ -17,9 +17,9 @@ step_redis_check() {
 
 step_redis_apply() {
 	if ! command -v redis-server >/dev/null 2>&1; then
-		pkg_install "$REDIS_PACKAGE"
+		pkg_install "$REDIS_PACKAGE" || return 1
 	fi
-	run systemctl enable --now "$REDIS_UNIT"
+	run systemctl enable --now "$REDIS_UNIT" || return 1
 	state_write_value "$REDIS_STATE_KEY" "done"
 	return 0
 }

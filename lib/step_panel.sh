@@ -54,7 +54,7 @@ step_panel_apply() {
 		fi
 		rm -f "$tmp"
 	fi
-	write_rendered_file "$(path_sudoers)" "$content"
+	write_rendered_file "$(path_sudoers)" "$content" 0440
 	run chmod 0440 "$(path_sudoers)" || return 1
 	return 0
 }

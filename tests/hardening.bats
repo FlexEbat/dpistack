@@ -221,3 +221,102 @@ teardown() {
 	[ "$status" -eq 1 ]
 	[[ "$output" == *"git ls-files returned no files"* ]]
 }
+
+@test "atomic_write keeps the mode of an existing file and gives a new file 0644" {
+	target="$DPISTACK_ROOT/etc/app.conf"
+	mkdir -p "$DPISTACK_ROOT/etc"
+	echo old >"$target"
+	chmod 0640 "$target"
+	lib "echo new | atomic_write '$target'"
+	[ "$(stat -c %a "$target")" = "640" ]
+	[ "$(cat "$target")" = "new" ]
+	lib "echo fresh | atomic_write '$DPISTACK_ROOT/etc/fresh.conf'"
+	[ "$(stat -c %a "$DPISTACK_ROOT/etc/fresh.conf")" = "644" ]
+}
+
+@test "atomic_write with an explicit mode never exposes the content wider" {
+	target="$DPISTACK_ROOT/etc/secret.conf"
+	mkdir -p "$DPISTACK_ROOT/etc"
+	echo old >"$target"
+	chmod 0644 "$target"
+	lib "echo new | atomic_write '$target' 0640"
+	[ "$(stat -c %a "$target")" = "640" ]
+	lib "echo newer | atomic_write '$target' 0600"
+	[ "$(stat -c %a "$target")" = "600" ]
+}
+
+@test "a rendered config file is world-readable, not 0600 from mktemp" {
+	mkdir -p "$DPISTACK_ROOT/etc" "$DPISTACK_ROOT/etc/evebox"
+	printf 'ID=ubuntu\nID_LIKE=debian\n' >"$DPISTACK_ROOT/etc/os-release"
+	PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$(mktemp)" MOCK_IP_EXISTING_IFACES=enp2s0 \
+		bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no \
+		--set TEST_ON_INSTALL=no >/dev/null 2>&1 || true
+	[ "$(stat -c %a "$DPISTACK_ROOT/etc/evebox/evebox.yaml")" = "644" ]
+	[ "$(stat -c %a "$DPISTACK_ROOT/etc/dpistack/secrets.conf")" = "600" ]
+}
+
+@test "a failing systemctl enable stops the install instead of reporting the step as done" {
+	mkdir -p "$DPISTACK_ROOT/etc" "$DPISTACK_ROOT/fake"
+	printf 'ID=ubuntu\nID_LIKE=debian\n' >"$DPISTACK_ROOT/etc/os-release"
+	cat >"$DPISTACK_ROOT/fake/systemctl" <<'EOF_FAKE'
+#!/usr/bin/env bash
+[[ "$*" == *enable*evebox* ]] && exit 1
+exit 0
+EOF_FAKE
+	chmod +x "$DPISTACK_ROOT/fake/systemctl"
+	PATH="$DPISTACK_ROOT/fake:$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$(mktemp)" MOCK_IP_EXISTING_IFACES=enp2s0 \
+		run bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no \
+		--set TEST_ON_INSTALL=no
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"шаг evebox упал"* ]]
+}
+
+@test "the redis step does not record done when the service fails to start" {
+	mkdir -p "$DPISTACK_ROOT/etc" "$DPISTACK_ROOT/fake"
+	printf 'ID=ubuntu\nID_LIKE=debian\n' >"$DPISTACK_ROOT/etc/os-release"
+	printf '#!/usr/bin/env bash\n[[ "$*" == *enable*redis* ]] && exit 1\nexit 0\n' >"$DPISTACK_ROOT/fake/systemctl"
+	chmod +x "$DPISTACK_ROOT/fake/systemctl"
+	PATH="$DPISTACK_ROOT/fake:$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$(mktemp)" MOCK_IP_EXISTING_IFACES=enp2s0 \
+		run bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no \
+		--set TEST_ON_INSTALL=no
+	[ "$status" -eq 1 ]
+	run lib 'state_read_value step.redis.status'
+	[ "$output" != "done" ]
+}
+
+@test "ntopng repo setup asks for universe only on Ubuntu" {
+	mkdir -p "$DPISTACK_ROOT/etc"
+	mocks="$(mktemp -d)"
+	cp "$REPO_DIR"/tests/mocks/* "$mocks/"
+	rm -f "$mocks/ntopng"
+	for id in ubuntu debian; do
+		printf 'ID=%s\nVERSION_ID=12\n' "$id" >"$DPISTACK_ROOT/etc/os-release"
+		[ "$id" = debian ] && printf 'ID=debian\nID_LIKE=\nVERSION_ID=12\n' >"$DPISTACK_ROOT/etc/os-release"
+		calls="$(mktemp)"
+		PATH="$mocks:$PATH" MOCK_CALLS_LOG="$calls" bash -c "
+			source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'
+			source '$REPO_DIR/lib/os.sh'; source '$REPO_DIR/lib/step_ntopng.sh'
+			os_detect >/dev/null 2>&1; ntopng_repo_add >/dev/null 2>&1"
+		if [ "$id" = ubuntu ]; then
+			grep -q "add-apt-repository -y universe" "$calls"
+		else
+			run grep -c "add-apt-repository" "$calls"
+			[ "$output" = "0" ]
+		fi
+		rm -f "$calls"
+	done
+	rm -rf "$mocks"
+}
+
+@test "config_snapshot_applied waits for the state lock like state_write_value" {
+	mkdir -p "$DPISTACK_ROOT/var/lib/dpistack"
+	state="$(lib 'path_state_file')"
+	mkdir -p "$(dirname "$state")"
+	flock -x "${state}.lock" sleep 3 &
+	holder=$!
+	sleep 0.3
+	run timeout 1 bash -c "$PRE; source '$REPO_DIR/lib/config.sh'; declare -A CONF=([A]=1); config_snapshot_applied"
+	kill "$holder" 2>/dev/null || true
+	wait "$holder" 2>/dev/null || true
+	[ "$status" -eq 124 ]
+}

@@ -130,16 +130,16 @@ suricata_build_from_source() {
 	ref="${CONF[SURICATA_VERSION]:-}"
 
 	if [[ ! -d "$src_dir/.git" ]]; then
-		run git clone "$SURICATA_REPO_URL" "$src_dir"
-		run git -C "$src_dir" submodule update --init --recursive
+		run git clone "$SURICATA_REPO_URL" "$src_dir" || return 1
+		run git -C "$src_dir" submodule update --init --recursive || return 1
 	else
-		run git -C "$src_dir" fetch --tags origin
+		run git -C "$src_dir" fetch --tags origin || return 1
 	fi
 
 	if [[ -n "$ref" ]]; then
-		run git -C "$src_dir" checkout "$ref"
+		run git -C "$src_dir" checkout "$ref" || return 1
 	else
-		run git -C "$src_dir" checkout HEAD
+		run git -C "$src_dir" checkout HEAD || return 1
 	fi
 	local resolved_ref
 	resolved_ref=$(git -C "$src_dir" rev-parse HEAD 2>/dev/null)
@@ -223,14 +223,14 @@ step_suricata_check() {
 step_suricata_apply() {
 	case "${CONF[SURICATA_SOURCE]}" in
 	oisf)
-		pkg_repo_add oisf
+		pkg_repo_add oisf || return 1
 		if ! command -v suricata >/dev/null 2>&1 || [[ -z "$(suricata_installed_version)" ]]; then
-			pkg_install "$SURICATA_PACKAGE"
+			pkg_install "$SURICATA_PACKAGE" || return 1
 		fi
 		;;
 	distro)
 		if ! command -v suricata >/dev/null 2>&1 || [[ -z "$(suricata_installed_version)" ]]; then
-			pkg_install "$SURICATA_PACKAGE"
+			pkg_install "$SURICATA_PACKAGE" || return 1
 		fi
 		;;
 	source)
@@ -247,16 +247,16 @@ step_suricata_apply() {
 
 	if [[ "${CONF[SURICATA_SOURCE]}" == "source" ]]; then
 		write_rendered_file "$(path_suricata_service_unit)" "$(suricata_render_service_unit)"
-		run systemctl daemon-reload
+		run systemctl daemon-reload || return 1
 	fi
 
-	run systemctl enable --now "$SURICATA_UNIT"
+	run systemctl enable --now "$SURICATA_UNIT" || return 1
 	local eve_json
 	eve_json=$(path_suricata_eve_json)
 	[[ -f "$eve_json" ]] && run chmod 0640 "$eve_json"
 
 	if [[ "${CONF[PIN_VERSIONS]:-no}" == "yes" && "${CONF[SURICATA_SOURCE]}" != "source" ]]; then
-		pkg_pin "$SURICATA_PACKAGE"
+		pkg_pin "$SURICATA_PACKAGE" || return 1
 	fi
 
 	return 0

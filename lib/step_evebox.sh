@@ -47,11 +47,11 @@ evebox_render_conf() {
 }
 
 evebox_repo_add() {
-	run mkdir -p "$(dirname "$(path_evebox_keyring)")"
-	run curl -fsSL "$EVEBOX_KEY_URL" -o "$(path_evebox_keyring)"
+	run mkdir -p "$(dirname "$(path_evebox_keyring)")" || return 1
+	run curl -fsSL "$EVEBOX_KEY_URL" -o "$(path_evebox_keyring)" || return 1
 	write_rendered_file "$(path_evebox_apt_list)" \
 		"deb [signed-by=$(path_evebox_keyring)] ${EVEBOX_REPO_URL} stable main"
-	run apt-get update
+	run apt-get update || return 1
 }
 
 step_evebox_check() {
@@ -71,18 +71,18 @@ step_evebox_check() {
 
 step_evebox_apply() {
 	if ! command -v evebox >/dev/null 2>&1; then
-		evebox_repo_add
-		pkg_install "$(pkg_spec "$EVEBOX_PACKAGE" "${CONF[EVEBOX_VERSION]:-}")"
+		evebox_repo_add || return 1
+		pkg_install "$(pkg_spec "$EVEBOX_PACKAGE" "${CONF[EVEBOX_VERSION]:-}")" || return 1
 	fi
 
 	write_rendered_file "$(path_evebox_yaml)" "$(evebox_render_conf)"
 
 	# The evebox user must read Suricata's logs (official Debian docs).
 	if getent group suricata >/dev/null 2>&1; then
-		run usermod -a -G suricata evebox
+		run usermod -a -G suricata evebox || return 1
 	fi
 
-	run systemctl enable --now "$EVEBOX_UNIT"
+	run systemctl enable --now "$EVEBOX_UNIT" || return 1
 
 	if [[ "${CONF[EVEBOX_DB]:-sqlite}" == "elasticsearch" ]]; then
 		echo "evebox: EVEBOX_RETENTION_DAYS работает только с SQLite, для Elasticsearch удаление старых событий настраивается на стороне Elasticsearch." >&2

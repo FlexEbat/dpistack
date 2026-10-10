@@ -41,16 +41,22 @@ ntopng_repo_add() {
 	# Real, documented ntop.org install sequence (packages.ntop.org):
 	# add universe (Ubuntu only), fetch the tiny apt-ntop.deb that
 	# registers the repo + imports the GPG key, then apt update.
-	run add-apt-repository -y universe
+	# Debian has no universe component, only Ubuntu does.
+	if [[ "$OS_ID" == "ubuntu" ]]; then
+		run add-apt-repository -y universe || return 1
+	fi
 	local version_id
 	# shellcheck disable=SC1090
 	version_id=$(. "$(path_os_release)" && echo "${VERSION_ID:-}")
 	local deb_tmp
 	deb_tmp="$(mktemp --suffix=.deb)"
-	run wget -qO "$deb_tmp" "${NTOP_REPO_DEB_URL_APT}/${version_id}/all/apt-ntop.deb"
-	run apt-get install -y "$deb_tmp"
+	if ! run wget -qO "$deb_tmp" "${NTOP_REPO_DEB_URL_APT}/${version_id}/all/apt-ntop.deb" ||
+		! run apt-get install -y "$deb_tmp"; then
+		rm -f "$deb_tmp"
+		return 1
+	fi
 	rm -f "$deb_tmp"
-	run apt-get update
+	run apt-get update || return 1
 }
 
 step_ntopng_check() {
@@ -70,13 +76,13 @@ step_ntopng_check() {
 
 step_ntopng_apply() {
 	if ! command -v ntopng >/dev/null 2>&1; then
-		ntopng_repo_add
-		pkg_install "$(pkg_spec "$NTOPNG_PACKAGE" "${CONF[NTOPNG_VERSION]:-}")"
+		ntopng_repo_add || return 1
+		pkg_install "$(pkg_spec "$NTOPNG_PACKAGE" "${CONF[NTOPNG_VERSION]:-}")" || return 1
 	fi
 
 	write_rendered_file "$(path_ntopng_conf)" "$(ntopng_render_conf)"
 
-	run systemctl enable --now "$NTOPNG_UNIT"
+	run systemctl enable --now "$NTOPNG_UNIT" || return 1
 
 	# A4: there is no dpistack.conf key to set a real ntopng password
 	# from here, so the default admin/admin credential is only ever

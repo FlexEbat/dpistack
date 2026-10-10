@@ -182,8 +182,13 @@ config_write_conf() {
 # later `dpistack-ctl reconfigure` can diff dpistack.conf (already
 # edited by config-write) against what the system was last built from.
 config_snapshot_applied() {
-	local f tmp key
+	local f tmp key lock_fd
 	f=$(path_state_file)
+	# Same lock as state_write_value: the watchdog rewrites this file too,
+	# and an unlocked read-modify-write here could drop its update.
+	mkdir -p "$(dirname "$f")"
+	exec {lock_fd}>"${f}.lock"
+	flock -x "$lock_fd"
 	tmp=$(mktemp)
 	if [[ -f "$f" ]]; then
 		grep -v '^applied\.' "$f" >"$tmp" || true
@@ -191,8 +196,9 @@ config_snapshot_applied() {
 	for key in $(printf '%s\n' "${!CONF[@]}" | sort); do
 		printf 'applied.%s=%s\n' "$key" "${CONF[$key]}" >>"$tmp"
 	done
-	atomic_write "$f" <"$tmp"
+	atomic_write "$f" 0600 <"$tmp"
 	rm -f "$tmp"
+	exec {lock_fd}>&-
 }
 
 config_write_secrets() {
@@ -203,8 +209,7 @@ config_write_secrets() {
 			[[ -n "${SECRETS[$key]}" ]] || continue
 			printf '%s=%s\n' "$key" "${SECRETS[$key]}"
 		done
-	} | atomic_write "$path"
-	chmod 0600 "$path"
+	} | atomic_write "$path" 0600
 }
 
 # config_print_summary
