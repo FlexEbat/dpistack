@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
 # nDPI: NDPI_SOURCE=pkg installs the distro's libndpi-dev, NDPI_SOURCE=source
-# clones and builds ntop/nDPI from GitHub (tech.md slice 4). Verified for
-# real in this environment: clone, autogen.sh, configure, make, make
-# install all work against the current ntop/nDPI master.
+# clones and builds ntop/nDPI from GitHub (tech.md slice 4).
 
 NDPI_PACKAGE="libndpi-dev"
+# The dnf name is set once the family is known (see os_detect).
 NDPI_REPO_URL="https://github.com/ntop/nDPI.git"
 
+# Empty NDPI_VERSION means the release the Suricata nDPI plugin builds
+# against. Built for real: the plugin in Suricata master compiles with
+# nDPI 4.12 and 4.14 only (4.10 and older lack its API, 5.0 and master
+# changed it), so master is not a safe default.
+NDPI_COMPAT_REF="4.14"
+
 ndpi_target_ref() {
-	# Empty NDPI_VERSION tracks the repo's default branch.
-	echo "${CONF[NDPI_VERSION]:-}"
+	echo "${CONF[NDPI_VERSION]:-$NDPI_COMPAT_REF}"
 }
 
 ndpi_built_ref_state_key() { echo "ndpi.built_ref"; }
 
 ndpi_pkg_installed_version() {
-	dpkg-query -W -f='${Version}' "$NDPI_PACKAGE" 2>/dev/null
+	pkg_installed_version "$NDPI_PACKAGE"
 }
 
 ndpi_source_lib_present() {
@@ -32,9 +36,9 @@ step_ndpi_check() {
 	source)
 		ndpi_source_lib_present || return 1
 		local wanted have
-		wanted=$(ndpi_target_ref)
+		wanted=$(git_ref_commit "$(path_ndpi_src_dir)" "$(ndpi_target_ref)")
 		have=$(state_read_value "$(ndpi_built_ref_state_key)")
-		[[ -z "$wanted" || "$wanted" == "$have" ]]
+		[[ -n "$wanted" && "$wanted" == "$have" ]]
 		;;
 	*)
 		return 1
@@ -64,11 +68,7 @@ ndpi_build_from_source() {
 		run git -C "$src_dir" fetch --tags origin || return 1
 	fi
 
-	if [[ -n "$ref" ]]; then
-		run git -C "$src_dir" checkout "$ref" || return 1
-	else
-		run git -C "$src_dir" checkout HEAD || return 1
-	fi
+	run git -C "$src_dir" checkout "$ref" || return 1
 
 	local resolved_ref
 	resolved_ref=$(git -C "$src_dir" rev-parse HEAD 2>/dev/null)

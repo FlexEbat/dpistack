@@ -145,7 +145,15 @@ step_rules_apply() {
 			echo "suricata-update завершился с ошибкой, прежний набор правил сохранён" >&2
 			return 1
 		fi
-		run suricatasc -c ruleset-reload-nonblocking
+		# On a first install Suricata is not up yet and has no socket; it
+		# reads the new rules when it starts. A reload that fails on a
+		# running Suricata is a warning: the rules are already on disk.
+		local socket
+		socket=$(path_suricata_socket)
+		if [[ -S "$socket" ]]; then
+			run suricatasc -c ruleset-reload-nonblocking "$socket" ||
+				echo "предупреждение: Suricata не приняла перезагрузку правил, они применятся при перезапуске" >&2
+		fi
 	fi
 
 	if [[ "${CONF[RULES_UPDATE]:-on}" == "on" ]]; then

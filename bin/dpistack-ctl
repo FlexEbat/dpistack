@@ -150,11 +150,18 @@ component_version() {
 	suricata) pkg="suricata" ;;
 	evebox) pkg="evebox" ;;
 	ntopng) pkg="ntopng" ;;
-	redis) pkg="redis-server" ;;
+	redis)
+		pkg="redis-server"
+		command -v dpkg-query >/dev/null 2>&1 || pkg="redis"
+		;;
 	*) return 0 ;;
 	esac
 	local v
-	v=$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null)
+	if command -v dpkg-query >/dev/null 2>&1; then
+		v=$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null)
+	else
+		v=$(rpm -q --qf '%{VERSION}-%{RELEASE}' "$pkg" 2>/dev/null) || v=""
+	fi
 	if [[ -z "$v" && "$1" == "suricata" ]] && command -v suricata >/dev/null 2>&1; then
 		# Source builds have no package; the binary reports its version.
 		v=$(suricata -V 2>/dev/null | sed -n 's/.*version \([0-9][^ ]*\).*/\1/p' | head -1)

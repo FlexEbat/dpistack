@@ -7,6 +7,7 @@
 NTOPNG_PACKAGE="ntopng"
 NTOPNG_UNIT="ntopng.service"
 NTOP_REPO_DEB_URL_APT="https://packages.ntop.org/apt"
+NTOP_REPO_RPM_URL="https://packages.ntop.org/centos-stable/ntop.repo"
 
 ntopng_effective_ifaces() {
 	# criterion 2: NTOPNG_IFACES defaults to IFACES, an explicit value
@@ -37,7 +38,29 @@ ntopng_render_conf() {
 		"NTOPNG_PIDFILE=$(path_ntopng_pidfile)"
 }
 
+# ntop.org publishes one rpm repo for the RHEL clones (EPEL comes from
+# pkg_enable_extra_repos). Fedora and Amazon Linux are not in its list:
+# there ntopng has to come from the distribution itself.
+ntopng_repo_add_rpm() {
+	case "$OS_ID" in
+	rocky | almalinux | centos | rhel | ol)
+		run curl -fsSL "$NTOP_REPO_RPM_URL" -o "$(path_ntop_repo_file)" || return 1
+		run dnf -y makecache || return 1
+		;;
+	*)
+		pkg_available "$NTOPNG_PACKAGE" || {
+			echo "ntopng: ntop.org не публикует репозиторий для $OS_ID и в репозиториях дистрибутива пакета нет; шаг можно пропустить: --skip ntopng" >&2
+			return 1
+		}
+		;;
+	esac
+}
+
 ntopng_repo_add() {
+	if [[ "$OS_FAMILY" == "dnf" ]]; then
+		ntopng_repo_add_rpm
+		return
+	fi
 	# Real, documented ntop.org install sequence (packages.ntop.org):
 	# add universe (Ubuntu only), fetch the tiny apt-ntop.deb that
 	# registers the repo + imports the GPG key, then apt update.

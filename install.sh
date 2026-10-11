@@ -233,14 +233,40 @@ run_plan() {
 	return "$any_pending"
 }
 
+# autodetect_iface - IFACES still holds the schema default enp2s0 and that
+# interface does not exist here (eth0, ens3, a renamed NIC...): take the
+# interface of the default route instead of failing the preflight. A
+# value anyone typed is never replaced.
+autodetect_iface() {
+	[[ "${CONF[IFACES]:-}" == "enp2s0" ]] && ! net_iface_exists enp2s0 || return 0
+	local found
+	found=$(net_default_iface)
+	[[ -n "$found" ]] || return 0
+	echo "IFACES: интерфейса enp2s0 нет, взят $found (интерфейс маршрута по умолчанию)" >&2
+	CONF[IFACES]="$found"
+}
+
+# ensure_preflight_tools - the preflight itself calls ss and curl, and a
+# minimal image has neither: install them first, but only when missing
+# and only for a real run.
+ensure_preflight_tools() {
+	[[ "$DRY_RUN" == "1" || "${EUID:-$(id -u)}" -ne 0 ]] && return 0
+	command -v ss >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && return 0
+	pkg_update_once || die 1 "обновление индекса пакетов не прошло"
+	case "$OS_FAMILY" in
+	apt) pkg_install iproute2 curl ca-certificates || die 1 "не удалось поставить iproute2 и curl" ;;
+	esac
+}
+
 # prepare_packages - the package index and the base tools come first, so
 # every later step finds its packages. A component whose package does not
 # exist here falls back to a source build, and the changed source is saved
 # to dpistack.conf and checked against the preflight again (a build needs
 # more disk than a package).
 prepare_packages() {
-	pkg_update_once || die 1 "apt-get update не прошёл"
+	pkg_update_once || die 1 "обновление индекса пакетов не прошло"
 	pkg_install_base || die 1 "не удалось поставить базовые пакеты"
+	pkg_enable_extra_repos || die 1 "не удалось подключить дополнительные репозитории (EPEL, CRB)"
 	local fallback=0
 	suricata_resolve_source && fallback=1
 	ndpi_resolve_source && fallback=1
@@ -288,6 +314,7 @@ cmd_install() {
 	panel_password_apply
 	config_generate_metrics_token_if_needed
 	validate_or_die
+	autodetect_iface
 
 	echo "Итоговый конфиг:"
 	config_print_summary
@@ -300,6 +327,8 @@ cmd_install() {
 		config_snapshot_applied
 		config_write_secrets "$(path_secrets)"
 	fi
+
+	ensure_preflight_tools
 
 	if ! step_preflight_check; then
 		exit 3
@@ -386,7 +415,7 @@ cmd_reconfigure() {
 
 	# A changed key can make a step install a package (nginx, a new version).
 	if [[ "${#CONFIG_AFFECTED_STEPS[@]}" -gt 0 ]]; then
-		pkg_update_once || die 1 "apt-get update не прошёл"
+		pkg_update_once || die 1 "обновление индекса пакетов не прошло"
 	fi
 	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
 		step_selected "$step" || continue
@@ -421,11 +450,11 @@ cmd_upgrade() {
 	fi
 
 	if [[ "${CONF[PIN_VERSIONS]:-no}" == "yes" ]]; then
-		echo "upgrade: PIN_VERSIONS=yes - apt сам пропустит закреплённые пакеты (apt-mark hold): ${packages[*]}"
+		echo "upgrade: PIN_VERSIONS=yes - менеджер пакетов пропустит закреплённые пакеты (apt-mark hold, dnf versionlock): ${packages[*]}"
 	fi
-	# Without a fresh index --only-upgrade never sees a newer version.
-	pkg_update_once || die 1 "apt-get update не прошёл"
-	run apt-get install --only-upgrade -y "${packages[@]}" || die 1 "apt-get install --only-upgrade не прошёл"
+	# Without a fresh index an upgrade never sees a newer version.
+	pkg_update_once || die 1 "обновление индекса пакетов не прошло"
+	pkg_upgrade "${packages[@]}" || die 1 "обновление пакетов не прошло"
 	return 0
 }
 

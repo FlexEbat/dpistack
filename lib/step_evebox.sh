@@ -47,6 +47,15 @@ evebox_render_conf() {
 }
 
 evebox_repo_add() {
+	if [[ "$OS_FAMILY" == "dnf" ]]; then
+		# The EveBox rpm repository exists (evebox.org/#downloads), but
+		# its .repo URL is not confirmed here, so none is guessed.
+		pkg_available "$EVEBOX_PACKAGE" || {
+			echo "evebox: для dnf-дистрибутива репозиторий не настроен и пакета нет. Поставьте EveBox с https://evebox.org/#downloads и повторите install --only evebox, либо пропустите шаг: --skip evebox" >&2
+			return 1
+		}
+		return 0
+	fi
 	run mkdir -p "$(dirname "$(path_evebox_keyring)")" || return 1
 	run curl -fsSL "$EVEBOX_KEY_URL" -o "$(path_evebox_keyring)" || return 1
 	write_rendered_file "$(path_evebox_apt_list)" \
