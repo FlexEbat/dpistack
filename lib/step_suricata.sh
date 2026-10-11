@@ -92,7 +92,7 @@ suricata_render_logrotate() {
 }
 
 suricata_installed_version() {
-	dpkg-query -W -f='${Version}' "$SURICATA_PACKAGE" 2>/dev/null
+	pkg_installed_version "$SURICATA_PACKAGE"
 }
 
 # suricata_validate_render <rendered-yaml-content>
@@ -130,10 +130,22 @@ suricata_source_binary_present() {
 # install. Returns 0 when it changed SURICATA_SOURCE.
 suricata_resolve_source() {
 	local source="${CONF[SURICATA_SOURCE]:-}" reason
-	[[ "$source" == "distro" || "$source" == "oisf" ]] || return 1
 	if command -v suricata >/dev/null 2>&1 && [[ -n "$(suricata_installed_version)" ]]; then
 		return 1
 	fi
+	# The other way round: a build from git needs Rust 1.85. Where the
+	# repositories cannot supply it (Debian 12 has 1.63) the distribution
+	# package is the only Suricata that installs; the nDPI plugin exists
+	# only in a source build, so it goes off. A pinned SURICATA_VERSION is
+	# the administrator's choice and is left alone.
+	if [[ "$source" == "source" && -z "${CONF[SURICATA_VERSION]:-}" ]] && ! suricata_source_binary_present &&
+		! pkg_rust_obtainable && pkg_available "$SURICATA_PACKAGE"; then
+		echo "suricata: для сборки из git нужен Rust 1.${SURICATA_RUST_MIN_MINOR}, в репозиториях его нет; взят пакет $SURICATA_PACKAGE из дистрибутива, nDPI выключен (плагин nDPI есть только в сборке из исходников)" >&2
+		CONF[SURICATA_SOURCE]=distro
+		CONF[NDPI_ENABLE]=no
+		return 0
+	fi
+	[[ "$source" == "distro" || "$source" == "oisf" ]] || return 1
 	if [[ "$source" == "oisf" && "$OS_ID" != "ubuntu" ]]; then
 		reason="PPA OISF существует только для Ubuntu"
 	elif [[ "$source" == "distro" ]] && ! pkg_available "$SURICATA_PACKAGE"; then
@@ -167,8 +179,13 @@ suricata_build_from_source() {
 	local resolved_ref
 	resolved_ref=$(git -C "$src_dir" rev-parse HEAD 2>/dev/null)
 
+	# --libdir puts the nDPI plugin where suricata.yaml and the rest of the
+	# installer look for it (path_suricata_ndpi_plugin): with only --prefix
+	# it lands in /usr/local/lib/suricata and Suricata fails on "Bad plugin
+	# path".
 	local configure_args=(--prefix=/usr/local --sysconfdir="${DPISTACK_ROOT}/etc"
-		--localstatedir="${DPISTACK_ROOT}/var" --disable-gccmarch-native)
+		--localstatedir="${DPISTACK_ROOT}/var" --libdir="${DPISTACK_ROOT}/usr/lib"
+		--disable-gccmarch-native)
 	if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
 		configure_args+=(--enable-ndpi --with-ndpi="$(path_ndpi_src_dir)")
 	fi
@@ -178,7 +195,8 @@ suricata_build_from_source() {
 		run ./autogen.sh &&
 			run ./configure "${configure_args[@]}" &&
 			run make -j"$(nproc)" &&
-			run make install
+			run make install &&
+			run make install-conf
 	)
 	local rc=$?
 	if [[ "$rc" -ne 0 ]]; then
@@ -206,7 +224,12 @@ step_suricata_check() {
 		local wanted have
 		wanted="${CONF[SURICATA_VERSION]:-}"
 		have=$(state_read_value "$SURICATA_BUILT_REF_STATE_KEY")
-		[[ -z "$wanted" || "$wanted" == "$have" ]] || return 1
+		# The state holds the commit that was built; a pinned tag or
+		# branch has to be compared as the commit it names, not as text.
+		if [[ -n "$wanted" ]]; then
+			wanted=$(git_ref_commit "$(path_suricata_src_dir)" "$wanted")
+			[[ -n "$wanted" && "$wanted" == "$have" ]] || return 1
+		fi
 	else
 		command -v suricata >/dev/null 2>&1 || return 1
 		[[ -n "$(suricata_installed_version)" ]] || return 1

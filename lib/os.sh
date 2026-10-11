@@ -51,6 +51,16 @@ os_detect() {
 	if [[ "$OS_FAMILY" == "apt" ]]; then
 		export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
 	fi
+	# Package and unit names that differ between the families.
+	if [[ "$OS_FAMILY" == "dnf" ]]; then
+		# These are read by step_ndpi.sh and step_redis.sh.
+		# shellcheck disable=SC2034
+		NDPI_PACKAGE="ndpi-devel"
+		# shellcheck disable=SC2034
+		REDIS_PACKAGE="redis"
+		# shellcheck disable=SC2034
+		REDIS_UNIT="redis.service"
+	fi
 }
 
 pkg_install() {
@@ -106,8 +116,30 @@ pkg_pin() {
 		run apt-mark hold "$1"
 		;;
 	dnf)
-		log "INFO" "dnf versionlock stub called for $1 (dnf family not reachable past preflight yet)"
+		pkg_install python3-dnf-plugin-versionlock || return 1
+		run dnf versionlock add "$1"
 		;;
+	esac
+}
+
+# pkg_installed_version <package> - the installed version, empty (and rc 1)
+# when the package is not installed.
+pkg_installed_version() {
+	local out
+	case "$OS_FAMILY" in
+	apt) out=$(dpkg-query -W -f='${Version}' "$1" 2>/dev/null) || return 1 ;;
+	dnf) out=$(rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null) || return 1 ;;
+	*) return 1 ;;
+	esac
+	printf '%s' "$out"
+}
+
+# pkg_upgrade <package...> - upgrade only what is already installed.
+pkg_upgrade() {
+	case "$OS_FAMILY" in
+	apt) run apt-get install --only-upgrade -y "$@" ;;
+	dnf) run dnf upgrade -y "$@" ;;
+	*) return 1 ;;
 	esac
 }
 
@@ -119,6 +151,7 @@ pkg_update_once() {
 	[[ "$PKG_INDEX_FRESH" == "1" ]] && return 0
 	case "$OS_FAMILY" in
 	apt) run apt-get update || return 1 ;;
+	dnf) run dnf -y makecache || return 1 ;;
 	esac
 	PKG_INDEX_FRESH=1
 }
@@ -139,14 +172,45 @@ pkg_available() {
 # Tools the steps call directly: curl and wget for keys and repos, gnupg
 # for apt keys, jq for the watchdog, openssl for the self-signed
 # certificate, logrotate for the Suricata rotation file, git for
-# source builds. A minimal image has none of them.
+# source builds, sudo (visudo) for the panel rule. A minimal image has none of them.
 pkg_install_base() {
 	case "$OS_FAMILY" in
 	apt)
-		local -a pkgs=(ca-certificates curl wget gnupg jq git openssl logrotate)
+		local -a pkgs=(ca-certificates curl wget gnupg jq git openssl logrotate iproute2 sudo)
 		# add-apt-repository (OISF PPA, universe) comes from this package.
 		[[ "$OS_ID" == "ubuntu" ]] && pkgs+=(software-properties-common)
 		pkg_install "${pkgs[@]}"
+		;;
+	dnf)
+		# Only what is missing: on RHEL 9 the curl binary comes from
+		# curl-minimal and installing curl next to it is a conflict.
+		local -a missing=()
+		local pair
+		for pair in curl:curl wget:wget gpg:gnupg2 jq:jq git:git openssl:openssl \
+			logrotate:logrotate ip:iproute visudo:sudo update-ca-trust:ca-certificates; do
+			command -v "${pair%%:*}" >/dev/null 2>&1 || missing+=("${pair##*:}")
+		done
+		[[ "${#missing[@]}" -eq 0 ]] || pkg_install "${missing[@]}"
+		;;
+	esac
+}
+
+# pkg_enable_extra_repos - the RHEL clones keep Suricata, redis and the
+# -devel packages in EPEL and CodeReady Builder. Fedora and Amazon Linux
+# need nothing; RHEL itself needs a subscription, so it is left to the
+# administrator with a clear message.
+pkg_enable_extra_repos() {
+	[[ "$OS_FAMILY" == "dnf" ]] || return 0
+	local major="${OS_VERSION_ID%%.*}" repo=crb
+	case "$OS_ID" in
+	fedora | amzn) return 0 ;;
+	rocky | almalinux | centos)
+		pkg_install dnf-plugins-core epel-release || return 1
+		[[ "$major" =~ ^[0-9]+$ ]] && ((major <= 8)) && repo=powertools
+		run dnf config-manager --set-enabled "$repo" || return 1
+		;;
+	*)
+		echo "$OS_ID: включите EPEL и репозиторий -devel (CodeReady Builder) вручную, установщик их не трогает" >&2
 		;;
 	esac
 }
@@ -165,8 +229,17 @@ pkg_build_deps() {
 		fi
 		pkg_install "${pkgs[@]}"
 		;;
+	dnf)
+		local -a pkgs=(gcc gcc-c++ make git autoconf automake libtool pkgconf-pkg-config libpcap-devel)
+		if [[ "$1" == "suricata" ]]; then
+			pkgs+=(pcre2-devel libyaml-devel jansson-devel file-devel zlib-devel
+				libcap-ng-devel libnet-devel lz4-devel python3-pyyaml cargo rust)
+			pkg_available cbindgen && pkgs+=(cbindgen)
+		fi
+		pkg_install "${pkgs[@]}"
+		;;
 	*)
-		die 3 "pkg_build_deps: сборка из исходников для family=$OS_FAMILY пока не поддерживается"
+		die 3 "pkg_build_deps: неизвестная семья пакетов: $OS_FAMILY"
 		;;
 	esac
 }
@@ -176,17 +249,81 @@ pkg_build_deps() {
 # to pick them. On a distro with nothing newer configure prints its own
 # message and the step stops there.
 SURICATA_RUST_MIN_MINOR=85
+
+# pkg_rust_versioned_minor - the smallest N >= 85 for which the apt
+# repositories carry rustc-1.N; empty when there is none.
+pkg_rust_versioned_minor() {
+	apt-cache pkgnames rustc-1. 2>/dev/null | sed -n 's/^rustc-1\.\([0-9][0-9]*\)$/\1/p' |
+		awk -v m="$SURICATA_RUST_MIN_MINOR" '$1 >= m' | sort -n | head -n 1
+}
+
+# pkg_rust_obtainable - a Rust new enough for Suricata from git is
+# installed or can be installed from the repositories.
+pkg_rust_obtainable() {
+	local have
+	have=$(rustc --version 2>/dev/null | sed -n 's/^rustc 1\.\([0-9][0-9]*\)\..*/\1/p')
+	((${have:-0} >= SURICATA_RUST_MIN_MINOR)) && return 0
+	case "$OS_FAMILY" in
+	apt) [[ -n "$(pkg_rust_versioned_minor)" ]] ;;
+	dnf)
+		have=$(dnf -q repoquery --latest-limit=1 --qf '%{version}' rust 2>/dev/null |
+			sed -n 's/^1\.\([0-9][0-9]*\)\..*/\1/p' | head -n 1)
+		((${have:-0} >= SURICATA_RUST_MIN_MINOR))
+		;;
+	*) return 1 ;;
+	esac
+}
+
 pkg_select_rust() {
 	[[ "$DRY_RUN" == "1" ]] && return 0
 	local have wanted
 	have=$(rustc --version 2>/dev/null | sed -n 's/^rustc 1\.\([0-9][0-9]*\)\..*/\1/p')
 	((${have:-0} >= SURICATA_RUST_MIN_MINOR)) && return 0
-	wanted=$(apt-cache pkgnames rustc-1. 2>/dev/null | sed -n 's/^rustc-1\.\([0-9][0-9]*\)$/\1/p' |
-		awk -v m="$SURICATA_RUST_MIN_MINOR" '$1 >= m' | sort -n | head -n 1)
+	wanted=$(pkg_rust_versioned_minor)
 	if [[ -z "$wanted" ]]; then
 		echo "suricata: rustc 1.${have:-?} старше 1.${SURICATA_RUST_MIN_MINOR}, более новых пакетов rustc-1.N в репозиториях нет; сборка может упасть на configure (тогда SURICATA_SOURCE=oisf или distro)" >&2
 		return 0
 	fi
 	pkg_install "rustc-1.$wanted" "cargo-1.$wanted" || return 1
 	export RUSTC="rustc-1.$wanted" CARGO="cargo-1.$wanted"
+}
+
+# net_iface_exists <name> - the interface is there. Uses ip when it is
+# installed and sysfs otherwise: a minimal image has no iproute2 yet.
+net_iface_exists() {
+	if command -v ip >/dev/null 2>&1; then
+		ip link show "$1" >/dev/null 2>&1
+	else
+		[[ -e "$(path_sys_class_net)/$1" ]]
+	fi
+}
+
+# net_default_iface - the interface of the default route, else the first
+# non-loopback interface that has a device behind it, else the first
+# non-loopback one; empty when there is none. Read from /proc and sysfs,
+# so it works before iproute2 is installed.
+net_default_iface() {
+	local found="" dir
+	if [[ -r "$(path_proc_net_route)" ]]; then
+		found=$(awk 'NR > 1 && $2 == "00000000" {print $1; exit}' "$(path_proc_net_route)")
+	fi
+	dir=$(path_sys_class_net)
+	if [[ -z "$found" && -d "$dir" ]]; then
+		local candidate
+		for candidate in "$dir"/*; do
+			[[ "${candidate##*/}" == "lo" ]] && continue
+			if [[ -e "$candidate/device" ]]; then
+				found="${candidate##*/}"
+				break
+			fi
+		done
+		if [[ -z "$found" ]]; then
+			for candidate in "$dir"/*; do
+				[[ -e "$candidate" && "${candidate##*/}" != "lo" ]] || continue
+				found="${candidate##*/}"
+				break
+			done
+		fi
+	fi
+	printf '%s' "$found"
 }

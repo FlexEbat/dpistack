@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack-ctl version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack-ctl
-DPISTACK_VERSION="0.3.3"
+DPISTACK_VERSION="0.4.0"
 
 : "${DRY_RUN:=0}"
 
@@ -190,4 +190,10 @@ conf_get() {
 	value="${value%\"}"
 	value="${value#\"}"
 	echo "${value:-$default}"
+}
+
+# git_ref_commit <repo-dir> <ref> - the commit a tag, branch or sha names
+# in that checkout; empty when the ref is unknown there.
+git_ref_commit() {
+	git -C "$1" rev-parse --verify -q "${2}^{commit}" 2>/dev/null
 }

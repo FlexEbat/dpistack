@@ -11,6 +11,8 @@ path_conf_draft() { echo "$(path_etc)/dpistack.conf.draft"; }
 path_secrets() { echo "$(path_etc)/secrets.conf"; }
 path_panel_auth() { echo "$(path_etc)/panel.auth"; }
 
+path_sys_class_net() { echo "${DPISTACK_ROOT}/sys/class/net"; }
+path_proc_net_route() { echo "${DPISTACK_ROOT}/proc/net/route"; }
 path_state_dir() { echo "${DPISTACK_ROOT}/var/lib/dpistack"; }
 path_state_file() { echo "$(path_state_dir)/state"; }
 path_health_json() { echo "$(path_state_dir)/health.json"; }
@@ -57,6 +59,7 @@ path_rules_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-rul
 path_suricata_socket() { echo "${DPISTACK_ROOT}/run/suricata/suricata-command.socket"; }
 
 path_evebox_yaml() { echo "${DPISTACK_ROOT}/etc/evebox/evebox.yaml"; }
+path_ntop_repo_file() { echo "${DPISTACK_ROOT}/etc/yum.repos.d/ntop.repo"; }
 path_evebox_keyring() { echo "${DPISTACK_ROOT}/etc/apt/keyrings/evebox.asc"; }
 path_evebox_apt_list() { echo "${DPISTACK_ROOT}/etc/apt/sources.list.d/evebox.list"; }
 path_ntopng_conf() { echo "${DPISTACK_ROOT}/etc/ntopng/ntopng.conf"; }

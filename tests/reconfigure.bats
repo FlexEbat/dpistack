@@ -139,7 +139,7 @@ install_base() {
 	[ "$status" -eq 0 ]
 	run bash "$REPO_DIR/install.sh" upgrade
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"apt сам пропустит"* ]]
+	[[ "$output" == *"менеджер пакетов пропустит"* ]]
 	run grep -c "apt-get install --only-upgrade" "$MOCK_CALLS_LOG"
 	[ "$output" = "1" ]
 }

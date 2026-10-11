@@ -360,7 +360,7 @@ inst() {
 	update_line="$(grep -n '^apt-get update' "$CALLS" | head -n 1 | cut -d: -f1)"
 	install_line="$(grep -n '^apt-get install' "$CALLS" | head -n 1 | cut -d: -f1)"
 	[ "$update_line" -lt "$install_line" ]
-	grep -q '^apt-get install -y ca-certificates curl wget gnupg jq git openssl logrotate software-properties-common$' "$CALLS"
+	grep -q '^apt-get install -y ca-certificates curl wget gnupg jq git openssl logrotate iproute2 sudo software-properties-common$' "$CALLS"
 }
 
 @test "a missing suricata package switches the run to a source build and saves it" {

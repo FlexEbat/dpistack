@@ -26,14 +26,14 @@ step_preflight_reasons() {
 	done
 
 	if [[ "${OS_FAMILY:-}" == "dnf" ]]; then
-		reasons+=("dnf-дистрибутив: пока не поддерживается")
+		log "WARN" "dnf-дистрибутив ($OS_ID ${OS_VERSION_ID:-}): поддержка не проверена на реальном хосте, см. tech.md 18.4"
 	fi
 
 	local iface _preflight_ifaces
 	IFS=',' read -ra _preflight_ifaces <<<"${CONF[IFACES]:-}"
 	for iface in "${_preflight_ifaces[@]}"; do
 		[[ -z "$iface" ]] && continue
-		if ! ip link show "$iface" >/dev/null 2>&1; then
+		if ! net_iface_exists "$iface"; then
 			reasons+=("интерфейс $iface из IFACES не существует")
 		fi
 	done

@@ -89,27 +89,50 @@ access_selinux_notice() {
 	local mode
 	mode=$(getenforce 2>/dev/null)
 	if [[ "$mode" == "Enforcing" ]]; then
-		echo "access: SELinux в режиме Enforcing. Нужны setsebool/semanage для портов и прокси nginx - применяются только в слайсе 26 (поддержка Fedora/RHEL), сейчас не трогаю." >&2
+		# nginx may not open connections to the local ntopng, EveBox and
+		# panel ports until this boolean is on.
+		if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+			run setsebool -P httpd_can_network_connect 1 ||
+				echo "access: SELinux Enforcing, setsebool httpd_can_network_connect не прошёл: nginx не сможет проксировать на локальные порты" >&2
+		else
+			echo "access: SELinux в режиме Enforcing; для ACCESS_MODE=${CONF[ACCESS_MODE]:-localhost} изменений не требуется" >&2
+		fi
+	fi
+}
+
+# access_allow_port <cidr> <port> - one rule in whichever firewall the
+# system has: ufw (Debian family) or firewalld (RHEL family).
+access_allow_port() {
+	local cidr="$1" port="$2"
+	if command -v ufw >/dev/null 2>&1; then
+		run ufw allow from "$cidr" to any port "$port" proto tcp
+	else
+		run firewall-cmd --permanent \
+			"--add-rich-rule=rule family=ipv4 source address=${cidr} port port=${port} protocol=tcp accept"
 	fi
 }
 
 access_firewall_apply() {
 	[[ "${CONF[FIREWALL_MANAGE]:-no}" == "auto" ]] || return 0
-	command -v ufw >/dev/null 2>&1 || {
-		echo "access: FIREWALL_MANAGE=auto, но ufw не найден - правила не применены" >&2
+	if ! command -v ufw >/dev/null 2>&1 && ! command -v firewall-cmd >/dev/null 2>&1; then
+		echo "access: FIREWALL_MANAGE=auto, но ни ufw, ни firewalld не найдены - правила не применены" >&2
 		return 0
-	}
+	fi
 	local cidr
 	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
 	local port
 	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
 		for port in "${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}"; do
-			run ufw allow from "$cidr" to any port "$port" proto tcp || return 1
+			access_allow_port "$cidr" "$port" || return 1
 		done
 	elif [[ "${CONF[ACCESS_MODE]:-localhost}" == "lan" ]]; then
 		for port in "${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}"; do
-			run ufw allow from "$cidr" to any port "$port" proto tcp || return 1
+			access_allow_port "$cidr" "$port" || return 1
 		done
+	fi
+	# firewalld keeps permanent rules apart from the running ones.
+	if ! command -v ufw >/dev/null 2>&1; then
+		run firewall-cmd --reload || return 1
 	fi
 }
 

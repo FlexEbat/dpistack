@@ -43,6 +43,14 @@ teardown() {
 @test "criterion 6: a second check does not report work needed for the same already-built version" {
 	mkdir -p "$DPISTACK_ROOT/usr/local/lib"
 	touch "$DPISTACK_ROOT/usr/local/lib/libndpi.so"
+	# The state holds the built commit; the pinned tag is compared as the
+	# commit it names.
+	src="$DPISTACK_ROOT/usr/local/src/dpistack-ndpi"
+	mkdir -p "$src"
+	git -C "$src" init -q
+	git -C "$src" -c user.name=t -c user.email=t@t commit -q --allow-empty -m one
+	git -C "$src" tag v4.14
+	sha="$(git -C "$src" rev-parse HEAD)"
 
 	run bash -c '
 		DPISTACK_ROOT="'"$DPISTACK_ROOT"'"
@@ -58,7 +66,7 @@ teardown() {
 		CONF[NDPI_SOURCE]="source"
 		CONF[NDPI_VERSION]="v4.14"
 		source "'"$REPO_DIR"'/lib/step_ndpi.sh"
-		state_write_value "ndpi.built_ref" "v4.14"
+		state_write_value "ndpi.built_ref" "'"$sha"'"
 		step_ndpi_check && echo "ALREADY_DONE"
 	'
 	[ "$status" -eq 0 ]

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Mock rpm(8) for bats tests: "rpm -q --qf FMT <pkg>" prints a version
+# unless the package is listed in MOCK_RPM_ABSENT, like the real one
+# ("package X is not installed" on stdout, exit 1).
+if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
+	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+fi
+pkg="${*: -1}"
+if [[ " ${MOCK_RPM_ABSENT:-} " == *" $pkg "* ]]; then
+	echo "package $pkg is not installed"
+	exit 1
+fi
+printf '7.0.8-1'
