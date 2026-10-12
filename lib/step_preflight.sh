@@ -38,7 +38,7 @@ step_preflight_reasons() {
 	case "$(os_support_level)" in
 	unsupported)
 		if [[ "${DPISTACK_ALLOW_UNSUPPORTED:-0}" != "1" ]]; then
-			reasons+=("$OS_ID ${OS_VERSION_ID:-} не поддерживается (поддерживаются Ubuntu 22.04, 24.04, 26.04, Debian 12, 13, RHEL, Rocky Linux, AlmaLinux и CentOS Stream 9, 10); продолжить на свой риск: DPISTACK_ALLOW_UNSUPPORTED=1")
+			reasons+=("$OS_ID ${OS_VERSION_ID:-} не поддерживается (поддерживаются Ubuntu LTS от 22.04, Debian от 12, Rocky Linux и AlmaLinux от 8); продолжить на свой риск: DPISTACK_ALLOW_UNSUPPORTED=1")
 		fi
 		;;
 	unverified)
