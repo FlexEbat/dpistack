@@ -1,0 +1,29 @@
+name: suricata-watch
+
+# The automatic check of Suricata releases: the pinned release must still
+# build with nDPI, and a newer release of the series is built and reported
+# in an issue. The repository itself is never changed from here.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    name: suricata release watch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Check the pinned release and the newest one
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # The build runs the installer, which refuses to run without root;
+        # root also needs git to accept the checkout owned by the runner.
+        run: |
+          sudo git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          bash scripts/suricata-watch.sh

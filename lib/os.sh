@@ -347,33 +347,34 @@ net_default_iface() {
 }
 
 # os_support_level - "supported", "unverified" or "unsupported" for this
-# system. Supported: Ubuntu 22.04, 24.04, 26.04; Debian 12, 13; RHEL, Rocky
-# Linux, AlmaLinux and CentOS Stream 9 and 10. An older release of those
-# is unsupported; anything else of a known family (Fedora, Mint, RHEL 8,
-# a newer Ubuntu) is tried with a warning.
+# system. Supported: Ubuntu LTS from 22.04, Debian from 12, Rocky Linux and
+# AlmaLinux from 8. Anything older of those is unsupported. Anything else
+# of a known family (RHEL and CentOS Stream until they become a target, an
+# interim Ubuntu, Fedora, Mint) is tried with a warning.
 os_support_level() {
-	local major="${OS_VERSION_ID%%.*}"
+	local major="${OS_VERSION_ID%%.*}" minor="${OS_VERSION_ID#*.}"
+	if [[ ! "$major" =~ ^[0-9]+$ ]]; then
+		echo unverified
+		return
+	fi
 	case "$OS_FAMILY:$OS_ID" in
 	apt:ubuntu)
-		case "$OS_VERSION_ID" in
-		22.04 | 24.04 | 26.04) echo supported ;;
-		14.04 | 16.04 | 18.04 | 20.04) echo unsupported ;;
-		*) echo unverified ;;
-		esac
+		if ((major < 22)); then
+			echo unsupported
+		elif [[ "$minor" == "04" ]] && ((major % 2 == 0)); then
+			echo supported
+		else
+			echo unverified
+		fi
 		;;
 	apt:debian)
-		case "$major" in
-		12 | 13) echo supported ;;
-		[1-9] | 10 | 11) echo unsupported ;;
-		*) echo unverified ;;
-		esac
+		if ((major >= 12)); then echo supported; else echo unsupported; fi
 		;;
-	dnf:rhel | dnf:rocky | dnf:almalinux | dnf:centos)
-		case "$major" in
-		9 | 10) echo supported ;;
-		[1-7]) echo unsupported ;;
-		*) echo unverified ;;
-		esac
+	dnf:rocky | dnf:almalinux)
+		if ((major >= 8)); then echo supported; else echo unsupported; fi
+		;;
+	dnf:rhel | dnf:centos)
+		if ((major >= 8)); then echo unverified; else echo unsupported; fi
 		;;
 	*) echo unverified ;;
 	esac

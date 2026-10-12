@@ -380,21 +380,27 @@ EOF
 	check ubuntu debian 22.04 supported
 	check ubuntu debian 24.04 supported
 	check ubuntu debian 26.04 supported
+	check ubuntu debian 28.04 supported
 	check ubuntu debian 20.04 unsupported
+	check ubuntu debian 18.04 unsupported
 	check ubuntu debian 25.10 unverified
+	check ubuntu debian 22.10 unverified
 	check debian "" 12 supported
 	check debian "" 13 supported
+	check debian "" 14 supported
 	check debian "" 11 unsupported
-	check debian "" 14 unverified
-	check rhel "fedora" 9.4 supported
-	check rhel "fedora" 10.0 supported
+	check rocky "rhel centos fedora" 8.10 supported
 	check rocky "rhel centos fedora" 9.5 supported
+	check rocky "rhel centos fedora" 10.0 supported
+	check almalinux "rhel centos fedora" 8.9 supported
 	check almalinux "rhel centos fedora" 10.0 supported
-	check centos "rhel fedora" 9 supported
-	check rhel "fedora" 8.10 unverified
-	check centos "rhel fedora" 7 unsupported
+	check rocky "rhel centos fedora" 7.9 unsupported
+	check rhel "fedora" 9.4 unverified
+	check rhel "fedora" 7.9 unsupported
+	check centos "rhel fedora" 9 unverified
 	check fedora "" 41 unverified
 	check linuxmint "ubuntu debian" 22 unverified
+	check debian "" sid unverified
 }
 
 preflight_reasons() {
