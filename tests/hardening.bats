@@ -302,11 +302,11 @@ EOF_FAKE
 			os_detect >/dev/null 2>&1; ntopng_repo_add >/dev/null 2>&1"
 		if [ "$id" = ubuntu ]; then
 			grep -q "add-apt-repository -y universe" "$calls"
-			grep -q "packages.ntop.org/apt/24.04/all/apt-ntop.deb" "$calls"
+			grep -q "packages.ntop.org/apt-stable/24.04/all/apt-ntop-stable.deb" "$calls"
 		else
 			run grep -c "add-apt-repository" "$calls"
 			[ "$output" = "0" ]
-			grep -q "packages.ntop.org/apt/bookworm/all/apt-ntop.deb" "$calls"
+			grep -q "packages.ntop.org/apt-stable/bookworm/all/apt-ntop-stable.deb" "$calls"
 		fi
 		rm -f "$calls"
 	done
@@ -389,7 +389,7 @@ inst() {
 
 @test "a missing libndpi-dev switches NDPI_SOURCE=pkg to a source build" {
 	ubuntu_root
-	MOCK_DPKG_ABSENT="libndpi-dev" MOCK_APT_MISSING="libndpi-dev" run inst install -y --dry-run --set SURICATA_SOURCE=source \
+	MOCK_RUSTC_VERSION=1.75.0 MOCK_DPKG_ABSENT="libndpi-dev" MOCK_APT_MISSING="libndpi-dev" run inst install -y --dry-run --set SURICATA_SOURCE=source \
 		--set NDPI_ENABLE=yes --set NDPI_SOURCE=pkg --set TEST_ON_INSTALL=no
 	[[ "$output" == *"пакета libndpi-dev нет в репозиториях"* ]]
 	[[ "$output" == *"ndpi: сборка из исходников"* ]]
@@ -404,13 +404,13 @@ inst() {
 
 @test "the source build picks a versioned rustc when the default one is too old" {
 	ubuntu_root
-	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" MOCK_APT_RUSTC="83 85 89" bash -c "
+	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" MOCK_APT_RUSTC="72 83 85 89" bash -c "
 		source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'
 		source '$REPO_DIR/lib/os.sh'; os_detect >/dev/null 2>&1
 		pkg_select_rust && echo \"RUSTC=\$RUSTC CARGO=\$CARGO\""
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"RUSTC=rustc-1.85 CARGO=cargo-1.85"* ]]
-	grep -q 'apt-get install -y rustc-1.85 cargo-1.85' "$CALLS"
+	[[ "$output" == *"RUSTC=rustc-1.83 CARGO=cargo-1.83"* ]]
+	grep -q 'apt-get install -y rustc-1.83 cargo-1.83' "$CALLS"
 }
 
 @test "no newer rustc package: a warning, nothing installed, the build is left to configure" {
@@ -420,7 +420,7 @@ inst() {
 		source '$REPO_DIR/lib/os.sh'; os_detect >/dev/null 2>&1
 		pkg_select_rust"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"старше 1.85"* ]]
+	[[ "$output" == *"старше 1.75"* ]]
 	run grep -c 'apt-get install' "$CALLS"
 	[ "$output" = "0" ]
 }

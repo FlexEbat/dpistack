@@ -104,6 +104,14 @@ rules_remove_timer_unit() {
 	fi
 }
 
+RULES_VERSION_STATE_KEY="rules.suricata_version"
+
+# rules_suricata_version - the version of the Suricata that is installed,
+# empty when it cannot be told.
+rules_suricata_version() {
+	suricata -V 2>/dev/null | sed -n 's/^This is Suricata version \([^ ]*\).*/\1/p' | head -n 1
+}
+
 step_rules_check() {
 	[[ -f "$(path_suricata_ruleset)" ]] || return 1
 
@@ -123,6 +131,15 @@ step_rules_check() {
 		[[ -f "$(path_rules_timer_unit)" ]] && return 1
 	fi
 
+	# A ruleset built for another Suricata version can hold rules the new
+	# one rejects ("Loading signatures failed"), so a changed version means
+	# the ruleset is rebuilt.
+	local running
+	running=$(rules_suricata_version)
+	if [[ -n "$running" ]]; then
+		[[ "$(state_read_value "$RULES_VERSION_STATE_KEY")" == "$running" ]] || return 1
+	fi
+
 	return 0
 }
 
@@ -137,6 +154,12 @@ step_rules_apply() {
 
 	# Not inside $(...): the array has to be set in this shell.
 	rules_update_argv
+	local running_version
+	running_version=$(rules_suricata_version)
+	if [[ -n "$running_version" && "$(state_read_value "$RULES_VERSION_STATE_KEY")" != "$running_version" ]]; then
+		# Another Suricata than the one the current ruleset was made for.
+		RULES_UPDATE_ARGV+=(--force)
+	fi
 	if [[ "${DRY_RUN:-0}" == "1" ]]; then
 		printf '+ %s\n' "$(rules_update_command)"
 	else
@@ -145,6 +168,7 @@ step_rules_apply() {
 			echo "suricata-update завершился с ошибкой, прежний набор правил сохранён" >&2
 			return 1
 		fi
+		[[ -z "$running_version" ]] || state_write_value "$RULES_VERSION_STATE_KEY" "$running_version"
 		# On a first install Suricata is not up yet and has no socket; it
 		# reads the new rules when it starts. A reload that fails on a
 		# running Suricata is a warning: the rules are already on disk.

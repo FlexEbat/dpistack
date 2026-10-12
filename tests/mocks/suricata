@@ -4,4 +4,8 @@
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
 fi
+# MOCK_SURICATA_VERSION makes "suricata -V" answer like the real one.
+if [[ "${1:-}" == "-V" && -n "${MOCK_SURICATA_VERSION:-}" ]]; then
+	echo "This is Suricata version $MOCK_SURICATA_VERSION RELEASE"
+fi
 exit "${MOCK_EXIT:-0}"

@@ -118,6 +118,15 @@ suricata_validate_render() {
 }
 
 SURICATA_REPO_URL="https://github.com/OISF/suricata.git"
+# Empty SURICATA_VERSION means the newest tested release of the stable 8.0
+# series, never master (9.0.0-dev is a development build). Built for real
+# together with nDPI 4.14 and its plugin; raise it after testing a newer
+# 8.0.x (and keep SURICATA_COPR in os.sh on the same series).
+SURICATA_STABLE_REF="suricata-8.0.7"
+
+suricata_target_ref() {
+	echo "${CONF[SURICATA_VERSION]:-$SURICATA_STABLE_REF}"
+}
 SURICATA_BUILT_REF_STATE_KEY="suricata.built_ref"
 
 suricata_source_binary_present() {
@@ -133,20 +142,25 @@ suricata_resolve_source() {
 	if command -v suricata >/dev/null 2>&1 && [[ -n "$(suricata_installed_version)" ]]; then
 		return 1
 	fi
-	# The other way round: a build from git needs Rust 1.85. Where the
-	# repositories cannot supply it (Debian 12 has 1.63) the distribution
-	# package is the only Suricata that installs; the nDPI plugin exists
-	# only in a source build, so it goes off. A pinned SURICATA_VERSION is
-	# the administrator's choice and is left alone.
+	# The other way round: a build needs Rust 1.75. Where the repositories
+	# cannot supply it (Debian 12 has 1.63) a package is the only Suricata
+	# that installs: the distribution one on the Debian family, the OISF
+	# COPR one on the RHEL family. The nDPI plugin exists only in a source
+	# build, so it goes off. A pinned SURICATA_VERSION is the
+	# administrator's choice and is left alone.
 	if [[ "$source" == "source" && -z "${CONF[SURICATA_VERSION]:-}" ]] && ! suricata_source_binary_present &&
-		! pkg_rust_obtainable && pkg_available "$SURICATA_PACKAGE"; then
-		echo "suricata: для сборки из git нужен Rust 1.${SURICATA_RUST_MIN_MINOR}, в репозиториях его нет; взят пакет $SURICATA_PACKAGE из дистрибутива, nDPI выключен (плагин nDPI есть только в сборке из исходников)" >&2
-		CONF[SURICATA_SOURCE]=distro
-		CONF[NDPI_ENABLE]=no
-		return 0
+		! pkg_rust_obtainable; then
+		local fallback=distro
+		[[ "$OS_FAMILY" == "dnf" ]] && fallback=oisf
+		if [[ "$fallback" == "oisf" ]] || pkg_available "$SURICATA_PACKAGE"; then
+			echo "suricata: для сборки нужен Rust 1.${SURICATA_RUST_MIN_MINOR}, в репозиториях его нет; взят пакет Suricata ($fallback), nDPI выключен (плагин nDPI есть только в сборке из исходников)" >&2
+			CONF[SURICATA_SOURCE]=$fallback
+			CONF[NDPI_ENABLE]=no
+			return 0
+		fi
 	fi
 	[[ "$source" == "distro" || "$source" == "oisf" ]] || return 1
-	if [[ "$source" == "oisf" && "$OS_ID" != "ubuntu" ]]; then
+	if [[ "$source" == "oisf" && "$OS_FAMILY" == "apt" && "$OS_ID" != "ubuntu" ]]; then
 		reason="PPA OISF существует только для Ubuntu"
 	elif [[ "$source" == "distro" ]] && ! pkg_available "$SURICATA_PACKAGE"; then
 		reason="пакета $SURICATA_PACKAGE нет в репозиториях"
@@ -162,7 +176,7 @@ suricata_build_from_source() {
 	src_dir=$(path_suricata_src_dir)
 	pkg_build_deps suricata || return 1
 	pkg_select_rust || return 1
-	ref="${CONF[SURICATA_VERSION]:-}"
+	ref=$(suricata_target_ref)
 
 	if [[ ! -d "$src_dir/.git" ]]; then
 		run git clone "$SURICATA_REPO_URL" "$src_dir" || return 1
@@ -171,13 +185,16 @@ suricata_build_from_source() {
 		run git -C "$src_dir" fetch --tags origin || return 1
 	fi
 
-	if [[ -n "$ref" ]]; then
-		run git -C "$src_dir" checkout "$ref" || return 1
-	else
-		run git -C "$src_dir" checkout HEAD || return 1
-	fi
-	local resolved_ref
+	run git -C "$src_dir" checkout "$ref" || return 1
+	local resolved_ref built_before
 	resolved_ref=$(git -C "$src_dir" rev-parse HEAD 2>/dev/null)
+	# Another release over an old build: the stale objects and the Rust
+	# cache of the previous tree must go, or make mixes two versions.
+	built_before=$(state_read_value "$SURICATA_BUILT_REF_STATE_KEY")
+	if [[ -n "$built_before" && "$built_before" != "$resolved_ref" ]]; then
+		run git -C "$src_dir" clean -fdxq || return 1
+	fi
+	run git -C "$src_dir" submodule update --init --recursive || return 1
 
 	# --libdir puts the nDPI plugin where suricata.yaml and the rest of the
 	# installer look for it (path_suricata_ndpi_plugin): with only --prefix
@@ -222,14 +239,11 @@ step_suricata_check() {
 	if [[ "$source" == "source" ]]; then
 		suricata_source_binary_present || return 1
 		local wanted have
-		wanted="${CONF[SURICATA_VERSION]:-}"
 		have=$(state_read_value "$SURICATA_BUILT_REF_STATE_KEY")
-		# The state holds the commit that was built; a pinned tag or
-		# branch has to be compared as the commit it names, not as text.
-		if [[ -n "$wanted" ]]; then
-			wanted=$(git_ref_commit "$(path_suricata_src_dir)" "$wanted")
-			[[ -n "$wanted" && "$wanted" == "$have" ]] || return 1
-		fi
+		# The state holds the commit that was built; the target tag or
+		# branch is compared as the commit it names, not as text.
+		wanted=$(git_ref_commit "$(path_suricata_src_dir)" "$(suricata_target_ref)")
+		[[ -n "$wanted" && "$wanted" == "$have" ]] || return 1
 	else
 		command -v suricata >/dev/null 2>&1 || return 1
 		[[ -n "$(suricata_installed_version)" ]] || return 1
@@ -259,11 +273,22 @@ step_suricata_check() {
 		expected_svc_hash=$(suricata_render_service_unit | state_hash_content)
 		actual_svc_hash=$(state_hash_content <"$service_path")
 		[[ "$expected_svc_hash" == "$actual_svc_hash" ]] || return 1
+	elif [[ "$OS_FAMILY" == "dnf" ]]; then
+		[[ -f "$(path_suricata_sysconfig)" ]] || return 1
+		[[ "$(suricata_render_sysconfig | state_hash_content)" == "$(state_hash_content <"$(path_suricata_sysconfig)")" ]] || return 1
 	fi
 
 	systemctl is-active --quiet "$SURICATA_UNIT" || return 1
 
 	return 0
+}
+
+suricata_render_sysconfig() {
+	cat <<'SYSCONFIG'
+# Managed by dpistack. Options of the Suricata unit; the capture interfaces
+# are in the af-packet section of /etc/suricata/suricata.yaml.
+OPTIONS="--af-packet --user suricata "
+SYSCONFIG
 }
 
 step_suricata_apply() {
@@ -294,6 +319,12 @@ step_suricata_apply() {
 	if [[ "${CONF[SURICATA_SOURCE]}" == "source" ]]; then
 		write_rendered_file "$(path_suricata_service_unit)" "$(suricata_render_service_unit)"
 		run systemctl daemon-reload || return 1
+	elif [[ "$OS_FAMILY" == "dnf" ]]; then
+		# The RPM unit starts "suricata -c suricata.yaml $OPTIONS" with
+		# OPTIONS from here, "-i eth0 --user suricata" by default. The
+		# interfaces come from the af-packet section of suricata.yaml, as
+		# on the Debian family.
+		write_rendered_file "$(path_suricata_sysconfig)" "$(suricata_render_sysconfig)"
 	fi
 
 	run systemctl enable --now "$SURICATA_UNIT" || return 1
@@ -310,7 +341,7 @@ step_suricata_apply() {
 
 step_suricata_plan() {
 	if [[ "${CONF[SURICATA_SOURCE]:-}" == "source" ]]; then
-		echo "suricata: сборка из исходников ($SURICATA_REPO_URL, ref=${CONF[SURICATA_VERSION]:-HEAD}, nDPI=${CONF[NDPI_ENABLE]:-no})"
+		echo "suricata: сборка из исходников ($SURICATA_REPO_URL, ref=$(suricata_target_ref), nDPI=${CONF[NDPI_ENABLE]:-no})"
 	else
 		echo "suricata: установка/обновление пакета ($OS_FAMILY, источник ${CONF[SURICATA_SOURCE]:-distro})"
 	fi

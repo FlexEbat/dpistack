@@ -46,14 +46,17 @@ evebox_render_conf() {
 		"EVEBOX_INPUT_PATHS=$(evebox_render_input_paths)"
 }
 
+EVEBOX_RPM_RELEASE_URL="https://evebox.org/files/rpm/stable/evebox-release.noarch.rpm"
+
 evebox_repo_add() {
 	if [[ "$OS_FAMILY" == "dnf" ]]; then
-		# The EveBox rpm repository exists (evebox.org/#downloads), but
-		# its .repo URL is not confirmed here, so none is guessed.
-		pkg_available "$EVEBOX_PACKAGE" || {
-			echo "evebox: для dnf-дистрибутива репозиторий не настроен и пакета нет. Поставьте EveBox с https://evebox.org/#downloads и повторите install --only evebox, либо пропустите шаг: --skip evebox" >&2
+		# The stable rpm repository is added by its release package
+		# (OISF tracker #3807, evebox.org downloads).
+		run dnf install -y "$EVEBOX_RPM_RELEASE_URL" || {
+			echo "evebox: не удалось подключить репозиторий $EVEBOX_RPM_RELEASE_URL. Поставьте EveBox с https://evebox.org/#downloads и повторите install --only evebox, либо пропустите шаг: --skip evebox" >&2
 			return 1
 		}
+		run dnf -y makecache || return 1
 		return 0
 	fi
 	run mkdir -p "$(dirname "$(path_evebox_keyring)")" || return 1
