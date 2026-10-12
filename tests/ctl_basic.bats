@@ -139,10 +139,12 @@ teardown() {
 	[ ! -s "$CALLS" ]
 }
 
-@test "version prints the set version" {
+@test "version prints the version set in lib/common.sh" {
 	run "$CTL" version
 	[ "$status" -eq 0 ]
-	[[ "$output" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+	want=$(sed -n 's/^DPISTACK_VERSION="\(.*\)"/\1/p' "$REPO_DIR/lib/common.sh")
+	[ -n "$want" ]
+	[ "$output" = "$want" ]
 }
 
 @test "commands owned by later slices exit 4, unknown commands exit 2" {

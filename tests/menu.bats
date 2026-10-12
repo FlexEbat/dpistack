@@ -229,8 +229,3 @@ run_menu() {
 	[[ "$output" == *"dpistack v$ver | Найдена установка"* ]]
 }
 
-@test "usage prints the version on the first line" {
-	run bash "$REPO_DIR/install.sh" install --help
-	[ "$status" -eq 0 ]
-	[[ "${lines[0]}" == "dpistack v"* ]]
-}

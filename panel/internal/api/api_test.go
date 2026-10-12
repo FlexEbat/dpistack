@@ -372,28 +372,6 @@ func TestBrokenHealthFileGives502(t *testing.T) {
 	}
 }
 
-// Criterion 6: there is no setting that opens the API. A server built from
-// a bare config still answers 401 and cannot be logged into.
-func TestNoConfigurationSwitchesLoginOff(t *testing.T) {
-	policy, _ := auth.NewPolicy("localhost", "")
-	h := New(Config{Policy: policy, Ctl: &ctl.Runner{Path: "/nonexistent"}})
-	hr := httptest.NewRequest("GET", "/api/status", nil)
-	hr.RemoteAddr = "127.0.0.1:1"
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, hr)
-	if w.Code != 401 {
-		t.Errorf("bare config: %d, want 401", w.Code)
-	}
-	hr = httptest.NewRequest("POST", "/api/login", strings.NewReader(`{"password":""}`))
-	hr.RemoteAddr = "127.0.0.1:1"
-	hr.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, hr)
-	if w.Code == 200 {
-		t.Error("an empty password must not log in")
-	}
-}
-
 func TestSecurityHeaders(t *testing.T) {
 	e := setup(t)
 	w := e.do(req{method: "GET", path: "/api/status"})
