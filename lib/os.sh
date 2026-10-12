@@ -93,15 +93,23 @@ pkg_spec() {
 	esac
 }
 
+# The OISF COPR series that matches SURICATA_STABLE_REF.
+SURICATA_COPR="@oisf/suricata-8.0"
+
 pkg_repo_add() {
 	# pkg_repo_add <name>
-	# Only "oisf" exists as a named repo so far (tech.md 4.3
-	# SURICATA_SOURCE=oisf); more get added as their slice needs one.
+	# Only "oisf" exists as a named repo (tech.md 4.3 SURICATA_SOURCE=oisf):
+	# the OISF PPA on Ubuntu, the OISF COPR on the RHEL family and Fedora.
 	local name="$1"
 	case "$OS_FAMILY:$name" in
 	apt:oisf)
 		run add-apt-repository -y ppa:oisf/suricata-stable
 		run apt-get update
+		;;
+	dnf:oisf)
+		pkg_install dnf-plugins-core || return 1
+		run dnf copr enable -y "$SURICATA_COPR" || return 1
+		run dnf -y makecache
 		;;
 	*)
 		die 3 "pkg_repo_add: неизвестная комбинация family=$OS_FAMILY repo=$name"
@@ -209,8 +217,17 @@ pkg_enable_extra_repos() {
 		[[ "$major" =~ ^[0-9]+$ ]] && ((major <= 8)) && repo=powertools
 		run dnf config-manager --set-enabled "$repo" || return 1
 		;;
+	rhel)
+		# EPEL from the Fedora project; CodeReady Builder needs a
+		# subscribed system. A system without one still installs the
+		# packages, only the -devel libraries for a source build are
+		# missing, and that fails with a clear message later.
+		pkg_install dnf-plugins-core "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${major}.noarch.rpm" || return 1
+		run subscription-manager repos "--enable=codeready-builder-for-rhel-${major}-$(uname -m)-rpms" ||
+			echo "rhel: репозиторий CodeReady Builder не включён (нужна подписка); для сборки из исходников включите его вручную" >&2
+		;;
 	*)
-		echo "$OS_ID: включите EPEL и репозиторий -devel (CodeReady Builder) вручную, установщик их не трогает" >&2
+		echo "$OS_ID: включите EPEL и репозиторий -devel вручную, установщик их не трогает" >&2
 		;;
 	esac
 }
@@ -244,11 +261,12 @@ pkg_build_deps() {
 	esac
 }
 
-# Suricata from git needs Rust 1.85. Ubuntu ships 1.75 as rustc but also
-# rustc-1.85 and newer next to it; OISF documents RUSTC/CARGO for ./configure
+# Suricata 8.0 needs Rust 1.75. Ubuntu keeps rustc-1.N packages next to the
+# default one; OISF documents RUSTC/CARGO for ./configure
 # to pick them. On a distro with nothing newer configure prints its own
 # message and the step stops there.
-SURICATA_RUST_MIN_MINOR=85
+# Rust 1.75 is the MSRV of the Suricata 8.0 releases (configure.ac).
+SURICATA_RUST_MIN_MINOR=75
 
 # pkg_rust_versioned_minor - the smallest N >= 85 for which the apt
 # repositories carry rustc-1.N; empty when there is none.
@@ -326,4 +344,88 @@ net_default_iface() {
 		fi
 	fi
 	printf '%s' "$found"
+}
+
+# os_support_level - "supported", "unverified" or "unsupported" for this
+# system. Supported: Ubuntu 22.04, 24.04, 26.04; Debian 12, 13; RHEL, Rocky
+# Linux, AlmaLinux and CentOS Stream 9 and 10. An older release of those
+# is unsupported; anything else of a known family (Fedora, Mint, RHEL 8,
+# a newer Ubuntu) is tried with a warning.
+os_support_level() {
+	local major="${OS_VERSION_ID%%.*}"
+	case "$OS_FAMILY:$OS_ID" in
+	apt:ubuntu)
+		case "$OS_VERSION_ID" in
+		22.04 | 24.04 | 26.04) echo supported ;;
+		14.04 | 16.04 | 18.04 | 20.04) echo unsupported ;;
+		*) echo unverified ;;
+		esac
+		;;
+	apt:debian)
+		case "$major" in
+		12 | 13) echo supported ;;
+		[1-9] | 10 | 11) echo unsupported ;;
+		*) echo unverified ;;
+		esac
+		;;
+	dnf:rhel | dnf:rocky | dnf:almalinux | dnf:centos)
+		case "$major" in
+		9 | 10) echo supported ;;
+		[1-7]) echo unsupported ;;
+		*) echo unverified ;;
+		esac
+		;;
+	*) echo unverified ;;
+	esac
+}
+
+# apt_enable_component <component> - add a component such as contrib to
+# the Debian archives in the sources, in the one-line format
+# (sources.list, *.list) and in deb822 (*.sources). Only lines and
+# stanzas that point at a debian.org host are touched, each changed file
+# is copied to the backups directory first (apt warns about stray files in
+# sources.list.d), and a second call changes nothing.
+apt_enable_component() {
+	local comp="$1" f dir changed=0
+	dir=$(path_apt_dir)
+	for f in "$dir/sources.list" "$dir"/sources.list.d/*.list "$dir"/sources.list.d/*.sources; do
+		[[ -f "$f" ]] || continue
+		local tmp
+		tmp=$(mktemp)
+		awk -v comp="$comp" '
+			function has(list, word,    n, a, i) {
+				n = split(list, a, /[ \t]+/)
+				for (i = 1; i <= n; i++) if (a[i] == word) return 1
+				return 0
+			}
+			/^(deb|deb-src)[ \t]/ && /debian\.org|debian\.net/ {
+				# deb [opts] URI suite comp1 comp2 ...
+				line = $0; sub(/\[[^]]*\][ \t]*/, "", line)
+				n = split(line, w, /[ \t]+/)
+				if (n >= 4 && has(substr(line, index(line, w[4])), "main") && !has(substr(line, index(line, w[4])), comp)) {
+					print $0 " " comp; next
+				}
+			}
+			/^URIs:/ { debian = ($0 ~ /debian\.org|debian\.net/) }
+			/^$/ { debian = 0 }
+			/^Components:/ && debian {
+				if (has(substr($0, 13), "main") && !has(substr($0, 13), comp)) { print $0 " " comp; next }
+			}
+			{ print }
+		' "$f" >"$tmp"
+		if ! cmp -s "$f" "$tmp"; then
+			if [[ "$DRY_RUN" == "1" ]]; then
+				echo "+ enable $comp in $f"
+			else
+				backup "$f"
+				cat "$tmp" >"$f"
+			fi
+			changed=1
+		fi
+		rm -f "$tmp"
+	done
+	if [[ "$changed" == "1" && "$DRY_RUN" != "1" ]]; then
+		PKG_INDEX_FRESH=0
+	fi
+	return 0
 }

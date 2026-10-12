@@ -3,6 +3,16 @@
 # installed; collects every failure reason instead of stopping at the
 # first one (install.sh's cmd_install dies with all of them, code 3).
 
+# preflight_step_wanted <step> - the step is part of this run (--skip and
+# --only are honoured when the installer has parsed them).
+preflight_step_wanted() {
+	if declare -F step_selected >/dev/null 2>&1; then
+		step_selected "$1"
+	else
+		return 0
+	fi
+}
+
 step_preflight_reasons() {
 	local reasons=()
 
@@ -25,9 +35,16 @@ step_preflight_reasons() {
 		fi
 	done
 
-	if [[ "${OS_FAMILY:-}" == "dnf" ]]; then
-		log "WARN" "dnf-дистрибутив ($OS_ID ${OS_VERSION_ID:-}): поддержка не проверена на реальном хосте, см. tech.md 18.4"
-	fi
+	case "$(os_support_level)" in
+	unsupported)
+		if [[ "${DPISTACK_ALLOW_UNSUPPORTED:-0}" != "1" ]]; then
+			reasons+=("$OS_ID ${OS_VERSION_ID:-} не поддерживается (поддерживаются Ubuntu 22.04, 24.04, 26.04, Debian 12, 13, RHEL, Rocky Linux, AlmaLinux и CentOS Stream 9, 10); продолжить на свой риск: DPISTACK_ALLOW_UNSUPPORTED=1")
+		fi
+		;;
+	unverified)
+		log "WARN" "$OS_ID ${OS_VERSION_ID:-} не входит в список проверенных платформ (tech.md 11), установка продолжится"
+		;;
+	esac
 
 	local iface _preflight_ifaces
 	IFS=',' read -ra _preflight_ifaces <<<"${CONF[IFACES]:-}"
@@ -49,11 +66,36 @@ step_preflight_reasons() {
 		fi
 	fi
 
+	# The repositories the selected steps are going to use must answer now,
+	# not in the middle of the install.
+	local probe
+	local -a probes=()
 	if [[ "${CONF[SURICATA_SOURCE]:-}" == "oisf" ]]; then
-		if ! curl -fsS --max-time 5 -o /dev/null "https://ppa.launchpadcontent.net/oisf/suricata-stable/ubuntu/"; then
-			reasons+=("репозиторий OISF PPA недоступен")
+		if [[ "$OS_FAMILY" == "dnf" ]]; then
+			probes+=("OISF COPR|https://copr.fedorainfracloud.org/coprs/g/oisf/suricata-8.0/")
+		else
+			probes+=("OISF PPA|https://ppa.launchpadcontent.net/oisf/suricata-stable/ubuntu/")
 		fi
 	fi
+	if preflight_step_wanted ntopng; then
+		if [[ "$OS_FAMILY" == "dnf" ]]; then
+			probes+=("ntop.org|${NTOP_REPO_RPM_URL:-https://packages.ntop.org/centos-stable/ntop.repo}")
+		else
+			probes+=("ntop.org|${NTOP_REPO_DEB_URL_APT:-https://packages.ntop.org/apt-stable}/")
+		fi
+	fi
+	if preflight_step_wanted evebox; then
+		if [[ "$OS_FAMILY" == "dnf" ]]; then
+			probes+=("EveBox|${EVEBOX_RPM_RELEASE_URL:-https://evebox.org/files/rpm/stable/evebox-release.noarch.rpm}")
+		else
+			probes+=("EveBox|${EVEBOX_REPO_URL:-https://evebox.org/files/debian}/")
+		fi
+	fi
+	for probe in "${probes[@]}"; do
+		if ! curl -fsS --max-time 5 -o /dev/null -- "${probe#*|}"; then
+			reasons+=("репозиторий ${probe%%|*} недоступен (${probe#*|})")
+		fi
+	done
 
 	if [[ "${CONF[EVEBOX_DB]:-sqlite}" == "elasticsearch" ]]; then
 		if ! curl -fsS --max-time 5 -o /dev/null -- "${CONF[EVEBOX_ES_URL]:-}"; then

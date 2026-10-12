@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
-# Mock for bats tests: the system rustc, Ubuntu's default version unless
+# Mock for bats tests: the system rustc, Debian 12 default version unless
 # MOCK_RUSTC_VERSION says otherwise.
-echo "rustc ${MOCK_RUSTC_VERSION:-1.75.0} (mock)"
+echo "rustc ${MOCK_RUSTC_VERSION:-1.63.0} (mock)"

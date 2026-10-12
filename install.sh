@@ -52,7 +52,7 @@ usage() {
 	cat <<'EOF'
 Использование: install.sh <команда> [опции]
 
-команды:  install | reconfigure | upgrade | uninstall | status | test | logs
+команды:  install | reconfigure | upgrade | uninstall | status | diag | test | logs
 dpistack без команды открывает меню: установки, если конфига нет, иначе управления.
 опции:
   --config FILE          путь к dpistack.conf (по умолчанию /etc/dpistack/dpistack.conf)
@@ -65,6 +65,9 @@ dpistack без команды открывает меню: установки, 
   --force                перезаписать вручную изменённые файлы (с бэкапом)
   --purge                для uninstall: удалить также данные и конфиги
   --no-color             без ANSI-цветов в меню и выводе
+
+diag собирает отчёт для разбора проблем (платформа, версии, репозитории, конфиг без секретов,
+службы, журналы) в stdout и в файл DIAG_OUT (по умолчанию новый временный файл, путь печатается).
 EOF
 }
 
@@ -502,6 +505,9 @@ cmd_uninstall() {
 		rm -rf "$(dirname "$(path_suricata_ruleset)")"
 		rm -f "$(path_ntopng_conf)" "$(path_evebox_yaml)"
 		rm -rf "$(access_tls_dir)" 2>/dev/null || true
+		if id "$PANEL_USER" >/dev/null 2>&1; then
+			run userdel "$PANEL_USER" || true
+		fi
 		echo "uninstall --purge: конфиги и данные компонентов удалены (пакеты не трогал)"
 	fi
 
@@ -545,6 +551,88 @@ exec_ctl() {
 	exec "$ctl" "$@"
 }
 
+# cmd_diag - one text report for a bug report: system, versions,
+# repositories, configuration without secrets, service state and the tail
+# of the logs. Read-only. The report also goes to a file (DIAG_OUT, else a
+# new private mktemp file); tokens, passwords and credentials in URLs are
+# replaced before anything is printed.
+diag_section() {
+	printf '\n===== %s =====\n' "$1"
+	shift
+	"$@" 2>&1 || echo "(rc=$?)"
+}
+
+diag_tool_versions() {
+	local tool
+	for tool in suricata evebox ntopng nginx redis-server rustc gcc git curl; do
+		if command -v "$tool" >/dev/null 2>&1; then
+			printf '%s: ' "$tool"
+			"$tool" --version 2>&1 | head -n 1
+		else
+			echo "$tool: нет"
+		fi
+	done
+}
+
+diag_packages() {
+	case "$OS_FAMILY" in
+	apt) dpkg -l 2>/dev/null | grep -E ' (suricata|libndpi|ntopng|evebox|redis|nginx|ufw|iproute2)' ;;
+	dnf) rpm -qa 2>/dev/null | grep -Ei '^(suricata|ndpi|ntopng|evebox|redis|valkey|nginx|firewalld)' ;;
+	esac
+}
+
+diag_repos() {
+	case "$OS_FAMILY" in
+	apt)
+		grep -hvE '^[[:space:]]*(#|$)' "$(path_apt_dir)/sources.list" "$(path_apt_dir)"/sources.list.d/*.list "$(path_apt_dir)"/sources.list.d/*.sources 2>/dev/null
+		;;
+	dnf)
+		dnf -q repolist 2>&1
+		;;
+	esac
+}
+
+diag_units() {
+	local unit
+	for unit in "$SURICATA_UNIT" "$REDIS_UNIT" "$EVEBOX_UNIT" "$NTOPNG_UNIT" "$NGINX_UNIT" "$WATCH_TIMER"; do
+		printf '%-28s active=%s enabled=%s\n' "$unit" \
+			"$(systemctl is-active "$unit" 2>&1)" "$(systemctl is-enabled "$unit" 2>&1)"
+	done
+	systemctl --failed --no-pager 2>&1 | head -n 15
+}
+
+diag_report() {
+	echo "dpistack v${DPISTACK_VERSION}, $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	diag_section "платформа" bash -c "echo \"$OS_ID $OS_VERSION_ID family=$OS_FAMILY уровень=\$1\"; cat \"$(path_os_release)\"; uname -a; nproc; free -m | sed -n 1,2p; df -h / | tail -n 1" _ "$(os_support_level)"
+	diag_section "версии" diag_tool_versions
+	if command -v suricata >/dev/null 2>&1; then
+		diag_section "suricata --build-info" bash -c 'suricata --build-info 2>&1 | grep -E "^This is|Rust|nDPI|AF_PACKET|Features"'
+	fi
+	diag_section "пакеты" diag_packages
+	diag_section "репозитории" diag_repos
+	diag_section "dpistack.conf" cat "$(path_conf)"
+	diag_section "состояние" bash -c "grep -vE '^(file_hash|applied)\\.' \"$(path_state_file)\" 2>/dev/null"
+	diag_section "службы" diag_units
+	diag_section "сеть" bash -c "ip -br addr 2>/dev/null; ss -ltn 2>/dev/null | head -n 25"
+	diag_section "SELinux и фаервол" bash -c "getenforce 2>&1; (ufw status 2>/dev/null || firewall-cmd --state 2>&1) | head -n 8"
+	if command -v suricata >/dev/null 2>&1 && [[ -f "$(path_suricata_yaml)" ]]; then
+		diag_section "suricata -T" bash -c "suricata -T -c \"$(path_suricata_yaml)\" 2>&1 | tail -n 12"
+	fi
+	diag_section "журнал dpistack (последние 80 строк)" bash -c "tail -n 80 \"$(path_install_log)\" 2>&1"
+	if command -v journalctl >/dev/null 2>&1; then
+		diag_section "journalctl (suricata, evebox, ntopng)" bash -c 'journalctl -u suricata -u evebox -u ntopng -n 40 --no-pager 2>&1'
+	fi
+}
+
+cmd_diag() {
+	os_detect >/dev/null 2>&1 || true
+	local out="${DIAG_OUT:-$(mktemp -t dpistack-diag.XXXXXX)}"
+	diag_report 2>&1 |
+		sed -E 's/((TOKEN|PASSWORD|PASS|SECRET)[A-Z_]*=).*/\1<скрыто>/; s#(://)[^/@[:space:]]+:[^/@[:space:]]+@#\1<скрыто>@#g' |
+		tee "$out"
+	echo "отчёт сохранён: $out" >&2
+}
+
 main() {
 	if [[ "$BIN_NAME" == "dpistack" ]]; then
 		case "${1:-}" in
@@ -577,6 +665,9 @@ main() {
 		;;
 	status)
 		cmd_status
+		;;
+	diag)
+		cmd_diag
 		;;
 	test | logs)
 		echo "$COMMAND доступна только через dpistack после установки, не через $BIN_NAME" >&2

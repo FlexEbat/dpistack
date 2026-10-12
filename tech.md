@@ -1,18 +1,20 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Версия документа: v10** (2026-10-11)
-**Версия программы: v0.4.0** (слайсы 0–15 реализованы в ветке `dev`, ждут реальной проверки на стенде; см. раздел «Changelog программы» ниже)
+**Версия документа: v11** (2026-10-11)
+**Версия программы: v0.5.0** (слайсы 0–15 реализованы в ветке `dev`, ждут реальной проверки на стенде; см. раздел «Changelog программы» ниже)
 
 Changelog программы (что реально сделано по слайсам из раздела 17, в `dev`, до реальной проверки на стенде):
 - v0.1.0 (слайсы 0–7): каркас установщика (`install.sh`, схема `dpistack.conf`, послойный конфиг, блокировка); Suricata (`distro`/`oisf`/`source`, рендер `suricata.yaml`, logrotate, systemd); nDPI (пакет или сборка из исходников); правила (`suricata-update`, безопасное обновление с сохранением прежнего набора, таймер); Redis и ntopng; EveBox (официальный репозиторий, `evebox.yaml`, retention); доступ (`localhost`/`lan`/`nginx`, TLS, `ufw`). Гейт (`shfmt`+`shellcheck`+`bats`) зелёный. Не проверено на реальном стенде: PPA OISF, репозитории ntop.org и evebox.org, реальная выкачка ET Open, сборка Suricata+nDPI (нужен Rust ≥1.85), `ufw`/SELinux вживую — см. `docs/prototype.md` и `docs/real-test-guide.md`.
 - v0.2.0 (слайсы 8–9): `reconfigure` — настоящий транзакционный поток (diff, лёгкое/тяжёлое, проверка `suricata -T` на временном файле до записи на диск, применяются только затронутые шаги); `upgrade` (`apt-get install --only-upgrade`, закреплённые версии пропускает сам apt); `uninstall`/`--purge` (удаляет только созданное самим dpistack, пакеты и сервисы компонентов не трогает — решение, не буквальное прочтение спеки, см. `docs/prototype.md`); текстовое меню `install`/`reconfigure` (без диалоговых библиотек) — быстрая установка, разделы по группам ключей, черновик, пароль панели, подтверждения. `lib/render.sh` — общий рендер `@@KEY@@` вместо рассинхронизированных `awk` по шагам. Гейт: 95 bats, зелёный.
 - v0.3.0 (слайсы 10–13): `dpistack-ctl` (статус, управление, логи, конфиги с бэкапом и откатом, `reconfigure`, правила, `iface`, `panel-passwd`, `test`, `health`); шаг `panel` (пользователь `dpistack`, `sudoers` с проверкой `visudo`); проверочные тесты BitTorrent и HTTPS и шаг `verify`; `dpistack-watch` с шагом `watch` и юнитами. Пароль панели хранится как argon2id (пакет `argon2`), `reconfigure` сравнивает конфиг со снимком применённого состояния. Гейт: 164 bats, зелёный. Не проверено на реальном стенде: `suricata -r` с `suricata-test.yaml`, правило `requires: keyword ndpi-protocol` на настоящей сборке с nDPI, `sudo -n` от пользователя `dpistack`, `argon2` на dnf-семействе. Модули `selfinstall` (слайс 15) ещё нет, поэтому юнит watchdog пропускает запуск до появления копии установщика.
+- v0.5.0 (платформы Ubuntu, Debian, RHEL, раздел 18.5): стабильные версии вместо сборок разработки (Suricata 8.0.7, ntop.org `apt-stable`), `contrib` на Debian, COPR OISF и `/etc/sysconfig/suricata` на RHEL-семействе, RPM-репозиторий EveBox, проверка поддерживаемых платформ и репозиториев в `preflight`, удаление пользователя панели при `--purge`.
 - v0.4.0 (реальные установки на Ubuntu 24.04 и dnf-семейство, раздел 18.4): интерфейс определяется сам, `iproute2` и `curl` ставятся до preflight, nDPI по умолчанию закреплён на 4.14, плагин nDPI ставится в `/usr/lib/suricata`, `make install-conf`, откат на пакет Suricata там, где нет Rust 1.85; слой dnf (EPEL/CRB, `rpm`, `versionlock`, `firewalld`, `setsebool`, репозиторий ntop.org) без проверки на реальном хосте.
 - v0.3.3 (пакеты и сборка, раздел 18.3): один `apt-get update` в начале `install`, `reconfigure` и `upgrade`; базовые пакеты и зависимости сборки ставятся сами; нет пакета Suricata или nDPI — сборка из исходников; репозиторий ntop.org для Debian по имени релиза; Rust 1.85 из `rustc-1.N`; gitleaks в CI бинарником.
 - v0.3.2 (повторное ревью, раздел 18.2): рендер конфигов сохраняет права (раньше `evebox.yaml`, юниты и `logrotate` получали 0600), сбой `run` в шагах останавливает шаг, `universe` только на Ubuntu, снимок `applied` под блокировкой `state`.
 - v0.3.1 (слайсы 14–15 и полное ревью): каналы оповещений (`log`, `tg`, `mail`, `panel`), `selfinstall` с командой `dpistack` и меню управления; исправления из раздела 18.1: `run` возвращает настоящий код ошибки, запись файлов не оставляет обрезанный результат, `state` защищён блокировкой, свободные ключи `dpistack.conf` проверяются шаблонами, `*_VERSION` для ntopng и EveBox действуют, CI закреплён по SHA.
 
 Changelog_tech:
+- v11: проект полноценный, не MVP (раздел 1, пункт 11), матрица платформ и их приёмка (раздел 11), стабильные каналы (5.1), раздел 18.5.
 - v10: раздел 18.4 (реальные установки), `NDPI_VERSION` пусто = 4.14 (раздел 3, ключи), автоопределение `IFACES`, dnf-семейство в 5.1 и 5.5, `tests/families.bats` в разделе 11.
 - v9: подготовка пакетов (5.1 шаг 4а), откат на сборку из исходников и зависимости сборки (5.5), gitleaks без стороннего action (12.1), результат ревью 18.3; закрыт открытый пункт про `apt-get update` из 18.1.
 - v8: защита ветки `main` и слияние через pull request (12.3), результат повторного ревью (18.2).
@@ -48,8 +50,8 @@ Changelog_tech:
 7. **Проверки:** BitTorrent (реплей pcap) и обычный HTTPS (живой запрос) с автоматическим вердиктом.
 8. **Watchdog:** проверяет процессы, порты, свежесть `eve.json`, drop rate, место на диске, возраст правил. Оповещения: панель, лог, Telegram, почта, каналы комбинируются.
 9. **Метрики:** панель отдаёт `/metrics` в формате Prometheus. Опционально установщик ставит VictoriaMetrics или Prometheus и настраивает сбор.
-10. **Личная панель:** лёгкая по ресурсам, современный вид. MVP: статус компонентов, start/stop/restart, редактор конфигов с валидацией (`suricata -T`), управление правилами, запуск тестов, просмотр логов и EVE-событий, графики метрик.
-11. **MVP** = стадии 0–4: Ubuntu/Debian, компоненты `native`, режим IDS. Docker, dnf-семейство, бэкенд метрик, IPS и единый файл идут после.
+10. **Личная панель:** лёгкая по ресурсам, современный вид. Возможности: статус компонентов, start/stop/restart, редактор конфигов с валидацией (`suricata -T`), управление правилами, запуск тестов, просмотр логов и EVE-событий, графики метрик.
+11. **Это готовый и полноценный проект, а не MVP.** Каждая заявленная возможность доводится до рабочего состояния на каждой поддерживаемой платформе и проверяется на стенде; пунктов «сделаем после MVP» в плане нет. Обязательные платформы: Ubuntu 22.04, 24.04 и 26.04, Debian 12 и 13, RHEL, Rocky Linux, AlmaLinux и CentOS Stream 9 и 10 (раздел 11, матрица платформ). Выпуск 1.0 возможен, когда закрыты все стадии 0–5 и каждая платформа прошла приёмку. Порядок стадий задаёт очерёдность работ, а не объём; слайс 26 (RHEL-семейство) выполняется вне очереди, потому что платформа обязательная.
 12. **Не входит:** мультипользовательская панель, свой SSO, дашборды Grafana, ntopng Enterprise, podman, LXD, i18n, перехват трафика всей сети без подходящей топологии.
 
 ---
@@ -89,7 +91,7 @@ Changelog_tech:
 - Панель: Go 1.22+, только `net/http` из стандартной библиотеки. Единственная внешняя зависимость: `golang.org/x/crypto` (argon2id). Формат `/metrics` пишется вручную, без `client_golang`. Фронт: ванильные ES-модули и CSS, без сборщика, без фреймворков, без иконочных шрифтов.
 - Тесты: `bats` для Bash, `go test` для панели.
 - Проверки: `shellcheck`, `shfmt`, `gofmt`, `go vet`.
-- Менеджеры пакетов: `apt` (Ubuntu, Debian), `dnf` (Fedora, RHEL и совместимые). Версии ОС: Ubuntu LTS 22.04+, Debian 11+, два последних релиза Fedora, RHEL-семейство 8+. Реальную поддержку версии определяет доступность выбранных источников; установщик проверяет её на `preflight` и выходит с понятной ошибкой.
+- Менеджеры пакетов: `apt` (Ubuntu, Debian), `dnf` (RHEL и совместимые, Fedora). Поддерживаемые платформы: Ubuntu 22.04, 24.04, 26.04; Debian 12, 13; RHEL, Rocky Linux, AlmaLinux, CentOS Stream 9, 10. Остальные релизы тех же семейств (Fedora, Linux Mint, RHEL 8, неLTS Ubuntu) запускаются с предупреждением, EOL-релизы (Ubuntu 20.04 и старше, Debian 11 и старше, RHEL 7 и старше) `preflight` отклоняет кодом 3; обойти можно на свой риск через `DPISTACK_ALLOW_UNSUPPORTED=1`. SUSE, Arch и Alpine не поддерживаются.
 - Архитектуры: `amd64`, `arm64`.
 - Контейнеры: только Docker с плагином `compose`.
 
@@ -224,8 +226,8 @@ scripts/
 | `SURICATA_RUNTIME` | `native` | `native` `docker` |
 | `EVEBOX_RUNTIME` | `native` | `native` `docker` |
 | `NTOPNG_RUNTIME` | `native` | `native` `docker` |
-| `SURICATA_SOURCE` | `source` | `distro` `oisf` `source` |
-| `SURICATA_VERSION` | пусто | пусто = последняя доступная в источнике |
+| `SURICATA_SOURCE` | `source` | `distro` `oisf` `source`; `oisf` это PPA OISF на Ubuntu и COPR `@oisf/suricata-8.0` на RHEL-семействе; на Debian его нет |
+| `SURICATA_VERSION` | пусто | для `source`: пусто = последний проверенный релиз стабильной серии 8.0 (сейчас `suricata-8.0.7`), не `master`; значение это тег или ветка |
 | `NDPI_ENABLE` | `yes` | `yes` `no`; `yes` требует плагин `ndpi.so` |
 | `NDPI_SOURCE` | `source` | `pkg` `source` |
 | `NDPI_VERSION` | пусто | пусто = релиз nDPI, с которым собирается плагин Suricata (сейчас `4.14`, проверено сборкой; master и 5.0 плагин не собирает) |
@@ -308,7 +310,7 @@ scripts/
 install.sh <команда> [опции]
 dpistack [команда] [опции]
 
-команды:  install | reconfigure | upgrade | uninstall | status | test | logs
+команды:  install | reconfigure | upgrade | uninstall | status | diag | test | logs
 опции:    --config FILE          путь к dpistack.conf (по умолчанию /etc/dpistack/dpistack.conf)
           --set KEY=VALUE        переопределить ключ, можно повторять
           --non-interactive, -y  без вопросов; недостающее берётся из умолчаний
@@ -328,6 +330,8 @@ dpistack [команда] [опции]
 `status` печатает по каждому шагу результат `check`: `в порядке` или `расхождение` с причиной. Ничего не меняет.
 
 Код возврата: `0` успех, `1` ошибка шага, `2` неверные аргументы или конфиг, `3` preflight не пройден или изменение не поддерживается в этом режиме.
+
+`diag` (v11, только чтение): один текстовый отчёт для разбора проблем на стенде: платформа и уровень поддержки, версии компонентов, `suricata --build-info`, пакеты, репозитории, `dpistack.conf`, состояние, службы и `systemctl --failed`, сеть, SELinux и фаервол, `suricata -T`, хвост журнала установщика и `journalctl`. Идёт в stdout и в файл `DIAG_OUT` (по умолчанию новый файл `mktemp`, путь печатается; фиксированных путей в `/tmp` проект не использует); токены, пароли и логин с паролем в URL заменяются на `<скрыто>`. Именно этот файл владелец присылает после проверки платформы.
 
 ### 4.5 `dpistack-ctl`
 
@@ -692,7 +696,9 @@ Root, Bash 4.4+, дистрибутив и архитектура из подд�
 
 **dnf-семейство (v10, не проверено на реальном хосте).** `pkg_update_once` делает `dnf makecache`; базовые пакеты ставятся только для недостающих команд (на RHEL 9 `curl` конфликтует с `curl-minimal`): `curl wget gnupg2 jq git openssl logrotate iproute sudo ca-certificates`. Rocky, AlmaLinux и CentOS получают `epel-release` и репозиторий `crb` (версия 8: `powertools`); Fedora и Amazon Linux ничего не получают; RHEL просит включить EPEL и CodeReady Builder вручную. Имена: `ndpi-devel`, `redis` и `redis.service`; версии пакетов через `rpm -q`, закрепление через `dnf versionlock`, обновление `dnf upgrade`. ntopng: репозиторий `packages.ntop.org/centos-stable/ntop.repo` для RHEL-клонов (по документации ntop.org), для Fedora и Amazon Linux его нет, там пакет берётся из дистрибутива или шаг пропускается. EveBox: URL rpm-репозитория не подтверждён, поэтому не угадывается: шаг останавливается с подсказкой `--skip evebox` или установкой пакета вручную. Фаервол: `ufw` где он есть, иначе `firewalld` (rich-правила и `--reload`); при SELinux Enforcing и `ACCESS_MODE=nginx` включается `httpd_can_network_connect`. Preflight на dnf пишет предупреждение, а не отказывает.
 
-**Сборка из исходников (v9).** Перед сборкой Suricata и nDPI ставятся зависимости: `build-essential git autoconf automake libtool pkg-config make libpcap-dev`, для Suricata ещё `libpcre2-dev libyaml-dev libjansson-dev libmagic-dev zlib1g-dev libcap-ng-dev libnet1-dev liblz4-dev python3-yaml cargo rustc` и `cbindgen`, если он есть в репозитории (имена проверены на Ubuntu 24.04). Сборке Suricata из git нужен Rust 1.85. Если `rustc` старше, ставятся `rustc-1.N` и `cargo-1.N` с наименьшим `N` не ниже 85 (на Ubuntu 22.04 и 24.04 они лежат рядом с `rustc` 1.75) и передаются в `configure` через `RUSTC` и `CARGO`, как описано в OISF. Если таких пакетов нет (Debian 12: `rustc` 1.63) и `SURICATA_VERSION` не задан, `install` ещё до сборки переключается на пакет Suricata из дистрибутива и выключает nDPI: плагин есть только в сборке из исходников. Закреплённый `SURICATA_VERSION` не трогается, и `configure` остановится на проверке Rust. Новых ключей `dpistack.conf` это не добавляет. `configure` получает `--libdir=/usr/lib`, иначе плагин nDPI ложится в `/usr/local/lib/suricata`, а `suricata.yaml` и весь код ищут его в `/usr/lib/suricata`; после `make install` выполняется `make install-conf`, который ставит `classification.config`, `reference.config` и `threshold.config` и не перезаписывает существующий `suricata.yaml`. Закреплённые `NDPI_VERSION` и `SURICATA_VERSION` сравниваются с состоянием как коммиты (`git rev-parse <ref>^{commit}`), а не как текст. Сборка для dnf-семейства ждёт слайса 26.
+**Платформы и стабильные версии (v11).** `os_support_level` разбирает `/etc/os-release`: `supported`, `unverified` (предупреждение в журнале) или `unsupported` (причина в `preflight`, код 3). Источники берутся стабильные, сборки разработки не используются нигде по умолчанию: Suricata из последнего проверенного релиза серии 8.0 (`SURICATA_STABLE_REF`, сейчас `suricata-8.0.7`; MSRV Rust 1.75, поэтому штатного `rustc` Ubuntu 24.04 достаточно), nDPI 4.14, ntop.org из `apt-stable` для Debian-семейства (для Ubuntu `apt-stable/<версия>`, для Debian `apt-stable/<имя релиза>`, файл `apt-ntop-stable.deb`) и `centos-stable` для RHEL-семейства, EveBox из канала `stable`. Канал `apt` ntop.org (ночные сборки `master`) не используется, и тихого отката на него нет: нет стабильного пакета, шаг останавливается с ошибкой. На Debian ntop.org требует компонент `contrib`: `apt_enable_component` добавляет его в строки и блоки `deb`, `deb-src` и `*.sources` (deb822) только для хостов `debian.org`, один раз, с копией в каталог бэкапов. Номер релиза Suricata при смене тега в уже собранном дереве приводит к `git clean -fdx` и пересборке. RHEL-семейство: `SURICATA_SOURCE=oisf` включает COPR `@oisf/suricata-8.0`, пакет запускается юнитом с опциями из `/etc/sysconfig/suricata` (`--af-packet --user suricata`, интерфейсы берутся из `suricata.yaml`), RHEL получает EPEL из проекта Fedora и CodeReady Builder через `subscription-manager` (без подписки сообщение, установка пакетов идёт дальше). Там, где собрать Suricata нельзя (нет Rust 1.75), `install` берёт пакет: из дистрибутива на Debian-семействе, из COPR на RHEL-семействе, nDPI при этом выключается. `preflight` проверяет доступность репозиториев, которые понадобятся выбранным шагам (OISF PPA или COPR, ntop.org, EveBox), и учитывает `--skip` и `--only`. `uninstall --purge` удаляет системного пользователя панели.
+
+**Сборка из исходников (v9).** Перед сборкой Suricata и nDPI ставятся зависимости: `build-essential git autoconf automake libtool pkg-config make libpcap-dev`, для Suricata ещё `libpcre2-dev libyaml-dev libjansson-dev libmagic-dev zlib1g-dev libcap-ng-dev libnet1-dev liblz4-dev python3-yaml cargo rustc` и `cbindgen`, если он есть в репозитории (имена проверены на Ubuntu 24.04). Сборке Suricata из git нужен Rust 1.85. Если `rustc` старше, ставятся `rustc-1.N` и `cargo-1.N` с наименьшим `N` не ниже 85 (на Ubuntu 22.04 и 24.04 они лежат рядом с `rustc` 1.75) и передаются в `configure` через `RUSTC` и `CARGO`, как описано в OISF. Если таких пакетов нет (Debian 12: `rustc` 1.63) и `SURICATA_VERSION` не задан, `install` ещё до сборки переключается на пакет Suricata из дистрибутива и выключает nDPI: плагин есть только в сборке из исходников. Закреплённый `SURICATA_VERSION` не трогается, и `configure` остановится на проверке Rust. Новых ключей `dpistack.conf` это не добавляет. `configure` получает `--libdir=/usr/lib`, иначе плагин nDPI ложится в `/usr/local/lib/suricata`, а `suricata.yaml` и весь код ищут его в `/usr/lib/suricata`; после `make install` выполняется `make install-conf`, который ставит `classification.config`, `reference.config` и `threshold.config` и не перезаписывает существующий `suricata.yaml`. Сборка Suricata из исходников использует стабильный тег по умолчанию, `master` только по явному `SURICATA_VERSION=master`. Закреплённые `NDPI_VERSION` и `SURICATA_VERSION` сравниваются с состоянием как коммиты (`git rev-parse <ref>^{commit}`), а не как текст. Сборка для dnf-семейства ждёт слайса 26.
 
 ### 5.6 Режимы и секреты
 
@@ -817,6 +823,7 @@ Root, Bash 4.4+, дистрибутив и архитектура из подд�
 - Запрещённый вид теста: «выполнили шаг, проверили, что вернулся 0». Тест проверяет результат: содержимое файла, вызванные команды, отказ.
 - На каждый слайс минимум: тест на каждый критерий с проверяемым условием, тест пути ошибки (неверный ключ, отсутствующий компонент, провал валидации), тест идемпотентности для слайсов установщика.
 - Интеграция на реальной ОС проверяется руками по критериям слайса и в bats не автоматизируется.
+- **Матрица платформ (обязательная приёмка, v11).** Выпуск и каждое исправление платформы подтверждаются прогоном на стенде: Ubuntu 22.04 и 24.04, Debian 12 и 13, RHEL 9 или клон (Rocky, AlmaLinux) 9 и 10. На каждой платформе проходят: `install -y` с умолчаниями (сборка из исходников или пакет, если Rust 1.75 недоступен), `install -y --set SURICATA_SOURCE=distro`, на Ubuntu и RHEL-семействе ещё `oisf`, повторный `install` без изменений, `reconfigure`, `upgrade`, `uninstall --purge`, затем `dpistack test all`. Среда разработки проверяет только Ubuntu 24.04 (без systemd, с подменой `systemctl`); остальное подтверждает владелец, и вывод стенда приходит как исходные данные для исправлений. Результаты фиксируются в разделе 18.
 - `tests/families.bats` (v10): семейства пакетных менеджеров (apt, dnf), откаты между пакетом и сборкой, определение интерфейса, закреплённые ссылки. Пути dnf идут через заглушки `dnf`, `rpm`, `firewall-cmd`, `setsebool`; на реальном Fedora или RHEL они не проверены.
 
 ---
@@ -960,10 +967,10 @@ CONTRACT GAP
 
 - **Стадия 0, прототип.** Слайс 0.
 - **Стадия 1, каркас.** Слайс 1.
-- **Стадия 2, ядро на хосте (native, apt-семейство).** Слайсы 2–9.
+- **Стадия 2, ядро на хосте (native).** Слайсы 2–9.
 - **Стадия 3, проверки и наблюдение.** Слайсы 10–14.
-- **Стадия 4, управление и панель.** Слайсы 15–25. **Конец стадии 4 = MVP.**
-- **Стадия 5, после MVP.** Слайсы 26–30.
+- **Стадия 4, управление и панель.** Слайсы 15–25. **Конец стадии 4 = рабочая панель.**
+- **Стадия 5, платформы и расширения.** Слайсы 26–30; слайс 26 (RHEL-семейство) идёт первым.
 
 ### Допущения, требующие проверки (не заморожены)
 
@@ -1142,7 +1149,7 @@ CONTRACT GAP
 4. `nginx -t` на отрендеренном конфиге проходит (проверка в изолированном каталоге).
 5. `NGINX_TLS=existing` без `NGINX_CERT` и `NGINX_KEY` даёт код 2.
 6. Режим не `localhost` без подтверждения предупреждения не применяется (код 2).
-7. На SELinux-системах шаг сообщает о нужных `setsebool`/`semanage`, применение только на слайсе 26.
+7. На SELinux-системах шаг сообщает о нужных `setsebool`/`semanage`, применяется: слайс 26 выполняется вне очереди.
 
 **Тесты:** `tests/access_step.bats` по критериям 1, 3, 5, 6.
 
@@ -1509,7 +1516,7 @@ CONTRACT GAP
 
 ---
 
-### Слайс 26: dnf-семейство, SELinux (после MVP)
+### Слайс 26: RHEL-семейство и SELinux (обязательная платформа)
 
 **Среда проверки:** Fedora, Rocky или Alma.
 
@@ -1529,7 +1536,7 @@ CONTRACT GAP
 
 ---
 
-### Слайс 27: Docker runtime (после MVP)
+### Слайс 27: Docker runtime
 
 **Файлы:** `lib/runtime_docker.sh`, `templates/compose.yaml.tpl`.
 
@@ -1550,7 +1557,7 @@ CONTRACT GAP
 
 ---
 
-### Слайс 28: бэкенд метрик, VictoriaMetrics и Prometheus (после MVP)
+### Слайс 28: бэкенд метрик, VictoriaMetrics и Prometheus
 
 **Файлы:** `lib/step_metrics.sh`, `templates/scrape.yaml.tpl`, юниты бэкенда.
 
@@ -1573,7 +1580,7 @@ CONTRACT GAP
 
 ---
 
-### Слайс 29: режим IPS (после MVP)
+### Слайс 29: режим IPS
 
 **Что делает:** `dpistack-ctl mode`, шаблон IPS, цепочка `DPISTACK`, `dpistack-fw.service`, таймер отката, кнопка в панели.
 
@@ -1593,7 +1600,7 @@ CONTRACT GAP
 
 ---
 
-### Слайс 30: единый файл (после MVP)
+### Слайс 30: единый файл
 
 **Что делает:** `scripts/bundle.sh` собирает `dpistack-install.sh` из `install.sh`, `lib/`, `templates/`, `bin/` (встраивание в heredoc), без изменения логики.
 
@@ -1692,7 +1699,7 @@ CONTRACT GAP
 
 - репозиторий ntop.org берётся из `apt` (сборки разработки), а не из `apt-stable`; для Debian 13 и Ubuntu 26.04 стабильного канала нет. Решение владельца.
 - ntop.org требует для Debian компонент `contrib` в `sources.list`; установщик его не добавляет (правка системного файла), при его отсутствии `apt` не найдёт `ntopng`.
-- ntopng и EveBox из своих репозиториев не имеют отката на сборку: нужен Rust, Node и разные зависимости, сборка не входит в MVP; при отсутствии пакета шаг останавливается с ошибкой.
+- ntopng и EveBox из своих репозиториев не имеют отката на сборку: нужен Rust, Node и разные зависимости, сборка из исходников не реализована; при отсутствии пакета шаг останавливается с ошибкой.
 - dnf-семейство: `pkg_available` есть, установка и сборка ждут слайса 26.
 - не проверено на стенде: сборка Suricata с `rustc-1.85`, `contrib` и пакеты ntop.org на Debian 12 и 13.
 
@@ -1721,3 +1728,29 @@ CONTRACT GAP
 - `SURICATA_VERSION` пусто означает master (сейчас `9.0.0-dev`, нерелизный код); решение о последнем релизном теге за владельцем;
 - другие семейства (SUSE, Arch, Alpine) не поддерживаются: `install` отказывает кодом 3 с названием дистрибутива;
 - после `uninstall --purge` остаётся системный пользователь `dpistack`.
+
+### 18.5 Платформы Ubuntu, Debian, RHEL и стабильные версии (v11)
+
+Подход изменён: проект полноценный, а не MVP (раздел 1, пункт 11). Обязательные платформы и порядок приёмки: раздел 2 и раздел 11. Исследование (документация OISF, ntop.org, EveBox, упаковка Debian и Fedora) и сборки на Ubuntu 24.04:
+
+| № | Важность | Находка | Исправление |
+|---|---|---|---|
+| R32 | высокая | по умолчанию собирался `master` Suricata (9.0.0-dev), нерелизный код в системе безопасности | `SURICATA_STABLE_REF=suricata-8.0.7`, проверено сборкой с nDPI 4.14 и плагином на штатном Rust 1.75 |
+| R33 | высокая | ntop.org брался из канала `apt` (ночные сборки `master`) | `apt-stable`, без отката на `apt` |
+| R34 | высокая | на Debian пакеты ntop.org не находились без компонента `contrib` | `apt_enable_component` |
+| R35 | высокая | RHEL-семейство: путь `oisf` вёл на Ubuntu PPA, юнит RPM брал интерфейс из `-i eth0` | COPR `@oisf/suricata-8.0` и `/etc/sysconfig/suricata` |
+| R36 | средняя | EveBox на RHEL-семействе: репозиторий не подключался | `evebox-release.noarch.rpm` (источник: трекер OISF, не проверено на хосте) |
+| R37 | средняя | `preflight` проверял Ubuntu PPA на любой системе и не проверял ntop.org и EveBox | пробы репозиториев по семейству и выбранным шагам |
+| R38 | средняя | EOL-релизы и незнакомые системы запускались молча | `os_support_level`, `DPISTACK_ALLOW_UNSUPPORTED=1` |
+| R39 | низкая | `uninstall --purge` оставлял пользователя панели | `userdel` |
+| R40 | высокая | набор правил, собранный для другой версии Suricata (после смены master на 8.0.7), не проходил `suricata -T` ("Loading signatures failed"), а шаг `rules` этого не замечал | версия Suricata в состоянии (`rules.suricata_version`), при смене шаг применяется заново с `suricata-update --force` |
+| R41 | средняя | не было способа быстро собрать вывод стенда для разбора | команда `diag` (4.4) |
+
+Фактическое поведение упаковки, на которое опирается код (проверено по пакетам и документации): юнит Debian-семейства запускает `suricata -D --af-packet -c /etc/suricata/suricata.yaml`, интерфейсы из `suricata.yaml` (версии 6.0.4, 7.0.3 и 7.0.10); юнит RPM берёт `$OPTIONS` из `/etc/sysconfig/suricata` и работает от пользователя `suricata`.
+
+Не проверено на реальном хосте и остаётся открытым (вывод стенда владельца приходит как исходные данные):
+
+- Debian 12 и 13, RHEL 9 и 10, Rocky и AlmaLinux: все пути, включая `contrib`, ntop.org `apt-stable/trixie` (каталог существует, файл `apt-ntop-stable.deb` не подтверждён), COPR OISF, EveBox rpm, `firewalld`, SELinux;
+- Debian 12: Rust 1.63, поэтому выбирается пакет Suricata 6.0 из дистрибутива без nDPI; новее его можно получить только пакетом backports, установщик backports не подключает;
+- ntopng и EveBox из своих репозиториев не имеют отката на сборку из исходников: при недоступном репозитории шаг останавливается, пропустить его можно `--skip`;
+- `SURICATA_STABLE_REF` нужно поднимать вручную после проверки нового релиза 8.0.x; `dependabot` его не отслеживает.

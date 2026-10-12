@@ -6,7 +6,9 @@
 
 NTOPNG_PACKAGE="ntopng"
 NTOPNG_UNIT="ntopng.service"
-NTOP_REPO_DEB_URL_APT="https://packages.ntop.org/apt"
+# The stable channel (apt-stable). "apt" next to it is the development one:
+# nightly builds of the master branch, not for a security tool.
+NTOP_REPO_DEB_URL_APT="https://packages.ntop.org/apt-stable"
 NTOP_REPO_RPM_URL="https://packages.ntop.org/centos-stable/ntop.repo"
 
 ntopng_effective_ifaces() {
@@ -67,6 +69,9 @@ ntopng_repo_add() {
 	# Debian has no universe component, only Ubuntu does.
 	if [[ "$OS_ID" == "ubuntu" ]]; then
 		run add-apt-repository -y universe || return 1
+	else
+		# ntop.org: on Debian add "contrib" to every deb and deb-src line.
+		apt_enable_component contrib
 	fi
 	# ntop.org names the Ubuntu repos by version (apt/24.04) and the
 	# Debian ones by release name (apt/bookworm); apt/12 does not exist.
@@ -83,7 +88,7 @@ ntopng_repo_add() {
 	fi
 	local deb_tmp
 	deb_tmp="$(mktemp --suffix=.deb)"
-	if ! run wget -qO "$deb_tmp" "${NTOP_REPO_DEB_URL_APT}/${version_id}/all/apt-ntop.deb" ||
+	if ! run wget -qO "$deb_tmp" "${NTOP_REPO_DEB_URL_APT}/${version_id}/all/apt-ntop-stable.deb" ||
 		! run apt-get install -y "$deb_tmp"; then
 		rm -f "$deb_tmp"
 		return 1

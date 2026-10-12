@@ -65,14 +65,21 @@ fam() {
 	grep -q '^dnf config-manager --set-enabled powertools$' "$CALLS"
 }
 
-@test "dnf: Fedora needs no extra repositories and RHEL gets a message" {
+@test "dnf: Fedora needs no extra repositories, RHEL gets EPEL and CodeReady Builder" {
 	os_release fedora fedora 41
 	fam 'pkg_enable_extra_repos' >/dev/null
 	[ ! -s "$CALLS" ]
 	os_release rhel "fedora" 9.4
-	run fam 'pkg_enable_extra_repos'
-	[[ "$output" == *"включите EPEL"* ]]
-	[ ! -s "$CALLS" ]
+	fam 'pkg_enable_extra_repos' >/dev/null
+	grep -q '^dnf install -y dnf-plugins-core https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm$' "$CALLS"
+	grep -q "^subscription-manager repos --enable=codeready-builder-for-rhel-9-$(uname -m)-rpms\$" "$CALLS"
+}
+
+@test "dnf: RHEL without a subscription still goes on, with a message" {
+	os_release rhel "fedora" 9.4
+	run fam 'subscription-manager() { return 1; }; pkg_enable_extra_repos'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"CodeReady Builder не включён"* ]]
 }
 
 @test "dnf: the build dependencies of Suricata and nDPI use the rpm names" {
@@ -136,9 +143,10 @@ fam() {
 	[[ "$output" == *"--skip ntopng"* ]]
 }
 
-@test "evebox on dnf: no repository is guessed, the message names the way out" {
+@test "evebox on dnf: the stable repository comes from its release package, a failure names the way out" {
 	os_release rocky "rhel centos fedora" 9.4
 	fam 'evebox_repo_add' >/dev/null
+	grep -q '^dnf install -y https://evebox.org/files/rpm/stable/evebox-release.noarch.rpm$' "$CALLS"
 	MOCK_EXIT=1 run fam 'evebox_repo_add'
 	[ "$status" -eq 1 ]
 	[[ "$output" == *"evebox.org/#downloads"* ]]
@@ -181,14 +189,16 @@ rust_case() {
 		suricata_resolve_source; rc=\$?; echo \"rc=\$rc source=\${CONF[SURICATA_SOURCE]} ndpi=\${CONF[NDPI_ENABLE]}\""
 }
 
-@test "no Rust 1.85 anywhere: the distribution package, nDPI off, a message" {
+@test "no Rust 1.75 anywhere: the distribution package, nDPI off, a message" {
 	run rust_case ''
 	[[ "$output" == *"rc=0 source=distro ndpi=no"* ]]
-	[[ "$output" == *"нужен Rust 1.85"* ]]
+	[[ "$output" == *"нужен Rust 1.75"* ]]
 }
 
-@test "a rustc-1.85 package, a new rustc or a pinned version keep the source build" {
+@test "a rustc-1.N package, a current rustc or a pinned version keep the source build" {
 	MOCK_APT_RUSTC="85" run rust_case ''
+	[[ "$output" == *"rc=1 source=source ndpi=yes"* ]]
+	MOCK_RUSTC_VERSION=1.75.0 run rust_case ''
 	[[ "$output" == *"rc=1 source=source ndpi=yes"* ]]
 	MOCK_RUSTC_VERSION=1.90.0 run rust_case ''
 	[[ "$output" == *"rc=1 source=source ndpi=yes"* ]]
@@ -269,4 +279,224 @@ inst_dry() {
 	[[ "$output" == *"pinned-ok"* ]]
 	[[ "$output" == *"unknown-rebuilds"* ]]
 	[[ "$output" == *"stale-rebuilds"* ]]
+}
+
+@test "Suricata without SURICATA_VERSION is the newest tested stable release, never master" {
+	os_release ubuntu debian 24.04
+	run fam 'suricata_target_ref; CONF[SURICATA_VERSION]=suricata-8.0.1; suricata_target_ref; echo "$SURICATA_STABLE_REF $SURICATA_COPR"'
+	[ "${lines[-3]}" = "suricata-8.0.7" ]
+	[ "${lines[-2]}" = "suricata-8.0.1" ]
+	[[ "${lines[-1]}" == "suricata-8.0."*" @oisf/suricata-8.0" ]]
+	[[ "${lines[-3]}" != *master* && "${lines[-3]}" != *dev* ]]
+}
+
+@test "ntop.org: the stable channel, not the development one" {
+	run grep -rn 'packages.ntop.org/apt"' "$REPO_DIR/lib"
+	[ "$status" -ne 0 ]
+	grep -q 'NTOP_REPO_DEB_URL_APT="https://packages.ntop.org/apt-stable"' "$REPO_DIR/lib/step_ntopng.sh"
+	grep -q 'centos-stable/ntop.repo' "$REPO_DIR/lib/step_ntopng.sh"
+}
+
+sources_fixture() {
+	mkdir -p "$DPISTACK_ROOT/etc/apt/sources.list.d"
+	cat >"$DPISTACK_ROOT/etc/apt/sources.list" <<'EOF'
+deb http://deb.debian.org/debian bookworm main non-free-firmware
+deb-src http://deb.debian.org/debian bookworm main
+deb http://security.debian.org/debian-security bookworm-security main contrib
+deb [signed-by=/usr/share/keyrings/x.gpg arch=amd64] http://deb.debian.org/debian bookworm-updates main
+# deb http://deb.debian.org/debian commented main
+deb https://packages.ntop.org/apt-stable/bookworm all main
+EOF
+	cat >"$DPISTACK_ROOT/etc/apt/sources.list.d/debian.sources" <<'EOF'
+Types: deb
+URIs: http://deb.debian.org/debian
+Suites: trixie trixie-updates
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: https://example.com/repo
+Suites: stable
+Components: main
+EOF
+}
+
+@test "apt_enable_component adds contrib to the Debian lines and stanzas only" {
+	os_release debian debian 12
+	sources_fixture
+	fam 'apt_enable_component contrib' >/dev/null
+	list="$DPISTACK_ROOT/etc/apt/sources.list"
+	grep -q '^deb http://deb.debian.org/debian bookworm main non-free-firmware contrib$' "$list"
+	grep -q '^deb-src http://deb.debian.org/debian bookworm main contrib$' "$list"
+	grep -q '^deb http://security.debian.org/debian-security bookworm-security main contrib$' "$list"
+	grep -q 'arch=amd64\] http://deb.debian.org/debian bookworm-updates main contrib$' "$list"
+	grep -q '^# deb http://deb.debian.org/debian commented main$' "$list"
+	grep -q '^deb https://packages.ntop.org/apt-stable/bookworm all main$' "$list"
+	sources="$DPISTACK_ROOT/etc/apt/sources.list.d/debian.sources"
+	grep -q '^Components: main contrib$' "$sources"
+	[ "$(grep -c '^Components: main$' "$sources")" = "1" ]
+}
+
+@test "apt_enable_component is idempotent and keeps backups outside sources.list.d" {
+	os_release debian debian 12
+	sources_fixture
+	fam 'apt_enable_component contrib' >/dev/null
+	cp "$DPISTACK_ROOT/etc/apt/sources.list" "$DPISTACK_ROOT/after1"
+	fam 'apt_enable_component contrib' >/dev/null
+	cmp "$DPISTACK_ROOT/after1" "$DPISTACK_ROOT/etc/apt/sources.list"
+	[ -n "$(ls "$DPISTACK_ROOT"/var/lib/dpistack/backups/ | grep '^sources.list.')" ]
+	run ls "$DPISTACK_ROOT/etc/apt/sources.list.d"
+	[ "$output" = "debian.sources" ]
+}
+
+@test "apt_enable_component honours dry-run" {
+	os_release debian debian 12
+	sources_fixture
+	cp "$DPISTACK_ROOT/etc/apt/sources.list" "$DPISTACK_ROOT/before"
+	run fam 'DRY_RUN=1; apt_enable_component contrib'
+	[[ "$output" == *"+ enable contrib in"* ]]
+	cmp "$DPISTACK_ROOT/before" "$DPISTACK_ROOT/etc/apt/sources.list"
+}
+
+@test "ntopng on Debian: contrib first, then the stable repo package" {
+	os_release debian debian 12
+	sources_fixture
+	fam 'ntopng_repo_add' >/dev/null
+	grep -q 'bookworm main non-free-firmware contrib$' "$DPISTACK_ROOT/etc/apt/sources.list"
+	grep -q 'packages.ntop.org/apt-stable/bookworm/all/apt-ntop-stable.deb' "$CALLS"
+	run grep -c 'add-apt-repository' "$CALLS"
+	[ "$output" = "0" ]
+}
+
+@test "os_support_level: the supported platforms and the ones that are not" {
+	check() {
+		os_release "$1" "$2" "$3"
+		run fam 'os_support_level'
+		[ "$output" = "$4" ] || {
+			echo "$1 $3: got $output want $4" >&2
+			return 1
+		}
+	}
+	check ubuntu debian 22.04 supported
+	check ubuntu debian 24.04 supported
+	check ubuntu debian 26.04 supported
+	check ubuntu debian 20.04 unsupported
+	check ubuntu debian 25.10 unverified
+	check debian "" 12 supported
+	check debian "" 13 supported
+	check debian "" 11 unsupported
+	check debian "" 14 unverified
+	check rhel "fedora" 9.4 supported
+	check rhel "fedora" 10.0 supported
+	check rocky "rhel centos fedora" 9.5 supported
+	check almalinux "rhel centos fedora" 10.0 supported
+	check centos "rhel fedora" 9 supported
+	check rhel "fedora" 8.10 unverified
+	check centos "rhel fedora" 7 unsupported
+	check fedora "" 41 unverified
+	check linuxmint "ubuntu debian" 22 unverified
+}
+
+preflight_reasons() {
+	PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" bash -c "
+		cd '$REPO_DIR'
+		source lib/paths.sh; source lib/common.sh; source lib/state.sh; source lib/os.sh
+		for f in lib/step_*.sh; do source \$f; done
+		declare -A CONF=()
+		os_detect >/dev/null 2>&1
+		step_preflight_reasons" 2>&1
+}
+
+@test "preflight refuses an unsupported release and names the way around it" {
+	os_release ubuntu debian 20.04
+	run preflight_reasons
+	[[ "$output" == *"ubuntu 20.04 не поддерживается"* ]]
+	[[ "$output" == *"DPISTACK_ALLOW_UNSUPPORTED=1"* ]]
+	DPISTACK_ALLOW_UNSUPPORTED=1 run preflight_reasons
+	[[ "$output" != *"не поддерживается"* ]]
+}
+
+@test "preflight lets a supported release and warns about an unverified one" {
+	os_release debian debian 12
+	run preflight_reasons
+	[[ "$output" != *"не поддерживается"* ]]
+	[[ "$output" != *"не входит в список"* ]]
+	os_release fedora fedora 41
+	run preflight_reasons
+	[[ "$output" == *"не входит в список проверенных платформ"* ]]
+}
+
+@test "dnf: the OISF COPR is enabled for SURICATA_SOURCE=oisf" {
+	os_release rocky "rhel centos fedora" 9.4
+	fam 'pkg_repo_add oisf' >/dev/null
+	grep -q '^dnf install -y dnf-plugins-core$' "$CALLS"
+	grep -q '^dnf copr enable -y @oisf/suricata-8.0$' "$CALLS"
+}
+
+@test "dnf without Rust 1.75 falls back to the OISF COPR package, nDPI off" {
+	os_release rocky "rhel centos fedora" 9.4
+	MOCK_DPKG_ABSENT="suricata" MOCK_RPM_ABSENT="suricata" run fam 'CONF[SURICATA_SOURCE]=source; CONF[NDPI_ENABLE]=yes
+		suricata_resolve_source; echo "rc=$? source=${CONF[SURICATA_SOURCE]} ndpi=${CONF[NDPI_ENABLE]}"'
+	[[ "$output" == *"rc=0 source=oisf ndpi=no"* ]]
+}
+
+@test "the RPM unit gets its options from /etc/sysconfig/suricata" {
+	os_release rocky "rhel centos fedora" 9.4
+	run fam 'suricata_render_sysconfig'
+	[[ "$output" == *'OPTIONS="--af-packet --user suricata "'* ]]
+	[[ "$output" == *"suricata.yaml"* ]]
+}
+
+@test "uninstall --purge removes the panel user" {
+	os_release ubuntu debian 24.04
+	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
+	: >"$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+	fakebin="$(mktemp -d)"
+	printf '#!/usr/bin/env bash\n[[ "$1" == "dpistack" ]] && exit 0\nexec /usr/bin/id "$@"\n' >"$fakebin/id"
+	chmod +x "$fakebin/id"
+	PATH="$fakebin:$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" MOCK_IP_EXISTING_IFACES=enp2s0 \
+		bash "$REPO_DIR/install.sh" uninstall -y --purge >/dev/null 2>&1 || true
+	grep -q '^userdel dpistack$' "$CALLS"
+	rm -rf "$fakebin"
+}
+
+@test "rules: a ruleset made for another Suricata version is rebuilt with --force" {
+	os_release ubuntu debian 24.04
+	script='CONF[RULES_SOURCES]=et/open; CONF[RULES_UPDATE]=off; step_rules_apply >/dev/null 2>&1; state_read_value rules.suricata_version'
+	MOCK_SURICATA_VERSION=8.0.7 run fam "$script"
+	[ "${lines[-1]}" = "8.0.7" ]
+	grep -q '^suricata-update -D .* --force$' "$CALLS" || grep -q -- '--force' "$CALLS"
+	: >"$CALLS"
+	MOCK_SURICATA_VERSION=8.0.7 fam "$script" >/dev/null
+	run grep -c -- '--force' "$CALLS"
+	[ "$output" = "0" ]
+	: >"$CALLS"
+	MOCK_SURICATA_VERSION=8.0.8 run fam "$script"
+	[ "${lines[-1]}" = "8.0.8" ]
+	grep -q -- '--force' "$CALLS"
+}
+
+@test "rules: without a readable Suricata version nothing is forced" {
+	os_release ubuntu debian 24.04
+	fam 'CONF[RULES_SOURCES]=et/open; CONF[RULES_UPDATE]=off; step_rules_apply' >/dev/null 2>&1
+	run grep -c -- '--force' "$CALLS"
+	[ "$output" = "0" ]
+}
+
+@test "diag writes a report with its sections and hides secrets" {
+	os_release ubuntu debian 24.04
+	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
+	printf 'ALERT_SMTP_URL=smtp://user:s3cret@mail.example.com:587\nALERT_TG_TOKEN=12345:abcdef\nIFACES=eth0\n' >"$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+	out="$DPISTACK_ROOT/diag.txt"
+	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" DIAG_OUT="$out" bash "$REPO_DIR/install.sh" diag --no-color
+	[ "$status" -eq 0 ]
+	[ -s "$out" ]
+	grep -q '^===== платформа =====$' "$out"
+	grep -q 'уровень=supported' "$out"
+	grep -q '^===== dpistack.conf =====$' "$out"
+	grep -q '^IFACES=eth0$' "$out"
+	! grep -q 's3cret' "$out"
+	! grep -q '12345:abcdef' "$out"
+	grep -q '<скрыто>' "$out"
+	[[ "$output" != *"s3cret"* ]]
 }
