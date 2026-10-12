@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack-ctl version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack-ctl
-DPISTACK_VERSION="0.5.1"
+DPISTACK_VERSION="0.6.0"
 
 : "${DRY_RUN:=0}"
 
@@ -170,7 +170,7 @@ panel_auth_write() {
 	command -v argon2 >/dev/null 2>&1 || return 2
 	local salt hash
 	salt=$(head -c 16 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
-	hash=$(printf '%s' "$plaintext" | argon2 "$salt" -id -t 3 -m 16 -p 4 -l 32 -e) || return 1
+	hash=$(printf '%s' "$plaintext" | argon2 "$salt" -id -t 3 -m 14 -p 4 -l 32 -e) || return 1
 	# shellcheck disable=SC2016 # literal PHC prefix, not an expansion
 	[[ "$hash" == '$argon2id$'* ]] || return 1
 	printf '%s\n' "$hash" | atomic_write "$(path_panel_auth)" 0640 || return 1

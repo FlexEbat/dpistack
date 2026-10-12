@@ -244,6 +244,8 @@ FAKE
 	[[ "$(cat "$auth")" == '$argon2id$'* ]]
 	[ "$(stat -c %a "$auth")" = "640" ]
 	grep -q "^chown root:dpistack $auth" "$MOCK_CALLS_LOG"
+	# 16 MiB: the panel unit has MemoryMax=64M, so a 64 MiB hash could not be checked there.
+	grep -q -- "^argon2 .* -id -t 3 -m 14 -p 4 -l 32 -e" "$MOCK_CALLS_LOG"
 	! grep -q "$pw" "$MOCK_CALLS_LOG"
 	! grep -rq "$pw" "$DPISTACK_ROOT/var/log" 2>/dev/null
 

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dpistack</title>
+<link rel="stylesheet" href="app.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<main id="login" hidden>
+  <h1>dpistack</h1>
+  <form id="login-form">
+    <label for="password">Пароль</label>
+    <input id="password" type="password" autocomplete="current-password" required autofocus>
+    <button type="submit">Войти</button>
+    <p id="login-error" class="error" role="alert"></p>
+  </form>
+</main>
+<main id="overview" hidden>
+  <header>
+    <h1>Обзор</h1>
+    <button id="logout" type="button">Выйти</button>
+  </header>
+  <p id="overview-error" class="error" role="alert"></p>
+</main>
+</body>
+</html>
