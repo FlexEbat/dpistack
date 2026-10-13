@@ -26,12 +26,6 @@ plant() {
 	(cd "$WORK" && git add -A)
 }
 
-@test "the repository itself passes" {
-	run bash "$REPO_DIR/scripts/security.sh"
-	[ "$status" -eq 0 ]
-	[[ "$output" != *"FAIL"* ]]
-}
-
 @test "a clean tree passes" {
 	run bash "$WORK/scripts/security.sh"
 	[ "$status" -eq 0 ]

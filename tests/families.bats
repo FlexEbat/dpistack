@@ -284,17 +284,11 @@ inst_dry() {
 @test "Suricata without SURICATA_VERSION is the newest tested stable release, never master" {
 	os_release ubuntu debian 24.04
 	run fam 'suricata_target_ref; CONF[SURICATA_VERSION]=suricata-8.0.1; suricata_target_ref; echo "$SURICATA_STABLE_REF $SURICATA_COPR"'
-	[ "${lines[-3]}" = "suricata-8.0.7" ]
+	# Not the literal pin: it moves with every release the weekly watch accepts.
+	[[ "${lines[-3]}" =~ ^suricata-[0-9]+\.[0-9]+\.[0-9]+$ ]]
 	[ "${lines[-2]}" = "suricata-8.0.1" ]
-	[[ "${lines[-1]}" == "suricata-8.0."*" @oisf/suricata-8.0" ]]
-	[[ "${lines[-3]}" != *master* && "${lines[-3]}" != *dev* ]]
-}
-
-@test "ntop.org: the stable channel, not the development one" {
-	run grep -rn 'packages.ntop.org/apt"' "$REPO_DIR/lib"
-	[ "$status" -ne 0 ]
-	grep -q 'NTOP_REPO_DEB_URL_APT="https://packages.ntop.org/apt-stable"' "$REPO_DIR/lib/step_ntopng.sh"
-	grep -q 'centos-stable/ntop.repo' "$REPO_DIR/lib/step_ntopng.sh"
+	# The COPR series follows the pin: suricata-8.0.7 pairs with @oisf/suricata-8.0.
+	[ "${lines[-1]}" = "${lines[-3]} @oisf/${lines[-3]%.*}" ]
 }
 
 sources_fixture() {

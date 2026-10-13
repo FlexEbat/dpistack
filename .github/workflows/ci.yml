@@ -27,6 +27,11 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: panel/go.mod
+          check-latest: true
+          cache: false
       - name: Install tools
         run: |
           sudo apt-get update
@@ -48,7 +53,8 @@ jobs:
           OS_NAME: ${{ matrix.os }}
         run: |
           n=0
-          grep -E '^(not ok|FAIL:|.*error:)' "$RUNNER_TEMP/gate.log" | head -6 | while IFS= read -r line; do
+          # A failure that prints none of those markers still shows its last lines.
+          { grep -E '^(not ok|FAIL:|--- FAIL|FAIL[[:space:]]|panic:|go: [^d]|.*error:)' "$RUNNER_TEMP/gate.log" || tail -n 6 "$RUNNER_TEMP/gate.log"; } | head -6 | while IFS= read -r line; do
             n=$((n + 1))
             gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
               -f state=failure -f context="gate $OS_NAME #$n" -f description="${line:0:130}" >/dev/null
