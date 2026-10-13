@@ -13,6 +13,34 @@ preflight_step_wanted() {
 	fi
 }
 
+# preflight_panel_reasons - the panel binary has to be obtainable before
+# the install starts: a ready file for prebuilt, Go (at least the version
+# panel/go.mod asks for) for build. A binary that is already installed and
+# current needs neither, so a repeat run on a host without Go still passes.
+preflight_panel_reasons() {
+	panel_bin_current && return 0
+	if [[ "${CONF[PANEL_SOURCE]:-build}" == "prebuilt" ]]; then
+		if [[ ! -f "$(panel_prebuilt_path)" ]]; then
+			reasons+=("PANEL_SOURCE=prebuilt, но рядом с install.sh нет готового бинарника dpistack-panel")
+		fi
+		return 0
+	fi
+	if [[ ! -d "$SCRIPT_DIR/panel" ]]; then
+		reasons+=("PANEL_SOURCE=build, но нет каталога panel/ с исходниками (возьмите готовый бинарник: PANEL_SOURCE=prebuilt)")
+		return 0
+	fi
+	local need have
+	need=$(awk '/^go /{print $2; exit}' "$SCRIPT_DIR/panel/go.mod" 2>/dev/null)
+	if ! command -v go >/dev/null 2>&1; then
+		reasons+=("PANEL_SOURCE=build, но Go не найден (нужен Go ${need:-новее}; готовый бинарник: PANEL_SOURCE=prebuilt)")
+		return 0
+	fi
+	have=$(go version 2>/dev/null | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p')
+	if [[ -n "$need" && -n "$have" && "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" != "$need" ]]; then
+		reasons+=("PANEL_SOURCE=build, но Go $have старше требуемого $need (готовый бинарник: PANEL_SOURCE=prebuilt)")
+	fi
+}
+
 step_preflight_reasons() {
 	local reasons=()
 
@@ -26,6 +54,10 @@ step_preflight_reasons() {
 
 	if ! command -v systemctl >/dev/null 2>&1; then
 		reasons+=("systemd (systemctl) не найден, нужен для native runtime")
+	fi
+
+	if preflight_step_wanted panel; then
+		preflight_panel_reasons
 	fi
 
 	local key

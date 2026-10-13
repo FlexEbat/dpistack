@@ -324,6 +324,9 @@ cmd_install() {
 	if [[ "$METRICS_TOKEN_JUST_GENERATED" == "1" ]]; then
 		echo "Создан METRICS_TOKEN (сохраните — больше нигде не показывается и не восстанавливается): ${SECRETS[METRICS_TOKEN]}"
 	fi
+	if [[ "$PANEL_PASSWORD_JUST_GENERATED" == "1" ]]; then
+		echo "Создан пароль панели (сохраните — больше нигде не показывается, на диске остаётся только хэш): $PANEL_PASSWORD_GENERATED_VALUE"
+	fi
 
 	if [[ "$DRY_RUN" != "1" ]]; then
 		config_write_conf "$(path_conf)"
@@ -513,6 +516,8 @@ cmd_uninstall() {
 
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
 	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_sudoers)"
+	run systemctl disable --now "$PANEL_SERVICE" 2>/dev/null || true
+	rm -f "$(path_panel_service_unit)" "$(path_panel_bin)"
 	run systemctl daemon-reload
 
 	rm -f "$(path_conf)" "$(path_conf_draft)" "$(path_secrets)" "$(path_panel_auth)"
