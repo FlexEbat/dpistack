@@ -5,6 +5,9 @@ setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 	DPISTACK_ROOT="$(mktemp -d)"
 	export DPISTACK_ROOT
+	# Own scratch dir: BATS_TEST_TMPDIR does not exist before bats 1.4
+	# (Ubuntu 22.04 has 1.2.1), and a shared one leaks files between tests.
+	WORK="$(mktemp -d)"
 	mkdir -p "$DPISTACK_ROOT/etc"
 	cat >"$DPISTACK_ROOT/etc/os-release" <<'EOF_OS'
 ID=ubuntu
@@ -20,7 +23,7 @@ EOF_OS
 }
 
 teardown() {
-	rm -rf "$DPISTACK_ROOT"
+	rm -rf "$DPISTACK_ROOT" "$WORK"
 	rm -f "$MOCK_CALLS_LOG"
 }
 
@@ -161,13 +164,13 @@ unit_file() {
 }
 
 @test "criterion 5: PANEL_SOURCE=prebuilt installs the binary that lies next to install.sh" {
-	installer_copy "$BATS_TEST_TMPDIR/inst"
-	printf '#!/bin/sh\necho prebuilt\n' >"$BATS_TEST_TMPDIR/inst/dpistack-panel"
-	chmod 0755 "$BATS_TEST_TMPDIR/inst/dpistack-panel"
-	run bash "$BATS_TEST_TMPDIR/inst/install.sh" install -y \
+	installer_copy "$WORK/inst"
+	printf '#!/bin/sh\necho prebuilt\n' >"$WORK/inst/dpistack-panel"
+	chmod 0755 "$WORK/inst/dpistack-panel"
+	run bash "$WORK/inst/install.sh" install -y \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set PANEL_SOURCE=prebuilt
 	[ "$status" -eq 0 ]
-	cmp "$BATS_TEST_TMPDIR/inst/dpistack-panel" "$DPISTACK_ROOT/usr/local/bin/dpistack-panel"
+	cmp "$WORK/inst/dpistack-panel" "$DPISTACK_ROOT/usr/local/bin/dpistack-panel"
 	! grep -q "^go build" "$MOCK_CALLS_LOG"
 }
 
@@ -198,15 +201,15 @@ unit_file() {
 }
 
 @test "a changed source rebuilds the binary and restarts the unit" {
-	installer_copy "$BATS_TEST_TMPDIR/inst"
+	installer_copy "$WORK/inst"
 	inst() {
-		bash "$BATS_TEST_TMPDIR/inst/install.sh" install -y \
+		bash "$WORK/inst/install.sh" install -y \
 			--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	}
 	run inst
 	[ "$status" -eq 0 ]
 	: >"$MOCK_CALLS_LOG"
-	echo "// changed" >>"$BATS_TEST_TMPDIR/inst/panel/internal/api/api.go"
+	echo "// changed" >>"$WORK/inst/panel/internal/api/api.go"
 	run inst
 	[ "$status" -eq 0 ]
 	grep -q "^go build" "$MOCK_CALLS_LOG"
@@ -254,15 +257,15 @@ release_binary_name() {
 }
 
 @test "PANEL_SOURCE=auto (the default) installs the release binary for this CPU and builds nothing" {
-	installer_copy "$BATS_TEST_TMPDIR/inst"
-	printf '#!/bin/sh\necho release\n' >"$BATS_TEST_TMPDIR/inst/$(release_binary_name)"
-	chmod 0755 "$BATS_TEST_TMPDIR/inst/$(release_binary_name)"
+	installer_copy "$WORK/inst"
+	printf '#!/bin/sh\necho release\n' >"$WORK/inst/$(release_binary_name)"
+	chmod 0755 "$WORK/inst/$(release_binary_name)"
 	# A binary of another CPU lies there too and must be ignored.
-	printf '#!/bin/sh\necho other\n' >"$BATS_TEST_TMPDIR/inst/dpistack-panel-linux-riscv64"
-	run bash "$BATS_TEST_TMPDIR/inst/install.sh" install -y \
+	printf '#!/bin/sh\necho other\n' >"$WORK/inst/dpistack-panel-linux-riscv64"
+	run bash "$WORK/inst/install.sh" install -y \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
-	cmp "$BATS_TEST_TMPDIR/inst/$(release_binary_name)" "$DPISTACK_ROOT/usr/local/bin/dpistack-panel"
+	cmp "$WORK/inst/$(release_binary_name)" "$DPISTACK_ROOT/usr/local/bin/dpistack-panel"
 	! grep -q "^go build" "$MOCK_CALLS_LOG"
 }
 
@@ -273,10 +276,10 @@ release_binary_name() {
 }
 
 @test "PANEL_SOURCE=build builds even when a ready binary lies next to install.sh" {
-	installer_copy "$BATS_TEST_TMPDIR/inst"
-	printf '#!/bin/sh\necho release\n' >"$BATS_TEST_TMPDIR/inst/$(release_binary_name)"
-	chmod 0755 "$BATS_TEST_TMPDIR/inst/$(release_binary_name)"
-	run bash "$BATS_TEST_TMPDIR/inst/install.sh" install -y \
+	installer_copy "$WORK/inst"
+	printf '#!/bin/sh\necho release\n' >"$WORK/inst/$(release_binary_name)"
+	chmod 0755 "$WORK/inst/$(release_binary_name)"
+	run bash "$WORK/inst/install.sh" install -y \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set PANEL_SOURCE=build
 	[ "$status" -eq 0 ]
 	grep -q "^go build" "$MOCK_CALLS_LOG"
