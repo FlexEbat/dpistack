@@ -52,11 +52,22 @@ jobs:
             echo "tag $GITHUB_REF_NAME does not match DPISTACK_VERSION $code_version" >&2
             exit 1
           fi
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: panel/go.mod
+          check-latest: true
+          cache: false
       - name: Build archive
         run: |
           name="dpistack-${GITHUB_REF_NAME#v}"
           mkdir -p "dist/$name/tests"
           cp -a install.sh lib templates bin panel README.md LICENSE dpistack.conf.example "dist/$name/"
+          # Ready panel binaries: a host without Go installs the panel from
+          # these (PANEL_SOURCE=auto picks the one for its CPU).
+          for arch in amd64 arm64; do
+            (cd panel && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-s -w" \
+              -o "../dist/$name/dpistack-panel-linux-$arch" ./cmd/panel)
+          done
           cp -a tests/data "dist/$name/tests/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
