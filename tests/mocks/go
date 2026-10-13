@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Mock go(1) for bats tests: `go version` answers, `go build -o <path>`
+# writes a stub executable, so no test compiles or downloads anything.
+if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
+	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+fi
+if [[ "${1:-}" == "version" ]]; then
+	echo "go version ${MOCK_GO_VERSION:-go1.27.2} linux/amd64"
+	exit 0
+fi
+if [[ "${1:-}" == "build" ]]; then
+	[[ "${MOCK_GO_BUILD_FAIL:-0}" == "1" ]] && exit 1
+	out=""
+	prev=""
+	for a in "$@"; do
+		[[ "$prev" == "-o" ]] && out="$a"
+		prev="$a"
+	done
+	if [[ -n "$out" ]]; then
+		printf '#!/bin/sh\nexit 0\n' >"$out"
+		chmod 0755 "$out"
+	fi
+	exit 0
+fi
+exit 0

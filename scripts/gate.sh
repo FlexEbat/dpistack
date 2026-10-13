@@ -49,6 +49,9 @@ if [[ -d panel ]]; then
 
 	echo "== go test =="
 	(cd panel && go test ./...) || fail "go test"
+
+	echo "== panel budget =="
+	bash scripts/panel-budget.sh || fail "panel budget"
 fi
 
 exit "$status"

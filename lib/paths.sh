@@ -39,6 +39,7 @@ path_evebox_data_dir() { echo "${DPISTACK_ROOT}/var/lib/evebox"; }
 path_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib/dpistack"; }
 path_installer_copy_dir() { echo "$(path_lib_dir)/installer"; }
 path_panel_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/dpistack-panel"; }
+path_panel_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-panel.service"; }
 path_sudoers() { echo "${DPISTACK_ROOT}/etc/sudoers.d/dpistack"; }
 
 path_suricata_yaml() { echo "${DPISTACK_ROOT}/etc/suricata/suricata.yaml"; }
