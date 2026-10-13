@@ -56,7 +56,7 @@ jobs:
         run: |
           name="dpistack-${GITHUB_REF_NAME#v}"
           mkdir -p "dist/$name/tests"
-          cp -a install.sh lib templates bin README.md LICENSE dpistack.conf.example "dist/$name/"
+          cp -a install.sh lib templates bin panel README.md LICENSE dpistack.conf.example "dist/$name/"
           cp -a tests/data "dist/$name/tests/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
