@@ -53,7 +53,8 @@ jobs:
           OS_NAME: ${{ matrix.os }}
         run: |
           n=0
-          grep -E '^(not ok|FAIL:|--- FAIL|FAIL[[:space:]]|panic:|go: |.*error:)' "$RUNNER_TEMP/gate.log" | head -6 | while IFS= read -r line; do
+          # A failure that prints none of those markers still shows its last lines.
+          { grep -E '^(not ok|FAIL:|--- FAIL|FAIL[[:space:]]|panic:|go: [^d]|.*error:)' "$RUNNER_TEMP/gate.log" || tail -n 6 "$RUNNER_TEMP/gate.log"; } | head -6 | while IFS= read -r line; do
             n=$((n + 1))
             gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
               -f state=failure -f context="gate $OS_NAME #$n" -f description="${line:0:130}" >/dev/null
