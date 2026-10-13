@@ -4,9 +4,16 @@ set -uo pipefail
 
 status=0
 
+# fail <stage> marks the gate red and names the stage, so a red run says
+# which check broke even when that check prints nothing recognisable.
+fail() {
+	echo "FAIL: $1"
+	status=1
+}
+
 echo "== shfmt =="
 if ! shfmt -d install.sh lib bin scripts tests; then
-	status=1
+	fail shfmt
 fi
 
 echo "== shellcheck =="
@@ -17,31 +24,31 @@ echo "== shellcheck =="
 # enough in Russian strings to hit it consistently.
 # shellcheck disable=SC2046
 if ! LANG=C.utf8 LC_ALL=C.utf8 shellcheck -x install.sh lib/*.sh bin/dpistack-ctl bin/dpistack-watch scripts/*.sh; then
-	status=1
+	fail shellcheck
 fi
 
 echo "== security =="
 if ! bash scripts/security.sh; then
-	status=1
+	fail security
 fi
 
 echo "== bats =="
 if ! bats tests; then
-	status=1
+	fail bats
 fi
 
 if [[ -d panel ]]; then
 	echo "== gofmt =="
 	if [[ -n "$(gofmt -l panel)" ]]; then
 		gofmt -l panel
-		status=1
+		fail gofmt
 	fi
 
 	echo "== go vet =="
-	(cd panel && go vet ./...) || status=1
+	(cd panel && go vet ./...) || fail "go vet"
 
 	echo "== go test =="
-	(cd panel && go test ./...) || status=1
+	(cd panel && go test ./...) || fail "go test"
 fi
 
 exit "$status"
