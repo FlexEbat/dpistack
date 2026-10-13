@@ -1,3 +1,5 @@
+import { start as startOverview } from "./modules/overview.js";
+
 const $ = (id) => document.getElementById(id);
 
 function cookie(name) {
@@ -25,17 +27,39 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
+let stopOverview = null;
+
+function showOverview() {
+  show("overview");
+  stopOverview?.();
+  stopOverview = startOverview(
+    api,
+    {
+      overall: $("overall"),
+      components: $("components"),
+      checks: $("checks"),
+      error: $("overview-error"),
+    },
+    showLogin,
+  );
+}
+
+function showLogin() {
+  stopOverview?.();
+  stopOverview = null;
+  show("login");
+  $("password").focus();
+}
+
 async function boot() {
   try {
     await api("/api/status");
-    $("overview-error").textContent = "";
-    show("overview");
+    showOverview();
   } catch (err) {
     if (err.status === 401) {
-      show("login");
+      showLogin();
     } else {
-      $("overview-error").textContent = err.message;
-      show("overview");
+      showOverview(); // the screen shows the error text itself
     }
   }
 }
@@ -58,7 +82,7 @@ $("login-form").addEventListener("submit", async (event) => {
 
 $("logout").addEventListener("click", async () => {
   await api("/api/logout", { method: "POST" }).catch(() => {});
-  show("login");
+  showLogin();
 });
 
 boot();
