@@ -38,7 +38,7 @@ evebox_input_enabled() {
 evebox_render_conf() {
 	render_template "$SCRIPT_DIR/templates/evebox.yaml.tpl" \
 		"EVEBOX_HOST=$(access_effective_bind_host)" \
-		"EVEBOX_PORT=${CONF[EVEBOX_PORT]:-5636}" \
+		"EVEBOX_PORT=$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}")" \
 		"EVEBOX_DB_TYPE=${CONF[EVEBOX_DB]:-sqlite}" \
 		"EVEBOX_RETENTION_DAYS=${CONF[EVEBOX_RETENTION_DAYS]:-30}" \
 		"EVEBOX_INPUT_ENABLED=$(evebox_input_enabled)" \
@@ -99,7 +99,7 @@ step_evebox_apply() {
 	if [[ "${CONF[EVEBOX_DB]:-sqlite}" == "elasticsearch" ]]; then
 		echo "evebox: EVEBOX_RETENTION_DAYS работает только с SQLite, для Elasticsearch удаление старых событий настраивается на стороне Elasticsearch." >&2
 	fi
-	echo "evebox: слушает на $(access_effective_bind_host):${CONF[EVEBOX_PORT]:-5636}; встроенные TLS и аутентификация EveBox отключены, доступ ограничивается сетью (ACCESS_MODE/firewall)." >&2
+	echo "evebox: слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}"); встроенные TLS и аутентификация EveBox отключены, доступ ограничивается сетью (ACCESS_MODE/firewall)." >&2
 	return 0
 }
 

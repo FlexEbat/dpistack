@@ -89,6 +89,17 @@ config_validate() {
 		fi
 	done
 
+	# nginx takes the public port, the service moves to <public>+10000.
+	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+		local port_key
+		for port_key in NTOPNG_PORT EVEBOX_PORT PANEL_PORT; do
+			if [[ "${CONF[$port_key]:-0}" =~ ^[0-9]+$ ]] && ((${CONF[$port_key]:-0} > 55535)); then
+				echo "ACCESS_MODE=nginx требует $port_key не больше 55535 (сервис слушает на порту плюс 10000)"
+				errors=$((errors + 1))
+			fi
+		done
+	fi
+
 	if [[ "${CONF[EVEBOX_DB]:-}" == "elasticsearch" && -z "${CONF[EVEBOX_ES_URL]:-}" ]]; then
 		echo "EVEBOX_DB=elasticsearch требует EVEBOX_ES_URL"
 		errors=$((errors + 1))

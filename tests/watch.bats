@@ -281,3 +281,16 @@ stats_line() {
 	[ ! -e "$HEALTH" ]
 	exec 9>&-
 }
+
+@test "with ACCESS_MODE=nginx the port checks look at the services, not at nginx in front of them" {
+	echo "ACCESS_MODE=nginx" >"$CONF_FILE"
+	# Only nginx answers on the public ports: the services behind it are down.
+	FAKE_LISTEN="3000 5636 9800 6379" run "$WATCH"
+	[ "$(field ntopng.port status)" = "warn" ]
+	[ "$(field ntopng.port value)" = "13000" ]
+	[ "$(field panel.port value)" = "19800" ]
+	FAKE_LISTEN="13000 15636 19800 6379" run "$WATCH"
+	[ "$(field ntopng.port status)" = "ok" ]
+	[ "$(field evebox.port status)" = "ok" ]
+	[ "$(field panel.port status)" = "ok" ]
+}

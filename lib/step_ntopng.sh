@@ -36,7 +36,7 @@ ntopng_render_interfaces_block() {
 ntopng_render_conf() {
 	render_template "$SCRIPT_DIR/templates/ntopng.conf.tpl" \
 		"NTOPNG_INTERFACES=$(ntopng_render_interfaces_block)" \
-		"NTOPNG_BIND=$(access_effective_bind_host):${CONF[NTOPNG_PORT]:-3000}" \
+		"NTOPNG_BIND=$(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")" \
 		"NTOPNG_PIDFILE=$(path_ntopng_pidfile)"
 }
 
@@ -126,12 +126,12 @@ step_ntopng_apply() {
 	# from here, so the default admin/admin credential is only ever
 	# safe when access_effective_bind_host keeps this on 127.0.0.1;
 	# step_access.sh prints its own louder warning for lan/nginx modes.
-	echo "ntopng: логин/пароль по умолчанию admin/admin, слушает на $(access_effective_bind_host):${CONF[NTOPNG_PORT]:-3000} - смените пароль в веб-интерфейсе." >&2
+	echo "ntopng: логин/пароль по умолчанию admin/admin, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - смените пароль в веб-интерфейсе." >&2
 
 	return 0
 }
 
 step_ntopng_plan() {
-	echo "ntopng: интерфейсы $(ntopng_effective_ifaces), порт ${CONF[NTOPNG_PORT]:-3000}, bind $(access_effective_bind_host)"
+	echo "ntopng: интерфейсы $(ntopng_effective_ifaces), порт ${CONF[NTOPNG_PORT]:-3000} (сервис на $(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")), bind $(access_effective_bind_host)"
 	echo "ntopng: рендер $(path_ntopng_conf)"
 }

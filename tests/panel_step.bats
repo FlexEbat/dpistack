@@ -144,11 +144,12 @@ unit_file() {
 	grep -q ' -addr 0.0.0.0:9800 -access lan -lan-cidr 127.0.0.1/32 ' "$(unit_file)"
 }
 
-@test "the unit follows ACCESS_MODE: nginx keeps the panel on loopback and passes the CIDR" {
+@test "the unit follows ACCESS_MODE: nginx keeps the panel on loopback, behind nginx, and passes the CIDR" {
 	run install_base --set ACCESS_MODE=nginx --set ACCESS_CONFIRM=yes --set NGINX_MANAGE=snippet \
 		--set LAN_CIDR=10.1.0.0/16 --set PANEL_PORT=9900
 	[ "$status" -eq 0 ]
-	grep -q ' -addr 127.0.0.1:9900 -access nginx -lan-cidr 10.1.0.0/16 ' "$(unit_file)"
+	# nginx takes 9900, the panel itself moves to 19900.
+	grep -q ' -addr 127.0.0.1:19900 -access nginx -lan-cidr 10.1.0.0/16 ' "$(unit_file)"
 }
 
 @test "criterion 5: PANEL_SOURCE=prebuilt without a ready binary stops preflight with code 3" {
@@ -170,11 +171,11 @@ unit_file() {
 	! grep -q "^go build" "$MOCK_CALLS_LOG"
 }
 
-@test "PANEL_SOURCE=build with a Go older than panel/go.mod stops preflight with code 3" {
+@test "a Go older than panel/go.mod and no ready binary stop preflight with code 3" {
 	MOCK_GO_VERSION=go1.20.1 run install_base
 	[ "$status" -eq 3 ]
 	[[ "$output" == *"Go 1.20.1 старше требуемого"* ]]
-	[[ "$output" == *"PANEL_SOURCE=prebuilt"* ]]
+	[[ "$output" == *"нет готового бинарника"* ]]
 }
 
 @test "a failing build stops the install and leaves no unit behind" {
@@ -241,4 +242,42 @@ unit_file() {
 	[ ! -e "$(unit_file)" ]
 	[ ! -e "$DPISTACK_ROOT/usr/local/bin/dpistack-panel" ]
 	grep -q "^systemctl disable --now dpistack-panel.service" "$MOCK_CALLS_LOG"
+}
+
+# The ready binary a release archive ships for this CPU.
+release_binary_name() {
+	case "$(uname -m)" in
+	x86_64) echo dpistack-panel-linux-amd64 ;;
+	aarch64 | arm64) echo dpistack-panel-linux-arm64 ;;
+	*) echo "dpistack-panel-linux-$(uname -m)" ;;
+	esac
+}
+
+@test "PANEL_SOURCE=auto (the default) installs the release binary for this CPU and builds nothing" {
+	installer_copy "$BATS_TEST_TMPDIR/inst"
+	printf '#!/bin/sh\necho release\n' >"$BATS_TEST_TMPDIR/inst/$(release_binary_name)"
+	chmod 0755 "$BATS_TEST_TMPDIR/inst/$(release_binary_name)"
+	# A binary of another CPU lies there too and must be ignored.
+	printf '#!/bin/sh\necho other\n' >"$BATS_TEST_TMPDIR/inst/dpistack-panel-linux-riscv64"
+	run bash "$BATS_TEST_TMPDIR/inst/install.sh" install -y \
+		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	[ "$status" -eq 0 ]
+	cmp "$BATS_TEST_TMPDIR/inst/$(release_binary_name)" "$DPISTACK_ROOT/usr/local/bin/dpistack-panel"
+	! grep -q "^go build" "$MOCK_CALLS_LOG"
+}
+
+@test "PANEL_SOURCE=auto builds from panel/ when no ready binary lies next to install.sh" {
+	run install_base
+	[ "$status" -eq 0 ]
+	grep -q "^go build" "$MOCK_CALLS_LOG"
+}
+
+@test "PANEL_SOURCE=build builds even when a ready binary lies next to install.sh" {
+	installer_copy "$BATS_TEST_TMPDIR/inst"
+	printf '#!/bin/sh\necho release\n' >"$BATS_TEST_TMPDIR/inst/$(release_binary_name)"
+	chmod 0755 "$BATS_TEST_TMPDIR/inst/$(release_binary_name)"
+	run bash "$BATS_TEST_TMPDIR/inst/install.sh" install -y \
+		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set PANEL_SOURCE=build
+	[ "$status" -eq 0 ]
+	grep -q "^go build" "$MOCK_CALLS_LOG"
 }

@@ -111,3 +111,43 @@ install_base() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"REAL_NGINX_T_OK"* ]]
 }
+
+@test "nginx mode: nginx takes each public port, every service listens on that port plus 10000 on loopback" {
+	run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 0 ]
+	for pair in "3000 13000" "5636 15636" "9800 19800"; do
+		set -- $pair
+		grep -q "^    listen $1;" "$NGINX_SNIPPET"
+		grep -q "proxy_pass http://127.0.0.1:$2;" "$NGINX_SNIPPET"
+	done
+	# The services themselves: never on the port nginx listens on.
+	grep -qx -- "-w=127.0.0.1:13000" "$DPISTACK_ROOT/etc/ntopng/ntopng.conf"
+	grep -q "port: 15636" "$DPISTACK_ROOT/etc/evebox/evebox.yaml"
+	grep -q " -addr 127.0.0.1:19800 " "$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service"
+}
+
+@test "without nginx the services keep the public ports" {
+	run install_base --set ACCESS_MODE=lan --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 0 ]
+	grep -qx -- "-w=0.0.0.0:3000" "$DPISTACK_ROOT/etc/ntopng/ntopng.conf"
+	grep -q "port: 5636" "$DPISTACK_ROOT/etc/evebox/evebox.yaml"
+	grep -q " -addr 0.0.0.0:9800 " "$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service"
+}
+
+@test "nginx mode refuses a public port that has no room for the service port" {
+	run install_base --set ACCESS_MODE=nginx --set ACCESS_CONFIRM=yes --set NTOPNG_PORT=60000
+	[ "$status" -eq 2 ]
+	[[ "$output" == *"NTOPNG_PORT не больше 55535"* ]]
+}
+
+@test "nginx mode: preflight stops when the public port is taken by something else" {
+	MOCK_SS_LISTEN="9800" run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 3 ]
+	[[ "$output" == *"порт 9800 (PANEL_PORT) уже занят, а на нём должен слушать nginx"* ]]
+}
+
+@test "nginx mode: preflight also checks the service port" {
+	MOCK_SS_LISTEN="19800" run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 3 ]
+	[[ "$output" == *"порт 19800 (PANEL_PORT) уже занят"* ]]
+}

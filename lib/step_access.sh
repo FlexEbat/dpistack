@@ -8,6 +8,21 @@
 
 NGINX_UNIT="nginx.service"
 
+# access_backend_port <public-port> - the port a web service itself listens
+# on. Only with ACCESS_MODE=nginx does it differ from the public one: nginx
+# takes the public port on every address, so the service moves to
+# 127.0.0.1:<public>+10000 (config validation keeps the public port at
+# 55535 or below in that mode). Binding two sockets to the same port would
+# fail with EADDRINUSE.
+access_backend_port() {
+	local port="$1"
+	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+		echo $((port + 10000))
+	else
+		echo "$port"
+	fi
+}
+
 access_effective_bind_host() {
 	case "${CONF[ACCESS_MODE]:-localhost}" in
 	lan) echo "0.0.0.0" ;;
@@ -79,7 +94,7 @@ access_render_nginx_full() {
 		evebox) port="${CONF[EVEBOX_PORT]:-5636}" ;;
 		panel) port="${CONF[PANEL_PORT]:-9800}" ;;
 		esac
-		access_render_nginx_service "$name" "$port" "$port" "$cidr"
+		access_render_nginx_service "$name" "$port" "$(access_backend_port "$port")" "$cidr"
 		echo
 	done
 }

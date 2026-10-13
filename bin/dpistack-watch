@@ -86,13 +86,24 @@ check_process() {
 	esac
 }
 
+# backend_port <public-port> - with ACCESS_MODE=nginx the services listen
+# on <public>+10000 behind nginx (tech.md 7, same rule as access_backend_port
+# in the installer); the check must look at the service, not at nginx.
+backend_port() {
+	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+		echo $(($1 + 10000))
+	else
+		echo "$1"
+	fi
+}
+
 # component_port <id> - empty when the component has no port to check.
 component_port() {
 	case "$1" in
-	evebox) echo "${CONF[EVEBOX_PORT]}" ;;
-	ntopng) echo "${CONF[NTOPNG_PORT]}" ;;
+	evebox) backend_port "${CONF[EVEBOX_PORT]}" ;;
+	ntopng) backend_port "${CONF[NTOPNG_PORT]}" ;;
 	redis) echo 6379 ;;
-	panel) echo "${CONF[PANEL_PORT]}" ;;
+	panel) backend_port "${CONF[PANEL_PORT]}" ;;
 	victoriametrics | prometheus) echo "${CONF[METRICS_BACKEND_PORT]}" ;;
 	esac
 }
