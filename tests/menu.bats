@@ -228,4 +228,3 @@ run_menu() {
 	rm -f "$f"
 	[[ "$output" == *"dpistack v$ver | Найдена установка"* ]]
 }
-
