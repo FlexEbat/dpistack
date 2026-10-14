@@ -81,4 +81,8 @@ nav button[aria-current="page"] { background: var(--accent); border-color: var(-
 
 [hidden] { display: none !important; }
 
+.editor { display: block; width: 100%; min-height: 24rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--fg); font: 0.85rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; resize: vertical; }
+.result { margin: 0.75rem 0 0; white-space: pre-wrap; word-break: break-word; }
+.result.error { color: var(--bad); }
+
 .log { margin: 0; padding: 0.75rem; min-height: 12rem; max-height: 60vh; overflow: auto; background: var(--card); border: 1px solid var(--border); border-radius: 6px; font: 0.8rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }

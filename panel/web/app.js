@@ -1,5 +1,6 @@
 import { start as startOverview } from "./modules/overview.js";
 import { start as startComponents } from "./modules/components.js";
+import { start as startConfigs } from "./modules/configs.js";
 import { start as startLogs } from "./modules/logs.js";
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +20,7 @@ async function api(path, options = {}) {
   if (!res.ok) {
     const err = new Error(body.error || "Ошибка " + res.status);
     err.status = res.status;
+    err.body = body; // a refusal carries the checker's words in body.output
     throw err;
   }
   return body;
@@ -29,7 +31,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "components", "logs"];
+const VIEWS = ["overview", "components", "configs", "logs"];
 let stopView = null;
 
 // Every screen starts when shown and returns a stop function, so a hidden
@@ -45,6 +47,20 @@ const SCREENS = {
     startComponents(
       api,
       { list: $("components-list"), error: $("components-error"), message: $("components-message") },
+      showLogin,
+    ),
+  configs: () =>
+    startConfigs(
+      api,
+      {
+        name: $("cfg-name"),
+        editor: $("cfg-editor"),
+        check: $("cfg-check"),
+        save: $("cfg-save"),
+        apply: $("cfg-apply"),
+        revert: $("cfg-revert"),
+        result: $("cfg-result"),
+      },
       showLogin,
     ),
   logs: () =>

@@ -25,6 +25,7 @@
   <nav id="nav" aria-label="Разделы">
     <button type="button" data-view="overview" aria-current="page">Обзор</button>
     <button type="button" data-view="components">Компоненты</button>
+    <button type="button" data-view="configs">Конфиги</button>
     <button type="button" data-view="logs">Логи</button>
   </nav>
   <div id="view-overview">
@@ -39,6 +40,17 @@
     <p id="components-error" class="error" role="alert"></p>
     <p id="components-message" class="muted" aria-live="polite"></p>
     <section id="components-list"></section>
+  </div>
+  <div id="view-configs" hidden>
+    <div class="toolbar">
+      <select id="cfg-name" aria-label="Файл"></select>
+      <button id="cfg-check" type="button">Проверить</button>
+      <button id="cfg-save" type="button">Сохранить</button>
+      <button id="cfg-apply" type="button">Сохранить и применить</button>
+      <button id="cfg-revert" type="button">Откатить</button>
+    </div>
+    <textarea id="cfg-editor" class="editor" spellcheck="false" autocomplete="off" aria-label="Содержимое файла"></textarea>
+    <pre id="cfg-result" class="result" role="status"></pre>
   </div>
   <div id="view-logs" hidden>
     <p id="logs-error" class="error" role="alert"></p>

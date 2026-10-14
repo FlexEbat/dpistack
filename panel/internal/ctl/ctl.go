@@ -28,6 +28,13 @@ const maxLogOutput = 4 << 20
 // maxLine bounds one streamed log line.
 const maxLine = 1 << 20
 
+// writeTimeout bounds config-write: `suricata -T` loads the whole ruleset,
+// and --apply may restart a component or run reconfigure.
+const writeTimeout = 3 * time.Minute
+
+// maxChecker keeps the checker's own words, which travel in the error.
+const maxChecker = 64 << 10
+
 // stopGrace is how long a streamed ctl gets to exit after its stdin is closed.
 const stopGrace = 5 * time.Second
 
@@ -41,6 +48,9 @@ var ErrUnavailable = errors.New("dpistack-ctl unavailable")
 type ExitError struct {
 	Code    int
 	Message string
+	// Output is what ctl printed to stdout before it failed: for
+	// config-write, the words of the checker (suricata -T and the like).
+	Output string
 }
 
 func (e *ExitError) Error() string {
@@ -102,6 +112,33 @@ func (r *Runner) Control(ctx context.Context, verb, id string) (string, error) {
 // ReloadSuricata runs `reload suricata`.
 func (r *Runner) ReloadSuricata(ctx context.Context) (string, error) {
 	out, err := r.run(ctx, maxOutput, "reload", "suricata")
+	return strings.TrimSpace(string(out)), err
+}
+
+// ConfigRead returns the current text of a config file.
+func (r *Runner) ConfigRead(ctx context.Context, name string) (string, error) {
+	out, err := r.runWith(ctx, maxLogOutput, callTimeout, nil, "config-read", name)
+	return string(out), err
+}
+
+// ConfigWrite hands content to `config-write <name>`: mode "" saves, "--check"
+// only checks, "--apply" saves and applies. The output is what ctl printed.
+func (r *Runner) ConfigWrite(ctx context.Context, name, mode string, content []byte) (string, error) {
+	args := []string{"config-write", name}
+	switch mode {
+	case "":
+	case "--check", "--apply":
+		args = append(args, mode)
+	default:
+		return "", fmt.Errorf("ctl: config-write mode %q is not allowed", mode)
+	}
+	out, err := r.runWith(ctx, maxOutput, writeTimeout, content, args...)
+	return strings.TrimSpace(string(out)), err
+}
+
+// ConfigRevert runs `config-revert <name>`.
+func (r *Runner) ConfigRevert(ctx context.Context, name string) (string, error) {
+	out, err := r.runWith(ctx, maxOutput, callTimeout, nil, "config-revert", name)
 	return strings.TrimSpace(string(out)), err
 }
 
@@ -229,17 +266,32 @@ func (r *Runner) command(ctx context.Context, args ...string) *exec.Cmd {
 // run executes one ctl call. A non-zero exit is an *ExitError; failing to
 // run ctl at all, or output past limit, is ErrUnavailable.
 func (r *Runner) run(ctx context.Context, limit int, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, callTimeout)
+	return r.runWith(ctx, limit, callTimeout, nil, args...)
+}
+
+// runWith is run with its own timeout and a stdin.
+func (r *Runner) runWith(ctx context.Context, limit int, timeout time.Duration, stdin []byte, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	cmd := r.command(ctx, args...)
 	stdout := limitedBuffer{max: limit}
 	var stderr limitedBuffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%w: не ответил за %s", ErrUnavailable, timeout)
+		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return nil, &ExitError{Code: exit.ExitCode(), Message: firstLine(stderr.String())}
+			out := strings.TrimSpace(stdout.String())
+			if len(out) > maxChecker {
+				out = out[:maxChecker]
+			}
+			return nil, &ExitError{Code: exit.ExitCode(), Message: firstLine(stderr.String()), Output: out}
 		}
 		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
