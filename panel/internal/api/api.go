@@ -71,6 +71,11 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/status", s.authed(s.status))
 	mux.HandleFunc("POST /api/components/{id}/{action}", s.authed(s.control))
 	mux.HandleFunc("POST /api/suricata/reload", s.authed(s.reloadSuricata))
+	mux.HandleFunc("GET /api/config", s.authed(s.configList))
+	mux.HandleFunc("GET /api/config/{name}", s.authed(s.configGet))
+	mux.HandleFunc("PUT /api/config/{name}", s.authed(s.configPut))
+	mux.HandleFunc("POST /api/config/{name}/check", s.authed(s.configCheck))
+	mux.HandleFunc("POST /api/config/{name}/revert", s.authed(s.configRevert))
 	mux.HandleFunc("GET /api/logs/{id}", s.authed(s.logs))
 	mux.HandleFunc("GET /api/logs/{id}/stream", s.authed(s.logStream))
 	// Every other /api path answers 401 without a session, so the API

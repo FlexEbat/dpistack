@@ -63,6 +63,20 @@ teardown() {
 	grep -q first "$LOCAL_RULES"
 }
 
+@test "config-write --check gives the checker's verdict and changes nothing" {
+	before="$(sha256sum "$YAML" | cut -d' ' -f1)"
+	run bash -c "{ cat '$YAML'; echo '# only a check'; } | '$CTL' config-write suricata.yaml --check"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"проверка пройдена"* ]]
+
+	run bash -c "echo 'INVALID: true' | '$CTL' config-write suricata.yaml --check 2>/dev/null"
+	[ "$status" -eq 3 ]
+	[[ "$output" == *"ERROR: invalid configuration"* ]]
+
+	[ "$(sha256sum "$YAML" | cut -d' ' -f1)" = "$before" ]
+	[ ! -d "$BACKUPS" ] || ! ls "$BACKUPS" | grep -q '^suricata.yaml\.'
+}
+
 @test "criterion 1: a failed schema check or an empty evebox.yaml also gives 3" {
 	before="$(sha256sum "$CONF_FILE" | cut -d' ' -f1)"
 	run bash -c "sed 's/^PANEL_PORT=.*/PANEL_PORT=notaport/' '$CONF_FILE' | '$CTL' config-write dpistack.conf 2>/dev/null"
@@ -165,6 +179,15 @@ teardown() {
 	grep -q "# edited by hand" "$YAML"
 	! grep -q "^  - interface: eth1" "$YAML"
 	grep -q '^IFACES=enp2s0,eth1$' "$CONF_FILE"
+}
+
+@test "a file saved through config-write counts as hand-edited for the installer (rule 5.4)" {
+	run bash -c "{ cat '$YAML'; echo '# saved in the panel'; } | '$CTL' config-write suricata.yaml"
+	[ "$status" -eq 0 ]
+	run "$CTL" iface add eth1
+	[ "$status" -eq 0 ]
+	grep -q "# saved in the panel" "$YAML"
+	! grep -q "^  - interface: eth1" "$YAML"
 }
 
 @test "criterion 5: a failed reconfigure puts dpistack.conf back" {

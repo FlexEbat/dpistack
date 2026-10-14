@@ -55,7 +55,7 @@ usage() {
   reload suricata                    перечитать правила без остановки
   logs <id> [-n N] [--follow]        журнал компонента, N до 1000 (--until-stdin-closed: для панели)
   config-read <имя>                  печатает текущий файл
-  config-write <имя> [--apply]       новое содержимое со stdin
+  config-write <имя> [--apply|--check] новое содержимое со stdin; --check только проверяет
   config-revert <имя>                возвращает последний бэкап
   reconfigure [--dry-run]            применяет текущий dpistack.conf
   rules-update                       обновить правила с откатом при ошибке
@@ -461,12 +461,15 @@ apply_config() {
 }
 
 cmd_config_write() {
-	[[ $# -ge 1 && $# -le 2 ]] || fail 2 "config-write: <имя> [--apply]"
-	local name="$1" apply=0
+	[[ $# -ge 1 && $# -le 2 ]] || fail 2 "config-write: <имя> [--apply|--check]"
+	local name="$1" apply=0 check=0
 	config_path "$name" >/dev/null || fail 5 "неизвестное имя файла: $name"
 	if [[ $# -eq 2 ]]; then
-		[[ "$2" == "--apply" ]] || fail 2 "config-write: неизвестный аргумент: $2"
-		apply=1
+		case "$2" in
+		--apply) apply=1 ;;
+		--check) check=1 ;;
+		*) fail 2 "config-write: неизвестный аргумент: $2" ;;
+		esac
 	fi
 
 	local staging staged out rc
@@ -483,6 +486,15 @@ cmd_config_write() {
 		[[ -n "$out" ]] && echo "$out"
 		((rc == 4)) && fail 4 "компонент отсутствует"
 		fail 3 "$name: проверка не пройдена, файл не изменён"
+	fi
+
+	if ((check)); then
+		# The panel's "Проверить": the verdict and the checker's own words,
+		# and nothing is replaced.
+		rm -f "$staged"
+		[[ -n "$out" ]] && echo "$out"
+		echo "$name: проверка пройдена, файл не изменён"
+		return 0
 	fi
 
 	config_commit "$name" "$staged"
