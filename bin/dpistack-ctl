@@ -53,7 +53,7 @@ usage() {
   status [--json]                    состояние компонентов
   start|stop|restart <id>            управление компонентом
   reload suricata                    перечитать правила без остановки
-  logs <id> [-n N] [--follow]        журнал компонента, N до 1000
+  logs <id> [-n N] [--follow]        журнал компонента, N до 1000 (--until-stdin-closed: для панели)
   config-read <имя>                  печатает текущий файл
   config-write <имя> [--apply]       новое содержимое со stdin
   config-revert <имя>                возвращает последний бэкап
@@ -268,7 +268,7 @@ cmd_logs() {
 	[[ $# -ge 1 ]] || fail 2 "logs: нужен <id>"
 	local id="$1"
 	shift
-	local n="$LOGS_DEFAULT" follow=0
+	local n="$LOGS_DEFAULT" follow=0 until_eof=0
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
 		-n)
@@ -278,6 +278,14 @@ cmd_logs() {
 			;;
 		--follow)
 			follow=1
+			shift
+			;;
+		--until-stdin-closed)
+			# For the panel: it is not root, so it cannot signal sudo to
+			# stop us. It holds our stdin open while it listens and closes
+			# it to end the stream, which works even when no new line comes.
+			follow=1
+			until_eof=1
 			shift
 			;;
 		*) fail 2 "logs: неизвестный аргумент: $1" ;;
@@ -290,6 +298,18 @@ cmd_logs() {
 
 	local unit
 	unit=$(resolve_component "$id") || exit $?
+	if ((until_eof)); then
+		journalctl -u "$unit" -n "$n" --no-pager --follow &
+		local jpid=$!
+		# <&0: a background command otherwise gets /dev/null as stdin and
+		# would see end of input at once.
+		cat <&0 >/dev/null &
+		local cpid=$!
+		wait -n
+		kill "$jpid" "$cpid" 2>/dev/null
+		wait 2>/dev/null
+		return 0
+	fi
 	if ((follow)); then
 		# No pipe trap: journalctl dies of SIGPIPE when the reader closes.
 		journalctl -u "$unit" -n "$n" --no-pager --follow

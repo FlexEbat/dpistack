@@ -33,6 +33,12 @@ FAKE
 	cat >"$FAKE_BIN/journalctl" <<'FAKE'
 #!/usr/bin/env bash
 echo "journalctl $*" >>"$CALLS"
+if [[ -n "${FAKE_QUIET:-}" ]]; then
+	# One line, then silence: only a closed stdin can end the stream.
+	echo $$ >"$FAKE_PIDFILE"
+	echo line
+	exec sleep 30
+fi
 if [[ " $* " == *" --follow "* ]]; then
 	# Stops on a failed write, like the real journalctl; SIGPIPE may be
 	# ignored (CI runners), then the failing echo is the only signal.
@@ -123,6 +129,15 @@ teardown() {
 	run timeout 10 bash -c "'$CTL' logs suricata --follow | head -n 1"
 	[ "$status" -eq 0 ]
 	[ "$output" = "line" ]
+}
+
+@test "logs --until-stdin-closed stops journalctl when stdin closes, though no new line comes" {
+	FAKE_QUIET=1 FAKE_PIDFILE="$DPISTACK_ROOT/journal.pid"
+	export FAKE_QUIET FAKE_PIDFILE
+	run timeout 10 bash -c "{ sleep 1; } | '$CTL' logs suricata -n 5 --until-stdin-closed"
+	[ "$status" -eq 0 ]
+	[ "$output" = "line" ]
+	! kill -0 "$(cat "$FAKE_PIDFILE")" 2>/dev/null
 }
 
 @test "criterion 4: shell metacharacters give 5 and nothing runs" {
