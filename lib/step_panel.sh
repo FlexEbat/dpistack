@@ -8,13 +8,40 @@ PANEL_USER="dpistack"
 PANEL_SERVICE="dpistack-panel.service"
 PANEL_SRC_HASH_KEY="panel.src_hash"
 
-panel_source_mode() {
-	echo "${CONF[PANEL_SOURCE]:-build}"
+# panel_prebuilt_path - the ready binary next to install.sh: the one for
+# this CPU (dpistack-panel-linux-amd64 or -arm64, as the release archive
+# ships them), else a plain dpistack-panel. When neither exists it names
+# the file a release archive would have, for messages.
+panel_prebuilt_path() {
+	local arch f
+	case "$(uname -m)" in
+	x86_64) arch=amd64 ;;
+	aarch64 | arm64) arch=arm64 ;;
+	*) arch=$(uname -m) ;;
+	esac
+	for f in "$SCRIPT_DIR/dpistack-panel-linux-$arch" "$SCRIPT_DIR/dpistack-panel"; do
+		if [[ -f "$f" ]]; then
+			echo "$f"
+			return 0
+		fi
+	done
+	echo "$SCRIPT_DIR/dpistack-panel-linux-$arch"
 }
 
-# panel_prebuilt_path - where a ready binary has to lie for prebuilt.
-panel_prebuilt_path() {
-	echo "$SCRIPT_DIR/dpistack-panel"
+# panel_source_mode - build or prebuilt. auto (the default) takes the ready
+# binary when one lies next to install.sh, as in a release archive, and
+# builds from panel/ otherwise, as in a git checkout.
+panel_source_mode() {
+	case "${CONF[PANEL_SOURCE]:-auto}" in
+	auto)
+		if [[ -f "$(panel_prebuilt_path)" ]]; then
+			echo prebuilt
+		else
+			echo build
+		fi
+		;;
+	*) echo "${CONF[PANEL_SOURCE]}" ;;
+	esac
 }
 
 # panel_src_hash - one hash over everything the binary is built from, so
@@ -29,7 +56,8 @@ panel_src_hash() {
 # panel_args - the flags of the panel (tech.md 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
-	local mode="${CONF[ACCESS_MODE]:-localhost}" port="${CONF[PANEL_PORT]:-9800}"
+	local mode="${CONF[ACCESS_MODE]:-localhost}" port
+	port=$(access_backend_port "${CONF[PANEL_PORT]:-9800}")
 	local host="127.0.0.1" args cidr=""
 	[[ "$mode" == "lan" ]] && host="0.0.0.0"
 	if [[ "$mode" != "localhost" ]]; then

@@ -13,31 +13,36 @@ preflight_step_wanted() {
 	fi
 }
 
+# preflight_port_busy <port> - something already listens on the port.
+preflight_port_busy() {
+	ss -ltn 2>/dev/null | awk '{print $4}' | grep -q ":${1}\$"
+}
+
 # preflight_panel_reasons - the panel binary has to be obtainable before
 # the install starts: a ready file for prebuilt, Go (at least the version
 # panel/go.mod asks for) for build. A binary that is already installed and
 # current needs neither, so a repeat run on a host without Go still passes.
 preflight_panel_reasons() {
 	panel_bin_current && return 0
-	if [[ "${CONF[PANEL_SOURCE]:-build}" == "prebuilt" ]]; then
+	if [[ "$(panel_source_mode)" == "prebuilt" ]]; then
 		if [[ ! -f "$(panel_prebuilt_path)" ]]; then
-			reasons+=("PANEL_SOURCE=prebuilt, но рядом с install.sh нет готового бинарника dpistack-panel")
+			reasons+=("PANEL_SOURCE=prebuilt, но рядом с install.sh нет готового бинарника dpistack-panel (в архиве релиза он называется $(basename "$(panel_prebuilt_path)"))")
 		fi
 		return 0
 	fi
 	if [[ ! -d "$SCRIPT_DIR/panel" ]]; then
-		reasons+=("PANEL_SOURCE=build, но нет каталога panel/ с исходниками (возьмите готовый бинарник: PANEL_SOURCE=prebuilt)")
+		reasons+=("панель нечем взять: рядом с install.sh нет ни готового бинарника ($(basename "$(panel_prebuilt_path)")), ни каталога panel/ с исходниками")
 		return 0
 	fi
 	local need have
 	need=$(awk '/^go /{print $2; exit}' "$SCRIPT_DIR/panel/go.mod" 2>/dev/null)
 	if ! command -v go >/dev/null 2>&1; then
-		reasons+=("PANEL_SOURCE=build, но Go не найден (нужен Go ${need:-новее}; готовый бинарник: PANEL_SOURCE=prebuilt)")
+		reasons+=("панель нечем взять: нет Go (нужен Go ${need:-новее}) и рядом с install.sh нет готового бинарника ($(basename "$(panel_prebuilt_path)"))")
 		return 0
 	fi
 	have=$(go version 2>/dev/null | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p')
 	if [[ -n "$need" && -n "$have" && "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" != "$need" ]]; then
-		reasons+=("PANEL_SOURCE=build, но Go $have старше требуемого $need (готовый бинарник: PANEL_SOURCE=prebuilt)")
+		reasons+=("панель нечем взять: Go $have старше требуемого $need и рядом с install.sh нет готового бинарника ($(basename "$(panel_prebuilt_path)"))")
 	fi
 }
 
@@ -138,20 +143,30 @@ step_preflight_reasons() {
 	# A port held by a service dpistack already installed is not a
 	# conflict on a repeat run, so ports whose step is already applied
 	# are skipped.
-	local port_key port owner_step
+	# With ACCESS_MODE=nginx both ports matter: nginx takes the public one
+	# (the access step owns it), the service takes public+10000.
+	local port_key port owner_step public
 	for port_key in NTOPNG_PORT EVEBOX_PORT PANEL_PORT METRICS_BACKEND_PORT; do
-		port="${CONF[$port_key]:-}"
-		[[ -z "$port" ]] && continue
+		public="${CONF[$port_key]:-}"
+		[[ -z "$public" ]] && continue
 		case "$port_key" in
 		NTOPNG_PORT) owner_step=ntopng ;;
 		EVEBOX_PORT) owner_step=evebox ;;
 		PANEL_PORT) owner_step=panel ;;
 		METRICS_BACKEND_PORT) owner_step=metrics ;;
 		esac
+		if [[ "$port_key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+			if ! step_access_check && preflight_port_busy "$public"; then
+				reasons+=("порт $public ($port_key) уже занят, а на нём должен слушать nginx")
+			fi
+			port=$(access_backend_port "$public")
+		else
+			port="$public"
+		fi
 		if "step_${owner_step}_check"; then
 			continue
 		fi
-		if ss -ltn 2>/dev/null | awk '{print $4}' | grep -q ":${port}\$"; then
+		if preflight_port_busy "$port"; then
 			reasons+=("порт $port ($port_key) уже занят")
 		fi
 	done
