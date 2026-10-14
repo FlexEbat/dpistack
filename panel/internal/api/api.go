@@ -14,6 +14,7 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/FlexEbat/dpistack/panel/internal/auth"
@@ -47,6 +48,7 @@ type server struct {
 	cfg      Config
 	sessions *auth.Sessions
 	limiter  *auth.Limiter
+	streams  atomic.Int32 // open log streams, capped at maxStreams
 }
 
 type ctxKey struct{}
@@ -67,6 +69,10 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/login", s.login)
 	mux.HandleFunc("POST /api/logout", s.authed(s.logout))
 	mux.HandleFunc("GET /api/status", s.authed(s.status))
+	mux.HandleFunc("POST /api/components/{id}/{action}", s.authed(s.control))
+	mux.HandleFunc("POST /api/suricata/reload", s.authed(s.reloadSuricata))
+	mux.HandleFunc("GET /api/logs/{id}", s.authed(s.logs))
+	mux.HandleFunc("GET /api/logs/{id}/stream", s.authed(s.logStream))
 	// Every other /api path answers 401 without a session, so the API
 	// does not reveal which paths exist.
 	mux.HandleFunc("/api/", s.authed(func(w http.ResponseWriter, _ *http.Request) {

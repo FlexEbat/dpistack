@@ -1,4 +1,6 @@
 import { start as startOverview } from "./modules/overview.js";
+import { start as startComponents } from "./modules/components.js";
+import { start as startLogs } from "./modules/logs.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -27,26 +29,57 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-let stopOverview = null;
+const VIEWS = ["overview", "components", "logs"];
+let stopView = null;
+
+// Every screen starts when shown and returns a stop function, so a hidden
+// screen polls nothing and holds no stream.
+const SCREENS = {
+  overview: () =>
+    startOverview(
+      api,
+      { overall: $("overall"), components: $("components"), checks: $("checks"), error: $("overview-error") },
+      showLogin,
+    ),
+  components: () =>
+    startComponents(
+      api,
+      { list: $("components-list"), error: $("components-error"), message: $("components-message") },
+      showLogin,
+    ),
+  logs: () =>
+    startLogs(
+      api,
+      {
+        component: $("log-component"),
+        lines: $("log-lines"),
+        show: $("log-show"),
+        follow: $("log-follow"),
+        output: $("log-output"),
+        error: $("logs-error"),
+      },
+      showLogin,
+    ),
+};
+
+function showView(name) {
+  show("overview"); // the signed-in page
+  stopView?.();
+  for (const v of VIEWS) $("view-" + v).hidden = v !== name;
+  for (const b of document.querySelectorAll("#nav button")) {
+    if (b.dataset.view === name) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  }
+  stopView = SCREENS[name]();
+}
 
 function showOverview() {
-  show("overview");
-  stopOverview?.();
-  stopOverview = startOverview(
-    api,
-    {
-      overall: $("overall"),
-      components: $("components"),
-      checks: $("checks"),
-      error: $("overview-error"),
-    },
-    showLogin,
-  );
+  showView("overview");
 }
 
 function showLogin() {
-  stopOverview?.();
-  stopOverview = null;
+  stopView?.();
+  stopView = null;
   show("login");
   $("password").focus();
 }
@@ -79,6 +112,10 @@ $("login-form").addEventListener("submit", async (event) => {
     $("login-error").textContent = err.message;
   }
 });
+
+for (const b of document.querySelectorAll("#nav button")) {
+  b.addEventListener("click", () => showView(b.dataset.view));
+}
 
 $("logout").addEventListener("click", async () => {
   await api("/api/logout", { method: "POST" }).catch(() => {});

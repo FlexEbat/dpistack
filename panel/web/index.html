@@ -19,15 +19,37 @@
 </main>
 <main id="overview" hidden>
   <header>
-    <h1>Обзор</h1>
+    <h1>dpistack</h1>
     <button id="logout" type="button">Выйти</button>
   </header>
-  <p id="overview-error" class="error" role="alert"></p>
-  <section id="overall" class="overall" aria-live="polite"></section>
-  <h2>Компоненты</h2>
-  <section id="components"></section>
-  <h2>Проверки</h2>
-  <section id="checks"></section>
+  <nav id="nav" aria-label="Разделы">
+    <button type="button" data-view="overview" aria-current="page">Обзор</button>
+    <button type="button" data-view="components">Компоненты</button>
+    <button type="button" data-view="logs">Логи</button>
+  </nav>
+  <div id="view-overview">
+    <p id="overview-error" class="error" role="alert"></p>
+    <section id="overall" class="overall" aria-live="polite"></section>
+    <h2>Компоненты</h2>
+    <section id="components"></section>
+    <h2>Проверки</h2>
+    <section id="checks"></section>
+  </div>
+  <div id="view-components" hidden>
+    <p id="components-error" class="error" role="alert"></p>
+    <p id="components-message" class="muted" aria-live="polite"></p>
+    <section id="components-list"></section>
+  </div>
+  <div id="view-logs" hidden>
+    <p id="logs-error" class="error" role="alert"></p>
+    <div class="toolbar">
+      <select id="log-component" aria-label="Компонент"></select>
+      <label>Строк <input id="log-lines" type="number" min="1" max="1000" value="200"></label>
+      <button id="log-show" type="button">Показать</button>
+      <button id="log-follow" type="button">Следить</button>
+    </div>
+    <pre id="log-output" class="log" aria-live="off"></pre>
+  </div>
 </main>
 </body>
 </html>
