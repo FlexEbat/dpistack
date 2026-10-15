@@ -78,6 +78,7 @@ nav button[aria-current="page"] { background: var(--accent); border-color: var(-
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
 .toolbar input[type="number"] { width: 5.5rem; }
+.toolbar input.wide { flex: 1 1 16rem; min-width: 0; }
 
 [hidden] { display: none !important; }
 

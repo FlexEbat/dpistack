@@ -26,6 +26,7 @@
     <button type="button" data-view="overview" aria-current="page">Обзор</button>
     <button type="button" data-view="components">Компоненты</button>
     <button type="button" data-view="configs">Конфиги</button>
+    <button type="button" data-view="rules">Правила</button>
     <button type="button" data-view="logs">Логи</button>
   </nav>
   <div id="view-overview">
@@ -51,6 +52,35 @@
     </div>
     <textarea id="cfg-editor" class="editor" spellcheck="false" autocomplete="off" aria-label="Содержимое файла"></textarea>
     <pre id="cfg-result" class="result" role="status"></pre>
+  </div>
+  <div id="view-rules" hidden>
+    <p id="rules-error" class="error" role="alert"></p>
+    <p id="rules-message" class="muted" aria-live="polite"></p>
+    <div class="toolbar">
+      <button id="rules-update" type="button">Обновить сейчас</button>
+      <span id="rules-last" class="muted" aria-live="polite"></span>
+    </div>
+    <pre id="rules-update-output" class="result" role="status"></pre>
+    <h2>Источники</h2>
+    <section id="rules-sources"></section>
+    <div class="toolbar">
+      <input id="rules-url" type="text" class="wide" placeholder="https://example.org/rules.tar.gz" aria-label="Адрес нового источника" autocomplete="off">
+      <button id="rules-url-add" type="button">Добавить источник</button>
+    </div>
+    <h2>Группы правил</h2>
+    <section id="rules-groups"></section>
+    <div class="toolbar">
+      <input id="rules-group" type="text" class="wide" placeholder="emerging-p2p.rules" aria-label="Имя группы" autocomplete="off">
+      <button id="rules-group-add" type="button">Включить группу</button>
+    </div>
+    <h2>Поиск правил</h2>
+    <div class="toolbar">
+      <input id="rules-q" type="text" class="wide" placeholder="sid или часть текста" aria-label="Поиск правила" autocomplete="off">
+      <button id="rules-search" type="button">Найти</button>
+    </div>
+    <section id="rules-results"></section>
+    <h2>Отключённые правила</h2>
+    <section id="rules-disabled"></section>
   </div>
   <div id="view-logs" hidden>
     <p id="logs-error" class="error" role="alert"></p>
