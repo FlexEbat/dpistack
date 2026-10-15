@@ -28,6 +28,7 @@
     <button type="button" data-view="configs">Конфиги</button>
     <button type="button" data-view="rules">Правила</button>
     <button type="button" data-view="logs">Логи</button>
+    <button type="button" data-view="events">События</button>
   </nav>
   <div id="view-overview">
     <p id="overview-error" class="error" role="alert"></p>
@@ -91,6 +92,17 @@
       <button id="log-follow" type="button">Следить</button>
     </div>
     <pre id="log-output" class="log" aria-live="off"></pre>
+  </div>
+  <div id="view-events" hidden>
+    <p id="events-error" class="error" role="alert"></p>
+    <div class="toolbar">
+      <select id="ev-type" aria-label="Тип события"><option value="alert">alert</option></select>
+      <input id="ev-q" type="text" class="wide" placeholder="часть текста события" aria-label="Фильтр по тексту" autocomplete="off">
+      <label>Показать <select id="ev-limit"><option>50</option><option>100</option><option>200</option><option>500</option></select></label>
+      <button id="ev-show" type="button">Обновить</button>
+      <button id="ev-follow" type="button">Следить</button>
+    </div>
+    <section id="ev-list"></section>
   </div>
 </main>
 </body>

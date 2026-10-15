@@ -3,6 +3,7 @@ import { start as startComponents } from "./modules/components.js";
 import { start as startConfigs } from "./modules/configs.js";
 import { start as startRules } from "./modules/rules.js";
 import { start as startLogs } from "./modules/logs.js";
+import { start as startEvents } from "./modules/events.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -32,7 +33,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "components", "configs", "rules", "logs"];
+const VIEWS = ["overview", "components", "configs", "rules", "logs", "events"];
 let stopView = null;
 
 // Every screen starts when shown and returns a stop function, so a hidden
@@ -97,6 +98,20 @@ const SCREENS = {
         follow: $("log-follow"),
         output: $("log-output"),
         error: $("logs-error"),
+      },
+      showLogin,
+    ),
+  events: () =>
+    startEvents(
+      api,
+      {
+        error: $("events-error"),
+        type: $("ev-type"),
+        q: $("ev-q"),
+        limit: $("ev-limit"),
+        show: $("ev-show"),
+        follow: $("ev-follow"),
+        list: $("ev-list"),
       },
       showLogin,
     ),
