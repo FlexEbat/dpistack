@@ -1,6 +1,7 @@
 import { start as startOverview } from "./modules/overview.js";
 import { start as startComponents } from "./modules/components.js";
 import { start as startConfigs } from "./modules/configs.js";
+import { start as startRules } from "./modules/rules.js";
 import { start as startLogs } from "./modules/logs.js";
 
 const $ = (id) => document.getElementById(id);
@@ -31,7 +32,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "components", "configs", "logs"];
+const VIEWS = ["overview", "components", "configs", "rules", "logs"];
 let stopView = null;
 
 // Every screen starts when shown and returns a stop function, so a hidden
@@ -60,6 +61,29 @@ const SCREENS = {
         apply: $("cfg-apply"),
         revert: $("cfg-revert"),
         result: $("cfg-result"),
+      },
+      showLogin,
+    ),
+  rules: () =>
+    startRules(
+      api,
+      {
+        root: $("view-rules"),
+        error: $("rules-error"),
+        message: $("rules-message"),
+        update: $("rules-update"),
+        last: $("rules-last"),
+        updateOutput: $("rules-update-output"),
+        sources: $("rules-sources"),
+        url: $("rules-url"),
+        urlAdd: $("rules-url-add"),
+        groups: $("rules-groups"),
+        group: $("rules-group"),
+        groupAdd: $("rules-group-add"),
+        q: $("rules-q"),
+        search: $("rules-search"),
+        results: $("rules-results"),
+        disabled: $("rules-disabled"),
       },
       showLogin,
     ),

@@ -59,7 +59,7 @@ usage() {
   config-revert <имя>                возвращает последний бэкап
   reconfigure [--dry-run]            применяет текущий dpistack.conf
   rules-update                       обновить правила с откатом при ошибке
-  rules-sources list|enable|disable|add-url|remove [арг]
+  rules-sources list [--enabled]|enable|disable|add-url|remove [арг]
   rules-group enable|disable <группа>
   rules-sid enable|disable <sid>
   rules-search <запрос>              до 50 правил по sid или msg
@@ -672,7 +672,11 @@ cmd_rules_sources() {
 	command -v suricata-update >/dev/null 2>&1 || fail 4 "suricata-update не установлен"
 	case "$sub" in
 	list)
-		[[ $# -eq 0 ]] || fail 2 "rules-sources list: без аргументов"
+		if [[ $# -eq 1 && "$1" == "--enabled" ]]; then
+			suricata-update list-enabled-sources -D "$data_dir"
+			return
+		fi
+		[[ $# -eq 0 ]] || fail 2 "rules-sources list: без аргументов или --enabled"
 		suricata-update list-sources -D "$data_dir"
 		;;
 	enable | disable | remove)
@@ -712,13 +716,19 @@ cmd_rules_search() {
 }
 
 # cmd_rules_update - snapshot, suricata-update, suricata -T, reload;
-# any failure puts the previous ruleset back.
+# any failure puts the previous ruleset back. What the tools said goes to
+# stdout (the last RULES_UPDATE_TAIL lines) on success and on failure, so
+# the panel can show the reason: its caller keeps only the first line of
+# stderr, which for suricata-update is a log header, not the cause.
+RULES_UPDATE_TAIL=40
+
 cmd_rules_update() {
 	[[ $# -eq 0 ]] || fail 2 "rules-update: без аргументов"
 	command -v suricata-update >/dev/null 2>&1 || fail 4 "suricata-update не установлен"
-	local ruleset snap
+	local ruleset snap log
 	ruleset=$(path_suricata_ruleset)
 	snap=$(mktemp)
+	log=$(mktemp)
 	if [[ -f "$ruleset" ]]; then
 		cp -p "$ruleset" "$snap"
 	else
@@ -728,16 +738,24 @@ cmd_rules_update() {
 
 	local ok=1
 	rules_update_argv
-	"${RULES_UPDATE_ARGV[@]}" || ok=0
+	"${RULES_UPDATE_ARGV[@]}" >"$log" 2>&1 || ok=0
 	if ((ok)) && command -v suricata >/dev/null 2>&1; then
 		local check_dir
 		check_dir=$(mktemp -d)
-		suricata -T -c "$(path_suricata_yaml)" -l "$check_dir" >/dev/null 2>&1 || ok=0
+		if ! suricata -T -c "$(path_suricata_yaml)" -l "$check_dir" >>"$log" 2>&1; then
+			echo "suricata -T не принял новый набор правил" >>"$log"
+			ok=0
+		fi
 		rm -rf "$check_dir"
 	fi
 	if ((ok)); then
-		suricatasc -c ruleset-reload-nonblocking "$(path_suricata_socket)" || ok=0
+		suricatasc -c ruleset-reload-nonblocking "$(path_suricata_socket)" >>"$log" 2>&1 || {
+			echo "перезагрузка правил не удалась" >>"$log"
+			ok=0
+		}
 	fi
+	tail -n "$RULES_UPDATE_TAIL" "$log"
+	rm -f "$log"
 
 	if ((!ok)); then
 		if [[ -n "$snap" ]]; then

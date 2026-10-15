@@ -258,6 +258,47 @@ FAKE
 	grep -q "keep me" "$ruleset"
 }
 
+@test "slice 20: rules-sources list --enabled asks suricata-update for the enabled sources only" {
+	run "$CTL" rules-sources list --enabled
+	[ "$status" -eq 0 ]
+	grep -q "suricata-update list-enabled-sources -D $DPISTACK_ROOT/var/lib/suricata" "$MOCK_CALLS_LOG"
+	run "$CTL" rules-sources list
+	grep -q "suricata-update list-sources -D $DPISTACK_ROOT/var/lib/suricata" "$MOCK_CALLS_LOG"
+	run "$CTL" rules-sources list --all
+	[ "$status" -eq 2 ]
+}
+
+@test "slice 20: a failed rules-update prints the reason on stdout, not only on stderr" {
+	ruleset="$DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules"
+	mkdir -p "$(dirname "$ruleset")"
+	echo 'alert tcp any any -> any any (msg:"keep me"; sid:1;)' >"$ruleset"
+	MOCK_SURICATA_UPDATE_FAIL=1 run bash -c "'$CTL' rules-update 2>/dev/null"
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"keeping the old one"* ]]
+	grep -q "keep me" "$ruleset"
+}
+
+@test "slice 20: a ruleset that suricata -T rejects is rolled back and says why" {
+	ruleset="$DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules"
+	mkdir -p "$(dirname "$ruleset")"
+	echo 'alert tcp any any -> any any (msg:"keep me"; sid:1;)' >"$ruleset"
+	# The update itself works, then the fake suricata -T judges the new yaml bad.
+	echo "INVALID" >>"$YAML"
+	run bash -c "'$CTL' rules-update 2>/dev/null"
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"suricata -T не принял новый набор правил"* ]]
+	grep -q "keep me" "$ruleset"
+}
+
+@test "slice 20: a good rules-update exits 0 and shows what suricata-update wrote" {
+	ruleset="$DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules"
+	mkdir -p "$(dirname "$ruleset")"
+	echo 'alert tcp any any -> any any (msg:"old"; sid:1;)' >"$ruleset"
+	run "$CTL" rules-update
+	[ "$status" -eq 0 ]
+	grep -q "mock-generated" "$ruleset"
+}
+
 @test "criterion 7: panel-passwd writes an argon2id hash, 0640 root:dpistack, password never shown" {
 	pw="S3cret-Pass-Word-12345"
 	run bash -c "printf '%s\n' '$pw' | '$CTL' panel-passwd"

@@ -49,6 +49,7 @@ type server struct {
 	sessions *auth.Sessions
 	limiter  *auth.Limiter
 	streams  atomic.Int32 // open log streams, capped at maxStreams
+	rules    rulesState   // the last rules update started from this panel
 }
 
 type ctxKey struct{}
@@ -76,6 +77,12 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("PUT /api/config/{name}", s.authed(s.configPut))
 	mux.HandleFunc("POST /api/config/{name}/check", s.authed(s.configCheck))
 	mux.HandleFunc("POST /api/config/{name}/revert", s.authed(s.configRevert))
+	mux.HandleFunc("GET /api/rules/sources", s.authed(s.rulesSources))
+	mux.HandleFunc("POST /api/rules/sources", s.authed(s.rulesSourceChange))
+	mux.HandleFunc("POST /api/rules/update", s.authed(s.rulesUpdate))
+	mux.HandleFunc("GET /api/rules/search", s.authed(s.rulesSearch))
+	mux.HandleFunc("POST /api/rules/groups/{group}/{action}", s.authed(s.rulesGroup))
+	mux.HandleFunc("POST /api/rules/sid/{sid}/{action}", s.authed(s.rulesSID))
 	mux.HandleFunc("GET /api/logs/{id}", s.authed(s.logs))
 	mux.HandleFunc("GET /api/logs/{id}/stream", s.authed(s.logStream))
 	// Every other /api path answers 401 without a session, so the API
