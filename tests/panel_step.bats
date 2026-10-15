@@ -102,8 +102,24 @@ unit_file() {
 	[ "$status" -eq 0 ]
 	[ -x "$DPISTACK_ROOT/usr/local/bin/dpistack-panel" ]
 	grep -q "^go build .* -o .* ./cmd/panel" "$MOCK_CALLS_LOG"
-	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack-ctl" "$(unit_file)"
+	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack-ctl -eve-file $DPISTACK_ROOT/var/log/suricata/eve.json" "$(unit_file)"
 	grep -q "^systemctl enable --now dpistack-panel.service" "$MOCK_CALLS_LOG"
+}
+
+@test "slice 21: EVE_FILE=no leaves -eve-file out of the unit, so the panel says viewing is off" {
+	run install_base --set EVE_FILE=no --set EVEBOX_DB=elasticsearch --set EVEBOX_ES_URL=http://es.local:9200
+	[ "$status" -eq 0 ]
+	grep -q "^ExecStart=.*dpistack-panel " "$(unit_file)"
+	! grep -q -- "-eve-file" "$(unit_file)"
+}
+
+@test "slice 21: changing EVE_FILE on reconfigure rewrites the panel unit" {
+	run install_base --set EVEBOX_DB=elasticsearch --set EVEBOX_ES_URL=http://es.local:9200
+	[ "$status" -eq 0 ]
+	grep -q -- "-eve-file" "$(unit_file)"
+	run bash "$REPO_DIR/install.sh" reconfigure -y --set EVE_FILE=no
+	[ "$status" -eq 0 ]
+	! grep -q -- "-eve-file" "$(unit_file)"
 }
 
 @test "criterion 1: the generated password is shown once and never stored in plain text" {

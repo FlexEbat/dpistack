@@ -19,6 +19,7 @@ import (
 
 	"github.com/FlexEbat/dpistack/panel/internal/auth"
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
+	"github.com/FlexEbat/dpistack/panel/internal/eve"
 	"github.com/FlexEbat/dpistack/panel/internal/health"
 )
 
@@ -40,6 +41,7 @@ type Config struct {
 	AuthFile   string
 	HealthFile string
 	Ctl        *ctl.Runner
+	Eve        *eve.Reader // nil: viewing events is off (EVE_FILE=no)
 	Web        fs.FS
 	Now        func() time.Time // nil means time.Now
 }
@@ -83,6 +85,8 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/rules/search", s.authed(s.rulesSearch))
 	mux.HandleFunc("POST /api/rules/groups/{group}/{action}", s.authed(s.rulesGroup))
 	mux.HandleFunc("POST /api/rules/sid/{sid}/{action}", s.authed(s.rulesSID))
+	mux.HandleFunc("GET /api/eve", s.authed(s.eveList))
+	mux.HandleFunc("GET /api/eve/stream", s.authed(s.eveStream))
 	mux.HandleFunc("GET /api/logs/{id}", s.authed(s.logs))
 	mux.HandleFunc("GET /api/logs/{id}/stream", s.authed(s.logStream))
 	// Every other /api path answers 401 without a session, so the API
