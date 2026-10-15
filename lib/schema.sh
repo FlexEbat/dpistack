@@ -114,7 +114,7 @@ schema_init() {
 	_schema_add 'IPS_NFQ_CHAINS|free|INPUT,OUTPUT,FORWARD||advanced|capture|suricata|light|no'
 	_schema_add 'NTOPNG_IFACES|free|||advanced|capture|ntopng access|light|no'
 
-	_schema_add 'EVE_FILE|enum|yes|yes,no|advanced|eve|suricata watch|light|no'
+	_schema_add 'EVE_FILE|enum|yes|yes,no|advanced|eve|suricata watch panel|light|no'
 	_schema_add 'EVE_TYPES|free|alert,flow,dns,tls,http,stats||basic|eve|suricata watch|light|no'
 	_schema_add 'EVE_SYSLOG|enum|no|yes,no|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_REDIS|free|||advanced|eve|suricata|light|no'

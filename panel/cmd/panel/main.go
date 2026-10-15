@@ -19,6 +19,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/api"
 	"github.com/FlexEbat/dpistack/panel/internal/auth"
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
+	"github.com/FlexEbat/dpistack/panel/internal/eve"
 	"github.com/FlexEbat/dpistack/panel/web"
 )
 
@@ -37,6 +38,7 @@ func run(args []string) error {
 	authFile := fs.String("auth-file", "/etc/dpistack/panel.auth", "argon2id hash of the panel password")
 	healthFile := fs.String("health-file", "/var/lib/dpistack/health.json", "watchdog report")
 	ctlPath := fs.String("ctl", "/usr/local/sbin/dpistack-ctl", "dpistack-ctl path")
+	eveFile := fs.String("eve-file", "", "eve.json to show on the Events screen; empty turns the viewer off (EVE_FILE=no)")
 	useSudo := fs.Bool("sudo", true, "run dpistack-ctl through sudo -n")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -56,11 +58,17 @@ func run(args []string) error {
 		return fmt.Errorf("access mode %s requires a loopback addr, got %s", *access, ap.Addr())
 	}
 
+	var events *eve.Reader
+	if *eveFile != "" {
+		events = eve.New(*eveFile)
+	}
+
 	handler := api.New(api.Config{
 		Policy:     policy,
 		AuthFile:   *authFile,
 		HealthFile: *healthFile,
 		Ctl:        &ctl.Runner{Path: *ctlPath, Sudo: *useSudo},
+		Eve:        events,
 		Web:        web.Files,
 	})
 	srv := &http.Server{
