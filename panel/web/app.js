@@ -4,6 +4,7 @@ import { start as startConfigs } from "./modules/configs.js";
 import { start as startRules } from "./modules/rules.js";
 import { start as startLogs } from "./modules/logs.js";
 import { start as startEvents } from "./modules/events.js";
+import { start as startMetrics } from "./modules/metrics.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -33,7 +34,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "components", "configs", "rules", "logs", "events"];
+const VIEWS = ["overview", "components", "configs", "rules", "logs", "events", "metrics"];
 let stopView = null;
 
 // Every screen starts when shown and returns a stop function, so a hidden
@@ -99,6 +100,12 @@ const SCREENS = {
         output: $("log-output"),
         error: $("logs-error"),
       },
+      showLogin,
+    ),
+  metrics: () =>
+    startMetrics(
+      api,
+      { error: $("metrics-error"), ranges: $("mx-ranges"), charts: $("mx-charts") },
       showLogin,
     ),
   events: () =>
