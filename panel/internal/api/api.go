@@ -20,6 +20,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/auth"
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 	"github.com/FlexEbat/dpistack/panel/internal/eve"
+	"github.com/FlexEbat/dpistack/panel/internal/export"
 	"github.com/FlexEbat/dpistack/panel/internal/health"
 	"github.com/FlexEbat/dpistack/panel/internal/metrics"
 )
@@ -38,14 +39,16 @@ const (
 
 // Config is everything the server needs from the outside.
 type Config struct {
-	Policy     *auth.Policy
-	AuthFile   string
-	HealthFile string
-	Ctl        *ctl.Runner
-	Eve        *eve.Reader // nil: viewing events is off (EVE_FILE=no)
-	Metrics    *metrics.Collector
-	Web        fs.FS
-	Now        func() time.Time // nil means time.Now
+	Policy      *auth.Policy
+	AuthFile    string
+	HealthFile  string
+	Ctl         *ctl.Runner
+	Eve         *eve.Reader // nil: viewing events is off (EVE_FILE=no)
+	Metrics     *metrics.Collector
+	Export      *export.Exporter // nil: GET /metrics is off (METRICS_EXPORT=no)
+	ExportToken string           // the bearer token of GET /metrics
+	Web         fs.FS
+	Now         func() time.Time // nil means time.Now
 }
 
 type server struct {
@@ -87,6 +90,7 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/rules/search", s.authed(s.rulesSearch))
 	mux.HandleFunc("POST /api/rules/groups/{group}/{action}", s.authed(s.rulesGroup))
 	mux.HandleFunc("POST /api/rules/sid/{sid}/{action}", s.authed(s.rulesSID))
+	mux.HandleFunc("GET /metrics", s.metricsExport)
 	mux.HandleFunc("GET /api/metrics", s.authed(s.metricsSeries))
 	mux.HandleFunc("GET /api/eve", s.authed(s.eveList))
 	mux.HandleFunc("GET /api/eve/stream", s.authed(s.eveStream))

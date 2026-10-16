@@ -12,6 +12,29 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/eve"
 )
 
+// DecodeStats reads the counters out of one `stats` event.
+func DecodeStats(ev eve.Event) (Stats, bool) {
+	var e struct {
+		Stats struct {
+			Uptime  float64 `json:"uptime"`
+			Capture struct {
+				Packets uint64 `json:"kernel_packets"`
+				Drops   uint64 `json:"kernel_drops"`
+			} `json:"capture"`
+		} `json:"stats"`
+	}
+	if err := json.Unmarshal(ev.Line, &e); err != nil {
+		return Stats{}, false
+	}
+	return Stats{
+		ID:      ev.ID,
+		Packets: e.Stats.Capture.Packets,
+		Drops:   e.Stats.Capture.Drops,
+		Uptime:  e.Stats.Uptime,
+		Time:    ev.Time,
+	}, true
+}
+
 // EveStats returns the newest `stats` event of r as Stats. It polls the
 // file first, so the numbers are as fresh as the file.
 func EveStats(r *eve.Reader) func() (Stats, bool) {
@@ -23,25 +46,7 @@ func EveStats(r *eve.Reader) func() (Stats, bool) {
 		if len(last) == 0 {
 			return Stats{}, false
 		}
-		var e struct {
-			Stats struct {
-				Uptime  float64 `json:"uptime"`
-				Capture struct {
-					Packets uint64 `json:"kernel_packets"`
-					Drops   uint64 `json:"kernel_drops"`
-				} `json:"capture"`
-			} `json:"stats"`
-		}
-		if err := json.Unmarshal(last[0].Line, &e); err != nil {
-			return Stats{}, false
-		}
-		return Stats{
-			ID:      last[0].ID,
-			Packets: e.Stats.Capture.Packets,
-			Drops:   e.Stats.Capture.Drops,
-			Uptime:  e.Stats.Uptime,
-			Time:    last[0].Time,
-		}, true
+		return DecodeStats(last[0])
 	}
 }
 
@@ -57,17 +62,21 @@ func FileSize(path string) func() (int64, bool) {
 	}
 }
 
+// FreeRatio is the free share (0..1) of the filesystem that holds dir
+// (statfs, as tech.md 3 allows).
+func FreeRatio(dir string) (float64, bool) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(dir, &st); err != nil || st.Blocks == 0 {
+		return 0, false
+	}
+	return float64(st.Bavail) / float64(st.Blocks), true
+}
+
 // DiskFree returns the free share of the filesystem that holds path's
-// directory (statfs, as tech.md 3 allows).
+// directory.
 func DiskFree(path string) func() (float64, bool) {
 	dir := filepath.Dir(path)
-	return func() (float64, bool) {
-		var st syscall.Statfs_t
-		if err := syscall.Statfs(dir, &st); err != nil || st.Blocks == 0 {
-			return 0, false
-		}
-		return float64(st.Bavail) / float64(st.Blocks), true
-	}
+	return func() (float64, bool) { return FreeRatio(dir) }
 }
 
 // Proc reports the CPU time and the resident memory of this process.

@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/auth"
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 	"github.com/FlexEbat/dpistack/panel/internal/eve"
+	"github.com/FlexEbat/dpistack/panel/internal/export"
 	"github.com/FlexEbat/dpistack/panel/internal/metrics"
 	"github.com/FlexEbat/dpistack/panel/web"
 )
@@ -41,6 +43,10 @@ func run(args []string) error {
 	ctlPath := fs.String("ctl", "/usr/local/sbin/dpistack-ctl", "dpistack-ctl path")
 	eveFile := fs.String("eve-file", "", "eve.json to show on the Events screen; empty turns the viewer off (EVE_FILE=no)")
 	metricsFile := fs.String("metrics-file", "", "metrics.json: the graph history is restored from it and saved to it; empty keeps it in memory only")
+	tokenFile := fs.String("metrics-token-file", "", "file with the bearer token of GET /metrics; empty switches /metrics off (METRICS_EXPORT=no)")
+	testsFile := fs.String("tests-file", "", "tests-last.json, for the test metrics")
+	rulesFile := fs.String("rules-file", "", "suricata.rules, for its age")
+	diskPaths := fs.String("disk-paths", "", "comma-separated directories whose free space /metrics reports")
 	useSudo := fs.Bool("sudo", true, "run dpistack-ctl through sudo -n")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -73,14 +79,42 @@ func run(args []string) error {
 	}
 	collector := metrics.New(metrics.Config{Inputs: inputs, File: *metricsFile, Logf: log.Printf})
 
+	// The token comes from a file, never from a flag: flags show in ps and in
+	// the unit. A file that was asked for and cannot be used stops the panel,
+	// because a /metrics that quietly accepts anyone would be worse.
+	var exporter *export.Exporter
+	var token string
+	if *tokenFile != "" {
+		data, err := os.ReadFile(*tokenFile)
+		if err != nil {
+			return fmt.Errorf("metrics token: %w", err)
+		}
+		token = strings.TrimSpace(string(data))
+		if token == "" {
+			return fmt.Errorf("metrics token: %s is empty", *tokenFile)
+		}
+		var paths []string
+		for _, p := range strings.Split(*diskPaths, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				paths = append(paths, p)
+			}
+		}
+		exporter = export.New(export.Config{
+			HealthFile: *healthFile, TestsFile: *testsFile, RulesFile: *rulesFile, EveFile: *eveFile,
+			DiskPaths: paths, Eve: events, Proc: metrics.Proc,
+		})
+	}
+
 	handler := api.New(api.Config{
-		Policy:     policy,
-		AuthFile:   *authFile,
-		HealthFile: *healthFile,
-		Ctl:        &ctl.Runner{Path: *ctlPath, Sudo: *useSudo},
-		Eve:        events,
-		Metrics:    collector,
-		Web:        web.Files,
+		Policy:      policy,
+		AuthFile:    *authFile,
+		HealthFile:  *healthFile,
+		Ctl:         &ctl.Runner{Path: *ctlPath, Sudo: *useSudo},
+		Eve:         events,
+		Metrics:     collector,
+		Export:      exporter,
+		ExportToken: token,
+		Web:         web.Files,
 	})
 	srv := &http.Server{
 		Addr:              *addr,
