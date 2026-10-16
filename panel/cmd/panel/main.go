@@ -20,6 +20,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/auth"
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 	"github.com/FlexEbat/dpistack/panel/internal/eve"
+	"github.com/FlexEbat/dpistack/panel/internal/metrics"
 	"github.com/FlexEbat/dpistack/panel/web"
 )
 
@@ -39,6 +40,7 @@ func run(args []string) error {
 	healthFile := fs.String("health-file", "/var/lib/dpistack/health.json", "watchdog report")
 	ctlPath := fs.String("ctl", "/usr/local/sbin/dpistack-ctl", "dpistack-ctl path")
 	eveFile := fs.String("eve-file", "", "eve.json to show on the Events screen; empty turns the viewer off (EVE_FILE=no)")
+	metricsFile := fs.String("metrics-file", "", "metrics.json: the graph history is restored from it and saved to it; empty keeps it in memory only")
 	useSudo := fs.Bool("sudo", true, "run dpistack-ctl through sudo -n")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -63,12 +65,21 @@ func run(args []string) error {
 		events = eve.New(*eveFile)
 	}
 
+	inputs := metrics.Inputs{Proc: metrics.Proc}
+	if events != nil {
+		inputs.Stats = metrics.EveStats(events)
+		inputs.EveSize = metrics.FileSize(*eveFile)
+		inputs.DiskFree = metrics.DiskFree(*eveFile)
+	}
+	collector := metrics.New(metrics.Config{Inputs: inputs, File: *metricsFile, Logf: log.Printf})
+
 	handler := api.New(api.Config{
 		Policy:     policy,
 		AuthFile:   *authFile,
 		HealthFile: *healthFile,
 		Ctl:        &ctl.Runner{Path: *ctlPath, Sudo: *useSudo},
 		Eve:        events,
+		Metrics:    collector,
 		Web:        web.Files,
 	})
 	srv := &http.Server{
@@ -89,16 +100,26 @@ func run(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// The collector saves metrics.json when ctx ends; shutdown waits for it.
+	sampled := make(chan struct{})
+	go func() {
+		collector.Run(ctx)
+		close(sampled)
+	}()
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(ln) }()
 
 	select {
 	case err := <-done:
+		stop()
+		<-sampled
 		return err
 	case <-ctx.Done():
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := srv.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		err := srv.Shutdown(shutdown)
+		<-sampled
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
 		return nil
