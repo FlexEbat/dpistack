@@ -53,6 +53,25 @@ panel_src_hash() {
 		sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
 }
 
+# panel_token_wanted - 0 when GET /metrics is on and there is a token to guard
+# it. The token reaches the panel through a file: a flag would show in ps
+# and in the unit.
+panel_token_wanted() {
+	[[ "${CONF[METRICS_EXPORT]:-yes}" == "yes" && -n "${SECRETS[METRICS_TOKEN]:-}" ]]
+}
+
+# panel_token_matches - the token file holds the current token when /metrics
+# is on, and does not exist when it is off.
+panel_token_matches() {
+	local file
+	file=$(path_metrics_token)
+	if panel_token_wanted; then
+		[[ -f "$file" && "$(<"$file")" == "${SECRETS[METRICS_TOKEN]}" ]]
+	else
+		[[ ! -e "$file" ]]
+	fi
+}
+
 # panel_args - the flags of the panel (tech.md 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
@@ -74,6 +93,13 @@ panel_args() {
 	args+=" -auth-file $(path_panel_auth) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json)"
 	# Without the flag the panel shows that viewing events is off.
 	[[ "${CONF[EVE_FILE]:-yes}" == "yes" ]] && args+=" -eve-file $(path_suricata_eve_json)"
+	# Without a token file /metrics does not exist (404).
+	if panel_token_wanted; then
+		local disks
+		disks=$(dirname "$(path_suricata_eve_json)")
+		[[ "${CONF[EVEBOX_DB]:-sqlite}" == "sqlite" ]] && disks+=",$(path_evebox_data_dir)"
+		args+=" -metrics-token-file $(path_metrics_token) -tests-file $(path_tests_last_json) -rules-file $(path_suricata_ruleset) -disk-paths ${disks}"
+	fi
 	echo "$args"
 }
 
@@ -150,6 +176,7 @@ step_panel_check() {
 	[[ "$(stat -c %a "$path")" == "440" ]] || return 1
 
 	[[ -f "$(path_metrics_json)" ]] || return 1
+	panel_token_matches || return 1
 	panel_bin_current || return 1
 	panel_unit_matches || return 1
 	return 0
@@ -178,6 +205,21 @@ step_panel_apply() {
 		run install -D -m 0640 /dev/null "$mfile" || return 1
 	fi
 	run chown "$PANEL_USER:$PANEL_USER" "$mfile" || return 1
+
+	# The bearer token of /metrics: readable by the panel, nobody else. In a
+	# dry run only the fact is printed, never the value.
+	local tfile
+	tfile=$(path_metrics_token)
+	if panel_token_wanted; then
+		if [[ "${DRY_RUN:-0}" == "1" ]]; then
+			echo "+ записать $tfile (0640 root:$PANEL_USER)"
+		else
+			printf '%s\n' "${SECRETS[METRICS_TOKEN]}" | atomic_write "$tfile" 0640 || return 1
+			run chown "root:$PANEL_USER" "$tfile" || return 1
+		fi
+	else
+		run rm -f "$tfile" || return 1
+	fi
 
 	# A broken sudoers file locks sudo out, so visudo checks a temp copy
 	# before anything lands in /etc/sudoers.d.
@@ -216,4 +258,29 @@ step_panel_apply() {
 
 step_panel_plan() {
 	echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack-ctl), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), юнит $PANEL_SERVICE"
+}
+
+# panel_report_metrics - the token of /metrics and a scrape_config entry
+# ready to paste, printed once when the token has just been made. Never in a
+# dry run: the token does not exist then.
+panel_report_metrics() {
+	[[ "${METRICS_TOKEN_JUST_GENERATED:-0}" == "1" && "${DRY_RUN:-0}" != "1" ]] || return 0
+	panel_token_wanted || return 0
+	local mode="${CONF[ACCESS_MODE]:-localhost}" port="${CONF[PANEL_PORT]:-9800}" scheme="http" host="127.0.0.1"
+	if [[ "$mode" != "localhost" ]]; then
+		host="<адрес-сервера>"
+	fi
+	[[ "$mode" == "nginx" && "${CONF[NGINX_TLS]:-none}" != "none" ]] && scheme="https"
+	echo "Создан METRICS_TOKEN для GET /metrics (сохраните: он больше нигде не показывается): ${SECRETS[METRICS_TOKEN]}"
+	echo "Строка для scrape_configs (Prometheus и VictoriaMetrics):"
+	cat <<EOF
+  - job_name: dpistack
+    metrics_path: /metrics
+    scheme: ${scheme}
+    authorization:
+      type: Bearer
+      credentials: ${SECRETS[METRICS_TOKEN]}
+    static_configs:
+      - targets: ['${host}:${port}']
+EOF
 }

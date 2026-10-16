@@ -48,6 +48,11 @@ func Read(path string) (*Report, error) {
 	if len(data) > maxSize {
 		return nil, errors.New("health.json is too large")
 	}
+	return Parse(data)
+}
+
+// Parse reads the content of a health.json already in memory.
+func Parse(data []byte) (*Report, error) {
 	var r Report
 	if err := json.Unmarshal(data, &r); err != nil {
 		return nil, fmt.Errorf("parse health.json: %w", err)

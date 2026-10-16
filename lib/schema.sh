@@ -174,7 +174,7 @@ schema_init() {
 	# Secrets: live in secrets.conf, never dpistack.conf, never printed.
 	_schema_add 'ALERT_TG_TOKEN|free|||advanced|watch|watch|light|yes'
 	_schema_add 'ALERT_SMTP_URL|free|||advanced|watch|watch|light|yes'
-	_schema_add 'METRICS_TOKEN|free|||advanced|metrics|metrics|heavy|yes'
+	_schema_add 'METRICS_TOKEN|free|||advanced|metrics|metrics panel|heavy|yes'
 }
 
 schema_init

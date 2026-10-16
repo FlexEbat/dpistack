@@ -64,12 +64,18 @@ type Reader struct {
 	discard  bool        // drop bytes up to the next newline (we joined mid-line)
 	nextID   uint64
 	rings    map[string]*ring
+	counts   map[string]uint64 // events read per type since the reader was made
 	present  bool
 }
 
+// MaxCountTypes bounds the number of types counted, so a file with endless
+// invented event types cannot grow the map (and the metric labels) without
+// limit.
+const MaxCountTypes = 50
+
 // New returns a Reader for path. Nothing is read until Poll.
 func New(path string) *Reader {
-	return &Reader{path: path, rings: map[string]*ring{}, nextID: 1}
+	return &Reader{path: path, rings: map[string]*ring{}, counts: map[string]uint64{}, nextID: 1}
 }
 
 // Poll reads what was appended to the file since the last call.
@@ -213,6 +219,9 @@ func (r *Reader) add(line []byte) {
 	if err := json.Unmarshal(line, &head); err != nil || head.Type == "" {
 		return // a broken or foreign line is skipped, not an error
 	}
+	if _, known := r.counts[head.Type]; known || len(r.counts) < MaxCountTypes {
+		r.counts[head.Type]++
+	}
 	rg := r.rings[head.Type]
 	if rg == nil {
 		if len(r.rings) == MaxTypes {
@@ -279,6 +288,34 @@ func (r *Reader) Types() []string {
 	}
 	sort.Strings(types)
 	return types
+}
+
+// Counts returns how many events of each type the reader has read since it
+// was made: not how many are in memory.
+func (r *Reader) Counts() map[string]uint64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make(map[string]uint64, len(r.counts))
+	for t, n := range r.counts {
+		out[t] = n
+	}
+	return out
+}
+
+// Newest returns the newest event of any type kept in memory.
+func (r *Reader) Newest() (Event, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var best Event
+	found := false
+	for _, rg := range r.rings {
+		rg.each(func(e Event) {
+			if !found || e.ID > best.ID {
+				best, found = e, true
+			}
+		})
+	}
+	return best, found
 }
 
 // Recent returns the events that match q, newest first, at most q.Limit.

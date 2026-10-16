@@ -338,3 +338,44 @@ func TestMissingFileIsNotAnError(t *testing.T) {
 		t.Error("the file that appeared later is not followed")
 	}
 }
+
+// Counts are totals read since the reader was made, not what is in memory,
+// and the number of types counted is bounded.
+func TestCountsAndNewest(t *testing.T) {
+	f := newFile(t)
+	var text string
+	for i := 1; i <= PerTypeCap+50; i++ {
+		text += line("alert", i)
+	}
+	text += line("dns", 7)
+	for i := 0; i < MaxCountTypes+20; i++ {
+		text += line(fmt.Sprintf("odd%03d", i), 1)
+	}
+	f.write(text)
+	r := New(f.path)
+	poll(t, r)
+
+	counts := r.Counts()
+	if counts["alert"] != uint64(PerTypeCap+50) {
+		t.Errorf("alert counted %d, want %d (the ring only holds %d)", counts["alert"], PerTypeCap+50, PerTypeCap)
+	}
+	if counts["dns"] != 1 {
+		t.Errorf("dns counted %d", counts["dns"])
+	}
+	if len(counts) != MaxCountTypes {
+		t.Errorf("%d types counted, want at most %d", len(counts), MaxCountTypes)
+	}
+
+	f.append(line("alert", 9999))
+	poll(t, r)
+	if r.Counts()["alert"] != uint64(PerTypeCap+51) {
+		t.Error("a new event was not counted once")
+	}
+	ev, ok := r.Newest()
+	if !ok || ev.Type != "alert" || !strings.Contains(string(ev.Line), `"n":9999`) {
+		t.Errorf("newest: %+v %v", ev, ok)
+	}
+	if _, ok := New(f.path + ".none").Newest(); ok {
+		t.Error("a reader with nothing has a newest event")
+	}
+}
