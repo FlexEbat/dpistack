@@ -71,7 +71,7 @@ panel_args() {
 	fi
 	args="-addr ${host}:${port} -access ${mode}"
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
-	args+=" -auth-file $(path_panel_auth) -health-file $(path_health_json) -ctl $(path_ctl_bin)"
+	args+=" -auth-file $(path_panel_auth) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json)"
 	# Without the flag the panel shows that viewing events is off.
 	[[ "${CONF[EVE_FILE]:-yes}" == "yes" ]] && args+=" -eve-file $(path_suricata_eve_json)"
 	echo "$args"
@@ -149,6 +149,7 @@ step_panel_check() {
 	[[ "$expected" == "$actual" ]] || return 1
 	[[ "$(stat -c %a "$path")" == "440" ]] || return 1
 
+	[[ -f "$(path_metrics_json)" ]] || return 1
 	panel_bin_current || return 1
 	panel_unit_matches || return 1
 	return 0
@@ -167,6 +168,16 @@ step_panel_apply() {
 	if [[ -f "$(path_panel_auth)" ]]; then
 		run chown root:dpistack "$(path_panel_auth)" || return 1
 	fi
+
+	# The panel keeps its graph history in metrics.json and may write nothing
+	# else in the state directory (health.json, state and the backups stay
+	# root's), so only this one file is its own. An existing history is kept.
+	local mfile
+	mfile=$(path_metrics_json)
+	if [[ ! -e "$mfile" ]]; then
+		run install -D -m 0640 /dev/null "$mfile" || return 1
+	fi
+	run chown "$PANEL_USER:$PANEL_USER" "$mfile" || return 1
 
 	# A broken sudoers file locks sudo out, so visudo checks a temp copy
 	# before anything lands in /etc/sudoers.d.

@@ -102,8 +102,29 @@ unit_file() {
 	[ "$status" -eq 0 ]
 	[ -x "$DPISTACK_ROOT/usr/local/bin/dpistack-panel" ]
 	grep -q "^go build .* -o .* ./cmd/panel" "$MOCK_CALLS_LOG"
-	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack-ctl -eve-file $DPISTACK_ROOT/var/log/suricata/eve.json" "$(unit_file)"
+	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack-ctl -metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json -eve-file $DPISTACK_ROOT/var/log/suricata/eve.json" "$(unit_file)"
 	grep -q "^systemctl enable --now dpistack-panel.service" "$MOCK_CALLS_LOG"
+}
+
+@test "slice 22: metrics.json is created for the panel user and an existing history is kept" {
+	run install_base
+	[ "$status" -eq 0 ]
+	mfile="$DPISTACK_ROOT/var/lib/dpistack/metrics.json"
+	[ -f "$mfile" ]
+	[ "$(stat -c %a "$mfile")" = "640" ]
+	grep -q "^chown dpistack:dpistack $mfile" "$MOCK_CALLS_LOG"
+	echo '{"version":1}' >"$mfile"
+	run install_base --force
+	[ "$status" -eq 0 ]
+	grep -q '"version":1' "$mfile"
+}
+
+@test "slice 22: the panel unit gets the metrics file, and nothing else in the state directory is handed over" {
+	run install_base
+	[ "$status" -eq 0 ]
+	grep -q -- "-metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json" "$(unit_file)"
+	! grep -E "^chown .*dpistack:dpistack .*/var/lib/dpistack/?( |$)" "$MOCK_CALLS_LOG"
+	! grep -E "^chown .*dpistack:dpistack .*(health.json|/state|backups|staging)" "$MOCK_CALLS_LOG"
 }
 
 @test "slice 21: EVE_FILE=no leaves -eve-file out of the unit, so the panel says viewing is off" {
