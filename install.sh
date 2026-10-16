@@ -321,9 +321,6 @@ cmd_install() {
 
 	echo "Итоговый конфиг:"
 	config_print_summary
-	if [[ "$METRICS_TOKEN_JUST_GENERATED" == "1" ]]; then
-		echo "Создан METRICS_TOKEN (сохраните — больше нигде не показывается и не восстанавливается): ${SECRETS[METRICS_TOKEN]}"
-	fi
 	if [[ "$PANEL_PASSWORD_JUST_GENERATED" == "1" ]]; then
 		echo "Создан пароль панели (сохраните — больше нигде не показывается, на диске остаётся только хэш): $PANEL_PASSWORD_GENERATED_VALUE"
 	fi
@@ -354,6 +351,7 @@ cmd_install() {
 		run_apply
 	fi
 	verify_final_report
+	panel_report_metrics
 	echo "установка завершена"
 	return 0
 }
@@ -430,6 +428,7 @@ cmd_reconfigure() {
 		fi
 	done
 
+	panel_report_metrics
 	echo "конфиг применён"
 	return 0
 }

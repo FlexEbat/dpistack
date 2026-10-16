@@ -102,7 +102,7 @@ unit_file() {
 	[ "$status" -eq 0 ]
 	[ -x "$DPISTACK_ROOT/usr/local/bin/dpistack-panel" ]
 	grep -q "^go build .* -o .* ./cmd/panel" "$MOCK_CALLS_LOG"
-	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack-ctl -metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json -eve-file $DPISTACK_ROOT/var/log/suricata/eve.json" "$(unit_file)"
+	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack-ctl -metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json -eve-file $DPISTACK_ROOT/var/log/suricata/eve.json -metrics-token-file $DPISTACK_ROOT/etc/dpistack/metrics.token -tests-file $DPISTACK_ROOT/var/lib/dpistack/tests-last.json -rules-file $DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules -disk-paths $DPISTACK_ROOT/var/log/suricata,$DPISTACK_ROOT/var/lib/evebox" "$(unit_file)"
 	grep -q "^systemctl enable --now dpistack-panel.service" "$MOCK_CALLS_LOG"
 }
 
@@ -125,6 +125,70 @@ unit_file() {
 	grep -q -- "-metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json" "$(unit_file)"
 	! grep -E "^chown .*dpistack:dpistack .*/var/lib/dpistack/?( |$)" "$MOCK_CALLS_LOG"
 	! grep -E "^chown .*dpistack:dpistack .*(health.json|/state|backups|staging)" "$MOCK_CALLS_LOG"
+}
+
+token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" | cut -d= -f2-; }
+
+@test "slice 23: the token reaches the panel through a 0640 root:dpistack file, never through a flag, the unit or dpistack.conf" {
+	run install_base
+	[ "$status" -eq 0 ]
+	tfile="$DPISTACK_ROOT/etc/dpistack/metrics.token"
+	token=$(token_of)
+	[ "${#token}" -eq 64 ]
+	[ "$(cat "$tfile")" = "$token" ]
+	[ "$(stat -c %a "$tfile")" = "640" ]
+	grep -q "^chown root:dpistack $tfile" "$MOCK_CALLS_LOG"
+	grep -q -- "-metrics-token-file $tfile" "$(unit_file)"
+	! grep -rq "$token" "$(unit_file)" "$DPISTACK_ROOT/etc/dpistack/dpistack.conf" "$MOCK_CALLS_LOG"
+}
+
+@test "slice 23: the report shows the token with a ready scrape_config entry, once" {
+	run install_base
+	[ "$status" -eq 0 ]
+	token=$(token_of)
+	[[ "$output" == *"Создан METRICS_TOKEN для GET /metrics"*"$token"* ]]
+	[[ "$output" == *"job_name: dpistack"* ]]
+	[[ "$output" == *"credentials: $token"* ]]
+	[[ "$output" == *"targets: ['127.0.0.1:9800']"* ]]
+	[[ "$output" == *"scheme: http"* ]]
+	# A second run has no new token and shows none.
+	run install_base
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"$token"* ]]
+	[[ "$output" != *"job_name: dpistack"* ]]
+}
+
+@test "slice 23: a dry run neither writes nor prints the token" {
+	run bash "$REPO_DIR/install.sh" install -y --dry-run --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	[ "$status" -eq 0 ]
+	[ ! -e "$DPISTACK_ROOT/etc/dpistack/metrics.token" ]
+	[ ! -e "$DPISTACK_ROOT/etc/dpistack/secrets.conf" ]
+	! echo "$output" | grep -Eq '[0-9a-f]{64}'
+	[[ "$output" != *"Создан METRICS_TOKEN"* ]]
+	[[ "$output" != *"credentials:"* ]]
+}
+
+@test "slice 23: METRICS_EXPORT=no leaves no token file and no flags, and the panel unit says so" {
+	run install_base --set METRICS_EXPORT=no
+	[ "$status" -eq 0 ]
+	[ ! -e "$DPISTACK_ROOT/etc/dpistack/metrics.token" ]
+	! grep -q -- "-metrics-token-file\|-tests-file\|-rules-file\|-disk-paths" "$(unit_file)"
+	[[ "$output" != *"job_name: dpistack"* ]]
+}
+
+@test "slice 23: reconfigure turns /metrics on and off, and shows the new token once" {
+	run install_base --set METRICS_EXPORT=no
+	[ "$status" -eq 0 ]
+	run bash "$REPO_DIR/install.sh" reconfigure -y --set METRICS_EXPORT=yes
+	[ "$status" -eq 0 ]
+	token=$(token_of)
+	[ "$(cat "$DPISTACK_ROOT/etc/dpistack/metrics.token")" = "$token" ]
+	grep -q -- "-metrics-token-file" "$(unit_file)"
+	[[ "$output" == *"credentials: $token"* ]]
+	run bash "$REPO_DIR/install.sh" reconfigure -y --set METRICS_EXPORT=no
+	[ "$status" -eq 0 ]
+	[ ! -e "$DPISTACK_ROOT/etc/dpistack/metrics.token" ]
+	! grep -q -- "-metrics-token-file" "$(unit_file)"
 }
 
 @test "slice 21: EVE_FILE=no leaves -eve-file out of the unit, so the panel says viewing is off" {
