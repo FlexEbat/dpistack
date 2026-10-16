@@ -18,7 +18,9 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/export"
 )
 
-const exportToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+// A made-up 64-character token. It is built, not written out, so that a
+// secret scanner has no literal to mistake for a real key.
+var exportToken = strings.Repeat("a1b2c3d4", 8)
 
 // parsed is the exposition text read back by a strict parser of format
 // 0.0.4: what promtool would check, for the places where it is not installed.

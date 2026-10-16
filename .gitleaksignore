@@ -1,0 +1,6 @@
+# Findings of gitleaks that are not secrets, by fingerprint. One entry per
+# line with the reason above it; a new entry needs the same: tech.md 12.1.
+#
+# A made-up bearer token in a Go test (slice 23). It was written out as a
+# literal in this commit and has been built at run time since.
+76a0b946cb37f99f6204b2b78fe6a78e14d56296:panel/internal/api/metrics_export_test.go:generic-api-key:21
