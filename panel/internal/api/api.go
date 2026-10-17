@@ -45,6 +45,8 @@ type Config struct {
 	Ctl         *ctl.Runner
 	Eve         *eve.Reader // nil: viewing events is off (EVE_FILE=no)
 	Metrics     *metrics.Collector
+	TestsFile   string           // tests-last.json
+	EventsFile  string           // events.jsonl
 	Export      *export.Exporter // nil: GET /metrics is off (METRICS_EXPORT=no)
 	ExportToken string           // the bearer token of GET /metrics
 	Web         fs.FS
@@ -57,6 +59,7 @@ type server struct {
 	limiter  *auth.Limiter
 	streams  atomic.Int32 // open log streams, capped at maxStreams
 	rules    rulesState   // the last rules update started from this panel
+	ops      opState      // tests and interface changes, one at a time
 }
 
 type ctxKey struct{}
@@ -92,6 +95,11 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/rules/sid/{sid}/{action}", s.authed(s.rulesSID))
 	mux.HandleFunc("GET /metrics", s.metricsExport)
 	mux.HandleFunc("GET /api/metrics", s.authed(s.metricsSeries))
+	mux.HandleFunc("POST /api/tests/{which}", s.authed(s.testsRun))
+	mux.HandleFunc("GET /api/tests/last", s.authed(s.testsLast))
+	mux.HandleFunc("GET /api/alerts", s.authed(s.alertsList))
+	mux.HandleFunc("GET /api/iface", s.authed(s.ifaceList))
+	mux.HandleFunc("POST /api/iface/{action}", s.authed(s.ifaceChange))
 	mux.HandleFunc("GET /api/eve", s.authed(s.eveList))
 	mux.HandleFunc("GET /api/eve/stream", s.authed(s.eveStream))
 	mux.HandleFunc("GET /api/logs/{id}", s.authed(s.logs))

@@ -102,7 +102,7 @@ unit_file() {
 	[ "$status" -eq 0 ]
 	[ -x "$DPISTACK_ROOT/usr/local/bin/dpistack-panel" ]
 	grep -q "^go build .* -o .* ./cmd/panel" "$MOCK_CALLS_LOG"
-	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack-ctl -metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json -eve-file $DPISTACK_ROOT/var/log/suricata/eve.json -metrics-token-file $DPISTACK_ROOT/etc/dpistack/metrics.token -tests-file $DPISTACK_ROOT/var/lib/dpistack/tests-last.json -rules-file $DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules -disk-paths $DPISTACK_ROOT/var/log/suricata,$DPISTACK_ROOT/var/lib/evebox" "$(unit_file)"
+	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack-ctl -metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json -eve-file $DPISTACK_ROOT/var/log/suricata/eve.json -tests-file $DPISTACK_ROOT/var/lib/dpistack/tests-last.json -events-file $DPISTACK_ROOT/var/lib/dpistack/events.jsonl -metrics-token-file $DPISTACK_ROOT/etc/dpistack/metrics.token -rules-file $DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules -disk-paths $DPISTACK_ROOT/var/log/suricata,$DPISTACK_ROOT/var/lib/evebox" "$(unit_file)"
 	grep -q "^systemctl enable --now dpistack-panel.service" "$MOCK_CALLS_LOG"
 }
 
@@ -172,7 +172,9 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	run install_base --set METRICS_EXPORT=no
 	[ "$status" -eq 0 ]
 	[ ! -e "$DPISTACK_ROOT/etc/dpistack/metrics.token" ]
-	! grep -q -- "-metrics-token-file\|-tests-file\|-rules-file\|-disk-paths" "$(unit_file)"
+	! grep -q -- "-metrics-token-file\|-rules-file\|-disk-paths" "$(unit_file)"
+	# The screens of tests and alerts do not depend on /metrics.
+	grep -q -- "-tests-file $DPISTACK_ROOT/var/lib/dpistack/tests-last.json -events-file $DPISTACK_ROOT/var/lib/dpistack/events.jsonl" "$(unit_file)"
 	[[ "$output" != *"job_name: dpistack"* ]]
 }
 

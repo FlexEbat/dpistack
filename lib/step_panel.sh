@@ -93,12 +93,14 @@ panel_args() {
 	args+=" -auth-file $(path_panel_auth) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json)"
 	# Without the flag the panel shows that viewing events is off.
 	[[ "${CONF[EVE_FILE]:-yes}" == "yes" ]] && args+=" -eve-file $(path_suricata_eve_json)"
+	# The Tests and Alerts screens read these two files whatever /metrics does.
+	args+=" -tests-file $(path_tests_last_json) -events-file $(path_events_jsonl)"
 	# Without a token file /metrics does not exist (404).
 	if panel_token_wanted; then
 		local disks
 		disks=$(dirname "$(path_suricata_eve_json)")
 		[[ "${CONF[EVEBOX_DB]:-sqlite}" == "sqlite" ]] && disks+=",$(path_evebox_data_dir)"
-		args+=" -metrics-token-file $(path_metrics_token) -tests-file $(path_tests_last_json) -rules-file $(path_suricata_ruleset) -disk-paths ${disks}"
+		args+=" -metrics-token-file $(path_metrics_token) -rules-file $(path_suricata_ruleset) -disk-paths ${disks}"
 	fi
 	echo "$args"
 }

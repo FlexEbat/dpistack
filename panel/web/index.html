@@ -30,6 +30,8 @@
     <button type="button" data-view="logs">Логи</button>
     <button type="button" data-view="events">События</button>
     <button type="button" data-view="metrics">Метрики</button>
+    <button type="button" data-view="tests">Тесты</button>
+    <button type="button" data-view="alerts">Оповещения</button>
   </nav>
   <div id="view-overview">
     <p id="overview-error" class="error" role="alert"></p>
@@ -43,6 +45,16 @@
     <p id="components-error" class="error" role="alert"></p>
     <p id="components-message" class="muted" aria-live="polite"></p>
     <section id="components-list"></section>
+    <div id="ifaces">
+      <h2>Интерфейсы захвата</h2>
+      <p id="ifaces-error" class="error" role="alert"></p>
+      <p id="ifaces-message" class="muted" aria-live="polite"></p>
+      <section id="ifaces-list"></section>
+      <div class="toolbar">
+        <input id="ifaces-name" type="text" class="wide" placeholder="например eth1" aria-label="Имя интерфейса" autocomplete="off">
+        <button id="ifaces-add" type="button">Добавить интерфейс</button>
+      </div>
+    </div>
   </div>
   <div id="view-configs" hidden>
     <div class="toolbar">
@@ -113,6 +125,21 @@
       <button type="button" data-range="24h" aria-pressed="false">24 часа</button>
     </div>
     <section id="mx-charts" class="charts"></section>
+  </div>
+  <div id="view-tests" hidden>
+    <p id="tests-error" class="error" role="alert"></p>
+    <div id="tests-buttons" class="toolbar"></div>
+    <p id="tests-note" class="muted" aria-live="polite"></p>
+    <section id="tests-result"></section>
+  </div>
+  <div id="view-alerts" hidden>
+    <p id="alerts-error" class="error" role="alert"></p>
+    <div class="toolbar">
+      <select id="al-check" aria-label="Проверка"><option value="">Все проверки</option></select>
+      <label>Показать <select id="al-limit"><option>50</option><option selected>100</option><option>200</option><option>500</option></select></label>
+      <button id="al-refresh" type="button">Обновить</button>
+    </div>
+    <section id="al-list"></section>
   </div>
 </main>
 </body>

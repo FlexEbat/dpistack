@@ -5,6 +5,9 @@ import { start as startRules } from "./modules/rules.js";
 import { start as startLogs } from "./modules/logs.js";
 import { start as startEvents } from "./modules/events.js";
 import { start as startMetrics } from "./modules/metrics.js";
+import { start as startTests } from "./modules/tests.js";
+import { start as startAlerts } from "./modules/alerts.js";
+import { start as startIfaces } from "./modules/ifaces.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -34,7 +37,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "components", "configs", "rules", "logs", "events", "metrics"];
+const VIEWS = ["overview", "components", "configs", "rules", "logs", "events", "metrics", "tests", "alerts"];
 let stopView = null;
 
 // Every screen starts when shown and returns a stop function, so a hidden
@@ -46,12 +49,29 @@ const SCREENS = {
       { overall: $("overall"), components: $("components"), checks: $("checks"), error: $("overview-error") },
       showLogin,
     ),
-  components: () =>
-    startComponents(
+  components: () => {
+    const stopList = startComponents(
       api,
       { list: $("components-list"), error: $("components-error"), message: $("components-message") },
       showLogin,
-    ),
+    );
+    const stopIfaces = startIfaces(
+      api,
+      {
+        root: $("ifaces"),
+        error: $("ifaces-error"),
+        message: $("ifaces-message"),
+        list: $("ifaces-list"),
+        name: $("ifaces-name"),
+        add: $("ifaces-add"),
+      },
+      showLogin,
+    );
+    return () => {
+      stopList();
+      stopIfaces();
+    };
+  },
   configs: () =>
     startConfigs(
       api,
@@ -100,6 +120,18 @@ const SCREENS = {
         output: $("log-output"),
         error: $("logs-error"),
       },
+      showLogin,
+    ),
+  tests: () =>
+    startTests(
+      api,
+      { error: $("tests-error"), buttons: $("tests-buttons"), note: $("tests-note"), result: $("tests-result") },
+      showLogin,
+    ),
+  alerts: () =>
+    startAlerts(
+      api,
+      { error: $("alerts-error"), check: $("al-check"), limit: $("al-limit"), refresh: $("al-refresh"), list: $("al-list") },
       showLogin,
     ),
   metrics: () =>

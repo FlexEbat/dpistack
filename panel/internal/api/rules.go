@@ -74,7 +74,7 @@ func (rs *rulesState) finish(res *updateResult) {
 func (s *server) rulesSources(w http.ResponseWriter, r *http.Request) {
 	list, err := s.cfg.Ctl.RulesSources(r.Context())
 	if err != nil {
-		rulesError(w, err)
+		opError(w, err)
 		return
 	}
 	last, updating := s.rules.snapshot()
@@ -118,7 +118,7 @@ func (s *server) rulesSourceChange(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := s.cfg.Ctl.RulesSource(r.Context(), body.Action, arg)
 	if err != nil {
-		rulesError(w, err)
+		opError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "output": out})
@@ -148,7 +148,7 @@ func (s *server) rulesUpdate(w http.ResponseWriter, r *http.Request) {
 	s.rules.finish(res)
 
 	if err != nil {
-		rulesError(w, err)
+		opError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "output": out, "last_update": res})
@@ -167,7 +167,7 @@ func (s *server) rulesSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	rules, err := s.cfg.Ctl.RulesSearch(r.Context(), q)
 	if err != nil {
-		rulesError(w, err)
+		opError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -185,7 +185,7 @@ func (s *server) rulesGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := s.cfg.Ctl.RulesGroup(r.Context(), action, group)
 	if err != nil {
-		rulesError(w, err)
+		opError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "output": out})
@@ -200,17 +200,18 @@ func (s *server) rulesSID(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := s.cfg.Ctl.RulesSID(r.Context(), action, sid)
 	if err != nil {
-		rulesError(w, err)
+		opError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "output": out})
 }
 
-// rulesError is ctlError for the rules screen. Here exit 5 is a value ctl
-// refused (400, not a missing path), exit 4 is suricata-update or the
-// ruleset missing on this host (409), and exit 1 is a failed update, whose
-// reason ctl printed on stdout (500 with it in output).
-func rulesError(w http.ResponseWriter, err error) {
+// opError is ctlError for the screens that run long or editing commands
+// (rules, tests, interfaces). Here exit 5 is a value ctl refused (400, not
+// a missing path), exit 4 is a tool or file missing on this host (409), and
+// exit 1 is a failed operation, whose reason ctl printed on stdout (500
+// with it in output).
+func opError(w http.ResponseWriter, err error) {
 	var exit *ctl.ExitError
 	if errors.As(err, &exit) {
 		switch exit.Code {
