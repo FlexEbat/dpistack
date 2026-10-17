@@ -44,7 +44,8 @@ func run(args []string) error {
 	eveFile := fs.String("eve-file", "", "eve.json to show on the Events screen; empty turns the viewer off (EVE_FILE=no)")
 	metricsFile := fs.String("metrics-file", "", "metrics.json: the graph history is restored from it and saved to it; empty keeps it in memory only")
 	tokenFile := fs.String("metrics-token-file", "", "file with the bearer token of GET /metrics; empty switches /metrics off (METRICS_EXPORT=no)")
-	testsFile := fs.String("tests-file", "", "tests-last.json, for the test metrics")
+	testsFile := fs.String("tests-file", "", "tests-last.json: the Tests screen and the test metrics")
+	eventsFile := fs.String("events-file", "", "events.jsonl: the Alerts screen")
 	rulesFile := fs.String("rules-file", "", "suricata.rules, for its age")
 	diskPaths := fs.String("disk-paths", "", "comma-separated directories whose free space /metrics reports")
 	useSudo := fs.Bool("sudo", true, "run dpistack-ctl through sudo -n")
@@ -112,6 +113,8 @@ func run(args []string) error {
 		Ctl:         &ctl.Runner{Path: *ctlPath, Sudo: *useSudo},
 		Eve:         events,
 		Metrics:     collector,
+		TestsFile:   *testsFile,
+		EventsFile:  *eventsFile,
 		Export:      exporter,
 		ExportToken: token,
 		Web:         web.Files,
