@@ -94,3 +94,52 @@ list_actions() {
 	grep -qE 'GITLEAKS_SHA256: [0-9a-f]{64}$' "$WF/security.yml"
 	grep -q 'sha256sum -c' "$WF/security.yml"
 }
+
+@test "dpistack.conf.example matches the tech.md 4.3 key table and lib/schema.sh defaults" {
+	run bash "$REPO_DIR/scripts/check-conf-example.sh"
+	[ "$status" -eq 0 ]
+}
+
+@test "the conf example check catches a key missing from the example" {
+	work="$(mktemp -d)"
+	mkdir -p "$work/scripts" "$work/lib"
+	cp "$REPO_DIR/scripts/check-conf-example.sh" "$work/scripts/"
+	cp "$REPO_DIR/lib/schema.sh" "$work/lib/"
+	cp "$REPO_DIR/tech.md" "$work/"
+	grep -v '^EVE_KEEP=' "$REPO_DIR/dpistack.conf.example" >"$work/dpistack.conf.example"
+	run bash "$work/scripts/check-conf-example.sh"
+	rm -rf "$work"
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"EVE_KEEP"* ]]
+}
+
+@test "the conf example check catches a default that differs from the schema" {
+	work="$(mktemp -d)"
+	mkdir -p "$work/scripts" "$work/lib"
+	cp "$REPO_DIR/scripts/check-conf-example.sh" "$work/scripts/"
+	cp "$REPO_DIR/lib/schema.sh" "$work/lib/"
+	cp "$REPO_DIR/tech.md" "$work/"
+	sed 's/^PANEL_PORT=.*/PANEL_PORT=9999/' "$REPO_DIR/dpistack.conf.example" >"$work/dpistack.conf.example"
+	run bash "$work/scripts/check-conf-example.sh"
+	rm -rf "$work"
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"default differs for PANEL_PORT"* ]]
+}
+
+@test "README covers what slice 25 requires" {
+	for needle in "Ограничение топологии" "Модель угроз" "Быстрая установка" "dpistack.conf" "reconfigure" "dpistack-ctl" "scrape_configs" "VictoriaMetrics" "vmagent" "Prometheus"; do
+		grep -q "$needle" "$REPO_DIR/README.md" || {
+			echo "README lacks: $needle"
+			return 1
+		}
+	done
+}
+
+@test "every local link in README points to an existing file" {
+	while IFS= read -r target; do
+		[ -e "$REPO_DIR/$target" ] || {
+			echo "broken link: $target"
+			return 1
+		}
+	done < <(grep -oE '\]\([^)#:]+\)' "$REPO_DIR/README.md" | sed -E 's/^\]\((.*)\)$/\1/')
+}
