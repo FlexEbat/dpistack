@@ -430,3 +430,52 @@ apt_enable_component() {
 	fi
 	return 0
 }
+
+# selinux_port <type> <port> - lets a confined daemon use a non-default
+# TCP port (semanage port). Idempotent: a port already carrying the type
+# is left alone; -a fails when policy already defines the port with
+# another type, then -m remaps it. Not fatal: a missing type (no policy
+# module for that daemon) only prints a warning.
+selinux_port() {
+	local type="$1" port="$2"
+	selinux_active || return 0
+	if ! command -v semanage >/dev/null 2>&1; then
+		[[ "$OS_FAMILY" == "dnf" ]] && pkg_install policycoreutils-python-utils
+	fi
+	if ! command -v semanage >/dev/null 2>&1; then
+		echo "selinux: semanage не найден, порт $port не получил тип $type" >&2
+		return 0
+	fi
+	if semanage port -l 2>/dev/null | awk -v t="$type" '$1 == t && $2 == "tcp" {$1 = ""; $2 = ""; gsub(/,/, " "); print}' | grep -qw -- "$port"; then
+		return 0
+	fi
+	run semanage port -a -t "$type" -p tcp "$port" ||
+		run semanage port -m -t "$type" -p tcp "$port" ||
+		echo "selinux: не удалось дать порту $port тип $type (возможно, у политики нет такого типа)" >&2
+	return 0
+}
+
+# selinux_relabel_installed - one pass over everything dpistack writes,
+# at the end of install and reconfigure.
+selinux_relabel_installed() {
+	selinux_restore \
+		"$(path_etc)" "$(path_state_dir)" "$(path_log_dir)" \
+		"$(path_sbin_dir)" "$(path_lib_dir)" "$(path_panel_bin)" \
+		"$(path_panel_service_unit)" "$(path_watch_service_unit)" "$(path_watch_timer_unit)" \
+		"$(path_sudoers)" \
+		"${DPISTACK_ROOT}/etc/suricata" "${DPISTACK_ROOT}/var/lib/suricata" \
+		"${DPISTACK_ROOT}/var/log/suricata" "${DPISTACK_ROOT}/usr/lib/suricata" \
+		"${DPISTACK_ROOT}/etc/ntopng" "${DPISTACK_ROOT}/etc/evebox" "$(path_evebox_data_dir)" \
+		"${DPISTACK_ROOT}/etc/nginx/conf.d"
+}
+
+# copr_chroot - the COPR chroot dnf would pick for this system
+# (epel-N for the RHEL family, fedora-N for Fedora), empty when unknown.
+copr_chroot() {
+	local major="${OS_VERSION_ID%%.*}"
+	[[ "$major" =~ ^[0-9]+$ ]] || return 0
+	case "$OS_ID" in
+	fedora) echo "fedora-$major" ;;
+	*) echo "epel-$major" ;;
+	esac
+}
