@@ -233,6 +233,14 @@ suricata_render_service_unit() {
 }
 
 step_suricata_check() {
+	if docker_wanted suricata; then
+		[[ -f "$(path_suricata_yaml)" ]] || return 1
+		[[ "$(suricata_render_yaml | state_hash_content)" == "$(state_hash_content <"$(path_suricata_yaml)")" ]] || return 1
+		[[ -f "$(path_suricata_logrotate)" ]] || return 1
+		[[ "$(suricata_render_logrotate | state_hash_content)" == "$(state_hash_content <"$(path_suricata_logrotate)")" ]] || return 1
+		docker_service_check suricata
+		return
+	fi
 	local source="${CONF[SURICATA_SOURCE]:-}"
 	[[ "$source" =~ ^(distro|oisf|source)$ ]] || return 1
 
@@ -292,6 +300,12 @@ SYSCONFIG
 }
 
 step_suricata_apply() {
+	if docker_wanted suricata; then
+		write_rendered_file "$(path_suricata_yaml)" "$(suricata_render_yaml)" || return 1
+		write_rendered_file "$(path_suricata_logrotate)" "$(suricata_render_logrotate)" || return 1
+		docker_service_apply suricata
+		return
+	fi
 	case "${CONF[SURICATA_SOURCE]}" in
 	oisf)
 		pkg_repo_add oisf || return 1
@@ -340,6 +354,12 @@ step_suricata_apply() {
 }
 
 step_suricata_plan() {
+	if docker_wanted suricata; then
+		docker_service_plan suricata
+		echo "suricata: рендер $(path_suricata_yaml) для интерфейсов ${CONF[IFACES]:-}"
+		echo "suricata: рендер $(path_suricata_logrotate)"
+		return 0
+	fi
 	if [[ "${CONF[SURICATA_SOURCE]:-}" == "source" ]]; then
 		echo "suricata: сборка из исходников ($SURICATA_REPO_URL, ref=$(suricata_target_ref), nDPI=${CONF[NDPI_ENABLE]:-no})"
 	else

@@ -75,6 +75,13 @@ verify_test_bittorrent() {
 		verify_set skip "нет ни правил группы emerging-p2p, ни плагина nDPI: включите emerging-p2p (RULES_GROUPS) или NDPI_ENABLE=yes"
 		return 0
 	fi
+	# The replay runs the host's suricata on a pcap. With Suricata in a
+	# container there is none on the host and the container is busy
+	# capturing: say so, do not report a missing package.
+	if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" ]]; then
+		verify_set skip "Suricata в контейнере: реплей pcap на хосте недоступен; события и алерты проверяйте на живом трафике (TEST_BT_LIVE=yes)"
+		return 0
+	fi
 	if ! command -v suricata >/dev/null 2>&1; then
 		verify_set fail "suricata не установлен"
 		return 0

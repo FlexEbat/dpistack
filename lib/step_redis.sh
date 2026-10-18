@@ -9,6 +9,10 @@ REDIS_UNIT="redis-server.service"
 REDIS_STATE_KEY="step.redis.status"
 
 step_redis_check() {
+	docker_wanted redis && {
+		docker_service_check redis
+		return
+	}
 	command -v redis-server >/dev/null 2>&1 || return 1
 	systemctl is-active --quiet "$REDIS_UNIT" || return 1
 	[[ "$(state_read_value "$REDIS_STATE_KEY")" == "done" ]] || return 1
@@ -16,6 +20,11 @@ step_redis_check() {
 }
 
 step_redis_apply() {
+	if docker_wanted redis; then
+		docker_service_apply redis || return 1
+		state_write_value "$REDIS_STATE_KEY" "done"
+		return 0
+	fi
 	if ! command -v redis-server >/dev/null 2>&1; then
 		pkg_install "$REDIS_PACKAGE" || return 1
 	fi
@@ -25,5 +34,9 @@ step_redis_apply() {
 }
 
 step_redis_plan() {
+	docker_wanted redis && {
+		docker_service_plan redis
+		return 0
+	}
 	echo "redis: установка $REDIS_PACKAGE, systemctl enable --now $REDIS_UNIT"
 }

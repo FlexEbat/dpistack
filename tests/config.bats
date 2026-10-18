@@ -57,7 +57,7 @@ run_install() {
 }
 
 @test "not-yet-supported runtime value names itself as unsupported" {
-	run_install --set SURICATA_RUNTIME=docker
+	run_install --set METRICS_BACKEND_RUNTIME=docker
 	[ "$status" -eq 2 ]
 	[[ "$output" == *"пока не поддерживается"* ]]
 }

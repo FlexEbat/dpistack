@@ -1,7 +1,27 @@
 #!/usr/bin/env bash
-# Mock for bats tests (tech.md 11): records the call and exits with
-# MOCK_EXIT (default 0), so steps never touch the real system in CI.
+# Mock docker for bats tests: logs every call. Answers the compose queries
+# dpistack makes:
+#   MOCK_DOCKER_RUNNING   names printed by `ps --status running --services`
+#   MOCK_DOCKER_PS        lines "service state" for `ps -a --format ...`
+#   MOCK_DOCKER_IMAGE     printed by `ps --format {{.Image}}`
+#   MOCK_DOCKER_COMPOSE_EXIT  exit of `docker compose version` (default 0)
+# Anything else exits with MOCK_EXIT (default 0).
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
 fi
+case "$*" in
+"compose version"*) exit "${MOCK_DOCKER_COMPOSE_EXIT:-0}" ;;
+*" ps --status running --services"*)
+	[[ -n "${MOCK_DOCKER_RUNNING:-}" ]] && printf '%s\n' "${MOCK_DOCKER_RUNNING}" | tr ' ' '\n'
+	exit 0
+	;;
+*" ps -a --format "*)
+	[[ -n "${MOCK_DOCKER_PS:-}" ]] && printf '%s\n' "${MOCK_DOCKER_PS}"
+	exit 0
+	;;
+*" ps --format "*)
+	[[ -n "${MOCK_DOCKER_IMAGE:-}" ]] && printf '%s\n' "${MOCK_DOCKER_IMAGE}"
+	exit 0
+	;;
+esac
 exit "${MOCK_EXIT:-0}"

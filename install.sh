@@ -25,6 +25,8 @@ source "$LIB_DIR/config.sh"
 source "$LIB_DIR/render.sh"
 # shellcheck source=lib/menu.sh
 source "$LIB_DIR/menu.sh"
+# shellcheck source=lib/runtime_docker.sh
+source "$LIB_DIR/runtime_docker.sh"
 
 STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics access panel watch verify)
 for _step in "${STEPS_ORDER[@]}"; do
