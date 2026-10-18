@@ -174,7 +174,12 @@ step_rules_apply() {
 		# running Suricata is a warning: the rules are already on disk.
 		local socket
 		socket=$(path_suricata_socket)
-		if [[ -S "$socket" ]]; then
+		if docker_wanted suricata; then
+			if docker_service_running suricata; then
+				run docker_suricata_reload ||
+					echo "предупреждение: Suricata не приняла перезагрузку правил, они применятся при перезапуске" >&2
+			fi
+		elif [[ -S "$socket" ]]; then
 			run suricatasc -c ruleset-reload-nonblocking "$socket" ||
 				echo "предупреждение: Suricata не приняла перезагрузку правил, они применятся при перезапуске" >&2
 		fi

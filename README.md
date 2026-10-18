@@ -65,6 +65,8 @@ ALERT_TG_CHAT_ID=123456789
 METRICS_EXPORT=yes
 ```
 
+Suricata, EveBox и ntopng (вместе с redis за ним) можно запускать в Docker: `SURICATA_RUNTIME=docker`, `EVEBOX_RUNTIME=docker`, `NTOPNG_RUNTIME=docker`, любая смесь с native. Нужен Docker с плагином `compose`; контейнеры идут с `network_mode: host`, файл `/opt/dpistack/compose/compose.yaml` генерирует установщик, а `dpistack-ctl` управляет ими так же, как службами (`status`, `start|stop|restart`, `logs`). Для Suricata в контейнере задайте `NDPI_ENABLE=no`: плагин nDPI в образ не ставится. Образы и тома пока проверены только на заглушках.
+
 Секреты в этот файл не пишутся: `ALERT_TG_TOKEN` и `ALERT_SMTP_URL` вводятся в меню (или через `--set`) и сохраняются только в `secrets.conf`.
 
 ## install, reconfigure, upgrade, uninstall

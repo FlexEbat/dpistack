@@ -23,6 +23,8 @@ for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
 		source "$_lib/config.sh"
 		# shellcheck source=lib/render.sh
 		source "$_lib/render.sh"
+		# shellcheck source=lib/runtime_docker.sh
+		source "$_lib/runtime_docker.sh"
 		# shellcheck source=lib/step_rules.sh
 		source "$_lib/step_rules.sh"
 		# shellcheck source=lib/step_verify.sh
@@ -104,6 +106,11 @@ unit_loaded() {
 
 # component_unit <id> - prints the unit that controls the component.
 component_unit() {
+	# docker runtime: no unit, the compose service is addressed as docker:<id>.
+	if [[ "$1" =~ ^(suricata|evebox|ntopng|redis)$ && "$(component_runtime "$1")" == "docker" ]]; then
+		echo "docker:$1"
+		return
+	fi
 	case "$1" in
 	suricata) echo "suricata.service" ;;
 	evebox) echo "evebox.service" ;;
@@ -145,6 +152,11 @@ component_runtime() {
 }
 
 component_version() {
+	if [[ "$(component_unit "$1")" == docker:* ]]; then
+		docker_compose_argv
+		"${DOCKER_COMPOSE_ARGV[@]}" ps --format '{{.Image}}' "$1" 2>/dev/null | head -1
+		return 0
+	fi
 	local pkg=""
 	case "$1" in
 	suricata) pkg="suricata" ;;
@@ -172,6 +184,10 @@ component_version() {
 component_state() {
 	# component_state <unit> -> active|inactive|failed|absent
 	local unit="$1"
+	if [[ "$unit" == docker:* ]]; then
+		docker_component_state "${unit#docker:}"
+		return
+	fi
 	if ! unit_loaded "$unit"; then
 		echo absent
 		return
@@ -212,6 +228,9 @@ cmd_status() {
 		state=$(component_state "$unit")
 		if [[ "$state" == "absent" ]]; then
 			enabled=false
+		elif [[ "$unit" == docker:* ]]; then
+			# restart: unless-stopped brings the container back at boot.
+			enabled=true
 		elif systemctl is-enabled --quiet "$unit" 2>/dev/null; then
 			enabled=true
 		else
@@ -253,14 +272,29 @@ cmd_control() {
 	[[ $# -eq 1 ]] || fail 2 "$verb: нужен ровно один <id>"
 	local unit
 	unit=$(resolve_component "$1") || exit $?
+	if [[ "$unit" == docker:* ]]; then
+		docker_compose_argv
+		"${DOCKER_COMPOSE_ARGV[@]}" "$verb" "${unit#docker:}" || fail 1 "$verb $1: docker compose завершился с ошибкой"
+		return 0
+	fi
 	systemctl "$verb" "$unit" || fail 1 "$verb $1: systemctl завершился с ошибкой"
+}
+
+# suricata_reload_now - reload the rules of the running Suricata, native
+# or in its container.
+suricata_reload_now() {
+	if [[ "$(component_unit suricata)" == docker:* ]]; then
+		docker_suricata_reload
+	else
+		suricatasc -c ruleset-reload-nonblocking "$(path_suricata_socket)"
+	fi
 }
 
 cmd_reload() {
 	[[ $# -eq 1 ]] || fail 2 "reload: нужен аргумент suricata"
 	[[ "$1" == "suricata" ]] || fail 5 "reload: поддерживается только suricata"
 	resolve_component suricata >/dev/null || exit $?
-	suricatasc -c ruleset-reload-nonblocking "$(path_suricata_socket)" ||
+	suricata_reload_now ||
 		fail 1 "reload suricata: suricatasc завершился с ошибкой"
 }
 
@@ -298,8 +332,23 @@ cmd_logs() {
 
 	local unit
 	unit=$(resolve_component "$id") || exit $?
+	# logs_argv <follow:0|1> - the command that prints the component's log.
+	logs_argv() {
+		if [[ "$unit" == docker:* ]]; then
+			docker_compose_argv
+			LOGS_ARGV=("${DOCKER_COMPOSE_ARGV[@]}" logs --no-color --tail "$n")
+			(($1)) && LOGS_ARGV+=(--follow)
+			LOGS_ARGV+=("${unit#docker:}")
+		else
+			LOGS_ARGV=(journalctl -u "$unit" -n "$n" --no-pager)
+			(($1)) && LOGS_ARGV+=(--follow)
+		fi
+		return 0
+	}
+	local -a LOGS_ARGV
 	if ((until_eof)); then
-		journalctl -u "$unit" -n "$n" --no-pager --follow &
+		logs_argv 1
+		"${LOGS_ARGV[@]}" &
 		local jpid=$!
 		# <&0: a background command otherwise gets /dev/null as stdin and
 		# would see end of input at once.
@@ -312,9 +361,11 @@ cmd_logs() {
 	fi
 	if ((follow)); then
 		# No pipe trap: journalctl dies of SIGPIPE when the reader closes.
-		journalctl -u "$unit" -n "$n" --no-pager --follow
+		logs_argv 1
+		"${LOGS_ARGV[@]}"
 	else
-		journalctl -u "$unit" -n "$n" --no-pager
+		logs_argv 0
+		"${LOGS_ARGV[@]}"
 	fi
 }
 
@@ -373,8 +424,9 @@ config_commit() {
 # the candidate local.rules, with the candidate suricata.yaml when that
 # is what changes. Nothing outside the temp dir is touched.
 suricata_check_set() {
-	local name="$1" staged="$2" tmp yaml rc
-	command -v suricata >/dev/null 2>&1 || {
+	local name="$1" staged="$2" tmp yaml rc docker=0 rulepath
+	[[ "$(component_unit suricata)" == docker:* ]] && docker=1
+	((docker)) || command -v suricata >/dev/null 2>&1 || {
 		echo "suricata не установлен" >&2
 		return 4
 	}
@@ -388,8 +440,17 @@ suricata_check_set() {
 	[[ "$name" == "local.rules" ]] && cat "$staged" >>"$tmp/rules/suricata.rules"
 	yaml="$(path_suricata_yaml)"
 	[[ "$name" == "suricata.yaml" ]] && yaml="$staged"
-	sed "s#^default-rule-path:.*#default-rule-path: $tmp/rules#" "$yaml" >"$tmp/suricata.yaml" 2>/dev/null
-	suricata -T -c "$tmp/suricata.yaml" -l "$tmp" 2>&1
+	# In docker the check runs in the same image the service uses, with the
+	# scratch directory mounted at /dpistack-check.
+	rulepath="$tmp/rules"
+	((docker)) && rulepath="/dpistack-check/rules"
+	sed "s#^default-rule-path:.*#default-rule-path: $rulepath#" "$yaml" >"$tmp/suricata.yaml" 2>/dev/null
+	if ((docker)); then
+		docker_compose_argv
+		"${DOCKER_COMPOSE_ARGV[@]}" run --rm --no-deps -v "$tmp:/dpistack-check" suricata -T -c /dpistack-check/suricata.yaml -l /dpistack-check 2>&1
+	else
+		suricata -T -c "$tmp/suricata.yaml" -l "$tmp" 2>&1
+	fi
 	rc=$?
 	rm -rf "$tmp"
 	((rc == 0)) || return 3
@@ -445,16 +506,13 @@ apply_config() {
 	case "$1" in
 	dpistack.conf) cmd_reconfigure ;;
 	suricata.yaml)
-		resolve_component suricata >/dev/null || exit $?
-		systemctl restart suricata.service || fail 1 "restart suricata не удался"
+		cmd_control restart suricata
 		;;
 	evebox.yaml)
-		resolve_component evebox >/dev/null || exit $?
-		systemctl restart evebox.service || fail 1 "restart evebox не удался"
+		cmd_control restart evebox
 		;;
 	ntopng.conf)
-		resolve_component ntopng >/dev/null || exit $?
-		systemctl restart ntopng.service || fail 1 "restart ntopng не удался"
+		cmd_control restart ntopng
 		;;
 	*) cmd_rules_update ;;
 	esac
@@ -739,7 +797,12 @@ cmd_rules_update() {
 	local ok=1
 	rules_update_argv
 	"${RULES_UPDATE_ARGV[@]}" >"$log" 2>&1 || ok=0
-	if ((ok)) && command -v suricata >/dev/null 2>&1; then
+	if ((ok)) && [[ "$(component_unit suricata)" == docker:* ]]; then
+		if ! docker_suricata_test >>"$log" 2>&1; then
+			echo "suricata -T не принял новый набор правил" >>"$log"
+			ok=0
+		fi
+	elif ((ok)) && command -v suricata >/dev/null 2>&1; then
 		local check_dir
 		check_dir=$(mktemp -d)
 		if ! suricata -T -c "$(path_suricata_yaml)" -l "$check_dir" >>"$log" 2>&1; then
@@ -749,7 +812,7 @@ cmd_rules_update() {
 		rm -rf "$check_dir"
 	fi
 	if ((ok)); then
-		suricatasc -c ruleset-reload-nonblocking "$(path_suricata_socket)" >>"$log" 2>&1 || {
+		suricata_reload_now >>"$log" 2>&1 || {
 			echo "перезагрузка правил не удалась" >>"$log"
 			ok=0
 		}

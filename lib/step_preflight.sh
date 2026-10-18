@@ -72,6 +72,19 @@ step_preflight_reasons() {
 		fi
 	done
 
+	if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" && "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
+		reasons+=("SURICATA_RUNTIME=docker: плагин nDPI в образ не ставится, задайте NDPI_ENABLE=no")
+	fi
+	if command -v docker >/dev/null 2>&1; then
+		local dkey
+		for dkey in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME; do
+			if [[ "${CONF[$dkey]:-}" == "docker" ]] && ! docker compose version >/dev/null 2>&1; then
+				reasons+=("$dkey=docker, но у docker нет плагина compose (docker compose version не отвечает)")
+				break
+			fi
+		done
+	fi
+
 	case "$(os_support_level)" in
 	unsupported)
 		if [[ "${DPISTACK_ALLOW_UNSUPPORTED:-0}" != "1" ]]; then

@@ -67,6 +67,12 @@ evebox_repo_add() {
 }
 
 step_evebox_check() {
+	if docker_wanted evebox; then
+		[[ -f "$(path_evebox_yaml)" ]] || return 1
+		[[ "$(evebox_render_conf | state_hash_content)" == "$(state_hash_content <"$(path_evebox_yaml)")" ]] || return 1
+		docker_service_check evebox
+		return
+	fi
 	command -v evebox >/dev/null 2>&1 || return 1
 
 	local conf_path
@@ -82,6 +88,12 @@ step_evebox_check() {
 }
 
 step_evebox_apply() {
+	if docker_wanted evebox; then
+		write_rendered_file "$(path_evebox_yaml)" "$(evebox_render_conf)" || return 1
+		docker_service_apply evebox || return 1
+		echo "evebox: в контейнере, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}"); встроенные TLS и аутентификация EveBox отключены, доступ ограничивается сетью (ACCESS_MODE/firewall)." >&2
+		return 0
+	fi
 	if ! command -v evebox >/dev/null 2>&1; then
 		evebox_repo_add || return 1
 		pkg_install "$(pkg_spec "$EVEBOX_PACKAGE" "${CONF[EVEBOX_VERSION]:-}")" || return 1
@@ -104,6 +116,11 @@ step_evebox_apply() {
 }
 
 step_evebox_plan() {
+	if docker_wanted evebox; then
+		docker_service_plan evebox
+		echo "evebox: рендер $(path_evebox_yaml)"
+		return 0
+	fi
 	echo "evebox: репозиторий evebox.org, пакет $EVEBOX_PACKAGE, база ${CONF[EVEBOX_DB]:-sqlite}, порт ${CONF[EVEBOX_PORT]:-5636}, bind $(access_effective_bind_host)"
 	echo "evebox: рендер $(path_evebox_yaml)"
 }

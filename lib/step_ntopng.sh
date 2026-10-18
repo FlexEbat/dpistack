@@ -98,6 +98,12 @@ ntopng_repo_add() {
 }
 
 step_ntopng_check() {
+	if docker_wanted ntopng; then
+		[[ -f "$(path_ntopng_conf)" ]] || return 1
+		[[ "$(ntopng_render_conf | state_hash_content)" == "$(state_hash_content <"$(path_ntopng_conf)")" ]] || return 1
+		docker_service_check ntopng
+		return
+	fi
 	command -v ntopng >/dev/null 2>&1 || return 1
 
 	local conf_path
@@ -113,6 +119,12 @@ step_ntopng_check() {
 }
 
 step_ntopng_apply() {
+	if docker_wanted ntopng; then
+		write_rendered_file "$(path_ntopng_conf)" "$(ntopng_render_conf)" || return 1
+		docker_service_apply ntopng || return 1
+		echo "ntopng: в контейнере, логин/пароль по умолчанию admin/admin, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - смените пароль в веб-интерфейсе." >&2
+		return 0
+	fi
 	if ! command -v ntopng >/dev/null 2>&1; then
 		ntopng_repo_add || return 1
 		pkg_install "$(pkg_spec "$NTOPNG_PACKAGE" "${CONF[NTOPNG_VERSION]:-}")" || return 1
@@ -139,6 +151,11 @@ step_ntopng_apply() {
 }
 
 step_ntopng_plan() {
+	if docker_wanted ntopng; then
+		docker_service_plan ntopng
+		echo "ntopng: рендер $(path_ntopng_conf), порт ${CONF[NTOPNG_PORT]:-3000} (сервис на $(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")), bind $(access_effective_bind_host)"
+		return 0
+	fi
 	echo "ntopng: интерфейсы $(ntopng_effective_ifaces), порт ${CONF[NTOPNG_PORT]:-3000} (сервис на $(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")), bind $(access_effective_bind_host)"
 	echo "ntopng: рендер $(path_ntopng_conf)"
 }
