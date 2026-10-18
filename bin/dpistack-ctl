@@ -107,7 +107,7 @@ unit_loaded() {
 # component_unit <id> - prints the unit that controls the component.
 component_unit() {
 	# docker runtime: no unit, the compose service is addressed as docker:<id>.
-	if [[ "$1" =~ ^(suricata|evebox|ntopng|redis)$ && "$(component_runtime "$1")" == "docker" ]]; then
+	if [[ "$1" =~ ^(suricata|evebox|ntopng|redis|victoriametrics|prometheus)$ && "$(component_runtime "$1")" == "docker" ]]; then
 		echo "docker:$1"
 		return
 	fi

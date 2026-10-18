@@ -492,6 +492,15 @@ cmd_uninstall() {
 	rm -f "$(path_rules_timer_unit)" "$(path_rules_service_unit)"
 	run systemctl daemon-reload
 
+	# The metrics backend is dpistack's own addition (unlike the packages of
+	# the stack): stopped, its unit and binaries removed; the series stay
+	# unless --purge.
+	if [[ -n "$(metrics_installed)" ]]; then
+		metrics_stop_installed || true
+		rm -f "$(path_vm_unit)" "$(path_prometheus_unit)" "$(path_vm_bin)" "$(path_prometheus_bin)"
+		run systemctl daemon-reload
+	fi
+
 	if [[ "${CONF[SURICATA_SOURCE]:-}" == "source" ]]; then
 		run systemctl disable --now "$SURICATA_UNIT" 2>/dev/null || true
 		rm -f "$(path_suricata_service_unit)"
@@ -511,6 +520,10 @@ cmd_uninstall() {
 		rm -rf "$(dirname "$(path_suricata_ruleset)")"
 		rm -f "$(path_ntopng_conf)" "$(path_evebox_yaml)"
 		rm -rf "$(access_tls_dir)" 2>/dev/null || true
+		rm -rf "$(path_metrics_data_dir)"
+		if id "$METRICS_USER" >/dev/null 2>&1; then
+			run userdel "$METRICS_USER" || true
+		fi
 		if id "$PANEL_USER" >/dev/null 2>&1; then
 			run userdel "$PANEL_USER" || true
 		fi

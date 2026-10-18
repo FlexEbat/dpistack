@@ -23,6 +23,13 @@ path_metrics_json() { echo "$(path_state_dir)/metrics.json"; }
 path_backups_dir() { echo "$(path_state_dir)/backups"; }
 path_staging_dir() { echo "$(path_state_dir)/staging"; }
 path_scrape_yaml() { echo "$(path_state_dir)/scrape.yaml"; }
+# Data of the metrics backend lives outside path_state_dir: uninstall
+# removes that directory, and without --purge the series must stay (5.7).
+path_metrics_data_dir() { echo "${DPISTACK_ROOT}/var/lib/dpistack-metrics"; }
+path_vm_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/victoria-metrics-prod"; }
+path_prometheus_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/prometheus"; }
+path_vm_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-vm.service"; }
+path_prometheus_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/prometheus.service"; }
 
 path_lock_file() { echo "${DPISTACK_ROOT}/var/lock/dpistack.lock"; }
 

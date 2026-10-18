@@ -159,7 +159,11 @@ access_firewall_apply() {
 			access_allow_port "$cidr" "$port" || return 1
 		done
 	elif [[ "${CONF[ACCESS_MODE]:-localhost}" == "lan" ]]; then
-		for port in "${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}"; do
+		local -a lan_ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
+		# The metrics backend binds 0.0.0.0 in lan mode (and nginx does not
+		# proxy it), so its own port is opened for LAN_CIDR too.
+		[[ "${CONF[METRICS_BACKEND]:-none}" != "none" ]] && lan_ports+=("$(metrics_port "${CONF[METRICS_BACKEND]}")")
+		for port in "${lan_ports[@]}"; do
 			access_allow_port "$cidr" "$port" || return 1
 		done
 	fi

@@ -131,7 +131,7 @@ scrape_configs:
 
 `credentials_file` держит токен вне конфига. Установщик в итоговом отчёте печатает ту же запись с `credentials: <токен>` вместо файла. Для `vmagent` берите тот же блок `scrape_configs` в файле, который указан флагом `-promscrape.config`, и добавьте `-remoteWrite.url` с адресом вашей VictoriaMetrics; одиночная VictoriaMetrics принимает такой файл флагом `-promscrape.config` сама.
 
-Установка VictoriaMetrics или Prometheus самим установщиком (`METRICS_BACKEND`) пока не поддерживается: по умолчанию `METRICS_BACKEND=none`, сбор настраиваете вы.
+По умолчанию `METRICS_BACKEND=none`: есть только эндпоинт, сбор настраиваете вы. Можно поручить это установщику: `METRICS_BACKEND=victoriametrics` или `prometheus` (бинарник с релиза проекта с проверкой sha256, либо контейнер при `METRICS_BACKEND_RUNTIME=docker`). Он кладёт `scrape.yaml` с этой целью, читает токен из файла, держит данные `METRICS_RETENTION` (число с суффиксом `h`, `d`, `w` или `y`, по умолчанию `30d`) в `/var/lib/dpistack-metrics` и слушает по правилам `ACCESS_MODE` (при `localhost` только на `127.0.0.1`; порт `METRICS_BACKEND_PORT`, по умолчанию 8428 и 9090). Смена бэкенда или `none` останавливает прежний и оставляет его данные, их удаляет только `uninstall --purge`. Проверено пока только на заглушках.
 
 ## Разработка
 

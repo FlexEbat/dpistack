@@ -110,6 +110,14 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
+	# VictoriaMetrics reads a bare number as months and the suffix m as
+	# months, Prometheus reads m as minutes: only the suffixes both read the
+	# same way (h, d, w, y) are allowed once a backend is installed.
+	if [[ "${CONF[METRICS_BACKEND]:-none}" != "none" && ! "${CONF[METRICS_RETENTION]:-30d}" =~ ^[0-9]+[hdwy]$ ]]; then
+		echo "METRICS_RETENTION=${CONF[METRICS_RETENTION]:-} с бэкендом метрик: нужно число с суффиксом h, d, w или y (например 30d); без суффикса и с m бэкенды читают значение по-разному"
+		errors=$((errors + 1))
+	fi
+
 	if [[ "${CONF[EVE_ROTATE]:-}" == "size" && -z "${CONF[EVE_MAX_SIZE_MB]:-}" ]]; then
 		echo "EVE_ROTATE=size требует EVE_MAX_SIZE_MB"
 		errors=$((errors + 1))
