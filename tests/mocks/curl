@@ -9,4 +9,14 @@ fi
 if [[ -n "${MOCK_CURL_FAIL_MATCH:-}" && "$*" == *"$MOCK_CURL_FAIL_MATCH"* ]]; then
 	exit 22
 fi
+# MOCK_CURL_BODY_FILE: the file a `-o <path>` download writes (a release
+# tarball in the metrics tests).
+if [[ -n "${MOCK_CURL_BODY_FILE:-}" ]]; then
+	args=("$@")
+	for ((i = 0; i < ${#args[@]}; i++)); do
+		if [[ "${args[i]}" == "-o" ]]; then
+			cp "$MOCK_CURL_BODY_FILE" "${args[i + 1]}"
+		fi
+	done
+fi
 exit "${MOCK_EXIT:-0}"

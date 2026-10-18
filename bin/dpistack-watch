@@ -194,6 +194,8 @@ check_disk_free() {
 	local -a paths=()
 	paths+=("$(dirname "$(path_suricata_eve_json)")")
 	[[ "${CONF[EVEBOX_DB]}" == "sqlite" ]] && paths+=("$(path_evebox_data_dir)")
+	# The series of the metrics backend are the fastest-growing data.
+	[[ "${CONF[METRICS_BACKEND]:-none}" != "none" && -d "$(path_metrics_data_dir)" ]] && paths+=("$(path_metrics_data_dir)")
 	local p total avail worst_total="" worst_avail="" worst_path=""
 	for p in "${paths[@]}"; do
 		[[ -d "$p" ]] || continue

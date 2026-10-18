@@ -56,10 +56,10 @@ run_install() {
 	[ "$status" -eq 2 ]
 }
 
-@test "not-yet-supported runtime value names itself as unsupported" {
-	run_install --set METRICS_BACKEND_RUNTIME=docker
-	[ "$status" -eq 2 ]
-	[[ "$output" == *"пока не поддерживается"* ]]
+@test "runtime docker is a supported value for every component, the metrics backend included" {
+	run_install --dry-run --set METRICS_BACKEND=victoriametrics --set METRICS_BACKEND_RUNTIME=docker
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"пока не поддерживается"* ]]
 }
 
 @test "not-yet-supported ips mode names itself as unsupported" {

@@ -37,15 +37,12 @@ install_mixed() {
 
 compose_cmd="docker compose -p dpistack -f"
 
-@test "criterion 6: docker is accepted for suricata, evebox and ntopng, not yet for the metrics backend" {
+@test "criterion 6: docker is accepted for suricata, evebox and ntopng" {
 	for key in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME; do
 		run install_base --dry-run --set "$key=docker"
 		[ "$status" -eq 0 ]
 		[[ "$output" != *"пока не поддерживается"* ]]
 	done
-	run install_base --dry-run --set METRICS_BACKEND_RUNTIME=docker
-	[ "$status" -eq 2 ]
-	[[ "$output" == *"пока не поддерживается"* ]]
 }
 
 @test "criterion 1: the mixed scheme brings up evebox, redis and ntopng in docker and Suricata natively" {

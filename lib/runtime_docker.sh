@@ -18,8 +18,10 @@ DOCKER_IMAGE_SURICATA="${DOCKER_IMAGE_SURICATA:-jasonish/suricata}"
 DOCKER_IMAGE_EVEBOX="${DOCKER_IMAGE_EVEBOX:-jasonish/evebox}"
 DOCKER_IMAGE_NTOPNG="${DOCKER_IMAGE_NTOPNG:-ntop/ntopng}"
 DOCKER_IMAGE_REDIS="${DOCKER_IMAGE_REDIS:-redis}"
+DOCKER_IMAGE_VICTORIAMETRICS="${DOCKER_IMAGE_VICTORIAMETRICS:-victoriametrics/victoria-metrics}"
+DOCKER_IMAGE_PROMETHEUS="${DOCKER_IMAGE_PROMETHEUS:-prom/prometheus}"
 # Services in start order (ntopng needs redis).
-DOCKER_SERVICES_ORDER=(suricata evebox redis ntopng)
+DOCKER_SERVICES_ORDER=(suricata evebox redis ntopng victoriametrics prometheus)
 
 # docker_service_runtime <service> - native or docker, from CONF.
 # redis follows ntopng: it is ntopng's own store (step_redis.sh).
@@ -28,6 +30,14 @@ docker_service_runtime() {
 	suricata) echo "${CONF[SURICATA_RUNTIME]:-native}" ;;
 	evebox) echo "${CONF[EVEBOX_RUNTIME]:-native}" ;;
 	redis | ntopng) echo "${CONF[NTOPNG_RUNTIME]:-native}" ;;
+	# A backend is a docker service only when it is the selected one.
+	victoriametrics | prometheus)
+		if [[ "${CONF[METRICS_BACKEND]:-none}" == "$1" ]]; then
+			echo "${CONF[METRICS_BACKEND_RUNTIME]:-native}"
+		else
+			echo native
+		fi
+		;;
 	*) echo native ;;
 	esac
 }
@@ -49,6 +59,8 @@ docker_image() {
 	evebox) echo "${DOCKER_IMAGE_EVEBOX}:${CONF[EVEBOX_VERSION]:-${DOCKER_TAG_EVEBOX:-latest}}" ;;
 	ntopng) echo "${DOCKER_IMAGE_NTOPNG}:${CONF[NTOPNG_VERSION]:-${DOCKER_TAG_NTOPNG:-stable}}" ;;
 	redis) echo "${DOCKER_IMAGE_REDIS}:${DOCKER_TAG_REDIS:-7-alpine}" ;;
+	victoriametrics) echo "${DOCKER_IMAGE_VICTORIAMETRICS}:${DOCKER_TAG_VICTORIAMETRICS:-$METRICS_VM_VERSION}" ;;
+	prometheus) echo "${DOCKER_IMAGE_PROMETHEUS}:${DOCKER_TAG_PROMETHEUS:-$METRICS_PROM_VERSION}" ;;
 	esac
 }
 
@@ -110,6 +122,34 @@ ${common}
     volumes:
       - ${root}/etc/ntopng:/etc/ntopng:ro
       - ${root}/var/lib/ntopng:/var/lib/ntopng
+BLOCK
+		;;
+	victoriametrics | prometheus)
+		local data scrape token
+		data=$(metrics_data_dir "$svc")
+		scrape=$(path_scrape_yaml)
+		token=$(path_metrics_token)
+		# Same-path mounts: scrape.yaml names the token file by its host
+		# path and works unchanged in the container. The container runs as
+		# the dpistack-metrics user and the dpistack group, which is what
+		# reads the token (root:dpistack 0640).
+		local ids
+		ids="$(id -u "$METRICS_USER" 2>/dev/null || echo 0):$(getent group dpistack 2>/dev/null | cut -d: -f3)"
+		[[ "$ids" == *: ]] && ids="${ids}0"
+		local cmd
+		if [[ "$svc" == "victoriametrics" ]]; then
+			cmd="[\"-storageDataPath=${data}\", \"-retentionPeriod=${CONF[METRICS_RETENTION]:-30d}\", \"-httpListenAddr=$(metrics_listen "$svc")\", \"-promscrape.config=${scrape}\"]"
+		else
+			cmd="[\"--config.file=${scrape}\", \"--storage.tsdb.path=${data}\", \"--storage.tsdb.retention.time=${CONF[METRICS_RETENTION]:-30d}\", \"--web.listen-address=$(metrics_listen "$svc")\"]"
+		fi
+		cat <<BLOCK
+${common}
+    user: "${ids}"
+    command: ${cmd}
+    volumes:
+      - ${data}:${data}
+      - ${scrape}:${scrape}:ro
+      - ${token}:${token}:ro
 BLOCK
 		;;
 	esac
