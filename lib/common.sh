@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack-ctl version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack-ctl
-DPISTACK_VERSION="0.15.0"
+DPISTACK_VERSION="0.16.0"
 
 : "${DRY_RUN:=0}"
 
@@ -68,6 +68,35 @@ lock_acquire() {
 	fi
 }
 
+# SELinux (slice 26). "Active" means Enforcing or Permissive: labels are
+# worth setting in Permissive too, otherwise switching to Enforcing later
+# starts denying what worked. Disabled or no getenforce: nothing to do.
+selinux_active() {
+	local mode
+	command -v getenforce >/dev/null 2>&1 || return 1
+	mode=$(getenforce 2>/dev/null) || return 1
+	[[ "$mode" == "Enforcing" || "$mode" == "Permissive" ]]
+}
+
+# selinux_restore <path...> - give existing paths the label the policy
+# says they should have (a file moved in from another directory keeps
+# the source's label, and the confined daemon that must read it is then
+# denied). Missing paths are skipped; a failure is only a warning, the
+# install itself does not depend on it.
+selinux_restore() {
+	selinux_active || return 0
+	command -v restorecon >/dev/null 2>&1 || return 0
+	local p
+	local -a existing=()
+	for p in "$@"; do
+		[[ -e "$p" ]] && existing+=("$p")
+	done
+	((${#existing[@]} > 0)) || return 0
+	run restorecon -RF "${existing[@]}" ||
+		echo "selinux: restorecon не прошёл для: ${existing[*]}" >&2
+	return 0
+}
+
 atomic_write() {
 	# atomic_write <target-path> [mode] < content-on-stdin
 	# mktemp makes the temp file 0600, and the rename would hand that mode
@@ -95,6 +124,9 @@ atomic_write() {
 	if ((ok != 0)) || ! cat >"$tmp" || ! mv -f "$tmp" "$target"; then
 		rm -f "$tmp"
 		return 1
+	fi
+	if selinux_active && command -v restorecon >/dev/null 2>&1; then
+		restorecon -F "$target" 2>/dev/null || true
 	fi
 }
 

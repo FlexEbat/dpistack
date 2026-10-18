@@ -349,6 +349,7 @@ cmd_install() {
 
 	if [[ "$pending" -ne 0 ]]; then
 		run_apply
+		selinux_relabel_installed
 	fi
 	verify_final_report
 	panel_report_metrics
@@ -427,6 +428,7 @@ cmd_reconfigure() {
 			die 1 "шаг $step упал при reconfigure"
 		fi
 	done
+	selinux_relabel_installed
 
 	panel_report_metrics
 	echo "конфиг применён"

@@ -115,6 +115,17 @@ access_selinux_notice() {
 	fi
 }
 
+# access_selinux_ports - in nginx mode nginx itself listens on the public
+# ports (3000, 5636, 9800 by default), which SELinux only lets httpd_t use
+# when they carry http_port_t.
+access_selinux_ports() {
+	[[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] || return 0
+	local port
+	for port in "${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}"; do
+		selinux_port http_port_t "$port"
+	done
+}
+
 # access_allow_port <cidr> <port> - one rule in whichever firewall the
 # system has: ufw (Debian family) or firewalld (RHEL family).
 access_allow_port() {
@@ -131,6 +142,13 @@ access_firewall_apply() {
 	[[ "${CONF[FIREWALL_MANAGE]:-no}" == "auto" ]] || return 0
 	if ! command -v ufw >/dev/null 2>&1 && ! command -v firewall-cmd >/dev/null 2>&1; then
 		echo "access: FIREWALL_MANAGE=auto, но ни ufw, ни firewalld не найдены - правила не применены" >&2
+		return 0
+	fi
+	# firewalld installed but stopped: its permanent rules would be
+	# written, but --reload fails and the ports stay closed or open by
+	# accident. Say so and leave it to the administrator.
+	if ! command -v ufw >/dev/null 2>&1 && ! firewall-cmd --state >/dev/null 2>&1; then
+		echo "access: FIREWALL_MANAGE=auto, но firewalld не запущен - правила не применены (запустите firewalld и повторите reconfigure)" >&2
 		return 0
 	fi
 	local cidr
@@ -175,6 +193,7 @@ step_access_apply() {
 	local mode="${CONF[ACCESS_MODE]:-localhost}"
 
 	access_selinux_notice
+	access_selinux_ports
 
 	if [[ "$mode" != "localhost" ]]; then
 		echo "access: ACCESS_MODE=$mode открывает веб-интерфейсы за пределы localhost." >&2

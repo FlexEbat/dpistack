@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Mock semanage for bats tests: logs the call; `port -l` prints
+# MOCK_SEMANAGE_LIST; `port -a` exits with MOCK_SEMANAGE_ADD_EXIT (default
+# 0), `port -m` with MOCK_SEMANAGE_MOD_EXIT (default 0).
+if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
+	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+fi
+case "$*" in
+"port -l"*)
+	printf '%s\n' "${MOCK_SEMANAGE_LIST:-}"
+	exit 0
+	;;
+"port -a"*) exit "${MOCK_SEMANAGE_ADD_EXIT:-0}" ;;
+"port -m"*) exit "${MOCK_SEMANAGE_MOD_EXIT:-0}" ;;
+esac
+exit 0

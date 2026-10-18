@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Mock for bats tests (tech.md 11): records the call and exits with
-# MOCK_EXIT (default 0), so steps never touch the real system in CI.
+# Mock for bats tests: records the call. `--state` exits with
+# MOCK_FIREWALLD_STATE_EXIT (default 0, "running"); everything else with
+# MOCK_EXIT (default 0).
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
 fi
+[[ "${1:-}" == "--state" ]] && exit "${MOCK_FIREWALLD_STATE_EXIT:-0}"
 exit "${MOCK_EXIT:-0}"

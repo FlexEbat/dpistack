@@ -120,6 +120,13 @@ step_ntopng_apply() {
 
 	write_rendered_file "$(path_ntopng_conf)" "$(ntopng_render_conf)"
 
+	# The ntopng policy module only lets ntop_t bind ntop_port_t (3000 and
+	# 3001); in nginx mode the service listens on PORT+10000 and a custom
+	# NTOPNG_PORT is the same case.
+	local ntopng_listen
+	ntopng_listen=$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")
+	[[ "$ntopng_listen" == "3000" || "$ntopng_listen" == "3001" ]] || selinux_port ntop_port_t "$ntopng_listen"
+
 	run systemctl enable --now "$NTOPNG_UNIT" || return 1
 
 	# A4: there is no dpistack.conf key to set a real ntopng password

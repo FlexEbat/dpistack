@@ -109,7 +109,16 @@ step_preflight_reasons() {
 	local -a probes=()
 	if [[ "${CONF[SURICATA_SOURCE]:-}" == "oisf" ]]; then
 		if [[ "$OS_FAMILY" == "dnf" ]]; then
-			probes+=("OISF COPR|https://copr.fedorainfracloud.org/coprs/g/oisf/suricata-8.0/")
+			# The repo file exists only for chroots the project builds for:
+			# a missing one (a new Rocky release, say) must stop here with
+			# code 3, not in the middle of `dnf copr enable`.
+			local chroot
+			chroot=$(copr_chroot)
+			if [[ -n "$chroot" ]]; then
+				probes+=("OISF COPR для $chroot|${OISF_COPR_REPO_URL:-https://copr.fedorainfracloud.org/coprs/g/oisf/suricata-8.0/repo/${chroot}/group_oisf-suricata-8.0-${chroot}.repo}")
+			else
+				probes+=("OISF COPR|https://copr.fedorainfracloud.org/coprs/g/oisf/suricata-8.0/")
+			fi
 		else
 			probes+=("OISF PPA|https://ppa.launchpadcontent.net/oisf/suricata-stable/ubuntu/")
 		fi
