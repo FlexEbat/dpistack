@@ -74,3 +74,17 @@ teardown() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"изменений нет"* ]]
 }
+
+@test "install --dry-run -y does not write panel.auth or print a panel password (R81)" {
+	run bash "$REPO_DIR/install.sh" install --dry-run -y \
+		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	[ "$status" -eq 0 ]
+	[ ! -e "$DPISTACK_ROOT/etc/dpistack/panel.auth" ]
+	[[ "$output" != *"Создан пароль панели"* ]]
+
+	DPISTACK_PANEL_PASSWORD="dry-run-secret-123" run bash "$REPO_DIR/install.sh" install --dry-run -y \
+		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	[ "$status" -eq 0 ]
+	[ ! -e "$DPISTACK_ROOT/etc/dpistack/panel.auth" ]
+	[[ "$output" != *"dry-run-secret-123"* ]]
+}

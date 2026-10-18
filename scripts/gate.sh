@@ -32,6 +32,11 @@ if ! bash scripts/security.sh; then
 	fail security
 fi
 
+echo "== conf example =="
+if ! bash scripts/check-conf-example.sh; then
+	fail "conf example"
+fi
+
 echo "== bats =="
 if ! bats tests; then
 	fail bats

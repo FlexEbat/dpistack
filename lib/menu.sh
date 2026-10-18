@@ -116,6 +116,10 @@ PANEL_PASSWORD_GENERATED_VALUE=""
 # plaintext never reaches dpistack.conf, secrets.conf or the logs.
 panel_password_apply() {
 	local plaintext=""
+	# --dry-run must not write panel.auth, install argon2 or print a
+	# password: a generated one would be shown but never stored, so the
+	# real run would then create a different one (R81).
+	[[ "${DRY_RUN:-0}" == "1" ]] && return 0
 	if [[ "$MENU_PANEL_PASSWORD_SET" == "1" ]]; then
 		plaintext="$MENU_PANEL_PASSWORD"
 	elif [[ "${NON_INTERACTIVE:-0}" == "1" && ! -f "$(path_panel_auth)" ]]; then
