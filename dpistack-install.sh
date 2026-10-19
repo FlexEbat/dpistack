@@ -115,6 +115,16 @@ diag собирает отчёт для разбора проблем (плат�
 EOF
 }
 
+# require_value <option> <argument count left> - an option that takes a value
+# and got none: `shift 2` would not move and the loop would spin forever.
+require_value() {
+	if (($2 < 2)); then
+		echo "у опции $1 нет значения" >&2
+		usage
+		exit 2
+	fi
+}
+
 parse_args() {
 	if [[ $# -eq 0 ]]; then
 		usage
@@ -125,10 +135,12 @@ parse_args() {
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
 		--config)
+			require_value "$1" "$#"
 			CONFIG_FILE="${2:-}"
 			shift 2
 			;;
 		--set)
+			require_value "$1" "$#"
 			SET_ARGS+=("${2:-}")
 			shift 2
 			;;
@@ -145,10 +157,12 @@ parse_args() {
 			shift
 			;;
 		--only)
+			require_value "$1" "$#"
 			ONLY_STEPS="${2:-}"
 			shift 2
 			;;
 		--skip)
+			require_value "$1" "$#"
 			SKIP_STEPS="${2:-}"
 			shift 2
 			;;
@@ -208,10 +222,13 @@ validate_step_names() {
 	done
 }
 
+# have_input_source - the menu has somewhere to read from: DPISTACK_INPUT, a
+# terminal on stdin, or (curl | bash: stdin is the script) the terminal device
+# itself. DPISTACK_TTY_DEV replaces /dev/tty, the tests use it.
 have_input_source() {
 	[[ -n "${DPISTACK_INPUT:-}" ]] && return 0
 	[[ -t 0 ]] && return 0
-	return 1
+	{ : <"${DPISTACK_TTY_DEV:-/dev/tty}"; } 2>/dev/null
 }
 
 layer_config_common() {
@@ -529,6 +546,13 @@ cmd_uninstall() {
 	fi
 
 	layer_config_common
+
+	if [[ "$DRY_RUN" == "1" ]]; then
+		# Everything below removes files with plain rm: a dry run only lists.
+		echo "dry-run: uninstall остановил бы и убрал таймеры и службы dpistack, цепочку DPISTACK, drop-in режима, конфиги ($(path_conf), $(path_secrets)), состояние ($(path_state_dir)) и копии программы; ничего не изменено"
+		[[ "$PURGE" == "1" ]] && echo "dry-run: с --purge ещё конфиги и данные компонентов (suricata.yaml, правила, ntopng, EveBox, TLS, данные метрик, пользователи)"
+		return 0
+	fi
 
 	run systemctl disable --now "$RULES_TIMER" 2>/dev/null || true
 	rm -f "$(path_rules_timer_unit)" "$(path_rules_service_unit)"
@@ -1432,6 +1456,14 @@ mode_check_ips_possible() {
 	command -v suricata >/dev/null 2>&1 || fail 4 "mode ips: suricata не установлена"
 }
 
+# mode_drop_rules_present - something can drop: a "drop" or "reject" rule in
+# local.rules, or a line in drop.conf (suricata-update turns the rules it
+# names into drop). Without either IPS only alerts, like IDS.
+mode_drop_rules_present() {
+	grep -Eqs '^[[:space:]]*(drop|reject)[[:space:]]' "$(path_suricata_local_rules)" && return 0
+	grep -Eqs '^[[:space:]]*[^#[:space:]]' "$(path_suricata_drop_conf)"
+}
+
 mode_go_ids() {
 	mode_cancel_timer
 	rm -f "$(path_mode_pending)"
@@ -1527,6 +1559,8 @@ cmd_mode() {
 		fail 1 "mode ips: не удалось запустить таймер отката, режим возвращён в ids"
 	fi
 	echo "режим ips включён; подтвердите командой mode-confirm в течение ${timeout} с, иначе вернётся ids"
+	mode_drop_rules_present ||
+		echo "предупреждение: правил drop нет (ни в local.rules, ни в drop.conf), IPS будет только оповещать, как IDS"
 }
 
 cmd_mode_confirm() {
@@ -2532,7 +2566,9 @@ write_rendered_file() {
 	fi
 
 	printf '%s\n' "$content" | dry_run_write "$path" "$mode"
-	state_set_file_hash "$path" "$new_hash"
+	# A dry run wrote nothing: recording the hash would make the next real
+	# run take the old file for a hand-edited one and leave it alone.
+	[[ "${DRY_RUN:-0}" == "1" ]] || state_set_file_hash "$path" "$new_hash"
 }
 
 backup() {
@@ -2937,12 +2973,19 @@ config_diff_and_steps() {
 	# shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure
 	CONFIG_CHANGE_WEIGHT="$overall_weight"
 	# shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure
-	CONFIG_AFFECTED_STEPS=("${!steps_seen[@]}")
+	# In the order of the pipeline (suricata before rules, access before
+	# panel...), not in the arbitrary order of an associative array; a step
+	# that is not in STEPS_ORDER goes last, sorted.
+	CONFIG_AFFECTED_STEPS=()
+	for step in "${STEPS_ORDER[@]:-}"; do
+		[[ -n "${steps_seen[$step]:-}" ]] && CONFIG_AFFECTED_STEPS+=("$step")
+	done
+	for step in $(printf '%s\n' "${!steps_seen[@]}" | sort); do
+		[[ " ${CONFIG_AFFECTED_STEPS[*]} " == *" $step "* ]] || CONFIG_AFFECTED_STEPS+=("$step")
+	done
 
 	echo "Затронутые шаги:"
-	for step in "${!steps_seen[@]}"; do
-		echo "  $step"
-	done | sort
+	printf '  %s\n' "${CONFIG_AFFECTED_STEPS[@]}"
 
 	echo "Тип изменения: $overall_weight"
 	return 0
@@ -3064,7 +3107,7 @@ menu_red() { menu_c 31 "$1"; }
 MENU_INPUT_OPENED=0
 menu_open_input() {
 	[[ "$MENU_INPUT_OPENED" == "1" ]] && return 0
-	exec 8<"${DPISTACK_INPUT:-/dev/tty}"
+	exec 8<"${DPISTACK_INPUT:-${DPISTACK_TTY_DEV:-/dev/tty}}"
 	MENU_INPUT_OPENED=1
 	trap 'menu_on_interrupt' INT
 }
@@ -7221,14 +7264,31 @@ suricata_mode_dropin_wanted() {
 	[[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "nfq" ]]
 }
 
+# suricata_nfq_user_args - "--user suricata --group suricata" when Suricata
+# can run unprivileged: the user exists and owns the log directory (the RPM
+# layout; the RPM unit already starts with --user). It binds the queue as
+# root and drops the rights afterwards (checked with a real NFQUEUE: the
+# process runs as that user, the queue stays). Without that user, or with a
+# log directory it cannot write, the old behaviour stays: root.
+suricata_nfq_user_args() {
+	local log_owner
+	getent passwd suricata >/dev/null 2>&1 || return 0
+	# DPISTACK_TEST_LOG_OWNER: the tests cannot chown a directory.
+	log_owner="${DPISTACK_TEST_LOG_OWNER:-$(stat -c %U "$(dirname "$(path_suricata_eve_json)")" 2>/dev/null)}" || return 0
+	[[ "$log_owner" == "suricata" ]] || return 0
+	echo "--user suricata --group suricata"
+}
+
 suricata_render_mode_dropin() {
+	local user_args
+	user_args=$(suricata_nfq_user_args)
 	cat <<DROPIN
 # Managed by dpistack: SURICATA_MODE=ips with IPS_METHOD=nfq.
 [Service]
 Type=simple
 PIDFile=
 ExecStart=
-ExecStart=$(command -v suricata || echo /usr/bin/suricata) -c $(path_suricata_yaml) --pidfile ${DPISTACK_ROOT}/run/suricata.pid -q ${IPS_QUEUE_NUM}
+ExecStart=$(command -v suricata || echo /usr/bin/suricata) -c $(path_suricata_yaml) --pidfile ${DPISTACK_ROOT}/run/suricata.pid -q ${IPS_QUEUE_NUM}${user_args:+ $user_args}
 DROPIN
 }
 

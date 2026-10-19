@@ -57,10 +57,32 @@ run_menu() {
 }
 
 @test "criterion 2: no terminal, no DPISTACK_INPUT, no -y exits 2 with a hint about -y" {
-	run bash "$REPO_DIR/install.sh" install \
+	run env DPISTACK_TTY_DEV=/nonexistent bash "$REPO_DIR/install.sh" install \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no </dev/null
 	[ "$status" -eq 2 ]
 	[[ "$output" == *"-y"* ]]
+}
+
+@test "curl | bash: stdin is a pipe, the menu reads the terminal device instead" {
+	local tty_file
+	tty_file="$(mktemp)"
+	printf 'q\ny\n' >"$tty_file"
+	run bash -c "echo 'not for the menu' | env DPISTACK_TTY_DEV='$tty_file' bash '$REPO_DIR/install.sh' install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no"
+	rm -f "$tty_file"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Быстрая установка"* ]]
+	[[ "$output" != *"нет терминала"* ]]
+}
+
+@test "curl | bash: reconfigure menu also finds the terminal device" {
+	local tty_file
+	tty_file="$(mktemp)"
+	printf 'q\ny\n' >"$tty_file"
+	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
+	printf 'SURICATA_SOURCE=oisf\nNDPI_ENABLE=no\n' >"$CONF_FILE"
+	run bash -c "echo x | env DPISTACK_TTY_DEV='$tty_file' bash '$REPO_DIR/install.sh' reconfigure"
+	rm -f "$tty_file"
+	[[ "$output" != *"нет терминала"* ]]
 }
 
 @test "criterion 3: an invalid value is rejected with the allowed list, old value kept" {

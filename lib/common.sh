@@ -167,7 +167,9 @@ write_rendered_file() {
 	fi
 
 	printf '%s\n' "$content" | dry_run_write "$path" "$mode"
-	state_set_file_hash "$path" "$new_hash"
+	# A dry run wrote nothing: recording the hash would make the next real
+	# run take the old file for a hand-edited one and leave it alone.
+	[[ "${DRY_RUN:-0}" == "1" ]] || state_set_file_hash "$path" "$new_hash"
 }
 
 backup() {

@@ -80,6 +80,16 @@ diag собирает отчёт для разбора проблем (плат�
 EOF
 }
 
+# require_value <option> <argument count left> - an option that takes a value
+# and got none: `shift 2` would not move and the loop would spin forever.
+require_value() {
+	if (($2 < 2)); then
+		echo "у опции $1 нет значения" >&2
+		usage
+		exit 2
+	fi
+}
+
 parse_args() {
 	if [[ $# -eq 0 ]]; then
 		usage
@@ -90,10 +100,12 @@ parse_args() {
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
 		--config)
+			require_value "$1" "$#"
 			CONFIG_FILE="${2:-}"
 			shift 2
 			;;
 		--set)
+			require_value "$1" "$#"
 			SET_ARGS+=("${2:-}")
 			shift 2
 			;;
@@ -110,10 +122,12 @@ parse_args() {
 			shift
 			;;
 		--only)
+			require_value "$1" "$#"
 			ONLY_STEPS="${2:-}"
 			shift 2
 			;;
 		--skip)
+			require_value "$1" "$#"
 			SKIP_STEPS="${2:-}"
 			shift 2
 			;;
@@ -173,10 +187,13 @@ validate_step_names() {
 	done
 }
 
+# have_input_source - the menu has somewhere to read from: DPISTACK_INPUT, a
+# terminal on stdin, or (curl | bash: stdin is the script) the terminal device
+# itself. DPISTACK_TTY_DEV replaces /dev/tty, the tests use it.
 have_input_source() {
 	[[ -n "${DPISTACK_INPUT:-}" ]] && return 0
 	[[ -t 0 ]] && return 0
-	return 1
+	{ : <"${DPISTACK_TTY_DEV:-/dev/tty}"; } 2>/dev/null
 }
 
 layer_config_common() {
@@ -494,6 +511,13 @@ cmd_uninstall() {
 	fi
 
 	layer_config_common
+
+	if [[ "$DRY_RUN" == "1" ]]; then
+		# Everything below removes files with plain rm: a dry run only lists.
+		echo "dry-run: uninstall остановил бы и убрал таймеры и службы dpistack, цепочку DPISTACK, drop-in режима, конфиги ($(path_conf), $(path_secrets)), состояние ($(path_state_dir)) и копии программы; ничего не изменено"
+		[[ "$PURGE" == "1" ]] && echo "dry-run: с --purge ещё конфиги и данные компонентов (suricata.yaml, правила, ntopng, EveBox, TLS, данные метрик, пользователи)"
+		return 0
+	fi
 
 	run systemctl disable --now "$RULES_TIMER" 2>/dev/null || true
 	rm -f "$(path_rules_timer_unit)" "$(path_rules_service_unit)"

@@ -49,6 +49,12 @@ FAKE
 #!/usr/bin/env bash
 echo "This is Suricata version 8.0.1 RELEASE"
 FAKE
+	# No package is installed here whatever the host has (a real suricata
+	# package would win over the fake binary above).
+	cat >"$FAKE_BIN/dpkg-query" <<'FAKE'
+#!/usr/bin/env bash
+exit 1
+FAKE
 	chmod +x "$FAKE_BIN"/*
 	PATH="$FAKE_BIN:$PATH"
 	export PATH

@@ -251,14 +251,31 @@ suricata_mode_dropin_wanted() {
 	[[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "nfq" ]]
 }
 
+# suricata_nfq_user_args - "--user suricata --group suricata" when Suricata
+# can run unprivileged: the user exists and owns the log directory (the RPM
+# layout; the RPM unit already starts with --user). It binds the queue as
+# root and drops the rights afterwards (checked with a real NFQUEUE: the
+# process runs as that user, the queue stays). Without that user, or with a
+# log directory it cannot write, the old behaviour stays: root.
+suricata_nfq_user_args() {
+	local log_owner
+	getent passwd suricata >/dev/null 2>&1 || return 0
+	# DPISTACK_TEST_LOG_OWNER: the tests cannot chown a directory.
+	log_owner="${DPISTACK_TEST_LOG_OWNER:-$(stat -c %U "$(dirname "$(path_suricata_eve_json)")" 2>/dev/null)}" || return 0
+	[[ "$log_owner" == "suricata" ]] || return 0
+	echo "--user suricata --group suricata"
+}
+
 suricata_render_mode_dropin() {
+	local user_args
+	user_args=$(suricata_nfq_user_args)
 	cat <<DROPIN
 # Managed by dpistack: SURICATA_MODE=ips with IPS_METHOD=nfq.
 [Service]
 Type=simple
 PIDFile=
 ExecStart=
-ExecStart=$(command -v suricata || echo /usr/bin/suricata) -c $(path_suricata_yaml) --pidfile ${DPISTACK_ROOT}/run/suricata.pid -q ${IPS_QUEUE_NUM}
+ExecStart=$(command -v suricata || echo /usr/bin/suricata) -c $(path_suricata_yaml) --pidfile ${DPISTACK_ROOT}/run/suricata.pid -q ${IPS_QUEUE_NUM}${user_args:+ $user_args}
 DROPIN
 }
 

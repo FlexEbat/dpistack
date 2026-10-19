@@ -62,6 +62,13 @@ if [[ -d panel ]]; then
 	echo "== go test =="
 	(cd panel && go test ./...) || fail "go test"
 
+	echo "== panel js =="
+	if command -v node >/dev/null 2>&1; then
+		(cd panel/web && node --test test/) || fail "panel js"
+	else
+		echo "node not found, skipped"
+	fi
+
 	echo "== panel budget =="
 	bash scripts/panel-budget.sh || fail "panel budget"
 fi

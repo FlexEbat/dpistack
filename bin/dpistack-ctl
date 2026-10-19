@@ -672,6 +672,14 @@ mode_check_ips_possible() {
 	command -v suricata >/dev/null 2>&1 || fail 4 "mode ips: suricata не установлена"
 }
 
+# mode_drop_rules_present - something can drop: a "drop" or "reject" rule in
+# local.rules, or a line in drop.conf (suricata-update turns the rules it
+# names into drop). Without either IPS only alerts, like IDS.
+mode_drop_rules_present() {
+	grep -Eqs '^[[:space:]]*(drop|reject)[[:space:]]' "$(path_suricata_local_rules)" && return 0
+	grep -Eqs '^[[:space:]]*[^#[:space:]]' "$(path_suricata_drop_conf)"
+}
+
 mode_go_ids() {
 	mode_cancel_timer
 	rm -f "$(path_mode_pending)"
@@ -767,6 +775,8 @@ cmd_mode() {
 		fail 1 "mode ips: не удалось запустить таймер отката, режим возвращён в ids"
 	fi
 	echo "режим ips включён; подтвердите командой mode-confirm в течение ${timeout} с, иначе вернётся ids"
+	mode_drop_rules_present ||
+		echo "предупреждение: правил drop нет (ни в local.rules, ни в drop.conf), IPS будет только оповещать, как IDS"
 }
 
 cmd_mode_confirm() {

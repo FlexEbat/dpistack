@@ -173,6 +173,19 @@ strip_times() { sed 's/^[0-9T:-]*Z //'; }
 	[ -n "$output" ]
 }
 
+@test "curl | bash install: the unpacked installer opens the menu from the terminal device" {
+	DPISTACK_ROOT="$(new_root)"
+	export DPISTACK_ROOT
+	local tty_file
+	tty_file="$(mktemp)"
+	printf 'q\ny\n' >"$tty_file"
+	run bash -c "cat '$BUNDLE' | env DPISTACK_TTY_DEV='$tty_file' bash -s -- install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no"
+	rm -f "$tty_file"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Быстрая установка"* ]]
+	[[ "$output" != *"нет терминала"* ]]
+}
+
 @test "the gate rebuilds nothing: it checks the bundle" {
 	grep -q 'scripts/bundle.sh --check' "$REPO_DIR/scripts/gate.sh"
 	grep -q 'dpistack-install.sh' "$REPO_DIR/scripts/gate.sh"

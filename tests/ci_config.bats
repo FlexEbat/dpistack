@@ -77,6 +77,18 @@ list_actions() {
 	done
 }
 
+@test "the release publishes the single-file installer and the panel binaries with checksums" {
+	grep -q 'cp dpistack-install.sh dist/' "$WF/release.yml"
+	grep -q 'dist/dpistack-install.sh ' "$WF/release.yml"
+	grep -q 'dpistack-install.sh.sha256' "$WF/release.yml"
+	[ -f "$REPO_DIR/dpistack-install.sh" ]
+}
+
+@test "the gate runs the panel screen tests with node" {
+	grep -q 'node --test' "$REPO_DIR/scripts/gate.sh"
+	[ -f "$REPO_DIR/panel/web/test/mode.test.mjs" ]
+}
+
 @test "the gate runs as root in every workflow: the installer refuses to run otherwise" {
 	run grep -n 'scripts/gate.sh' "$WF"/ci.yml "$WF"/release.yml
 	[ "$status" -eq 0 ]

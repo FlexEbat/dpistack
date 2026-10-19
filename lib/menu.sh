@@ -38,7 +38,7 @@ menu_red() { menu_c 31 "$1"; }
 MENU_INPUT_OPENED=0
 menu_open_input() {
 	[[ "$MENU_INPUT_OPENED" == "1" ]] && return 0
-	exec 8<"${DPISTACK_INPUT:-/dev/tty}"
+	exec 8<"${DPISTACK_INPUT:-${DPISTACK_TTY_DEV:-/dev/tty}}"
 	MENU_INPUT_OPENED=1
 	trap 'menu_on_interrupt' INT
 }
