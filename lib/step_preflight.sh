@@ -30,12 +30,12 @@ preflight_panel_reasons() {
 		fi
 		return 0
 	fi
-	if [[ ! -d "$SCRIPT_DIR/panel" ]]; then
+	if [[ ! -d "$ORIGIN_DIR/panel" ]]; then
 		reasons+=("панель нечем взять: рядом с install.sh нет ни готового бинарника ($(basename "$(panel_prebuilt_path)")), ни каталога panel/ с исходниками")
 		return 0
 	fi
 	local need have
-	need=$(awk '/^go /{print $2; exit}' "$SCRIPT_DIR/panel/go.mod" 2>/dev/null)
+	need=$(awk '/^go /{print $2; exit}' "$ORIGIN_DIR/panel/go.mod" 2>/dev/null)
 	if ! command -v go >/dev/null 2>&1; then
 		reasons+=("панель нечем взять: нет Go (нужен Go ${need:-новее}) и рядом с install.sh нет готового бинарника ($(basename "$(panel_prebuilt_path)"))")
 		return 0

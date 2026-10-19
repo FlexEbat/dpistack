@@ -57,11 +57,13 @@ export function start(api, els, onError) {
     }, 1000);
   }
 
-  async function load() {
+  // keepError: the read after a failed switch must not wipe the message that
+  // says why it failed (the same fault as R86 on the interfaces block).
+  async function load(keepError = false) {
     try {
       const st = await api("/api/mode");
       if (!running) return;
-      els.error.textContent = "";
+      if (!keepError) els.error.textContent = "";
       render(st);
     } catch (err) {
       fail(err);
@@ -91,7 +93,7 @@ export function start(api, els, onError) {
     } catch (err) {
       els.message.textContent = "";
       fail(err);
-      await load(); // the mode as the server has it
+      await load(true); // the mode as the server has it, the error stays
     } finally {
       setBusy(false);
     }

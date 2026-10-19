@@ -339,12 +339,19 @@ config_diff_and_steps() {
 	# shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure
 	CONFIG_CHANGE_WEIGHT="$overall_weight"
 	# shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure
-	CONFIG_AFFECTED_STEPS=("${!steps_seen[@]}")
+	# In the order of the pipeline (suricata before rules, access before
+	# panel...), not in the arbitrary order of an associative array; a step
+	# that is not in STEPS_ORDER goes last, sorted.
+	CONFIG_AFFECTED_STEPS=()
+	for step in "${STEPS_ORDER[@]:-}"; do
+		[[ -n "${steps_seen[$step]:-}" ]] && CONFIG_AFFECTED_STEPS+=("$step")
+	done
+	for step in $(printf '%s\n' "${!steps_seen[@]}" | sort); do
+		[[ " ${CONFIG_AFFECTED_STEPS[*]} " == *" $step "* ]] || CONFIG_AFFECTED_STEPS+=("$step")
+	done
 
 	echo "Затронутые шаги:"
-	for step in "${!steps_seen[@]}"; do
-		echo "  $step"
-	done | sort
+	printf '  %s\n' "${CONFIG_AFFECTED_STEPS[@]}"
 
 	echo "Тип изменения: $overall_weight"
 	return 0

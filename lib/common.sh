@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack-ctl version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack-ctl
-DPISTACK_VERSION="0.19.0"
+DPISTACK_VERSION="0.20.1"
 
 : "${DRY_RUN:=0}"
 
@@ -167,7 +167,9 @@ write_rendered_file() {
 	fi
 
 	printf '%s\n' "$content" | dry_run_write "$path" "$mode"
-	state_set_file_hash "$path" "$new_hash"
+	# A dry run wrote nothing: recording the hash would make the next real
+	# run take the old file for a hand-edited one and leave it alone.
+	[[ "${DRY_RUN:-0}" == "1" ]] || state_set_file_hash "$path" "$new_hash"
 }
 
 backup() {

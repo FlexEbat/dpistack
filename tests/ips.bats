@@ -263,3 +263,43 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	[ ! -e "$DROPIN" ]
 	[ "$(iptables-save)" = "$before" ]
 }
+
+@test "NFQ drop-in: no --user when the log directory is not owned by suricata, --user when it is" {
+	installed
+	run "$CTL" mode ips
+	[ "$status" -eq 0 ]
+	! grep -q -- '--user' "$DROPIN"
+	DPISTACK_TEST_LOG_OWNER=suricata run "$CTL" reconfigure
+	run "$CTL" mode ids
+	DPISTACK_TEST_LOG_OWNER=suricata run "$CTL" mode ips
+	[ "$status" -eq 0 ]
+	grep -q -- ' -q 0 --user suricata --group suricata$' "$DROPIN"
+}
+
+@test "mode ips warns when nothing can drop, and stays quiet when a drop rule or drop.conf line exists" {
+	installed
+	run "$CTL" mode ips
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"правил drop нет"* ]]
+	run "$CTL" mode ids
+	mkdir -p "$DPISTACK_ROOT/etc/suricata/rules"
+	echo 'drop tcp any any -> any 8080 (msg:"x"; sid:1000001; rev:1;)' >"$DPISTACK_ROOT/etc/suricata/rules/local.rules"
+	run "$CTL" mode ips
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"правил drop нет"* ]]
+	run "$CTL" mode ids
+	: >"$DPISTACK_ROOT/etc/suricata/rules/local.rules"
+	echo 'group:emerging-p2p.rules' >"$DPISTACK_ROOT/etc/suricata/drop.conf"
+	run "$CTL" mode ips
+	[[ "$output" != *"правил drop нет"* ]]
+}
+
+@test "a failed rollback service is reset before the next timer is started, so the unit name is free" {
+	installed
+	run "$CTL" mode ips
+	[ "$status" -eq 0 ]
+	grep -q '^systemctl reset-failed dpistack-mode-rollback.timer dpistack-mode-rollback.service' "$MOCK_CALLS_LOG"
+	reset=$(grep -n 'systemctl reset-failed dpistack-mode-rollback' "$MOCK_CALLS_LOG" | head -1 | cut -d: -f1)
+	run_line=$(grep -n '^systemd-run --unit=dpistack-mode-rollback' "$MOCK_CALLS_LOG" | head -1 | cut -d: -f1)
+	[ "$reset" -lt "$run_line" ]
+}

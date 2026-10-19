@@ -102,3 +102,23 @@ run_install() {
 	perm=$(stat -c '%a' "$secrets_file")
 	[ "$perm" = "600" ]
 }
+
+@test "reconfigure applies the affected steps in pipeline order, not in hash order" {
+	cat >"$BATS_TEST_TMPDIR/t.sh" <<'EOF_T'
+cd "$REPO_DIR"
+source lib/paths.sh; source lib/common.sh; source lib/state.sh
+source lib/schema.sh; source lib/config.sh
+STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics access panel watch verify)
+config_reset; config_load_defaults
+: >"$BATS_TEST_TMPDIR/old.conf"
+config_diff_and_steps "$BATS_TEST_TMPDIR/old.conf" >/dev/null
+echo "${CONFIG_AFFECTED_STEPS[*]}"
+EOF_T
+	run env REPO_DIR="$REPO_DIR" BATS_TEST_TMPDIR="$BATS_TEST_TMPDIR" DPISTACK_ROOT="$(mktemp -d)" bash "$BATS_TEST_TMPDIR/t.sh"
+	[ "$status" -eq 0 ]
+	local want="" s
+	for s in preflight selfinstall ndpi suricata rules redis ntopng evebox metrics access panel watch verify; do
+		[[ " $output " == *" $s "* ]] && want+="$s "
+	done
+	[ "$output" = "${want% }" ]
+}

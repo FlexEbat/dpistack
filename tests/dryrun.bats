@@ -88,3 +88,41 @@ teardown() {
 	[ ! -e "$DPISTACK_ROOT/etc/dpistack/panel.auth" ]
 	[[ "$output" != *"dry-run-secret-123"* ]]
 }
+
+@test "an option that needs a value and gets none exits 2 instead of looping forever" {
+	for opt in --set --config --only --skip; do
+		run timeout 10 bash "$REPO_DIR/install.sh" install "$opt"
+		[ "$status" -eq 2 ]
+		[[ "$output" == *"нет значения"* ]]
+	done
+}
+
+@test "uninstall --dry-run removes nothing: conf, secrets and state stay" {
+	mkdir -p "$DPISTACK_ROOT/etc/dpistack" "$DPISTACK_ROOT/var/lib/dpistack"
+	echo 'SURICATA_SOURCE=oisf' >"$CONF_FILE"
+	echo 'METRICS_TOKEN=x' >"$DPISTACK_ROOT/etc/dpistack/secrets.conf"
+	echo 'step.suricata.status=done' >"$DPISTACK_ROOT/var/lib/dpistack/state"
+	run bash "$REPO_DIR/install.sh" uninstall --dry-run
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"dry-run"* ]]
+	[ -f "$CONF_FILE" ]
+	[ -f "$DPISTACK_ROOT/etc/dpistack/secrets.conf" ]
+	grep -q 'step.suricata.status=done' "$DPISTACK_ROOT/var/lib/dpistack/state"
+}
+
+@test "a dry run does not record the hash of a file it did not write, so the real run still updates it" {
+	cat >"$BATS_TEST_TMPDIR/t.sh" <<'EOF_T'
+source "$REPO_DIR/lib/paths.sh"
+source "$REPO_DIR/lib/common.sh"
+source "$REPO_DIR/lib/state.sh"
+f="$DPISTACK_ROOT/etc/f.conf"
+echo old >"$f"
+DRY_RUN=1 write_rendered_file "$f" "new content"
+DRY_RUN=0 write_rendered_file "$f" "new content"
+cat "$f"
+EOF_T
+	run env REPO_DIR="$REPO_DIR" bash "$BATS_TEST_TMPDIR/t.sh"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"new content"* ]]
+	[[ "$output" != *"изменён вручную"* ]]
+}
