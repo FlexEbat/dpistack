@@ -19,13 +19,13 @@ panel_prebuilt_path() {
 	aarch64 | arm64) arch=arm64 ;;
 	*) arch=$(uname -m) ;;
 	esac
-	for f in "$SCRIPT_DIR/dpistack-panel-linux-$arch" "$SCRIPT_DIR/dpistack-panel"; do
+	for f in "$ORIGIN_DIR/dpistack-panel-linux-$arch" "$ORIGIN_DIR/dpistack-panel"; do
 		if [[ -f "$f" ]]; then
 			echo "$f"
 			return 0
 		fi
 	done
-	echo "$SCRIPT_DIR/dpistack-panel-linux-$arch"
+	echo "$ORIGIN_DIR/dpistack-panel-linux-$arch"
 }
 
 # panel_source_mode - build or prebuilt. auto (the default) takes the ready
@@ -47,8 +47,8 @@ panel_source_mode() {
 # panel_src_hash - one hash over everything the binary is built from, so
 # a changed source or web file rebuilds it and an unchanged one does not.
 panel_src_hash() {
-	[[ -d "$SCRIPT_DIR/panel" ]] || return 1
-	(cd "$SCRIPT_DIR/panel" &&
+	[[ -d "$ORIGIN_DIR/panel" ]] || return 1
+	(cd "$ORIGIN_DIR/panel" &&
 		find . -type f \( -name '*.go' -o -name go.mod -o -name go.sum -o -path './web/*' \) -print0 |
 		sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
 }
@@ -144,7 +144,7 @@ panel_bin_install() {
 		return 0
 	fi
 	tmp=$(mktemp) || return 1
-	if ! (cd "$SCRIPT_DIR/panel" &&
+	if ! (cd "$ORIGIN_DIR/panel" &&
 		run env CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$tmp" ./cmd/panel); then
 		rm -f "$tmp"
 		log "ERROR" "panel: сборка не удалась (нужен Go не старее версии в panel/go.mod; готовый бинарник: PANEL_SOURCE=prebuilt)"

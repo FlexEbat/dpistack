@@ -23,13 +23,20 @@ echo "== shellcheck =="
 # bug, not a script problem; lib/menu.sh is the first file dense
 # enough in Russian strings to hit it consistently.
 # shellcheck disable=SC2046
-if ! LANG=C.utf8 LC_ALL=C.utf8 shellcheck -x install.sh lib/*.sh bin/dpistack-ctl bin/dpistack-watch scripts/*.sh; then
+if ! LANG=C.utf8 LC_ALL=C.utf8 shellcheck -x install.sh lib/*.sh bin/dpistack-ctl bin/dpistack-watch scripts/*.sh dpistack-install.sh; then
 	fail shellcheck
 fi
 
 echo "== security =="
 if ! bash scripts/security.sh; then
 	fail security
+fi
+
+echo "== bundle =="
+# dpistack-install.sh is generated: a source changed without rebuilding it
+# fails here, not on a user's machine.
+if ! bash scripts/bundle.sh --check; then
+	fail bundle
 fi
 
 echo "== conf example =="

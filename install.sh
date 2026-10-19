@@ -8,6 +8,11 @@ set -uo pipefail
 # readlink -f: `dpistack` is a symlink to the installed install.sh.
 SCRIPT_DIR=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" &>/dev/null && pwd)
 LIB_DIR="$SCRIPT_DIR/lib"
+# Where things that do not travel inside the installer lie: the panel
+# source or a prebuilt binary. Next to install.sh unless dpistack-install.sh
+# (one file, unpacked elsewhere) says otherwise.
+# shellcheck disable=SC2034 # read by lib/step_panel.sh and step_preflight.sh
+ORIGIN_DIR="${DPISTACK_ORIGIN_DIR:-$SCRIPT_DIR}"
 
 # shellcheck source=lib/paths.sh
 source "$LIB_DIR/paths.sh"
