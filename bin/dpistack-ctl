@@ -660,6 +660,9 @@ mode_pending_deadline() {
 
 mode_cancel_timer() {
 	systemctl stop "${MODE_ROLLBACK_UNIT}.timer" "${MODE_ROLLBACK_UNIT}.service" >/dev/null 2>&1 || true
+	# A rollback service that failed stays loaded under the same name, and
+	# the next systemd-run --unit=... would be refused ("already loaded").
+	systemctl reset-failed "${MODE_ROLLBACK_UNIT}.timer" "${MODE_ROLLBACK_UNIT}.service" >/dev/null 2>&1 || true
 }
 
 # mode_check_ips_possible - everything IPS needs, or the refusal (code 3).

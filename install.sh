@@ -188,7 +188,7 @@ validate_step_names() {
 }
 
 # have_input_source - the menu has somewhere to read from: DPISTACK_INPUT, a
-# terminal on stdin, or (curl | bash: stdin is the script) the terminal device
+# terminal on stdin, or (a run fed through a pipe: stdin is the script) the terminal device
 # itself. DPISTACK_TTY_DEV replaces /dev/tty, the tests use it.
 have_input_source() {
 	[[ -n "${DPISTACK_INPUT:-}" ]] && return 0

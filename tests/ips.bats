@@ -293,3 +293,13 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	run "$CTL" mode ips
 	[[ "$output" != *"правил drop нет"* ]]
 }
+
+@test "a failed rollback service is reset before the next timer is started, so the unit name is free" {
+	installed
+	run "$CTL" mode ips
+	[ "$status" -eq 0 ]
+	grep -q '^systemctl reset-failed dpistack-mode-rollback.timer dpistack-mode-rollback.service' "$MOCK_CALLS_LOG"
+	reset=$(grep -n 'systemctl reset-failed dpistack-mode-rollback' "$MOCK_CALLS_LOG" | head -1 | cut -d: -f1)
+	run_line=$(grep -n '^systemd-run --unit=dpistack-mode-rollback' "$MOCK_CALLS_LOG" | head -1 | cut -d: -f1)
+	[ "$reset" -lt "$run_line" ]
+}

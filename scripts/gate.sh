@@ -64,7 +64,7 @@ if [[ -d panel ]]; then
 
 	echo "== panel js =="
 	if command -v node >/dev/null 2>&1; then
-		(cd panel/web && node --test test/) || fail "panel js"
+		(cd panel/web && node --test test/*.test.mjs) || fail "panel js"
 	else
 		echo "node not found, skipped"
 	fi

@@ -223,7 +223,7 @@ validate_step_names() {
 }
 
 # have_input_source - the menu has somewhere to read from: DPISTACK_INPUT, a
-# terminal on stdin, or (curl | bash: stdin is the script) the terminal device
+# terminal on stdin, or (a run fed through a pipe: stdin is the script) the terminal device
 # itself. DPISTACK_TTY_DEV replaces /dev/tty, the tests use it.
 have_input_source() {
 	[[ -n "${DPISTACK_INPUT:-}" ]] && return 0
@@ -1444,6 +1444,9 @@ mode_pending_deadline() {
 
 mode_cancel_timer() {
 	systemctl stop "${MODE_ROLLBACK_UNIT}.timer" "${MODE_ROLLBACK_UNIT}.service" >/dev/null 2>&1 || true
+	# A rollback service that failed stays loaded under the same name, and
+	# the next systemd-run --unit=... would be refused ("already loaded").
+	systemctl reset-failed "${MODE_ROLLBACK_UNIT}.timer" "${MODE_ROLLBACK_UNIT}.service" >/dev/null 2>&1 || true
 }
 
 # mode_check_ips_possible - everything IPS needs, or the refusal (code 3).
@@ -2404,7 +2407,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack-ctl version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack-ctl
-DPISTACK_VERSION="0.20.0"
+DPISTACK_VERSION="0.20.1"
 
 : "${DRY_RUN:=0}"
 
