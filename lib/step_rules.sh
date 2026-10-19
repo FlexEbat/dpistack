@@ -90,6 +90,11 @@ rules_write_timer_unit() {
 		echo "[Service]"
 		echo "Type=oneshot"
 		echo "ExecStart=/bin/sh -c $(printf '%q' "$(rules_update_command)")"
+		# suricata-update only writes the file: without this the running
+		# Suricata kept the old rules until its next restart. The leading
+		# "-" lets a failed reload (Suricata stopped) pass; native and
+		# docker alike go through the ctl.
+		echo "ExecStartPost=-$(path_ctl_bin) reload suricata"
 	} | dry_run_write "$(path_rules_service_unit)"
 }
 
@@ -127,6 +132,8 @@ step_rules_check() {
 	if [[ "${CONF[RULES_UPDATE]:-on}" == "on" ]]; then
 		[[ -f "$(path_rules_timer_unit)" ]] || return 1
 		grep -q "^OnCalendar=${CONF[RULES_UPDATE_CALENDAR]:-weekly}\$" "$(path_rules_timer_unit)" 2>/dev/null || return 1
+		# A service unit from before R133 has no reload after the update.
+		grep -q '^ExecStartPost=' "$(path_rules_service_unit)" 2>/dev/null || return 1
 	else
 		[[ -f "$(path_rules_timer_unit)" ]] && return 1
 	fi

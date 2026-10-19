@@ -71,3 +71,11 @@ install_base() {
 	[ -f "$RULESET" ]
 	grep -q "add-source" "$RULESET"
 }
+
+@test "the periodic update unit reloads the running Suricata after suricata-update (R133)" {
+	run install_base
+	[ "$status" -eq 0 ]
+	svc="$DPISTACK_ROOT/etc/systemd/system/dpistack-rules.service"
+	grep -q '^ExecStart=/bin/sh -c ' "$svc"
+	grep -Eq '^ExecStartPost=-.*dpistack-ctl reload suricata$' "$svc"
+}
