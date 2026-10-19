@@ -25,6 +25,8 @@ for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
 		source "$_lib/render.sh"
 		# shellcheck source=lib/runtime_docker.sh
 		source "$_lib/runtime_docker.sh"
+		# shellcheck source=lib/ips.sh
+		source "$_lib/ips.sh"
 		# shellcheck source=lib/step_rules.sh
 		source "$_lib/step_rules.sh"
 		# shellcheck source=lib/step_verify.sh
@@ -43,8 +45,10 @@ COMPONENTS=(suricata evebox ntopng redis victoriametrics prometheus panel watch 
 LOGS_MAX=1000
 LOGS_DEFAULT=100
 
-# Commands of the 4.5 table that later slices implement.
-PLANNED_COMMANDS=(mode mode-confirm)
+MODE_TIMEOUT_DEFAULT=120
+MODE_TIMEOUT_MIN=10
+MODE_TIMEOUT_MAX=3600
+MODE_ROLLBACK_UNIT="dpistack-mode-rollback"
 
 RULES_SEARCH_MAX=50
 
@@ -66,6 +70,10 @@ usage() {
   rules-sid enable|disable <sid>
   rules-search <запрос>              до 50 правил по sid или msg
   iface list|add|remove [имя]        интерфейсы захвата
+  mode ids|ips [--confirm-timeout S] режим Suricata; ips откатывается сам без mode-confirm (по умолчанию 120 с)
+  mode status [--json]               режим, метод и обратный отсчёт
+  mode-confirm                       подтвердить переключение в ips
+  fw apply|remove|restore            цепочка DPISTACK (restore: при загрузке)
   panel-passwd                       пароль панели со stdin
   test bittorrent|https|all [--json] проверочные тесты (раздел 10)
   health [--json]                    один прогон watchdog
@@ -612,13 +620,16 @@ cmd_reconfigure() {
 
 # iface_set_list <comma-list> - writes IFACES into dpistack.conf and
 # applies it; a failed apply puts the previous file back.
-iface_set_list() {
-	local list="$1" staging staged out rc
+# conf_apply_value <KEY> <value> - one key of dpistack.conf: checked as a
+# whole, committed with a backup, applied by reconfigure; the old file comes
+# back when reconfigure fails.
+conf_apply_value() {
+	local key="$1" value="$2" staging staged out rc
 	staging=$(path_staging_dir)
 	mkdir -p "$staging"
 	chmod 0700 "$staging"
 	staged="$staging/dpistack.conf"
-	awk -v v="$list" 'BEGIN{done=0} /^IFACES=/{print "IFACES=" v; done=1; next} {print} END{if(!done) print "IFACES=" v}' \
+	awk -v k="$key" -v v="$value" 'BEGIN{done=0} $0 ~ "^" k "=" {print k "=" v; done=1; next} {print} END{if(!done) print k "=" v}' \
 		"$(path_conf)" >"$staged"
 
 	out=$(config_validate_staged dpistack.conf "$staged")
@@ -626,7 +637,7 @@ iface_set_list() {
 	if ((rc != 0)); then
 		rm -f "$staged"
 		[[ -n "$out" ]] && echo "$out"
-		fail 3 "IFACES: проверка не пройдена, файл не изменён"
+		fail 3 "$key: проверка не пройдена, файл не изменён"
 	fi
 	config_commit dpistack.conf "$staged"
 	rm -f "$staged"
@@ -634,6 +645,171 @@ iface_set_list() {
 		cmd_config_revert dpistack.conf >/dev/null
 		fail 1 "reconfigure не удался, dpistack.conf возвращён"
 	fi
+}
+
+iface_set_list() { conf_apply_value IFACES "$1"; }
+
+# --------------------------------------------------------------- IPS mode
+
+mode_now() { "${DPISTACK_NOW_CMD:-date}" +%s; }
+
+# mode_pending_deadline - epoch seconds of the rollback, empty when none.
+mode_pending_deadline() {
+	sed -n 's/^deadline=//p' "$(path_mode_pending)" 2>/dev/null | head -1
+}
+
+mode_cancel_timer() {
+	systemctl stop "${MODE_ROLLBACK_UNIT}.timer" "${MODE_ROLLBACK_UNIT}.service" >/dev/null 2>&1 || true
+}
+
+# mode_check_ips_possible - everything IPS needs, or the refusal (code 3).
+mode_check_ips_possible() {
+	[[ "$(conf_get SURICATA_RUNTIME native)" == "native" ]] ||
+		fail 3 "mode ips: только для SURICATA_RUNTIME=native"
+	if [[ "$(conf_get IPS_METHOD nfq)" == "nfq" ]]; then
+		command -v iptables >/dev/null 2>&1 || fail 3 "mode ips: не найден iptables (нужен для цепочки DPISTACK)"
+	fi
+	command -v suricata >/dev/null 2>&1 || fail 4 "mode ips: suricata не установлена"
+}
+
+mode_go_ids() {
+	mode_cancel_timer
+	rm -f "$(path_mode_pending)"
+	# The rules go first: with no NFQUEUE jump, nothing waits for Suricata
+	# while it restarts in ids mode.
+	ips_fw_remove
+	if [[ "$(conf_get SURICATA_MODE ids)" != "ids" ]]; then
+		conf_apply_value SURICATA_MODE ids
+	fi
+}
+
+cmd_mode_status() {
+	local json=0
+	[[ "${1:-}" == "--json" ]] && json=1
+	local mode method deadline now remaining=0 pending=false
+	mode=$(conf_get SURICATA_MODE ids)
+	method=$(conf_get IPS_METHOD nfq)
+	deadline=$(mode_pending_deadline)
+	if [[ -n "$deadline" ]]; then
+		now=$(mode_now)
+		remaining=$((deadline - now))
+		((remaining < 0)) && remaining=0
+		pending=true
+	fi
+	if ((json)); then
+		printf '{"mode":"%s","method":"%s","pending":%s,"remaining_sec":%d}\n' "$mode" "$method" "$pending" "$remaining"
+	else
+		echo "режим: $mode (метод $method)"
+		[[ "$pending" == "true" ]] && echo "ожидает mode-confirm: ${remaining} с до отката в ids"
+	fi
+	return 0
+}
+
+cmd_mode() {
+	[[ $# -ge 1 ]] || fail 2 "mode: ids|ips|status"
+	local target="$1"
+	shift
+	case "$target" in
+	status)
+		cmd_mode_status "$@"
+		return
+		;;
+	ids | ips) ;;
+	*) fail 2 "mode: ids|ips|status" ;;
+	esac
+
+	local timeout="$MODE_TIMEOUT_DEFAULT"
+	while (($# > 0)); do
+		case "$1" in
+		--confirm-timeout)
+			[[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || fail 2 "mode: --confirm-timeout требует число секунд"
+			timeout="$2"
+			shift 2
+			;;
+		*) fail 2 "mode: неизвестный аргумент: $1" ;;
+		esac
+	done
+	((timeout >= MODE_TIMEOUT_MIN && timeout <= MODE_TIMEOUT_MAX)) ||
+		fail 2 "mode: --confirm-timeout от $MODE_TIMEOUT_MIN до $MODE_TIMEOUT_MAX секунд"
+
+	if [[ "$target" == "ids" ]]; then
+		mode_go_ids
+		echo "режим ids"
+		return 0
+	fi
+
+	mode_check_ips_possible
+	if [[ "$(conf_get SURICATA_MODE ids)" == "ips" && -z "$(mode_pending_deadline)" ]]; then
+		echo "уже в режиме ips"
+		return 0
+	fi
+
+	# Suricata restarts in ips first; only then do the rules start sending
+	# it traffic. --queue-bypass is there for the time it is down.
+	mode_cancel_timer
+	conf_apply_value SURICATA_MODE ips
+	if [[ "$(conf_get IPS_METHOD nfq)" == "nfq" ]]; then
+		if ! ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)"; then
+			ips_fw_remove
+			conf_apply_value SURICATA_MODE ids
+			fail 1 "mode ips: правила iptables не применились, режим возвращён в ids"
+		fi
+	fi
+
+	local deadline
+	deadline=$(($(mode_now) + timeout))
+	mkdir -p "$(path_state_dir)"
+	printf 'deadline=%s\n' "$deadline" >"$(path_mode_pending)"
+	if ! systemd-run --unit="$MODE_ROLLBACK_UNIT" --on-active="${timeout}s" --timer-property=AccuracySec=1s \
+		"$(path_ctl_bin)" mode-rollback >/dev/null 2>&1; then
+		# Without a timer there is nothing to bring the host back.
+		mode_go_ids
+		fail 1 "mode ips: не удалось запустить таймер отката, режим возвращён в ids"
+	fi
+	echo "режим ips включён; подтвердите командой mode-confirm в течение ${timeout} с, иначе вернётся ids"
+}
+
+cmd_mode_confirm() {
+	[[ $# -eq 0 ]] || fail 2 "mode-confirm: без аргументов"
+	local deadline
+	deadline=$(mode_pending_deadline)
+	[[ -n "$deadline" ]] || fail 3 "mode-confirm: нечего подтверждать (переключения в ips нет или оно уже откатилось)"
+	if (($(mode_now) > deadline)); then
+		fail 3 "mode-confirm: время подтверждения истекло, режим возвращается в ids"
+	fi
+	mode_cancel_timer
+	rm -f "$(path_mode_pending)"
+	echo "режим ips подтверждён"
+}
+
+# mode-rollback runs from the timer (and at boot): an unconfirmed switch
+# goes back to ids, the DPISTACK rules go away.
+cmd_mode_rollback() {
+	[[ -n "$(mode_pending_deadline)" ]] || return 0
+	mode_go_ids
+	echo "режим ips не подтверждён, возвращён ids"
+}
+
+cmd_fw() {
+	[[ $# -eq 1 ]] || fail 2 "fw: apply|remove|restore"
+	case "$1" in
+	apply)
+		ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw apply: iptables отказал"
+		;;
+	remove) ips_fw_remove ;;
+	restore)
+		# Boot: an unconfirmed switch did not survive the reboot, the rest
+		# is put back as the config says.
+		if [[ -n "$(mode_pending_deadline)" ]]; then
+			cmd_mode_rollback
+		elif [[ "$(conf_get SURICATA_MODE ids)" == "ips" && "$(conf_get IPS_METHOD nfq)" == "nfq" ]]; then
+			ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw restore: iptables отказал"
+		elif ips_fw_present; then
+			ips_fw_remove
+		fi
+		;;
+	*) fail 2 "fw: apply|remove|restore" ;;
+	esac
 }
 
 cmd_iface() {
@@ -917,14 +1093,15 @@ main() {
 	rules-sid) cmd_rules_sid "$@" ;;
 	rules-search) cmd_rules_search "$@" ;;
 	iface) cmd_iface "$@" ;;
+	mode) cmd_mode "$@" ;;
+	mode-confirm) cmd_mode_confirm "$@" ;;
+	mode-rollback) cmd_mode_rollback "$@" ;;
+	fw) cmd_fw "$@" ;;
 	panel-passwd) cmd_panel_passwd "$@" ;;
 	test) cmd_test "$@" ;;
 	health) cmd_health "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
 	*)
-		if in_list "$cmd" "${PLANNED_COMMANDS[@]}"; then
-			fail 4 "$cmd: пока не реализовано"
-		fi
 		usage >&2
 		exit 2
 		;;

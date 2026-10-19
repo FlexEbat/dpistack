@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Mock systemd-run for bats tests: logs the call, exits with
+# MOCK_SYSTEMD_RUN_EXIT (default 0). The timer it would start is simulated
+# by the test calling `dpistack-ctl mode-rollback` itself.
+if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
+	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+fi
+exit "${MOCK_SYSTEMD_RUN_EXIT:-0}"

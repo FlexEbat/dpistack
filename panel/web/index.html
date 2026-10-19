@@ -45,6 +45,17 @@
     <p id="components-error" class="error" role="alert"></p>
     <p id="components-message" class="muted" aria-live="polite"></p>
     <section id="components-list"></section>
+    <div id="mode">
+      <h2>Режим Suricata</h2>
+      <p id="mode-error" class="error" role="alert"></p>
+      <p id="mode-status"></p>
+      <p id="mode-message" class="muted" aria-live="polite"></p>
+      <div class="toolbar">
+        <button id="mode-ips" type="button">Включить IPS</button>
+        <button id="mode-ids" type="button">Вернуть IDS</button>
+        <button id="mode-confirm" type="button" hidden>Подтвердить IPS</button>
+      </div>
+    </div>
     <div id="ifaces">
       <h2>Интерфейсы захвата</h2>
       <p id="ifaces-error" class="error" role="alert"></p>

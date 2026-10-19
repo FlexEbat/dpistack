@@ -67,7 +67,6 @@ SCHEMA_PATTERN[METRICS_TOKEN]='^[A-Za-z0-9._~-]+$'
 unset _url _cidr _word
 
 declare -A SCHEMA_NOT_YET_SUPPORTED
-SCHEMA_NOT_YET_SUPPORTED["SURICATA_MODE=ips"]=1
 
 _schema_add() {
 	# _schema_add <row as documented above>

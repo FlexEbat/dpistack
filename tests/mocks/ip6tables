@@ -1,7 +1,64 @@
 #!/usr/bin/env bash
-# Mock for bats tests (tech.md 11): records the call and exits with
-# MOCK_EXIT (default 0), so steps never touch the real system in CI.
+# Stateful mock of iptables/ip6tables for bats tests (tech.md 11). Rules
+# live in $MOCK_IPT_STATE.<tool> (default /tmp/mock-ipt.<tool>) as the lines
+# "-N CHAIN" and "-A CHAIN rule...", in order. Supports -w, -N -F -X -A -I
+# -D -C and -n -L <chain>; INPUT, OUTPUT and FORWARD always exist.
+# `iptables-save` (a symlink-like copy) prints the state.
+tool=$(basename "$0")
+state="${MOCK_IPT_STATE:-/tmp/mock-ipt}.${tool/-save/}"
+[[ "$tool" == "iptables-save" ]] && state="${MOCK_IPT_STATE:-/tmp/mock-ipt}.iptables"
+touch "$state"
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
-	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+	printf '%s %s\n' "$tool" "$*" >>"$MOCK_CALLS_LOG"
 fi
-exit "${MOCK_EXIT:-0}"
+if [[ "$tool" == "iptables-save" || "$tool" == "ip6tables-save" ]]; then
+	cat "$state"
+	exit 0
+fi
+args=("$@")
+[[ "${args[0]:-}" == "-w" ]] && args=("${args[@]:1}")
+builtin() { [[ "$1" == INPUT || "$1" == OUTPUT || "$1" == FORWARD ]]; }
+chain_exists() { builtin "$1" || grep -qxF -- "-N $1" "$state"; }
+op="${args[0]:-}"
+case "$op" in
+-N)
+	chain_exists "${args[1]}" && exit 1
+	echo "-N ${args[1]}" >>"$state"
+	;;
+-F)
+	chain_exists "${args[1]}" || exit 1
+	grep -v -- "^-A ${args[1]} " "$state" >"$state.new" || true
+	mv "$state.new" "$state"
+	;;
+-X)
+	grep -qxF -- "-N ${args[1]}" "$state" || exit 1
+	grep -vxF -- "-N ${args[1]}" "$state" >"$state.new" || true
+	mv "$state.new" "$state"
+	;;
+-A)
+	chain_exists "${args[1]}" || exit 1
+	echo "-A ${args[*]:1}" >>"$state"
+	;;
+-I)
+	chain_exists "${args[1]}" || exit 1
+	line="-A ${args[1]} ${args[*]:3}"
+	# before the first rule of that chain, or at the end
+	awk -v c="-A ${args[1]} " -v l="$line" 'BEGIN{d=0} index($0,c)==1 && !d {print l; d=1} {print} END{if(!d) print l}' "$state" >"$state.new"
+	mv "$state.new" "$state"
+	;;
+-C)
+	grep -qxF -- "-A ${args[*]:1}" "$state"
+	exit $?
+	;;
+-D)
+	grep -qxF -- "-A ${args[*]:1}" "$state" || exit 1
+	awk -v l="-A ${args[*]:1}" '$0==l && !d {d=1; next} {print}' "$state" >"$state.new"
+	mv "$state.new" "$state"
+	;;
+-n)
+	# -n -L <chain>
+	chain_exists "${args[2]}"
+	exit $?
+	;;
+esac
+exit 0

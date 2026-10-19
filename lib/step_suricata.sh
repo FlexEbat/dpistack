@@ -18,7 +18,13 @@ suricata_home_net_value() {
 suricata_render_af_packet_block() {
 	local ifaces="${CONF[IFACES]:-}"
 	local bpf="${CONF[BPF_FILTER]:-}"
-	local iface cluster_id=99
+	local iface cluster_id=99 idx=0
+	local -a all=()
+	IFS=',' read -ra all <<<"$ifaces"
+	# IPS over af-packet: interfaces are bridged in pairs (0<->1, 2<->3)
+	# and every packet is forwarded to the peer unless a rule drops it.
+	local ips_pairs=0
+	[[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "afpacket" ]] && ips_pairs=1
 	local IFS=','
 	for iface in $ifaces; do
 		[[ -z "$iface" ]] && continue
@@ -26,6 +32,11 @@ suricata_render_af_packet_block() {
 		echo "    cluster-id: ${cluster_id}"
 		echo "    cluster-type: cluster_flow"
 		echo "    defrag: yes"
+		if ((ips_pairs)); then
+			echo "    copy-mode: ips"
+			echo "    copy-iface: ${all[$((idx ^ 1))]}"
+		fi
+		idx=$((idx + 1))
 		[[ -n "$bpf" ]] && echo "    bpf-filter: \"${bpf}\""
 		cluster_id=$((cluster_id + 1))
 	done
@@ -232,6 +243,59 @@ suricata_render_service_unit() {
 		"SYSCONFDIR=${DPISTACK_ROOT}/etc/suricata/"
 }
 
+# suricata_mode_dropin_wanted - IPS over NFQUEUE needs Suricata started with
+# -q instead of --af-packet. A drop-in overrides only ExecStart (and the
+# service type, since the package units fork with -D), whichever unit the
+# package, the RPM or the source build brought.
+suricata_mode_dropin_wanted() {
+	[[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "nfq" ]]
+}
+
+suricata_render_mode_dropin() {
+	cat <<DROPIN
+# Managed by dpistack: SURICATA_MODE=ips with IPS_METHOD=nfq.
+[Service]
+Type=simple
+PIDFile=
+ExecStart=
+ExecStart=$(command -v suricata || echo /usr/bin/suricata) -c $(path_suricata_yaml) --pidfile ${DPISTACK_ROOT}/run/suricata.pid -q ${IPS_QUEUE_NUM}
+DROPIN
+}
+
+suricata_render_fw_unit() {
+	render_template "$SCRIPT_DIR/templates/dpistack-fw.service.tpl" "CTL=$(path_ctl_bin)"
+}
+
+# suricata_mode_files_current - drop-in and fw unit are as they should be.
+suricata_mode_files_current() {
+	local dropin
+	dropin=$(path_suricata_mode_dropin)
+	if suricata_mode_dropin_wanted; then
+		[[ -f "$dropin" ]] || return 1
+		[[ "$(suricata_render_mode_dropin | state_hash_content)" == "$(state_hash_content <"$dropin")" ]] || return 1
+	else
+		[[ ! -e "$dropin" ]] || return 1
+	fi
+	[[ -f "$(path_fw_unit)" ]] || return 1
+	[[ "$(suricata_render_fw_unit | state_hash_content)" == "$(state_hash_content <"$(path_fw_unit)")" ]]
+}
+
+# suricata_mode_files_apply - write or remove the drop-in, install the fw unit.
+suricata_mode_files_apply() {
+	local dropin
+	dropin=$(path_suricata_mode_dropin)
+	if suricata_mode_dropin_wanted; then
+		write_rendered_file "$dropin" "$(suricata_render_mode_dropin)" || return 1
+	elif [[ -e "$dropin" ]]; then
+		run rm -f "$dropin" || return 1
+	fi
+	write_rendered_file "$(path_fw_unit)" "$(suricata_render_fw_unit)" || return 1
+	run systemctl daemon-reload || return 1
+	# Enabled, not started: at boot it restores the rules; right now the
+	# mode command owns them.
+	run systemctl enable dpistack-fw.service
+}
+
 step_suricata_check() {
 	if docker_wanted suricata; then
 		[[ -f "$(path_suricata_yaml)" ]] || return 1
@@ -272,6 +336,8 @@ step_suricata_check() {
 	expected_lr_hash=$(suricata_render_logrotate | state_hash_content)
 	actual_lr_hash=$(state_hash_content <"$logrotate_path")
 	[[ "$expected_lr_hash" == "$actual_lr_hash" ]] || return 1
+
+	suricata_mode_files_current || return 1
 
 	if [[ "$source" == "source" ]]; then
 		local service_path
@@ -326,6 +392,10 @@ step_suricata_apply() {
 	local yaml_path logrotate_path
 	yaml_path=$(path_suricata_yaml)
 	logrotate_path=$(path_suricata_logrotate)
+	# A config that was already there means Suricata may be running with the
+	# old one (a mode switch, new interfaces): it is restarted below.
+	local was_configured=0
+	[[ -f "$yaml_path" ]] && was_configured=1
 
 	write_rendered_file "$yaml_path" "$(suricata_render_yaml)"
 	write_rendered_file "$logrotate_path" "$(suricata_render_logrotate)"
@@ -341,7 +411,13 @@ step_suricata_apply() {
 		write_rendered_file "$(path_suricata_sysconfig)" "$(suricata_render_sysconfig)"
 	fi
 
+	suricata_mode_files_apply || return 1
+
 	run systemctl enable --now "$SURICATA_UNIT" || return 1
+	# A changed unit, drop-in or yaml (IDS <-> IPS) is read only after a restart.
+	if ((was_configured)); then
+		run systemctl restart "$SURICATA_UNIT" || return 1
+	fi
 	local eve_json
 	eve_json=$(path_suricata_eve_json)
 	[[ -f "$eve_json" ]] && run chmod 0640 "$eve_json"
@@ -367,5 +443,11 @@ step_suricata_plan() {
 	fi
 	echo "suricata: рендер $(path_suricata_yaml) для интерфейсов ${CONF[IFACES]:-}"
 	echo "suricata: рендер $(path_suricata_logrotate)"
+	if suricata_mode_dropin_wanted; then
+		echo "suricata: режим ips через NFQUEUE (drop-in $(path_suricata_mode_dropin), очередь ${IPS_QUEUE_NUM})"
+	elif [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" ]]; then
+		echo "suricata: режим ips через af-packet copy-mode (интерфейсы парами)"
+	fi
+	echo "suricata: юнит $(path_fw_unit) восстанавливает цепочку DPISTACK при загрузке"
 	echo "suricata: systemctl enable --now $SURICATA_UNIT"
 }

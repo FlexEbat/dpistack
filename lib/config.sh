@@ -110,6 +110,30 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
+	if [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" ]]; then
+		if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" ]]; then
+			echo "SURICATA_MODE=ips работает только с SURICATA_RUNTIME=native (NFQUEUE и copy-mode в контейнере не поддерживаются)"
+			errors=$((errors + 1))
+		fi
+		if [[ "${CONF[IPS_METHOD]:-nfq}" == "afpacket" ]]; then
+			local -a ips_ifaces=()
+			IFS=',' read -ra ips_ifaces <<<"${CONF[IFACES]:-}"
+			if ((${#ips_ifaces[@]} < 2 || ${#ips_ifaces[@]} % 2 != 0)); then
+				echo "IPS_METHOD=afpacket объединяет интерфейсы парами: в IFACES нужно чётное число интерфейсов (не меньше двух)"
+				errors=$((errors + 1))
+			fi
+		fi
+	fi
+	local ips_chain
+	local -a ips_chains=()
+	IFS=',' read -ra ips_chains <<<"${CONF[IPS_NFQ_CHAINS]:-INPUT,OUTPUT,FORWARD}"
+	for ips_chain in "${ips_chains[@]}"; do
+		if [[ ! "$ips_chain" =~ ^(INPUT|OUTPUT|FORWARD)$ ]]; then
+			echo "IPS_NFQ_CHAINS: допустимы INPUT, OUTPUT, FORWARD, получено $ips_chain"
+			errors=$((errors + 1))
+		fi
+	done
+
 	# VictoriaMetrics reads a bare number as months and the suffix m as
 	# months, Prometheus reads m as minutes: only the suffixes both read the
 	# same way (h, d, w, y) are allowed once a backend is installed.
