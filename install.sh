@@ -27,6 +27,8 @@ source "$LIB_DIR/render.sh"
 source "$LIB_DIR/menu.sh"
 # shellcheck source=lib/runtime_docker.sh
 source "$LIB_DIR/runtime_docker.sh"
+# shellcheck source=lib/ips.sh
+source "$LIB_DIR/ips.sh"
 
 STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics access panel watch verify)
 for _step in "${STEPS_ORDER[@]}"; do
@@ -490,6 +492,17 @@ cmd_uninstall() {
 
 	run systemctl disable --now "$RULES_TIMER" 2>/dev/null || true
 	rm -f "$(path_rules_timer_unit)" "$(path_rules_service_unit)"
+	run systemctl daemon-reload
+
+	# The DPISTACK chain and the boot unit that restores it are dpistack's
+	# own; foreign chains and rules are not touched (lib/ips.sh).
+	if [[ "$DRY_RUN" == "1" ]]; then
+		echo "dry-run: iptables: убрать переходы в DPISTACK и саму цепочку, удалить $(path_fw_unit)"
+	else
+		ips_fw_remove
+	fi
+	run systemctl disable dpistack-fw.service 2>/dev/null || true
+	rm -f "$(path_fw_unit)" "$(path_suricata_mode_dropin)"
 	run systemctl daemon-reload
 
 	# The metrics backend is dpistack's own addition (unlike the packages of

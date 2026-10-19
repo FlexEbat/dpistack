@@ -72,6 +72,9 @@ step_preflight_reasons() {
 		fi
 	done
 
+	if [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "nfq" ]] && ! command -v iptables >/dev/null 2>&1; then
+		reasons+=("SURICATA_MODE=ips с IPS_METHOD=nfq: не найден iptables (нужен для цепочки DPISTACK)")
+	fi
 	if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" && "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
 		reasons+=("SURICATA_RUNTIME=docker: плагин nDPI в образ не ставится, задайте NDPI_ENABLE=no")
 	fi

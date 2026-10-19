@@ -2,7 +2,9 @@ package ctl
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -47,5 +49,61 @@ func (r *Runner) IfaceChange(ctx context.Context, verb, name string) (string, er
 		return "", fmt.Errorf("ctl: iface verb %q is not allowed", verb)
 	}
 	out, err := r.runWith(ctx, maxOutput, IfaceTimeout, nil, "iface", verb, name)
+	return strings.TrimSpace(string(out)), err
+}
+
+// ModeTimeout bounds `mode ids|ips`: it runs reconfigure, which restarts
+// Suricata, and then the iptables rules.
+const ModeTimeout = 3 * time.Minute
+
+// Bounds of --confirm-timeout, the same as dpistack-ctl enforces.
+const (
+	ModeConfirmMin = 10
+	ModeConfirmMax = 3600
+)
+
+// ModeState is `mode status --json`: the current mode, the IPS method and,
+// while a switch to ips waits for its confirmation, the seconds left before
+// ctl takes it back.
+type ModeState struct {
+	Mode         string `json:"mode"`
+	Method       string `json:"method"`
+	Pending      bool   `json:"pending"`
+	RemainingSec int    `json:"remaining_sec"`
+}
+
+// ModeStatus runs `mode status --json`.
+func (r *Runner) ModeStatus(ctx context.Context) (ModeState, error) {
+	out, err := r.runWith(ctx, maxOutput, callTimeout, nil, "mode", "status", "--json")
+	if err != nil {
+		return ModeState{}, err
+	}
+	var st ModeState
+	if err := json.Unmarshal(out, &st); err != nil || (st.Mode != "ids" && st.Mode != "ips") {
+		return ModeState{}, fmt.Errorf("%w: mode status: %q", ErrUnavailable, strings.TrimSpace(string(out)))
+	}
+	return st, nil
+}
+
+// ModeSet runs `mode ids|ips [--confirm-timeout N]`; confirmTimeout 0 leaves
+// the default of ctl.
+func (r *Runner) ModeSet(ctx context.Context, mode string, confirmTimeout int) (string, error) {
+	if mode != "ids" && mode != "ips" {
+		return "", fmt.Errorf("ctl: mode %q is not allowed", mode)
+	}
+	args := []string{"mode", mode}
+	if mode == "ips" && confirmTimeout != 0 {
+		if confirmTimeout < ModeConfirmMin || confirmTimeout > ModeConfirmMax {
+			return "", fmt.Errorf("ctl: confirm timeout %d is out of range", confirmTimeout)
+		}
+		args = append(args, "--confirm-timeout", strconv.Itoa(confirmTimeout))
+	}
+	out, err := r.runWith(ctx, maxOutput, ModeTimeout, nil, args...)
+	return strings.TrimSpace(string(out)), err
+}
+
+// ModeConfirm runs `mode-confirm`.
+func (r *Runner) ModeConfirm(ctx context.Context) (string, error) {
+	out, err := r.runWith(ctx, maxOutput, callTimeout, nil, "mode-confirm")
 	return strings.TrimSpace(string(out)), err
 }

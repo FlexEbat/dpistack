@@ -8,6 +8,7 @@ import { start as startMetrics } from "./modules/metrics.js";
 import { start as startTests } from "./modules/tests.js";
 import { start as startAlerts } from "./modules/alerts.js";
 import { start as startIfaces } from "./modules/ifaces.js";
+import { start as startMode } from "./modules/mode.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -67,9 +68,22 @@ const SCREENS = {
       },
       showLogin,
     );
+    const stopMode = startMode(
+      api,
+      {
+        error: $("mode-error"),
+        status: $("mode-status"),
+        message: $("mode-message"),
+        ips: $("mode-ips"),
+        ids: $("mode-ids"),
+        confirm: $("mode-confirm"),
+      },
+      showLogin,
+    );
     return () => {
       stopList();
       stopIfaces();
+      stopMode();
     };
   },
   configs: () =>

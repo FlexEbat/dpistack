@@ -22,6 +22,7 @@ type opState struct {
 	mu           sync.Mutex
 	testsRunning bool
 	ifaceBusy    bool
+	modeBusy     bool
 }
 
 func (o *opState) begin(flag *bool) bool {

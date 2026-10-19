@@ -62,10 +62,10 @@ run_install() {
 	[[ "$output" != *"пока не поддерживается"* ]]
 }
 
-@test "not-yet-supported ips mode names itself as unsupported" {
-	run_install --set SURICATA_MODE=ips
-	[ "$status" -eq 2 ]
-	[[ "$output" == *"пока не поддерживается"* ]]
+@test "ips mode is a supported value now, with its own preconditions checked" {
+	run_install --dry-run --set SURICATA_MODE=ips
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"пока не поддерживается"* ]]
 }
 
 @test "ACCESS_MODE=lan without confirmation exits 2 in non-interactive mode" {

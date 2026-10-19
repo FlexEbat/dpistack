@@ -56,6 +56,23 @@ iface)
     [ "$(wc -l < "$dir/ifaces")" -gt 1 ] || { echo "dpistack-ctl: нельзя удалить последний интерфейс" >&2; exit 3; }
     grep -vx "$3" "$dir/ifaces" > "$dir/i.tmp"; mv "$dir/i.tmp" "$dir/ifaces"; echo "interface $3 removed" ;;
   esac ;;
+mode)
+  case "$2" in
+  status)
+    m=$(cat "$dir/mode" 2>/dev/null || echo ids)
+    if [ -f "$dir/remaining" ]; then p=true; r=$(cat "$dir/remaining"); else p=false; r=0; fi
+    printf '{"mode":"%s","method":"nfq","pending":%s,"remaining_sec":%s}\n' "$m" "$p" "$r" ;;
+  ids) rm -f "$dir/remaining"; echo ids > "$dir/mode"; echo "режим ids" ;;
+  ips)
+    [ -f "$dir/HOLD" ] && while [ -f "$dir/HOLD" ]; do sleep 0.05; done
+    [ -f "$dir/FAIL" ] && { echo "dpistack-ctl: mode ips: не найден iptables (нужен для цепочки DPISTACK)" >&2; exit 3; }
+    t=120; [ "$3" = "--confirm-timeout" ] && t="$4"
+    echo ips > "$dir/mode"; echo "$t" > "$dir/remaining"
+    echo "режим ips включён; подтвердите командой mode-confirm в течение $t с, иначе вернётся ids" ;;
+  esac ;;
+mode-confirm)
+  [ -f "$dir/remaining" ] || { echo "dpistack-ctl: mode-confirm: нечего подтверждать" >&2; exit 3; }
+  rm -f "$dir/remaining"; echo "режим ips подтверждён" ;;
 esac
 `
 
