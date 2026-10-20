@@ -122,3 +122,25 @@ EOF_T
 	done
 	[ "$output" = "${want% }" ]
 }
+
+@test "an integer with a leading zero is refused, not accepted as a bad octal number (R143)" {
+	cat >"$BATS_TEST_TMPDIR/t.sh" <<'EOF_T'
+cd "$REPO_DIR"
+source lib/paths.sh; source lib/common.sh; source lib/state.sh
+source lib/schema.sh
+for v in 08 010 007 -05 5 0 100 -1; do
+	if out=$(schema_validate_one WATCH_DISK_WARN_PCT "$v" 2>&1); then echo "$v ok"; else echo "$v refused: $out"; fi
+done
+EOF_T
+	run env REPO_DIR="$REPO_DIR" DPISTACK_ROOT="$(mktemp -d)" bash "$BATS_TEST_TMPDIR/t.sh"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"08 refused"* ]]
+	[[ "$output" == *"010 refused"* ]]
+	[[ "$output" == *"007 refused"* ]]
+	[[ "$output" == *"-05 refused"* ]]
+	[[ "$output" == *"5 ok"* ]]
+	[[ "$output" == *"0 ok"* ]]
+	[[ "$output" == *"100 ok"* ]]
+	[[ "$output" == *"-1 refused"* ]] # a number, but out of the range 0..100
+	[[ "$output" != *"value too great"* ]]
+}

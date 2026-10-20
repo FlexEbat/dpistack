@@ -3374,8 +3374,9 @@ menu_section_screen() {
 			continue
 			;;
 		*)
-			if [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#keys[@]})); then
-				menu_edit_key "${keys[$((choice - 1))]}"
+			# 10#: "08" is eight, not a bad octal number, and "010" is ten.
+			if [[ "$choice" =~ ^[0-9]+$ ]] && ((10#$choice >= 1 && 10#$choice <= ${#keys[@]})); then
+				menu_edit_key "${keys[$((10#$choice - 1))]}"
 			else
 				echo "  непонятный пункт: $choice" >&2
 			fi
@@ -3444,7 +3445,7 @@ menu_quick_install() {
 	IFS=',' read -ra sel_nums <<<"$sel"
 	for n in "${sel_nums[@]}"; do
 		n="${n// /}"
-		[[ "$n" =~ ^[0-9]+$ ]] && ((n >= 1 && n <= ${#ifaces[@]})) && chosen+=("${ifaces[$((n - 1))]}")
+		[[ "$n" =~ ^[0-9]+$ ]] && ((10#$n >= 1 && 10#$n <= ${#ifaces[@]})) && chosen+=("${ifaces[$((10#$n - 1))]}")
 	done
 	if [[ "${#chosen[@]}" -gt 0 ]]; then
 		local joined
@@ -3862,11 +3863,11 @@ menu_manage_logs() {
 	menu_read choice "Компонент (номер, Enter - назад): "
 	menu_die_on_eof
 	[[ "$choice" =~ ^[0-9]+$ ]] || return 0
-	((choice >= 1 && choice <= ${#MANAGE_COMPONENTS[@]})) || {
+	((10#$choice >= 1 && 10#$choice <= ${#MANAGE_COMPONENTS[@]})) || {
 		echo "  нет такого номера" >&2
 		return 0
 	}
-	id="${MANAGE_COMPONENTS[$((choice - 1))]}"
+	id="${MANAGE_COMPONENTS[$((10#$choice - 1))]}"
 	menu_manage_ctl logs "$id" -n 200
 	menu_read choice "f - следить за журналом (Ctrl+C - выход), Enter - назад: "
 	if [[ "$choice" == "f" ]]; then
@@ -5117,8 +5118,10 @@ schema_validate_one() {
 		fi
 		;;
 	int)
-		if ! [[ "$value" =~ ^-?[0-9]+$ ]]; then
-			echo "$key=$value: ожидалось целое число"
+		# No leading zeros: bash reads "08" as a bad octal number, "010" as
+		# eight, and a value kept as "08" breaks every later calculation.
+		if ! [[ "$value" =~ ^(0|-?[1-9][0-9]*)$ ]]; then
+			echo "$key=$value: ожидалось целое число без ведущих нулей"
 			return 1
 		fi
 		local range="${SCHEMA_OPTIONS[$key]}"
