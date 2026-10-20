@@ -21,9 +21,9 @@ const updateAllowance = ctl.UpdateTimeout + time.Minute
 // refused with a readable sentence before any privileged call. ctl still has
 // the last word.
 var (
-	sourceName  = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,100}$`)
+	sourceName  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$`)
 	sourceURL   = regexp.MustCompile(`^https?://[A-Za-z0-9._:/@+,=-]{1,500}$`)
-	groupName   = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
+	groupName   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
 	ruleSID     = regexp.MustCompile(`^[0-9]{1,10}$`)
 	searchQuery = regexp.MustCompile(`^[A-Za-z0-9._:=/@+, -]{1,100}$`)
 )
