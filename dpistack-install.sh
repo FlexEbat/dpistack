@@ -1623,7 +1623,7 @@ cmd_iface() {
 		;;
 	add)
 		[[ $# -eq 1 ]] || fail 2 "iface add: нужно имя интерфейса"
-		if [[ ! "$1" =~ ^[A-Za-z0-9._-]{1,15}$ ]] || ! ip link show "$1" >/dev/null 2>&1; then
+		if [[ ! "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,14}$ ]] || ! ip link show "$1" >/dev/null 2>&1; then
 			fail 5 "интерфейса нет в системе: $1"
 		fi
 		if in_list "$1" "${current[@]}"; then
@@ -1677,7 +1677,7 @@ rules_edit_line() {
 
 cmd_rules_group() {
 	[[ $# -eq 2 ]] || fail 2 "rules-group: enable|disable <группа>"
-	[[ "$2" =~ ^[A-Za-z0-9._-]+$ ]] || fail 5 "недопустимое имя группы"
+	[[ "$2" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail 5 "недопустимое имя группы"
 	case "$1" in
 	enable) rules_edit_line enable.conf add "group:$2.rules" ;;
 	disable) rules_edit_line enable.conf remove "group:$2.rules" ;;
@@ -1712,7 +1712,9 @@ cmd_rules_sources() {
 		;;
 	enable | disable | remove)
 		[[ $# -eq 1 ]] || fail 2 "rules-sources $sub: нужно имя источника"
-		[[ "$1" =~ ^[A-Za-z0-9._/-]+$ ]] || fail 5 "недопустимое имя источника"
+		# No leading "-": the name goes to suricata-update as an argument and
+		# would be read as an option.
+		[[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || fail 5 "недопустимое имя источника"
 		suricata-update "$sub-source" -D "$data_dir" "$1"
 		;;
 	add-url)

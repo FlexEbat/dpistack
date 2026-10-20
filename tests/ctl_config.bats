@@ -316,3 +316,16 @@ FAKE
 	run bash -c "printf '\n' | '$CTL' panel-passwd"
 	[ "$status" -eq 2 ]
 }
+
+@test "a name that starts with a dash is refused: it would reach suricata-update or ip as an option (R140)" {
+	: >"$MOCK_CALLS_LOG"
+	run "$CTL" rules-sources enable -x
+	[ "$status" -eq 5 ]
+	run "$CTL" rules-sources remove --force
+	[ "$status" -eq 5 ]
+	run "$CTL" rules-group enable -h
+	[ "$status" -eq 5 ]
+	run "$CTL" iface add -x
+	[ "$status" -eq 5 ]
+	if grep -q 'suricata-update' "$MOCK_CALLS_LOG"; then false; fi
+}
