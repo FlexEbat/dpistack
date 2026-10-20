@@ -208,6 +208,25 @@ docker_service_apply() {
 	run "${DOCKER_COMPOSE_ARGV[@]}" up -d "$svc"
 }
 
+# runtime_release_docker <service> - the service is going native: a container
+# of it that is still up would hold the port. Without docker, a compose file
+# or a running container there is nothing to do.
+runtime_release_docker() {
+	local svc="$1"
+	command -v docker >/dev/null 2>&1 || return 0
+	[[ -f "$(path_compose_yaml)" ]] || return 0
+	docker_service_running "$svc" || return 0
+	docker_compose_argv
+	run "${DOCKER_COMPOSE_ARGV[@]}" rm -fsv "$svc"
+}
+
+# runtime_release_native <unit> - the service is going docker: the unit of
+# the packaged one, if it is up, would hold the port the container needs.
+runtime_release_native() {
+	systemctl is-active --quiet "$1" 2>/dev/null || return 0
+	run systemctl disable --now "$1"
+}
+
 docker_service_plan() {
 	echo "$1: docker compose, образ $(docker_image "$1"), network_mode: host (рендер $(path_compose_yaml))"
 }

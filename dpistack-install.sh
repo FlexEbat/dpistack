@@ -2407,7 +2407,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack-ctl version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack-ctl
-DPISTACK_VERSION="0.20.1"
+DPISTACK_VERSION="0.20.2"
 
 : "${DRY_RUN:=0}"
 
@@ -4835,6 +4835,25 @@ docker_service_apply() {
 	run "${DOCKER_COMPOSE_ARGV[@]}" up -d "$svc"
 }
 
+# runtime_release_docker <service> - the service is going native: a container
+# of it that is still up would hold the port. Without docker, a compose file
+# or a running container there is nothing to do.
+runtime_release_docker() {
+	local svc="$1"
+	command -v docker >/dev/null 2>&1 || return 0
+	[[ -f "$(path_compose_yaml)" ]] || return 0
+	docker_service_running "$svc" || return 0
+	docker_compose_argv
+	run "${DOCKER_COMPOSE_ARGV[@]}" rm -fsv "$svc"
+}
+
+# runtime_release_native <unit> - the service is going docker: the unit of
+# the packaged one, if it is up, would hold the port the container needs.
+runtime_release_native() {
+	systemctl is-active --quiet "$1" 2>/dev/null || return 0
+	run systemctl disable --now "$1"
+}
+
 docker_service_plan() {
 	echo "$1: docker compose, образ $(docker_image "$1"), network_mode: host (рендер $(path_compose_yaml))"
 }
@@ -5563,11 +5582,13 @@ step_evebox_check() {
 
 step_evebox_apply() {
 	if docker_wanted evebox; then
+		runtime_release_native "$EVEBOX_UNIT" || return 1
 		write_rendered_file "$(path_evebox_yaml)" "$(evebox_render_conf)" || return 1
 		docker_service_apply evebox || return 1
 		echo "evebox: в контейнере, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}"); встроенные TLS и аутентификация EveBox отключены, доступ ограничивается сетью (ACCESS_MODE/firewall)." >&2
 		return 0
 	fi
+	runtime_release_docker evebox || return 1
 	if ! command -v evebox >/dev/null 2>&1; then
 		evebox_repo_add || return 1
 		pkg_install "$(pkg_spec "$EVEBOX_PACKAGE" "${CONF[EVEBOX_VERSION]:-}")" || return 1
@@ -6151,11 +6172,13 @@ step_ntopng_check() {
 
 step_ntopng_apply() {
 	if docker_wanted ntopng; then
+		runtime_release_native "$NTOPNG_UNIT" || return 1
 		write_rendered_file "$(path_ntopng_conf)" "$(ntopng_render_conf)" || return 1
 		docker_service_apply ntopng || return 1
 		echo "ntopng: в контейнере, логин/пароль по умолчанию admin/admin, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - смените пароль в веб-интерфейсе." >&2
 		return 0
 	fi
+	runtime_release_docker ntopng || return 1
 	if ! command -v ntopng >/dev/null 2>&1; then
 		ntopng_repo_add || return 1
 		pkg_install "$(pkg_spec "$NTOPNG_PACKAGE" "${CONF[NTOPNG_VERSION]:-}")" || return 1
@@ -6735,10 +6758,12 @@ step_redis_check() {
 
 step_redis_apply() {
 	if docker_wanted redis; then
+		runtime_release_native "$REDIS_UNIT" || return 1
 		docker_service_apply redis || return 1
 		state_write_value "$REDIS_STATE_KEY" "done"
 		return 0
 	fi
+	runtime_release_docker redis || return 1
 	if ! command -v redis-server >/dev/null 2>&1; then
 		pkg_install "$REDIS_PACKAGE" || return 1
 	fi
@@ -7425,11 +7450,13 @@ SYSCONFIG
 
 step_suricata_apply() {
 	if docker_wanted suricata; then
+		runtime_release_native "$SURICATA_UNIT" || return 1
 		write_rendered_file "$(path_suricata_yaml)" "$(suricata_render_yaml)" || return 1
 		write_rendered_file "$(path_suricata_logrotate)" "$(suricata_render_logrotate)" || return 1
 		docker_service_apply suricata
 		return
 	fi
+	runtime_release_docker suricata || return 1
 	case "${CONF[SURICATA_SOURCE]}" in
 	oisf)
 		pkg_repo_add oisf || return 1

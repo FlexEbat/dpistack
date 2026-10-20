@@ -206,3 +206,31 @@ compose_cmd="docker compose -p dpistack -f"
 	if grep -q '^docker ' "$MOCK_CALLS_LOG"; then false; fi
 	grep -q '^systemctl enable --now evebox.service' "$MOCK_CALLS_LOG"
 }
+
+@test "docker to native: a container of the service that is still up is removed before the native one starts (R139)" {
+	mkdir -p "$(dirname "$COMPOSE")"
+	echo "services:" >"$COMPOSE"
+	MOCK_DOCKER_RUNNING="evebox redis" run install_base
+	[ "$status" -eq 0 ]
+	grep -q "^docker compose -p dpistack -f .* rm -fsv evebox\$" "$MOCK_CALLS_LOG"
+	grep -q "^docker compose -p dpistack -f .* rm -fsv redis\$" "$MOCK_CALLS_LOG"
+	# a container that is not up is not touched
+	if grep -q "rm -fsv ntopng" "$MOCK_CALLS_LOG"; then false; fi
+}
+
+@test "native to docker: the packaged unit that is up is stopped before the container starts (R139)" {
+	run install_mixed
+	[ "$status" -eq 0 ]
+	grep -q '^systemctl disable --now evebox.service$' "$MOCK_CALLS_LOG"
+	grep -q '^systemctl disable --now ntopng.service$' "$MOCK_CALLS_LOG"
+	local stop up
+	stop=$(grep -n '^systemctl disable --now evebox.service$' "$MOCK_CALLS_LOG" | head -1 | cut -d: -f1)
+	up=$(grep -n 'up -d evebox$' "$MOCK_CALLS_LOG" | head -1 | cut -d: -f1)
+	[ "$stop" -lt "$up" ]
+}
+
+@test "a fresh docker install has no compose file yet and nothing to release (R139)" {
+	run install_mixed
+	[ "$status" -eq 0 ]
+	if grep -q ' rm -fsv ' "$MOCK_CALLS_LOG"; then false; fi
+}
