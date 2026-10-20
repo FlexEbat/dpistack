@@ -275,3 +275,13 @@ run_menu() {
 	[[ "$output" == *"непонятный пункт: zz"* ]]
 	[[ "$output" != *"value too great"* ]]
 }
+
+@test "a number with a leading zero is a decimal number in the menu, not a bad octal one (R142)" {
+	run_menu "3\n01\nbogus-value\n\n0\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"недопустимое значение, допустимо: native,docker"* ]]
+	run_menu "3\n09\n0\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"непонятный пункт: 09"* ]]
+	[[ "$output" != *"value too great"* ]]
+}

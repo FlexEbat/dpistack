@@ -218,8 +218,10 @@ schema_validate_one() {
 		fi
 		;;
 	int)
-		if ! [[ "$value" =~ ^-?[0-9]+$ ]]; then
-			echo "$key=$value: ожидалось целое число"
+		# No leading zeros: bash reads "08" as a bad octal number, "010" as
+		# eight, and a value kept as "08" breaks every later calculation.
+		if ! [[ "$value" =~ ^(0|-?[1-9][0-9]*)$ ]]; then
+			echo "$key=$value: ожидалось целое число без ведущих нулей"
 			return 1
 		fi
 		local range="${SCHEMA_OPTIONS[$key]}"
