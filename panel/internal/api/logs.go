@@ -109,8 +109,15 @@ func (e *sse) flushLocked(chunk string) error {
 	return e.rc.Flush()
 }
 
+// sseOneLine makes text safe for one "data:" field. A lone CR ends a line in
+// an event stream too: a log line with "\r" in it could otherwise start a
+// field of its own ("event:", "id:").
+func sseOneLine(s string) string {
+	return strings.NewReplacer("\r", " ", "\n", " ").Replace(s)
+}
+
 func (e *sse) data(line string) error {
-	return e.write("data: " + strings.ReplaceAll(line, "\n", " ") + "\n\n")
+	return e.write("data: " + sseOneLine(line) + "\n\n")
 }
 
 // finish stops any later write and reports whether the stream had begun.
@@ -182,7 +189,7 @@ func (s *server) logStream(w http.ResponseWriter, r *http.Request) {
 		ctlError(w, err)
 	case err != nil:
 		// Headers are gone; the error travels as an event.
-		_, _ = w.Write([]byte("event: error\ndata: " + errText(err) + "\n\n"))
+		_, _ = w.Write([]byte("event: error\ndata: " + sseOneLine(errText(err)) + "\n\n"))
 		_ = st.rc.Flush()
 	default:
 		if !began {

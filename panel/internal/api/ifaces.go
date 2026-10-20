@@ -11,7 +11,7 @@ import (
 
 // ifaceName is what ctl accepts: the length of a Linux interface name and
 // its usual characters.
-var ifaceName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,15}$`)
+var ifaceName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,14}$`)
 
 // ifaceList handles GET /api/iface: the interfaces Suricata listens on, from
 // `ctl iface list`.
