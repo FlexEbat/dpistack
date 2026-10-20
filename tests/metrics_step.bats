@@ -91,9 +91,9 @@ token_value() { sed -n 's/^METRICS_TOKEN=//p' "$DPISTACK_ROOT/etc/dpistack/secre
 	[ -n "$tok" ]
 	grep -q "credentials_file: $DPISTACK_ROOT/etc/dpistack/metrics.token" "$SCRAPE"
 	grep -q "targets: \['127.0.0.1:9800'\]" "$SCRAPE"
-	! grep -rq -- "$tok" "$SCRAPE" "$VM_UNIT" "$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+	if grep -rq -- "$tok" "$SCRAPE" "$VM_UNIT" "$DPISTACK_ROOT/etc/dpistack/dpistack.conf"; then false; fi
 	# not on the command line of any call either
-	! grep -q -- "$tok" "$MOCK_CALLS_LOG"
+	if grep -q -- "$tok" "$MOCK_CALLS_LOG"; then false; fi
 	# the file itself is root:dpistack 0640, written before the backend starts
 	[ "$(cat "$DPISTACK_ROOT/etc/dpistack/metrics.token")" = "$tok" ]
 }
@@ -130,9 +130,9 @@ token_value() { sed -n 's/^METRICS_TOKEN=//p' "$DPISTACK_ROOT/etc/dpistack/secre
 	: >"$MOCK_CALLS_LOG"
 	run with_vm
 	[ "$status" -eq 0 ]
-	! grep -q '^curl ' "$MOCK_CALLS_LOG"
-	! grep -q '^systemctl enable --now dpistack-vm' "$MOCK_CALLS_LOG"
-	! grep -q '^systemctl restart dpistack-vm' "$MOCK_CALLS_LOG"
+	if grep -qE '^curl .*(VictoriaMetrics|prometheus)/' "$MOCK_CALLS_LOG"; then false; fi
+	if grep -q '^systemctl enable --now dpistack-vm' "$MOCK_CALLS_LOG"; then false; fi
+	if grep -q '^systemctl restart dpistack-vm' "$MOCK_CALLS_LOG"; then false; fi
 	! grep -q '^systemctl disable' "$MOCK_CALLS_LOG"
 }
 
@@ -190,8 +190,8 @@ token_value() { sed -n 's/^METRICS_TOKEN=//p' "$DPISTACK_ROOT/etc/dpistack/secre
 	run with_vm --dry-run
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"victoriametrics v1.153.0"* ]]
-	! grep -q '^curl ' "$MOCK_CALLS_LOG"
-	! grep -q '^useradd' "$MOCK_CALLS_LOG"
+	if grep -qE '^curl .*(VictoriaMetrics|prometheus)/' "$MOCK_CALLS_LOG"; then false; fi
+	if grep -q '^useradd' "$MOCK_CALLS_LOG"; then false; fi
 	[ ! -e "$VM_UNIT" ]
 	[ ! -e "$SCRAPE" ]
 }
@@ -199,7 +199,7 @@ token_value() { sed -n 's/^METRICS_TOKEN=//p' "$DPISTACK_ROOT/etc/dpistack/secre
 @test "METRICS_BACKEND=none installs nothing and creates no user or data" {
 	run install_base
 	[ "$status" -eq 0 ]
-	! grep -q 'dpistack-metrics' "$MOCK_CALLS_LOG"
+	if grep -q 'dpistack-metrics' "$MOCK_CALLS_LOG"; then false; fi
 	[ ! -e "$DPISTACK_ROOT/var/lib/dpistack-metrics" ]
 	[ ! -e "$SCRAPE" ]
 }
@@ -230,7 +230,7 @@ token_value() { sed -n 's/^METRICS_TOKEN=//p' "$DPISTACK_ROOT/etc/dpistack/secre
 	grep -q "$DPISTACK_ROOT/etc/dpistack/metrics.token:$DPISTACK_ROOT/etc/dpistack/metrics.token:ro" "$compose"
 	grep -q 'network_mode: host' "$compose"
 	grep -q "^docker compose -p dpistack -f $compose up -d victoriametrics\$" "$MOCK_CALLS_LOG"
-	! grep -q '^curl ' "$MOCK_CALLS_LOG"
+	if grep -qE '^curl .*(VictoriaMetrics|prometheus)/' "$MOCK_CALLS_LOG"; then false; fi
 	[ ! -e "$VM_UNIT" ]
 }
 
@@ -248,4 +248,24 @@ token_value() { sed -n 's/^METRICS_TOKEN=//p' "$DPISTACK_ROOT/etc/dpistack/secre
 	MOCK_DOCKER_PS=$'victoriametrics running' run "$REPO_DIR/bin/dpistack-ctl" status --json
 	[ "$status" -eq 0 ]
 	echo "$output" | jq -e '.components[] | select(.id=="victoriametrics") | .runtime=="docker" and .state=="active"'
+}
+
+@test "a new pinned version replaces the old binary, a repeat run with the same version does not (R137)" {
+	with_vm
+	local bin="$DPISTACK_ROOT/usr/local/bin/victoria-metrics-prod"
+	[ -x "$bin" ]
+	echo stale >"$bin"
+	chmod 0755 "$bin"
+	# the state says an older version is installed
+	sed -i 's#^metrics.backend=.*#metrics.backend=native:victoriametrics:v0.0.1#' "$DPISTACK_ROOT/var/lib/dpistack/state"
+	: >"$MOCK_CALLS_LOG"
+	run with_vm
+	[ "$status" -eq 0 ]
+	grep -q '^curl .*victoria' "$MOCK_CALLS_LOG"
+	[ "$(grep -c '^stale$' "$bin")" -eq 0 ]
+	: >"$MOCK_CALLS_LOG"
+	echo keep >"$bin"
+	run with_vm
+	[ "$(grep -c '^curl .*victoria' "$MOCK_CALLS_LOG")" -eq 0 ]
+	grep -q '^keep$' "$bin"
 }

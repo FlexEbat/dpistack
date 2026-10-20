@@ -508,7 +508,10 @@ menu_main_screen() {
 			return 0
 			;;
 		*)
-			local idx=$((10#${choice:-0} - 1))
+			# Only a number goes into the arithmetic: "zz" there is a bash
+			# error that ends the whole menu.
+			local idx=0
+			[[ "$choice" =~ ^[0-9]+$ ]] && idx=$((10#$choice - 1))
 			if [[ "$choice" =~ ^[0-9]+$ && "$idx" -ge 1 && "$idx" -le "${#MENU_GROUPS[@]}" ]]; then
 				menu_section_screen "${MENU_GROUPS[$((idx - 1))]}"
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 2))" ]]; then
@@ -699,7 +702,8 @@ menu_reconfigure_screen() {
 			exit 0
 		} ;;
 		*)
-			local idx=$((10#${choice:-0}))
+			local idx=0
+			[[ "$choice" =~ ^[0-9]+$ ]] && idx=$((10#$choice))
 			if [[ "$choice" =~ ^[0-9]+$ && "$idx" -ge 1 && "$idx" -le "${#MENU_GROUPS[@]}" ]]; then
 				menu_section_screen "${MENU_GROUPS[$((idx - 1))]}"
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 1))" ]]; then

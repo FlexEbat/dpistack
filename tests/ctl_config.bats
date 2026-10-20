@@ -177,7 +177,7 @@ teardown() {
 	run "$CTL" iface add eth1
 	[ "$status" -eq 0 ]
 	grep -q "# edited by hand" "$YAML"
-	! grep -q "^  - interface: eth1" "$YAML"
+	if grep -q "^  - interface: eth1" "$YAML"; then false; fi
 	grep -q '^IFACES=enp2s0,eth1$' "$CONF_FILE"
 }
 
@@ -207,7 +207,7 @@ FAKE
 	[ "$status" -eq 0 ]
 	grep -qx "group:emerging-p2p.rules" "$DPISTACK_ROOT/etc/suricata/enable.conf"
 	run "$CTL" rules-group disable emerging-p2p
-	! grep -q "emerging-p2p" "$DPISTACK_ROOT/etc/suricata/enable.conf"
+	if grep -q "emerging-p2p" "$DPISTACK_ROOT/etc/suricata/enable.conf"; then false; fi
 
 	run "$CTL" rules-sid disable 2100498
 	[ "$status" -eq 0 ]
@@ -310,8 +310,8 @@ FAKE
 	grep -q "^chown root:dpistack $auth" "$MOCK_CALLS_LOG"
 	# 16 MiB: the panel unit has MemoryMax=64M, so a 64 MiB hash could not be checked there.
 	grep -q -- "^argon2 .* -id -t 3 -m 14 -p 4 -l 32 -e" "$MOCK_CALLS_LOG"
-	! grep -q "$pw" "$MOCK_CALLS_LOG"
-	! grep -rq "$pw" "$DPISTACK_ROOT/var/log" 2>/dev/null
+	if grep -q "$pw" "$MOCK_CALLS_LOG"; then false; fi
+	if grep -rq "$pw" "$DPISTACK_ROOT/var/log" 2>/dev/null; then false; fi
 
 	run bash -c "printf '\n' | '$CTL' panel-passwd"
 	[ "$status" -eq 2 ]

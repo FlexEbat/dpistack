@@ -123,7 +123,7 @@ unit_file() {
 	run install_base
 	[ "$status" -eq 0 ]
 	grep -q -- "-metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json" "$(unit_file)"
-	! grep -E "^chown .*dpistack:dpistack .*/var/lib/dpistack/?( |$)" "$MOCK_CALLS_LOG"
+	if grep -E "^chown .*dpistack:dpistack .*/var/lib/dpistack/?( |$)" "$MOCK_CALLS_LOG"; then false; fi
 	! grep -E "^chown .*dpistack:dpistack .*(health.json|/state|backups|staging)" "$MOCK_CALLS_LOG"
 }
 
@@ -163,7 +163,7 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	[ "$status" -eq 0 ]
 	[ ! -e "$DPISTACK_ROOT/etc/dpistack/metrics.token" ]
 	[ ! -e "$DPISTACK_ROOT/etc/dpistack/secrets.conf" ]
-	! echo "$output" | grep -Eq '[0-9a-f]{64}'
+	if echo "$output" | grep -Eq '[0-9a-f]{64}'; then false; fi
 	[[ "$output" != *"Создан METRICS_TOKEN"* ]]
 	[[ "$output" != *"credentials:"* ]]
 }
@@ -172,7 +172,7 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	run install_base --set METRICS_EXPORT=no
 	[ "$status" -eq 0 ]
 	[ ! -e "$DPISTACK_ROOT/etc/dpistack/metrics.token" ]
-	! grep -q -- "-metrics-token-file\|-rules-file\|-disk-paths" "$(unit_file)"
+	if grep -q -- "-metrics-token-file\|-rules-file\|-disk-paths" "$(unit_file)"; then false; fi
 	# The screens of tests and alerts do not depend on /metrics.
 	grep -q -- "-tests-file $DPISTACK_ROOT/var/lib/dpistack/tests-last.json -events-file $DPISTACK_ROOT/var/lib/dpistack/events.jsonl" "$(unit_file)"
 	[[ "$output" != *"job_name: dpistack"* ]]
@@ -215,8 +215,8 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	pw="$(printf '%s\n' "$output" | sed -n 's/^Создан пароль панели .*: \([A-Za-z0-9]\{24\}\)$/\1/p')"
 	[ -n "$pw" ]
 	[ "$(printf '%s\n' "$output" | grep -c "$pw")" -eq 1 ]
-	! grep -rqF "$pw" "$DPISTACK_ROOT"
-	! grep -qF "$pw" "$MOCK_CALLS_LOG"
+	if grep -rqF "$pw" "$DPISTACK_ROOT"; then false; fi
+	if grep -qF "$pw" "$MOCK_CALLS_LOG"; then false; fi
 
 	run install_base
 	[[ "$output" != *"Создан пароль панели"* ]]
@@ -297,8 +297,8 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	: >"$MOCK_CALLS_LOG"
 	run install_base
 	[ "$status" -eq 0 ]
-	! grep -q "^go build" "$MOCK_CALLS_LOG"
-	! grep -q "dpistack-panel.service" "$MOCK_CALLS_LOG"
+	if grep -q "^go build" "$MOCK_CALLS_LOG"; then false; fi
+	if grep -q "dpistack-panel.service" "$MOCK_CALLS_LOG"; then false; fi
 	run bash "$REPO_DIR/install.sh" status --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[[ "$output" == *"panel: в порядке"* ]]
 }

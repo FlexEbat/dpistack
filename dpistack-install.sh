@@ -3580,7 +3580,10 @@ menu_main_screen() {
 			return 0
 			;;
 		*)
-			local idx=$((10#${choice:-0} - 1))
+			# Only a number goes into the arithmetic: "zz" there is a bash
+			# error that ends the whole menu.
+			local idx=0
+			[[ "$choice" =~ ^[0-9]+$ ]] && idx=$((10#$choice - 1))
 			if [[ "$choice" =~ ^[0-9]+$ && "$idx" -ge 1 && "$idx" -le "${#MENU_GROUPS[@]}" ]]; then
 				menu_section_screen "${MENU_GROUPS[$((idx - 1))]}"
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 2))" ]]; then
@@ -3771,7 +3774,8 @@ menu_reconfigure_screen() {
 			exit 0
 		} ;;
 		*)
-			local idx=$((10#${choice:-0}))
+			local idx=0
+			[[ "$choice" =~ ^[0-9]+$ ]] && idx=$((10#$choice))
 			if [[ "$choice" =~ ^[0-9]+$ && "$idx" -ge 1 && "$idx" -le "${#MENU_GROUPS[@]}" ]]; then
 				menu_section_screen "${MENU_GROUPS[$((idx - 1))]}"
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 1))" ]]; then
@@ -5841,6 +5845,11 @@ step_metrics_apply() {
 	local backend installed marker
 	backend=$(metrics_backend)
 	installed=$(metrics_installed)
+	# A new pinned version (or another runtime) changes the marker: the
+	# binary then has to be fetched again, or the state would claim a
+	# version the old binary is not.
+	local refetch=0
+	[[ -n "$installed" && "$installed" != "$(metrics_marker "$backend")" ]] && refetch=1
 
 	# A backend that is no longer wanted (none, or the other one, or the
 	# other runtime) is stopped first; its data stays.
@@ -5863,7 +5872,7 @@ step_metrics_apply() {
 	if [[ "$(metrics_runtime)" == "docker" ]]; then
 		docker_service_apply "$backend" || return 1
 	else
-		if [[ ! -x "$(metrics_bin_path "$backend")" ]]; then
+		if [[ ! -x "$(metrics_bin_path "$backend")" || "$refetch" == "1" ]]; then
 			metrics_fetch_binary "$backend" || return 1
 		fi
 		write_rendered_file "$(metrics_unit_path "$backend")" "$(metrics_render_unit "$backend")" || return 1
@@ -6313,6 +6322,9 @@ panel_bin_current() {
 	bin=$(path_panel_bin)
 	[[ -x "$bin" ]] || return 1
 	if [[ "$(panel_source_mode)" == "prebuilt" ]]; then
+		# Run from the installed copy (dpistack reconfigure) there is no
+		# ready binary next to the script any more: what is installed stays.
+		[[ -f "$(panel_prebuilt_path)" ]] || return 0
 		cmp -s "$(panel_prebuilt_path)" "$bin"
 		return
 	fi
@@ -7241,13 +7253,19 @@ suricata_build_from_source() {
 		configure_args+=(--enable-ndpi --with-ndpi="$(path_ndpi_src_dir)")
 	fi
 
+	# install-conf writes the stock suricata.yaml over the rendered one; on a
+	# rebuild (a new release) the write_rendered_file guard would then take
+	# the stock file for a hand edit and keep it. So it runs only on the
+	# first build, when there is no suricata.yaml yet.
+	local install_conf=1
+	[[ -f "$(path_suricata_yaml)" ]] && install_conf=0
 	(
 		cd "$src_dir" || exit 1
 		run ./autogen.sh &&
 			run ./configure "${configure_args[@]}" &&
 			run make -j"$(nproc)" &&
 			run make install &&
-			run make install-conf
+			{ ((install_conf == 0)) || run make install-conf; }
 	)
 	local rc=$?
 	if [[ "$rc" -ne 0 ]]; then

@@ -250,3 +250,28 @@ run_menu() {
 	rm -f "$f"
 	[[ "$output" == *"dpistack v$ver | Найдена установка"* ]]
 }
+
+@test "a menu choice that is not a number is refused, it does not end the menu (R136)" {
+	local in
+	in="$(mktemp)"
+	printf 'zz\n1 2\nq\ny\n' >"$in"
+	run env DPISTACK_INPUT="$in" bash "$REPO_DIR/install.sh" install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	rm -f "$in"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"непонятный пункт: zz"* ]]
+	[[ "$output" == *"непонятный пункт: 1 2"* ]]
+	[[ "$output" != *"value too great"* && "$output" != *"syntax error"* ]]
+}
+
+@test "the reconfigure screen refuses a choice that is not a number too (R136)" {
+	local in
+	in="$(mktemp)"
+	printf 'zz\nq\ny\n' >"$in"
+	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
+	printf 'SURICATA_SOURCE=oisf\nNDPI_ENABLE=no\n' >"$CONF_FILE"
+	run env DPISTACK_INPUT="$in" bash "$REPO_DIR/install.sh" reconfigure
+	rm -f "$in"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"непонятный пункт: zz"* ]]
+	[[ "$output" != *"value too great"* ]]
+}

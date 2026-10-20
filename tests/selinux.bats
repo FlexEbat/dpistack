@@ -62,7 +62,7 @@ fam() {
 	MOCK_SEMANAGE_LIST="http_port_t tcp 80, 81, 9800, 443" MOCK_GETENFORCE=Enforcing \
 		run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes
 	[ "$status" -eq 0 ]
-	! grep -qx "semanage port -a -t http_port_t -p tcp 9800" "$MOCK_CALLS_LOG"
+	if grep -qx "semanage port -a -t http_port_t -p tcp 9800" "$MOCK_CALLS_LOG"; then false; fi
 	grep -qx "semanage port -a -t http_port_t -p tcp 3000" "$MOCK_CALLS_LOG"
 }
 
@@ -83,7 +83,7 @@ fam() {
 @test "criterion 2: with SELinux disabled nothing is labeled" {
 	MOCK_GETENFORCE=Disabled run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes
 	[ "$status" -eq 0 ]
-	! grep -q '^semanage' "$MOCK_CALLS_LOG"
+	if grep -q '^semanage' "$MOCK_CALLS_LOG"; then false; fi
 	! grep -q '^restorecon' "$MOCK_CALLS_LOG"
 }
 
@@ -101,7 +101,7 @@ fam() {
 @test "criterion 2: a dry run labels nothing" {
 	MOCK_GETENFORCE=Enforcing run install_base --dry-run --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes
 	[ "$status" -eq 0 ]
-	! grep -q '^semanage port -[am]' "$MOCK_CALLS_LOG"
+	if grep -q '^semanage port -[am]' "$MOCK_CALLS_LOG"; then false; fi
 	! grep -q '^restorecon' "$MOCK_CALLS_LOG"
 }
 
@@ -123,13 +123,13 @@ fam() {
 	done
 	# no rule without a source address, nothing opens to the world
 	[ "$(grep -c -- '--add-rich-rule' "$MOCK_CALLS_LOG")" -eq 3 ]
-	! grep -- '--add-rich-rule' "$MOCK_CALLS_LOG" | grep -v 'source address=192.168.10.0/24'
+	if grep -- '--add-rich-rule' "$MOCK_CALLS_LOG" | grep -v 'source address=192.168.10.0/24'; then false; fi
 	grep -qx 'firewall-cmd --reload' "$MOCK_CALLS_LOG"
 }
 
 @test "criterion 3: localhost mode and FIREWALL_MANAGE=no open nothing" {
 	run fam 'CONF[ACCESS_MODE]=localhost; CONF[FIREWALL_MANAGE]=auto; CONF[LAN_CIDR]=192.168.10.0/24; access_firewall_apply'
-	! grep -q -- '--add-rich-rule' "$MOCK_CALLS_LOG"
+	if grep -q -- '--add-rich-rule' "$MOCK_CALLS_LOG"; then false; fi
 	run fam 'CONF[ACCESS_MODE]=lan; CONF[FIREWALL_MANAGE]=no; access_firewall_apply'
 	! grep -q -- '--add-rich-rule' "$MOCK_CALLS_LOG"
 }
@@ -138,6 +138,6 @@ fam() {
 	MOCK_FIREWALLD_STATE_EXIT=1 run fam 'CONF[ACCESS_MODE]=lan; CONF[FIREWALL_MANAGE]=auto; CONF[LAN_CIDR]=192.168.10.0/24; access_firewall_apply'
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"firewalld не запущен"* ]]
-	! grep -q -- '--add-rich-rule' "$MOCK_CALLS_LOG"
+	if grep -q -- '--add-rich-rule' "$MOCK_CALLS_LOG"; then false; fi
 	! grep -q -- '--reload' "$MOCK_CALLS_LOG"
 }

@@ -104,7 +104,7 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	run "$CTL" mode ips
 	[ "$status" -eq 0 ]
 	grep -qx -- '-A FORWARD -j DPISTACK' "$STATE4"
-	! grep -qx -- '-A INPUT -j DPISTACK' "$STATE4"
+	if grep -qx -- '-A INPUT -j DPISTACK' "$STATE4"; then false; fi
 	! grep -qx -- '-A OUTPUT -j DPISTACK' "$STATE4"
 }
 
@@ -129,7 +129,7 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	grep -q '^SURICATA_MODE=ids$' "$CONF_FILE"
 	[ ! -e "$DROPIN" ]
 	[ ! -e "$PENDING" ]
-	! grep -q 'DPISTACK' "$STATE4" "$STATE6"
+	if grep -q 'DPISTACK' "$STATE4" "$STATE6"; then false; fi
 	grep -q '^systemctl restart suricata.service' "$MOCK_CALLS_LOG"
 	# nothing left to confirm
 	run "$CTL" mode-confirm
@@ -168,7 +168,7 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	[ "$status" -eq 1 ]
 	[[ "$output" == *"таймер отката"* ]]
 	grep -q '^SURICATA_MODE=ids$' "$CONF_FILE"
-	! grep -q 'DPISTACK' "$STATE4"
+	if grep -q 'DPISTACK' "$STATE4"; then false; fi
 	[ ! -e "$PENDING" ]
 }
 
@@ -185,7 +185,7 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	[ "$(iptables-save)" = "$before" ]
 	[ "$(ip6tables-save)" = "$before6" ]
 	# nothing of the other tools' chains was flushed or deleted on the way
-	! grep -E '^iptables (-w )?-[FXD] (INPUT|OUTPUT|FORWARD|MYCHAIN)( |$)' "$MOCK_CALLS_LOG" | grep -v 'DPISTACK'
+	if grep -E '^iptables (-w )?-[FXD] (INPUT|OUTPUT|FORWARD|MYCHAIN)( |$)' "$MOCK_CALLS_LOG" | grep -v 'DPISTACK'; then false; fi
 	! grep -qE '^(iptables|ip6tables) (-w )?-F (INPUT|OUTPUT|FORWARD|MYCHAIN)$' "$MOCK_CALLS_LOG"
 }
 
@@ -193,7 +193,7 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	install_base >/dev/null 2>&1
 	# enabled, not started: the mode command owns the rules until the next boot
 	grep -q '^systemctl enable dpistack-fw.service' "$MOCK_CALLS_LOG"
-	! grep -q '^systemctl enable --now dpistack-fw.service' "$MOCK_CALLS_LOG"
+	if grep -q '^systemctl enable --now dpistack-fw.service' "$MOCK_CALLS_LOG"; then false; fi
 	installed
 	[ -f "$FWUNIT" ]
 	grep -q 'ExecStart=.*dpistack-ctl fw restore' "$FWUNIT"
@@ -233,7 +233,7 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	grep -A5 '^  - interface: enp2s0' "$YAML" | grep -q '^    copy-iface: eth1$'
 	grep -A5 '^  - interface: eth1' "$YAML" | grep -q '^    copy-iface: enp2s0$'
 	[ ! -e "$DROPIN" ]
-	! grep -q '^iptables ' "$MOCK_CALLS_LOG"
+	if grep -q '^iptables ' "$MOCK_CALLS_LOG"; then false; fi
 	"$CTL" mode ids >/dev/null
 	! grep -q '^    copy-mode: ips$' "$YAML"
 }
@@ -252,13 +252,13 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	: >"$MOCK_CALLS_LOG"
 	run install_base --set SURICATA_MODE=ips
 	[ "$status" -eq 0 ]
-	! grep -q '^systemctl restart suricata.service' "$MOCK_CALLS_LOG"
+	if grep -q '^systemctl restart suricata.service' "$MOCK_CALLS_LOG"; then false; fi
 	before=$(iptables-save | grep -v DPISTACK)
 	"$CTL" fw apply
 	grep -qx -- '-N DPISTACK' "$STATE4"
 	run bash "$REPO_DIR/install.sh" uninstall
 	[ "$status" -eq 0 ]
-	! grep -q 'DPISTACK' "$STATE4" "$STATE6"
+	if grep -q 'DPISTACK' "$STATE4" "$STATE6"; then false; fi
 	[ ! -e "$FWUNIT" ]
 	[ ! -e "$DROPIN" ]
 	[ "$(iptables-save)" = "$before" ]
@@ -268,7 +268,7 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	installed
 	run "$CTL" mode ips
 	[ "$status" -eq 0 ]
-	! grep -q -- '--user' "$DROPIN"
+	[ "$(grep -c -- '--user' "$DROPIN")" -eq 0 ]
 	DPISTACK_TEST_LOG_OWNER=suricata run "$CTL" reconfigure
 	run "$CTL" mode ids
 	DPISTACK_TEST_LOG_OWNER=suricata run "$CTL" mode ips
