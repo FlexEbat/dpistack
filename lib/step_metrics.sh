@@ -243,6 +243,11 @@ step_metrics_apply() {
 	local backend installed marker
 	backend=$(metrics_backend)
 	installed=$(metrics_installed)
+	# A new pinned version (or another runtime) changes the marker: the
+	# binary then has to be fetched again, or the state would claim a
+	# version the old binary is not.
+	local refetch=0
+	[[ -n "$installed" && "$installed" != "$(metrics_marker "$backend")" ]] && refetch=1
 
 	# A backend that is no longer wanted (none, or the other one, or the
 	# other runtime) is stopped first; its data stays.
@@ -265,7 +270,7 @@ step_metrics_apply() {
 	if [[ "$(metrics_runtime)" == "docker" ]]; then
 		docker_service_apply "$backend" || return 1
 	else
-		if [[ ! -x "$(metrics_bin_path "$backend")" ]]; then
+		if [[ ! -x "$(metrics_bin_path "$backend")" || "$refetch" == "1" ]]; then
 			metrics_fetch_binary "$backend" || return 1
 		fi
 		write_rendered_file "$(metrics_unit_path "$backend")" "$(metrics_render_unit "$backend")" || return 1

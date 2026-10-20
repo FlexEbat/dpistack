@@ -495,8 +495,45 @@ preflight_reasons() {
 	grep -q 'уровень=supported' "$out"
 	grep -q '^===== dpistack.conf =====$' "$out"
 	grep -q '^IFACES=eth0$' "$out"
-	! grep -q 's3cret' "$out"
-	! grep -q '12345:abcdef' "$out"
+	if grep -q 's3cret' "$out"; then false; fi
+	if grep -q '12345:abcdef' "$out"; then false; fi
 	grep -q '<скрыто>' "$out"
 	[[ "$output" != *"s3cret"* ]]
+}
+
+@test "a Suricata rebuild does not run make install-conf over the rendered suricata.yaml (R134)" {
+	os_release ubuntu debian 24.04
+	local script='
+		pkg_build_deps() { :; }; pkg_select_rust() { :; }
+		run() { echo "RUN $*" >>"$MOCK_CALLS_LOG"; }
+		mkdir -p "$(path_suricata_src_dir)/.git"
+		suricata_build_from_source'
+	fam "$script"
+	grep -q '^RUN make install-conf$' "$CALLS"
+	: >"$CALLS"
+	mkdir -p "$(dirname "$DPISTACK_ROOT/etc/suricata/suricata.yaml")"
+	echo rendered >"$DPISTACK_ROOT/etc/suricata/suricata.yaml"
+	fam "$script"
+	grep -q '^RUN make install$' "$CALLS"
+	! grep -q 'install-conf' "$CALLS"
+}
+
+@test "PANEL_SOURCE=prebuilt: a reconfigure from the installed copy keeps the installed panel (R135)" {
+	os_release ubuntu debian 24.04
+	local script='
+		ORIGIN_DIR="$DPISTACK_ROOT/copy"; mkdir -p "$ORIGIN_DIR"
+		CONF[PANEL_SOURCE]=prebuilt
+		mkdir -p "$(dirname "$(path_panel_bin)")"; : >"$(path_panel_bin)"; chmod 755 "$(path_panel_bin)"
+		panel_bin_current && echo current'
+	run fam "$script"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *current* ]]
+	local script2='
+		ORIGIN_DIR="$DPISTACK_ROOT/copy"; mkdir -p "$ORIGIN_DIR"
+		CONF[PANEL_SOURCE]=prebuilt
+		echo new >"$ORIGIN_DIR/dpistack-panel"
+		mkdir -p "$(dirname "$(path_panel_bin)")"; echo old >"$(path_panel_bin)"; chmod 755 "$(path_panel_bin)"
+		panel_bin_current || echo differs'
+	run fam "$script2"
+	[[ "$output" == *differs* ]]
 }

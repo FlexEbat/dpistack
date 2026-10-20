@@ -149,7 +149,7 @@ port_down() { FAKE_LISTEN="3000 6379 9800"; }
 	at 0
 	FAKE_STOPPED="suricata.service" at 1
 	[ ! -s "$LOGGER_LOG" ]
-	! grep -q 'smtp://' "$CURL_CFG"
+	if grep -q 'smtp://' "$CURL_CFG"; then false; fi
 	grep -q 'api.telegram.org' "$CURL_CFG"
 	[ "$(grep -c '"check":"suricata.process"' "$EVENTS")" -eq 1 ]
 }
@@ -227,8 +227,8 @@ port_down() { FAKE_LISTEN="3000 6379 9800"; }
 		--set ALERT_TG_CHAT_ID=1 --set ALERT_TG_TOKEN="$TG_TOKEN"
 	[ "$status" -eq 0 ]
 	[[ "$output" != *"$TG_TOKEN"* ]]
-	! grep -rq "$TG_TOKEN" "$DPISTACK_ROOT/var/log" 2>/dev/null
-	! grep -q "$TG_TOKEN" "$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+	if grep -rq "$TG_TOKEN" "$DPISTACK_ROOT/var/log" 2>/dev/null; then false; fi
+	if grep -q "$TG_TOKEN" "$DPISTACK_ROOT/etc/dpistack/dpistack.conf"; then false; fi
 	[ "$(stat -c %a "$DPISTACK_ROOT/etc/dpistack/secrets.conf")" = "600" ]
 	grep -q "$TG_TOKEN" "$DPISTACK_ROOT/etc/dpistack/secrets.conf"
 }

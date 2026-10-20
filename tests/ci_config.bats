@@ -21,7 +21,7 @@ list_actions() {
 }
 
 @test "no workflow uses pull_request_target or untrusted event text in run steps" {
-	! grep -q 'pull_request_target' "$WF"/*.yml
+	if grep -q 'pull_request_target' "$WF"/*.yml; then false; fi
 	! grep -nE 'run:.*\$\{\{ *github\.(head_ref|event\.(issue|pull_request|comment))' "$WF"/*.yml
 }
 
@@ -63,7 +63,7 @@ list_actions() {
 }
 
 @test "no workflow pipes a download into a shell" {
-	! grep -nE '(curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba)?sh' "$WF"/*.yml
+	if grep -nE '(curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba)?sh' "$WF"/*.yml; then false; fi
 	! grep -nE 'bash <\((curl|wget)' "$WF"/*.yml
 }
 
@@ -154,4 +154,20 @@ list_actions() {
 			return 1
 		}
 	done < <(grep -oE '\]\([^)#:]+\)' "$REPO_DIR/README.md" | sed -E 's/^\]\((.*)\)$/\1/')
+}
+
+@test "no test has a bare '! command' before its last line: bats ignores it there (R138)" {
+	local bad
+	bad=$(awk '
+		/^@test/ { intest = 1; pending = ""; next }
+		intest && /^}/ { intest = 0; pending = ""; next }
+		intest {
+			if ($0 ~ /^[ \t]*(#|$)/) next
+			if (pending != "") { print FILENAME ":" pend_line ": " pending; pending = "" }
+			if ($0 ~ /^\t! /) { pending = $0; pend_line = FNR }
+		}' "$REPO_DIR"/tests/*.bats)
+	[ -z "$bad" ] || {
+		echo "$bad" >&2
+		false
+	}
 }

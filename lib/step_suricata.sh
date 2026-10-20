@@ -218,13 +218,19 @@ suricata_build_from_source() {
 		configure_args+=(--enable-ndpi --with-ndpi="$(path_ndpi_src_dir)")
 	fi
 
+	# install-conf writes the stock suricata.yaml over the rendered one; on a
+	# rebuild (a new release) the write_rendered_file guard would then take
+	# the stock file for a hand edit and keep it. So it runs only on the
+	# first build, when there is no suricata.yaml yet.
+	local install_conf=1
+	[[ -f "$(path_suricata_yaml)" ]] && install_conf=0
 	(
 		cd "$src_dir" || exit 1
 		run ./autogen.sh &&
 			run ./configure "${configure_args[@]}" &&
 			run make -j"$(nproc)" &&
 			run make install &&
-			run make install-conf
+			{ ((install_conf == 0)) || run make install-conf; }
 	)
 	local rc=$?
 	if [[ "$rc" -ne 0 ]]; then

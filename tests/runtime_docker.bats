@@ -51,14 +51,14 @@ compose_cmd="docker compose -p dpistack -f"
 	grep -q "^  evebox:" "$COMPOSE"
 	grep -q "^  redis:" "$COMPOSE"
 	grep -q "^  ntopng:" "$COMPOSE"
-	! grep -q "^  suricata:" "$COMPOSE"
+	if grep -q "^  suricata:" "$COMPOSE"; then false; fi
 	for svc in evebox redis ntopng; do
 		grep -q "^docker compose -p dpistack -f $COMPOSE up -d $svc\$" "$MOCK_CALLS_LOG"
 	done
 	# Suricata went the native way, the docker components did not install packages
 	grep -q '^systemctl enable --now suricata.service' "$MOCK_CALLS_LOG"
-	! grep -q '^apt-get install -y .*evebox' "$MOCK_CALLS_LOG"
-	! grep -q '^apt-get install -y .*ntopng' "$MOCK_CALLS_LOG"
+	if grep -q '^apt-get install -y .*evebox' "$MOCK_CALLS_LOG"; then false; fi
+	if grep -q '^apt-get install -y .*ntopng' "$MOCK_CALLS_LOG"; then false; fi
 	! grep -q '^systemctl enable --now evebox.service' "$MOCK_CALLS_LOG"
 }
 
@@ -88,7 +88,7 @@ compose_cmd="docker compose -p dpistack -f"
 	grep -q "network_mode: host" "$COMPOSE"
 	grep -q "cap_add: \[NET_ADMIN, NET_RAW, SYS_NICE\]" "$COMPOSE"
 	grep -q "$compose_cmd $COMPOSE up -d suricata\$" "$MOCK_CALLS_LOG"
-	! grep -q '^systemctl enable --now suricata.service' "$MOCK_CALLS_LOG"
+	if grep -q '^systemctl enable --now suricata.service' "$MOCK_CALLS_LOG"; then false; fi
 	[ -f "$DPISTACK_ROOT/etc/suricata/suricata.yaml" ]
 }
 
@@ -108,11 +108,11 @@ compose_cmd="docker compose -p dpistack -f"
 @test "criterion 5: dpistack leaves iptables, DOCKER-USER and Docker networks alone" {
 	run install_mixed --set SURICATA_RUNTIME=docker
 	[ "$status" -eq 0 ]
-	! grep -qE '^(iptables|ip6tables|nft) ' "$MOCK_CALLS_LOG"
-	! grep -q "DOCKER-USER" "$MOCK_CALLS_LOG"
-	! grep -qE '^docker (network|run|exec) ' "$MOCK_CALLS_LOG"
+	if grep -qE '^(iptables|ip6tables|nft) ' "$MOCK_CALLS_LOG"; then false; fi
+	if grep -q "DOCKER-USER" "$MOCK_CALLS_LOG"; then false; fi
+	if grep -qE '^docker (network|run|exec) ' "$MOCK_CALLS_LOG"; then false; fi
 	# host networking only: no published ports, no networks of our own
-	! grep -qE '^\s*(ports|networks):' "$COMPOSE"
+	if grep -qE '^\s*(ports|networks):' "$COMPOSE"; then false; fi
 	[ "$(grep -c "network_mode: host" "$COMPOSE")" -eq 4 ]
 }
 
@@ -203,6 +203,6 @@ compose_cmd="docker compose -p dpistack -f"
 	run install_base
 	[ "$status" -eq 0 ]
 	[ ! -f "$COMPOSE" ]
-	! grep -q '^docker ' "$MOCK_CALLS_LOG"
+	if grep -q '^docker ' "$MOCK_CALLS_LOG"; then false; fi
 	grep -q '^systemctl enable --now evebox.service' "$MOCK_CALLS_LOG"
 }

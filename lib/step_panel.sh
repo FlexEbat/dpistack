@@ -128,6 +128,9 @@ panel_bin_current() {
 	bin=$(path_panel_bin)
 	[[ -x "$bin" ]] || return 1
 	if [[ "$(panel_source_mode)" == "prebuilt" ]]; then
+		# Run from the installed copy (dpistack reconfigure) there is no
+		# ready binary next to the script any more: what is installed stays.
+		[[ -f "$(panel_prebuilt_path)" ]] || return 0
 		cmp -s "$(panel_prebuilt_path)" "$bin"
 		return
 	fi

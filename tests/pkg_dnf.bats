@@ -81,7 +81,7 @@ fam() {
 		run bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 3 ]
 	[[ "$output" == *"OISF COPR для epel-9"* ]]
-	! grep -q '^dnf copr enable' "$CALLS"
+	if grep -q '^dnf copr enable' "$CALLS"; then false; fi
 	! grep -q '^dnf install' "$CALLS"
 }
 
