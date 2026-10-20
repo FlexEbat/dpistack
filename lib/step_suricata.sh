@@ -390,11 +390,13 @@ SYSCONFIG
 
 step_suricata_apply() {
 	if docker_wanted suricata; then
+		runtime_release_native "$SURICATA_UNIT" || return 1
 		write_rendered_file "$(path_suricata_yaml)" "$(suricata_render_yaml)" || return 1
 		write_rendered_file "$(path_suricata_logrotate)" "$(suricata_render_logrotate)" || return 1
 		docker_service_apply suricata
 		return
 	fi
+	runtime_release_docker suricata || return 1
 	case "${CONF[SURICATA_SOURCE]}" in
 	oisf)
 		pkg_repo_add oisf || return 1

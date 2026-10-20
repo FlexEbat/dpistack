@@ -21,10 +21,12 @@ step_redis_check() {
 
 step_redis_apply() {
 	if docker_wanted redis; then
+		runtime_release_native "$REDIS_UNIT" || return 1
 		docker_service_apply redis || return 1
 		state_write_value "$REDIS_STATE_KEY" "done"
 		return 0
 	fi
+	runtime_release_docker redis || return 1
 	if ! command -v redis-server >/dev/null 2>&1; then
 		pkg_install "$REDIS_PACKAGE" || return 1
 	fi

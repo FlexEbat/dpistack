@@ -120,11 +120,13 @@ step_ntopng_check() {
 
 step_ntopng_apply() {
 	if docker_wanted ntopng; then
+		runtime_release_native "$NTOPNG_UNIT" || return 1
 		write_rendered_file "$(path_ntopng_conf)" "$(ntopng_render_conf)" || return 1
 		docker_service_apply ntopng || return 1
 		echo "ntopng: в контейнере, логин/пароль по умолчанию admin/admin, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - смените пароль в веб-интерфейсе." >&2
 		return 0
 	fi
+	runtime_release_docker ntopng || return 1
 	if ! command -v ntopng >/dev/null 2>&1; then
 		ntopng_repo_add || return 1
 		pkg_install "$(pkg_spec "$NTOPNG_PACKAGE" "${CONF[NTOPNG_VERSION]:-}")" || return 1
