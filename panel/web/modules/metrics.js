@@ -2,6 +2,7 @@
 // Charts are plain SVG; a series that cannot exist is shown as a note with
 // the reason, never as a flat line at zero, and a gap in the data is a gap
 // in the line.
+import { tickets } from "./poll.js";
 
 const POLL_MS = 30000; // the server samples every 30 s, so asking more often shows nothing new
 const W = 300;
@@ -95,6 +96,7 @@ function card(def, series) {
 
 export function start(api, els, onError) {
   let timer = null;
+  const seq = tickets();
   let running = true;
   let range = "1h";
 
@@ -106,17 +108,19 @@ export function start(api, els, onError) {
 
   async function load() {
     timer = null;
+    const ticket = seq.next();
     if (!running || document.hidden) return;
     try {
       const res = await api(`/api/metrics?range=${range}`);
-      if (!running) return;
+      if (!running || !seq.current(ticket)) return;
       els.charts.replaceChildren(...SERIES.map((def) => card(def, res.series[def.name])));
       els.error.textContent = "";
     } catch (err) {
+      if (!running || !seq.current(ticket)) return;
       if (err.status === 401) return onError(err);
       els.error.textContent = err.message;
     }
-    if (running) timer = setTimeout(load, POLL_MS);
+    if (running && seq.current(ticket)) timer = setTimeout(load, POLL_MS);
   }
 
   function onVisible() {

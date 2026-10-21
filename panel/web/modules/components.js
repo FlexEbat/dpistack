@@ -1,4 +1,5 @@
 // The Components screen: state of every component and its control buttons.
+import { tickets } from "./poll.js";
 
 const POLL_MS = 10000;
 const STATE = { active: "работает", inactive: "остановлен", failed: "сбой", absent: "не установлен" };
@@ -70,19 +71,24 @@ export function render(status, areas, run) {
 export function start(api, areas, onError) {
   let timer = null;
   let running = true;
+  const seq = tickets();
   areas = { ...areas, api };
 
   async function refresh() {
     clearTimeout(timer);
     timer = null;
+    const ticket = seq.next();
     if (!running || document.hidden) return;
     try {
-      render(await api("/api/status"), areas, run);
+      const status = await api("/api/status");
+      if (!running || !seq.current(ticket)) return;
+      render(status, areas, run);
     } catch (err) {
+      if (!running || !seq.current(ticket)) return;
       if (err.status === 401) return onError(err);
       areas.error.textContent = err.message;
     }
-    if (running) timer = setTimeout(refresh, POLL_MS);
+    if (running && seq.current(ticket)) timer = setTimeout(refresh, POLL_MS);
   }
 
   async function run(action) {
