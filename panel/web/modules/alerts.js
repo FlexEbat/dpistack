@@ -1,5 +1,6 @@
 // The Alerts screen: the changes of check status that the watchdog wrote to
 // events.jsonl, newest first, with a filter by check.
+import { tickets } from "./poll.js";
 
 const POLL_MS = 10000;
 const WORD = { ok: "норма", warn: "предупреждение", crit: "авария", na: "нет данных" };
@@ -27,6 +28,7 @@ export const word = (s) => WORD[s] || s;
 
 export function start(api, els, onError) {
   let timer = null;
+  const seq = tickets();
   let running = true;
 
   function fillChecks(checks) {
@@ -56,12 +58,13 @@ export function start(api, els, onError) {
 
   async function load() {
     timer = null;
+    const ticket = seq.next();
     if (!running || document.hidden) return;
     const query = new URLSearchParams({ limit: els.limit.value });
     if (els.check.value) query.set("check", els.check.value);
     try {
       const res = await api(`/api/alerts?${query}`);
-      if (!running) return;
+      if (!running || !seq.current(ticket)) return;
       els.error.textContent = "";
       fillChecks(res.checks);
       if (!res.file_present) {
@@ -72,10 +75,11 @@ export function start(api, els, onError) {
         els.list.replaceChildren(table(res.alerts));
       }
     } catch (err) {
+      if (!running || !seq.current(ticket)) return;
       if (err.status === 401) return onError(err);
       els.error.textContent = err.message;
     }
-    if (running) timer = setTimeout(load, POLL_MS);
+    if (running && seq.current(ticket)) timer = setTimeout(load, POLL_MS);
   }
 
   function reload() {
