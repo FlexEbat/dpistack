@@ -39,7 +39,7 @@ func (c *Collector) Save() error {
 		t := float64(s.T)
 		row[0] = &t
 		for j, v := range s.V {
-			if !math.IsNaN(v) {
+			if !math.IsNaN(v) && !math.IsInf(v, 0) {
 				v := v
 				row[1+j] = &v
 			}

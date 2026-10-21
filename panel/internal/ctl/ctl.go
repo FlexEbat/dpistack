@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // callTimeout bounds one ctl call; `status` asks systemd about every component.
@@ -288,9 +289,7 @@ func (r *Runner) runWith(ctx context.Context, limit int, timeout time.Duration, 
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
 			out := strings.TrimSpace(stdout.String())
-			if len(out) > maxChecker {
-				out = out[:maxChecker]
-			}
+			out = cutUTF8(out, maxChecker)
 			return nil, &ExitError{Code: exit.ExitCode(), Message: firstLine(stderr.String()), Output: out}
 		}
 		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
@@ -317,8 +316,18 @@ func firstLine(stderr string) string {
 		msg = msg[:i]
 	}
 	msg = strings.TrimPrefix(msg, "dpistack-ctl: ")
-	if len(msg) > 200 {
-		msg = msg[:200]
+	return cutUTF8(msg, 200)
+}
+
+// cutUTF8 shortens s to at most n bytes without cutting a character in
+// half: the messages are Russian, two bytes a letter, and half a letter
+// reaches the screen as a replacement sign.
+func cutUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
 	}
-	return msg
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

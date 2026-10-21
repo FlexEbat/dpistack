@@ -13,26 +13,35 @@ import (
 )
 
 // DecodeStats reads the counters out of one `stats` event.
+//
+// Suricata in NFQUEUE mode (IPS) has no `stats.capture` block at all (checked
+// against Suricata 7.0.3 with a real queue): the packets it saw are in
+// `stats.decoder.pkts`, and there is no kernel drop counter. Such an event
+// gives Packets from the decoder and NoKernel set, so a drop count of zero is
+// never invented.
 func DecodeStats(ev eve.Event) (Stats, bool) {
 	var e struct {
 		Stats struct {
 			Uptime  float64 `json:"uptime"`
-			Capture struct {
+			Capture *struct {
 				Packets uint64 `json:"kernel_packets"`
 				Drops   uint64 `json:"kernel_drops"`
 			} `json:"capture"`
+			Decoder struct {
+				Pkts uint64 `json:"pkts"`
+			} `json:"decoder"`
 		} `json:"stats"`
 	}
 	if err := json.Unmarshal(ev.Line, &e); err != nil {
 		return Stats{}, false
 	}
-	return Stats{
-		ID:      ev.ID,
-		Packets: e.Stats.Capture.Packets,
-		Drops:   e.Stats.Capture.Drops,
-		Uptime:  e.Stats.Uptime,
-		Time:    ev.Time,
-	}, true
+	st := Stats{ID: ev.ID, Uptime: e.Stats.Uptime, Time: ev.Time}
+	if c := e.Stats.Capture; c != nil {
+		st.Packets, st.Drops = c.Packets, c.Drops
+	} else {
+		st.Packets, st.NoKernel = e.Stats.Decoder.Pkts, true
+	}
+	return st, true
 }
 
 // EveStats returns the newest `stats` event of r as Stats. It polls the

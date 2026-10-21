@@ -68,7 +68,7 @@ path_suricata_src_dir() { echo "${DPISTACK_ROOT}/usr/local/src/dpistack-suricata
 path_suricata_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/suricata.service"; }
 path_rules_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-rules.service"; }
 path_rules_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-rules.timer"; }
-path_suricata_socket() { echo "${DPISTACK_ROOT}/run/suricata/suricata-command.socket"; }
+path_suricata_socket() { echo "${DPISTACK_ROOT}/run/suricata-command.socket"; }
 
 path_evebox_yaml() { echo "${DPISTACK_ROOT}/etc/evebox/evebox.yaml"; }
 path_suricata_sysconfig() { echo "${DPISTACK_ROOT}/etc/sysconfig/suricata"; }

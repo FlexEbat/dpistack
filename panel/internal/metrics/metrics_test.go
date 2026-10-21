@@ -474,3 +474,55 @@ func TestProcReportsThisProcess(t *testing.T) {
 		t.Errorf("/proc is there but rss is %d", rss)
 	}
 }
+
+// The event is the shape of a real stats line of Suricata 7.0.3 in NFQUEUE
+// mode (IPS), cut down to the fields that matter: there is no stats.capture
+// block, the packets are in stats.decoder.pkts.
+const nfqStatsLine = `{"timestamp":"2026-10-21T01:09:06.151112+0000","event_type":"stats","stats":{"uptime":%d,"ips":{"accepted":%d,"blocked":0,"rejected":0,"replaced":0},"decoder":{"pkts":%d,"bytes":1000}}}` + "\n"
+
+func TestNFQStatsCountDecoderPacketsAndNoDrops(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "eve.json")
+	write := func(uptime, pkts int) {
+		h, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(h, nfqStatsLine, uptime, pkts, pkts)
+		h.Close()
+	}
+	write(10, 100)
+	src := EveStats(eve.New(path))
+	st, ok := src()
+	if !ok || st.Packets != 100 || !st.NoKernel {
+		t.Fatalf("NFQUEUE stats: %+v ok=%v, want 100 decoder packets and NoKernel", st, ok)
+	}
+
+	clk := newClock()
+	c := New(Config{Now: clk.now, Inputs: Inputs{Stats: src}})
+	c.Sample()
+	write(40, 700)
+	clk.advance(30 * time.Second)
+	c.Sample()
+	if got := lastValue(t, c, PPS); math.Abs(got-20) > 1e-9 {
+		t.Errorf("pps in NFQUEUE mode = %v, want 20 (it was 0 while only stats.capture was read)", got)
+	}
+	if got := lastValue(t, c, Drops); !math.IsNaN(got) {
+		t.Errorf("drops in NFQUEUE mode = %v, want unknown: the kernel counts none", got)
+	}
+}
+
+func TestSaveLeavesOutInfinity(t *testing.T) {
+	clk := newClock()
+	file := filepath.Join(t.TempDir(), "metrics.json")
+	c := New(Config{Now: clk.now, File: file})
+	c.Sample()
+	c.mu.Lock()
+	c.ring[len(c.ring)-1].V[PPS] = math.Inf(1)
+	c.mu.Unlock()
+	if err := c.Save(); err != nil {
+		t.Fatalf("Save with an infinite value: %v (the history would never be written)", err)
+	}
+	if got := load(file, clk.now(), func(string, ...any) {}); len(got) != 1 || !math.IsNaN(got[0].V[PPS]) {
+		t.Errorf("restored %+v, want one sample with an unknown pps", got)
+	}
+}

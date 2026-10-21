@@ -65,6 +65,7 @@ suricata_render_eve_log_block() {
 	echo "      enabled: yes"
 	echo "      filetype: regular"
 	echo "      filename: eve.json"
+	echo "      filemode: 0640"
 	echo "      pcap-file: false"
 	echo "      community-id: false"
 	echo "      community-id-seed: 0"
@@ -83,7 +84,31 @@ suricata_render_yaml() {
 		"STATS_INTERVAL=${CONF[STATS_INTERVAL_SEC]:-30}" \
 		"EVE_LOG_BLOCK=$(suricata_render_eve_log_block)" \
 		"AF_PACKET_BLOCK=$(suricata_render_af_packet_block)" \
-		"PLUGINS_BLOCK=$(suricata_render_plugins_block)"
+		"PLUGINS_BLOCK=$(suricata_render_plugins_block)" \
+		"COMMAND_SOCKET=$(suricata_command_socket)"
+}
+
+# suricata_command_socket - where Suricata creates its command socket, the
+# one `dpistack-ctl reload` and logrotate talk to. In a container it lies in
+# the mounted run directory, where docker_suricata_reload looks for it.
+suricata_command_socket() {
+	if docker_wanted suricata; then
+		echo "/var/run/suricata/suricata-command.socket"
+	else
+		path_suricata_socket
+	fi
+}
+
+# suricata_reopen_command - the command that makes Suricata open eve.json
+# again after logrotate renamed it. Without it Suricata keeps writing to the
+# renamed file and the new eve.json stays empty.
+suricata_reopen_command() {
+	if docker_wanted suricata; then
+		docker_compose_argv
+		echo "${DOCKER_COMPOSE_ARGV[*]} exec -T suricata suricatasc -c reopen-log-files /var/run/suricata/suricata-command.socket"
+	else
+		echo "$(command -v suricatasc || echo /usr/bin/suricatasc) -c reopen-log-files $(path_suricata_socket)"
+	fi
 }
 
 suricata_rotate_directive() {
@@ -99,7 +124,8 @@ suricata_render_logrotate() {
 	render_template "$SCRIPT_DIR/templates/logrotate.tpl" \
 		"EVE_JSON_PATH=$(path_suricata_eve_json)" \
 		"ROTATE_DIRECTIVE=$(suricata_rotate_directive)" \
-		"EVE_KEEP=${CONF[EVE_KEEP]:-14}"
+		"EVE_KEEP=${CONF[EVE_KEEP]:-14}" \
+		"REOPEN_CMD=$(suricata_reopen_command)"
 }
 
 suricata_installed_version() {
@@ -388,9 +414,40 @@ OPTIONS="--af-packet --user suricata "
 SYSCONFIG
 }
 
+# suricata_log_access - who may read eve.json: the group "suricata", which
+# the panel and EveBox users join (tech.md 4.2). The Debian and Ubuntu
+# packages make no such group and run Suricata as root, so the group is
+# created here and the root-owned log directory handed to it (setgid, so
+# files Suricata creates later, also after logrotate, keep the group). Where
+# the log directory already belongs to a user (the RPM layout) only the
+# mode of the file is set.
+suricata_log_access() {
+	local eve dir owner
+	eve=$(path_suricata_eve_json)
+	dir=$(dirname "$eve")
+	if ! getent group suricata >/dev/null 2>&1; then
+		run groupadd --system suricata || return 1
+	fi
+	run mkdir -p "$dir" || return 1
+	# DPISTACK_TEST_LOG_OWNER: the tests cannot chown a directory.
+	owner="${DPISTACK_TEST_LOG_OWNER:-$(stat -c %U "$dir" 2>/dev/null)}"
+	if [[ "$owner" == "root" ]]; then
+		run chgrp suricata "$dir" || return 1
+		run chmod 2750 "$dir" || return 1
+		if [[ -f "$eve" ]]; then
+			run chgrp suricata "$eve" || return 1
+		fi
+	fi
+	if [[ -f "$eve" ]]; then
+		run chmod 0640 "$eve" || return 1
+	fi
+	return 0
+}
+
 step_suricata_apply() {
 	if docker_wanted suricata; then
 		runtime_release_native "$SURICATA_UNIT" || return 1
+		suricata_log_access || return 1
 		write_rendered_file "$(path_suricata_yaml)" "$(suricata_render_yaml)" || return 1
 		write_rendered_file "$(path_suricata_logrotate)" "$(suricata_render_logrotate)" || return 1
 		docker_service_apply suricata
@@ -437,15 +494,14 @@ step_suricata_apply() {
 	fi
 
 	suricata_mode_files_apply || return 1
+	suricata_log_access || return 1
 
 	run systemctl enable --now "$SURICATA_UNIT" || return 1
 	# A changed unit, drop-in or yaml (IDS <-> IPS) is read only after a restart.
 	if ((was_configured)); then
 		run systemctl restart "$SURICATA_UNIT" || return 1
 	fi
-	local eve_json
-	eve_json=$(path_suricata_eve_json)
-	[[ -f "$eve_json" ]] && run chmod 0640 "$eve_json"
+	suricata_log_access || return 1
 
 	if [[ "${CONF[PIN_VERSIONS]:-no}" == "yes" && "${CONF[SURICATA_SOURCE]}" != "source" ]]; then
 		pkg_pin "$SURICATA_PACKAGE" || return 1

@@ -230,9 +230,13 @@ func (e *Exporter) render(now time.Time) []byte {
 		_ = cfg.IO.Poll()
 		if recent := cfg.Eve.Recent(eve.Query{Type: "stats", Limit: 2}); len(recent) > 0 {
 			if cur, ok := metrics.DecodeStats(recent[0]); ok {
-				packets.set("", strconv.FormatUint(cur.Packets, 10))
-				drops.set("", strconv.FormatUint(cur.Drops, 10))
 				uptime.set("", num(cur.Uptime))
+				// Without stats.capture (NFQUEUE) there are no kernel counters:
+				// the metrics are left out, not exported as zero.
+				if !cur.NoKernel {
+					packets.set("", strconv.FormatUint(cur.Packets, 10))
+					drops.set("", strconv.FormatUint(cur.Drops, 10))
+				}
 				if len(recent) > 1 {
 					if prev, ok := metrics.DecodeStats(recent[1]); ok {
 						if r, ok := dropRatio(prev, cur); ok {
@@ -325,6 +329,9 @@ func (e *Exporter) render(now time.Time) []byte {
 // counter that went down means Suricata restarted: there is no ratio for
 // that interval, and never a negative one.
 func dropRatio(prev, cur metrics.Stats) (float64, bool) {
+	if prev.NoKernel || cur.NoKernel {
+		return 0, false // NFQUEUE has no kernel drop counter
+	}
 	if cur.Packets < prev.Packets || cur.Drops < prev.Drops {
 		return 0, false
 	}
