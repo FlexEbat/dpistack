@@ -549,7 +549,7 @@ cmd_uninstall() {
 
 	if [[ "$DRY_RUN" == "1" ]]; then
 		# Everything below removes files with plain rm: a dry run only lists.
-		echo "dry-run: uninstall остановил бы и убрал таймеры и службы dpistack, цепочку DPISTACK, drop-in режима, конфиги ($(path_conf), $(path_secrets)), состояние ($(path_state_dir)) и копии программы; ничего не изменено"
+		echo "dry-run: uninstall остановил бы и убрал таймеры и службы dpistack, цепочку DPISTACK, drop-in режима (Suricata, запущенная в NFQ, перезапускается), правила ufw/firewalld, добавленные dpistack, конфиги ($(path_conf), $(path_secrets)), состояние ($(path_state_dir)) и копии программы; ничего не изменено"
 		[[ "$PURGE" == "1" ]] && echo "dry-run: с --purge ещё конфиги и данные компонентов (suricata.yaml, правила, ntopng, EveBox, TLS, данные метрик, пользователи)"
 		return 0
 	fi
@@ -566,8 +566,19 @@ cmd_uninstall() {
 		ips_fw_remove
 	fi
 	run systemctl disable dpistack-fw.service 2>/dev/null || true
+	# Suricata started by the IPS drop-in sits on the queue (-q 0). With the
+	# drop-in gone it must be started again, or it keeps listening to a queue
+	# that nothing feeds any more instead of capturing like a plain install.
+	local was_ips=0
+	[[ -e "$(path_suricata_mode_dropin)" ]] && was_ips=1
 	rm -f "$(path_fw_unit)" "$(path_suricata_mode_dropin)"
 	run systemctl daemon-reload
+	if [[ "$was_ips" == 1 && "${CONF[SURICATA_SOURCE]:-}" != "source" ]]; then
+		run systemctl restart "$SURICATA_UNIT" 2>/dev/null || true
+	fi
+
+	# ufw and firewalld rules that dpistack added (and only those).
+	access_firewall_forget || true
 
 	# The metrics backend is dpistack's own addition (unlike the packages of
 	# the stack): stopped, its unit and binaries removed; the series stay
@@ -1454,7 +1465,7 @@ mode_check_ips_possible() {
 	[[ "$(conf_get SURICATA_RUNTIME native)" == "native" ]] ||
 		fail 3 "mode ips: только для SURICATA_RUNTIME=native"
 	if [[ "$(conf_get IPS_METHOD nfq)" == "nfq" ]]; then
-		command -v iptables >/dev/null 2>&1 || fail 3 "mode ips: не найден iptables (нужен для цепочки DPISTACK)"
+		[[ -n "$(ips_backend)" ]] || fail 3 "mode ips: не найдены ни iptables, ни nft (нужны для очереди NFQUEUE)"
 	fi
 	command -v suricata >/dev/null 2>&1 || fail 4 "mode ips: suricata не установлена"
 }
@@ -1547,7 +1558,7 @@ cmd_mode() {
 		if ! ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)"; then
 			ips_fw_remove
 			conf_apply_value SURICATA_MODE ids
-			fail 1 "mode ips: правила iptables не применились, режим возвращён в ids"
+			fail 1 "mode ips: правила файрвола не применились, режим возвращён в ids"
 		fi
 	fi
 
@@ -1591,7 +1602,7 @@ cmd_fw() {
 	[[ $# -eq 1 ]] || fail 2 "fw: apply|remove|restore"
 	case "$1" in
 	apply)
-		ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw apply: iptables отказал"
+		ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw apply: файрвол отказал"
 		;;
 	remove) ips_fw_remove ;;
 	restore)
@@ -1600,7 +1611,7 @@ cmd_fw() {
 		if [[ -n "$(mode_pending_deadline)" ]]; then
 			cmd_mode_rollback
 		elif [[ "$(conf_get SURICATA_MODE ids)" == "ips" && "$(conf_get IPS_METHOD nfq)" == "nfq" ]]; then
-			ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw restore: iptables отказал"
+			ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw restore: файрвол отказал"
 		elif ips_fw_present; then
 			ips_fw_remove
 		fi
@@ -2409,7 +2420,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack-ctl version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack-ctl
-DPISTACK_VERSION="0.20.2"
+DPISTACK_VERSION="0.20.3"
 
 : "${DRY_RUN:=0}"
 
@@ -3011,11 +3022,54 @@ IPS_CHAIN="DPISTACK"
 IPS_QUEUE_NUM=0
 IPS_ALL_CHAINS=(INPUT OUTPUT FORWARD)
 
-# ips_tools - the iptables front ends that exist (v4 always, v6 if there).
+# ips_tools - the iptables front ends that exist (v4 and v6 if there).
 ips_tools() {
-	echo iptables
+	command -v iptables >/dev/null 2>&1 && echo iptables
 	command -v ip6tables >/dev/null 2>&1 && echo ip6tables
 	return 0
+}
+
+# ips_backend - which firewall front end carries the queue rules: iptables
+# where it exists (also iptables-nft), nft on a system that has only nft
+# (a minimal Rocky/Alma, say). Prints nothing when there is neither.
+# nft keeps its own table "inet dpistack" (v4 and v6 in one), so the rules of
+# the host stay untouched there too.
+ips_backend() {
+	if command -v iptables >/dev/null 2>&1; then
+		echo iptables
+	elif command -v nft >/dev/null 2>&1; then
+		echo nft
+	fi
+	return 0
+}
+
+IPS_NFT_TABLE="dpistack"
+
+# ips_nft_hook <chain> - the nft hook of an iptables chain name.
+ips_nft_hook() {
+	case "$1" in
+	INPUT) echo input ;;
+	OUTPUT) echo output ;;
+	FORWARD) echo forward ;;
+	esac
+}
+
+# ips_nft_ruleset <chains> - the table as one nft script. "add" and "delete"
+# first make the rebuild atomic and repeatable whether or not it existed.
+ips_nft_ruleset() {
+	local chain hook
+	echo "add table inet $IPS_NFT_TABLE"
+	echo "delete table inet $IPS_NFT_TABLE"
+	echo "table inet $IPS_NFT_TABLE {"
+	for chain in $(ips_nfq_chains "$1"); do
+		hook=$(ips_nft_hook "$chain")
+		[[ -n "$hook" ]] || continue
+		echo "	chain $hook {"
+		echo "		type filter hook $hook priority -10; policy accept;"
+		echo "		queue num $IPS_QUEUE_NUM bypass"
+		echo "	}"
+	done
+	echo "}"
 }
 
 # ips_nfq_chains - the chains that get the jump, from IPS_NFQ_CHAINS.
@@ -3032,6 +3086,13 @@ ips_nfq_chains() {
 # Repeatable: the chain is rebuilt, a jump is added only if missing.
 ips_fw_apply() {
 	local chains="$1" tool chain
+	if [[ "$(ips_backend)" == "nft" ]]; then
+		ips_nft_ruleset "$chains" | nft -f - || return 1
+		return 0
+	fi
+	# iptables carries the rules: a table left by an earlier nft run must go,
+	# or every packet would be queued twice.
+	ips_nft_remove
 	for tool in $(ips_tools); do
 		"$tool" -w -N "$IPS_CHAIN" 2>/dev/null || true
 		"$tool" -w -F "$IPS_CHAIN" || return 1
@@ -3047,6 +3108,7 @@ ips_fw_apply() {
 # ips_fw_present - DPISTACK exists in iptables.
 ips_fw_present() {
 	local tool
+	ips_nft_present && return 0
 	for tool in $(ips_tools); do
 		"$tool" -w -n -L "$IPS_CHAIN" >/dev/null 2>&1 && return 0
 	done
@@ -3057,6 +3119,7 @@ ips_fw_present() {
 # IPS_NFQ_CHAINS says) and then the chain itself. Nothing else is touched.
 ips_fw_remove() {
 	local tool chain
+	ips_nft_remove
 	for tool in $(ips_tools); do
 		for chain in "${IPS_ALL_CHAINS[@]}"; do
 			while "$tool" -w -C "$chain" -j "$IPS_CHAIN" 2>/dev/null; do
@@ -3068,6 +3131,19 @@ ips_fw_remove() {
 			"$tool" -w -X "$IPS_CHAIN"
 		fi
 	done
+	return 0
+}
+
+# ips_nft_present - the table "inet dpistack" exists.
+ips_nft_present() {
+	command -v nft >/dev/null 2>&1 && nft list table inet "$IPS_NFT_TABLE" >/dev/null 2>&1
+}
+
+# ips_nft_remove - delete our own table, and only that.
+ips_nft_remove() {
+	if ips_nft_present; then
+		nft delete table inet "$IPS_NFT_TABLE" || return 1
+	fi
 	return 0
 }
 DPISTACK_BUNDLE_END
@@ -4543,7 +4619,7 @@ path_suricata_src_dir() { echo "${DPISTACK_ROOT}/usr/local/src/dpistack-suricata
 path_suricata_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/suricata.service"; }
 path_rules_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-rules.service"; }
 path_rules_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-rules.timer"; }
-path_suricata_socket() { echo "${DPISTACK_ROOT}/run/suricata/suricata-command.socket"; }
+path_suricata_socket() { echo "${DPISTACK_ROOT}/run/suricata-command.socket"; }
 
 path_evebox_yaml() { echo "${DPISTACK_ROOT}/etc/evebox/evebox.yaml"; }
 path_suricata_sysconfig() { echo "${DPISTACK_ROOT}/etc/sysconfig/suricata"; }
@@ -5343,51 +5419,145 @@ access_selinux_ports() {
 	done
 }
 
-# access_allow_port <cidr> <port> - one rule in whichever firewall the
-# system has: ufw (Debian family) or firewalld (RHEL family).
-access_allow_port() {
-	local cidr="$1" port="$2"
+# The firewall rules dpistack added are written down in the state as
+# "cidr,port" pairs (state key access.fw.rules), and only those are ever
+# taken out again: a rule the administrator had before (or adds later) is
+# never touched. A change of ACCESS_MODE, LAN_CIDR or FIREWALL_MANAGE, and
+# uninstall, remove what is no longer wanted.
+ACCESS_FW_STATE_KEY="access.fw.rules"
+
+# access_fw_tool -> ufw | firewalld | (nothing)
+access_fw_tool() {
 	if command -v ufw >/dev/null 2>&1; then
-		run ufw allow from "$cidr" to any port "$port" proto tcp
+		echo ufw
+	elif command -v firewall-cmd >/dev/null 2>&1; then
+		echo firewalld
+	fi
+	return 0
+}
+
+access_fw_rich_rule() {
+	echo "rule family=ipv4 source address=${1} port port=${2} protocol=tcp accept"
+}
+
+# access_fw_has <cidr> <port> - the rule is there, whoever added it.
+access_fw_has() {
+	local cidr="$1" port="$2"
+	if [[ "$(access_fw_tool)" == "ufw" ]]; then
+		ufw show added 2>/dev/null | grep -qxF "ufw allow from $cidr to any port $port proto tcp"
 	else
-		run firewall-cmd --permanent \
-			"--add-rich-rule=rule family=ipv4 source address=${cidr} port port=${port} protocol=tcp accept"
+		firewall-cmd --permanent "--query-rich-rule=$(access_fw_rich_rule "$cidr" "$port")" >/dev/null 2>&1
 	fi
 }
 
-access_firewall_apply() {
+# access_fw_delete <cidr> <port> - take one of our rules out.
+access_fw_delete() {
+	local cidr="$1" port="$2"
+	if [[ "$(access_fw_tool)" == "ufw" ]]; then
+		run ufw --force delete allow from "$cidr" to any port "$port" proto tcp
+	else
+		run firewall-cmd --permanent "--remove-rich-rule=$(access_fw_rich_rule "$cidr" "$port")"
+	fi
+}
+
+# access_allow_port <cidr> <port> - one rule in whichever firewall the
+# system has: ufw (Debian family) or firewalld (RHEL family). A rule that
+# was already there and is not ours is left alone and not written down.
+access_allow_port() {
+	local cidr="$1" port="$2" rule="$1,$2" mine=1
+	if access_fw_has "$cidr" "$port" && [[ " $(state_read_value "$ACCESS_FW_STATE_KEY") " != *" $rule "* ]]; then
+		mine=0
+	fi
+	if [[ "$mine" == 1 ]]; then
+		if [[ "$(access_fw_tool)" == "ufw" ]]; then
+			run ufw allow from "$cidr" to any port "$port" proto tcp || return 1
+		else
+			run firewall-cmd --permanent "--add-rich-rule=$(access_fw_rich_rule "$cidr" "$port")" || return 1
+		fi
+		ACCESS_FW_OWNED+=("$rule")
+	fi
+	return 0
+}
+
+# access_fw_wanted - "cidr,port" for every port that should be open now.
+access_fw_wanted() {
 	[[ "${CONF[FIREWALL_MANAGE]:-no}" == "auto" ]] || return 0
-	if ! command -v ufw >/dev/null 2>&1 && ! command -v firewall-cmd >/dev/null 2>&1; then
-		echo "access: FIREWALL_MANAGE=auto, но ни ufw, ни firewalld не найдены - правила не применены" >&2
+	local cidr port
+	local -a ports=()
+	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
+	case "${CONF[ACCESS_MODE]:-localhost}" in
+	nginx)
+		ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
+		;;
+	lan)
+		ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
+		# The metrics backend binds 0.0.0.0 in lan mode (and nginx does not
+		# proxy it), so its own port is opened for LAN_CIDR too.
+		[[ "${CONF[METRICS_BACKEND]:-none}" != "none" ]] && ports+=("$(metrics_port "${CONF[METRICS_BACKEND]}")")
+		;;
+	esac
+	for port in "${ports[@]}"; do
+		echo "$cidr,$port"
+	done
+	return 0
+}
+
+# access_firewall_sync <wanted rules...> - make the rules we own equal the
+# wanted ones: take out what we added earlier and is no longer wanted, add
+# what is missing, write the result down. Returns 0 when nothing could be
+# done because the firewall is not there (the state stays as it was).
+access_firewall_sync() {
+	local -a wanted=("$@")
+	local tool old rule changed=0
+	tool=$(access_fw_tool)
+	old=$(state_read_value "$ACCESS_FW_STATE_KEY")
+	if [[ -z "$tool" ]]; then
+		[[ ${#wanted[@]} -gt 0 ]] && echo "access: FIREWALL_MANAGE=auto, но ни ufw, ни firewalld не найдены - правила не применены" >&2
 		return 0
 	fi
 	# firewalld installed but stopped: its permanent rules would be
 	# written, but --reload fails and the ports stay closed or open by
 	# accident. Say so and leave it to the administrator.
-	if ! command -v ufw >/dev/null 2>&1 && ! firewall-cmd --state >/dev/null 2>&1; then
-		echo "access: FIREWALL_MANAGE=auto, но firewalld не запущен - правила не применены (запустите firewalld и повторите reconfigure)" >&2
+	if [[ "$tool" == "firewalld" ]] && ! firewall-cmd --state >/dev/null 2>&1; then
+		if [[ ${#wanted[@]} -gt 0 || -n "$old" ]]; then
+			echo "access: firewalld не запущен - правила не применены (запустите firewalld и повторите reconfigure)" >&2
+		fi
 		return 0
 	fi
-	local cidr
-	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
-	local port
-	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
-		for port in "${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}"; do
-			access_allow_port "$cidr" "$port" || return 1
-		done
-	elif [[ "${CONF[ACCESS_MODE]:-localhost}" == "lan" ]]; then
-		local -a lan_ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
-		# The metrics backend binds 0.0.0.0 in lan mode (and nginx does not
-		# proxy it), so its own port is opened for LAN_CIDR too.
-		[[ "${CONF[METRICS_BACKEND]:-none}" != "none" ]] && lan_ports+=("$(metrics_port "${CONF[METRICS_BACKEND]}")")
-		for port in "${lan_ports[@]}"; do
-			access_allow_port "$cidr" "$port" || return 1
-		done
-	fi
+	ACCESS_FW_OWNED=()
+	for rule in $old; do
+		if [[ " ${wanted[*]} " == *" $rule "* ]]; then
+			ACCESS_FW_OWNED+=("$rule")
+		else
+			access_fw_delete "${rule%,*}" "${rule#*,}" || return 1
+			changed=1
+		fi
+	done
+	for rule in "${wanted[@]}"; do
+		[[ " ${ACCESS_FW_OWNED[*]} " == *" $rule "* ]] && continue
+		access_allow_port "${rule%,*}" "${rule#*,}" || return 1
+		changed=1
+	done
 	# firewalld keeps permanent rules apart from the running ones.
-	if ! command -v ufw >/dev/null 2>&1; then
+	if [[ "$tool" == "firewalld" && "$changed" == 1 ]]; then
 		run firewall-cmd --reload || return 1
 	fi
+	state_write_value "$ACCESS_FW_STATE_KEY" "${ACCESS_FW_OWNED[*]}"
+	return 0
+}
+
+access_firewall_apply() {
+	local -a wanted=()
+	local rule
+	while IFS= read -r rule; do
+		[[ -n "$rule" ]] && wanted+=("$rule")
+	done < <(access_fw_wanted)
+	access_firewall_sync "${wanted[@]}"
+}
+
+# access_firewall_forget - uninstall: take out every rule we added.
+access_firewall_forget() {
+	access_firewall_sync
 }
 
 step_access_check() {
@@ -6587,8 +6757,8 @@ step_preflight_reasons() {
 		fi
 	done
 
-	if [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "nfq" ]] && ! command -v iptables >/dev/null 2>&1; then
-		reasons+=("SURICATA_MODE=ips с IPS_METHOD=nfq: не найден iptables (нужен для цепочки DPISTACK)")
+	if [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "nfq" ]] && [[ -z "$(ips_backend)" ]]; then
+		reasons+=("SURICATA_MODE=ips с IPS_METHOD=nfq: не найдены ни iptables, ни nft (нужны для очереди NFQUEUE)")
 	fi
 	if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" && "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
 		reasons+=("SURICATA_RUNTIME=docker: плагин nDPI в образ не ставится, задайте NDPI_ENABLE=no")
@@ -7130,6 +7300,7 @@ suricata_render_eve_log_block() {
 	echo "      enabled: yes"
 	echo "      filetype: regular"
 	echo "      filename: eve.json"
+	echo "      filemode: 0640"
 	echo "      pcap-file: false"
 	echo "      community-id: false"
 	echo "      community-id-seed: 0"
@@ -7148,7 +7319,31 @@ suricata_render_yaml() {
 		"STATS_INTERVAL=${CONF[STATS_INTERVAL_SEC]:-30}" \
 		"EVE_LOG_BLOCK=$(suricata_render_eve_log_block)" \
 		"AF_PACKET_BLOCK=$(suricata_render_af_packet_block)" \
-		"PLUGINS_BLOCK=$(suricata_render_plugins_block)"
+		"PLUGINS_BLOCK=$(suricata_render_plugins_block)" \
+		"COMMAND_SOCKET=$(suricata_command_socket)"
+}
+
+# suricata_command_socket - where Suricata creates its command socket, the
+# one `dpistack-ctl reload` and logrotate talk to. In a container it lies in
+# the mounted run directory, where docker_suricata_reload looks for it.
+suricata_command_socket() {
+	if docker_wanted suricata; then
+		echo "/var/run/suricata/suricata-command.socket"
+	else
+		path_suricata_socket
+	fi
+}
+
+# suricata_reopen_command - the command that makes Suricata open eve.json
+# again after logrotate renamed it. Without it Suricata keeps writing to the
+# renamed file and the new eve.json stays empty.
+suricata_reopen_command() {
+	if docker_wanted suricata; then
+		docker_compose_argv
+		echo "${DOCKER_COMPOSE_ARGV[*]} exec -T suricata suricatasc -c reopen-log-files /var/run/suricata/suricata-command.socket"
+	else
+		echo "$(command -v suricatasc || echo /usr/bin/suricatasc) -c reopen-log-files $(path_suricata_socket)"
+	fi
 }
 
 suricata_rotate_directive() {
@@ -7164,7 +7359,8 @@ suricata_render_logrotate() {
 	render_template "$SCRIPT_DIR/templates/logrotate.tpl" \
 		"EVE_JSON_PATH=$(path_suricata_eve_json)" \
 		"ROTATE_DIRECTIVE=$(suricata_rotate_directive)" \
-		"EVE_KEEP=${CONF[EVE_KEEP]:-14}"
+		"EVE_KEEP=${CONF[EVE_KEEP]:-14}" \
+		"REOPEN_CMD=$(suricata_reopen_command)"
 }
 
 suricata_installed_version() {
@@ -7453,9 +7649,40 @@ OPTIONS="--af-packet --user suricata "
 SYSCONFIG
 }
 
+# suricata_log_access - who may read eve.json: the group "suricata", which
+# the panel and EveBox users join (tech.md 4.2). The Debian and Ubuntu
+# packages make no such group and run Suricata as root, so the group is
+# created here and the root-owned log directory handed to it (setgid, so
+# files Suricata creates later, also after logrotate, keep the group). Where
+# the log directory already belongs to a user (the RPM layout) only the
+# mode of the file is set.
+suricata_log_access() {
+	local eve dir owner
+	eve=$(path_suricata_eve_json)
+	dir=$(dirname "$eve")
+	if ! getent group suricata >/dev/null 2>&1; then
+		run groupadd --system suricata || return 1
+	fi
+	run mkdir -p "$dir" || return 1
+	# DPISTACK_TEST_LOG_OWNER: the tests cannot chown a directory.
+	owner="${DPISTACK_TEST_LOG_OWNER:-$(stat -c %U "$dir" 2>/dev/null)}"
+	if [[ "$owner" == "root" ]]; then
+		run chgrp suricata "$dir" || return 1
+		run chmod 2750 "$dir" || return 1
+		if [[ -f "$eve" ]]; then
+			run chgrp suricata "$eve" || return 1
+		fi
+	fi
+	if [[ -f "$eve" ]]; then
+		run chmod 0640 "$eve" || return 1
+	fi
+	return 0
+}
+
 step_suricata_apply() {
 	if docker_wanted suricata; then
 		runtime_release_native "$SURICATA_UNIT" || return 1
+		suricata_log_access || return 1
 		write_rendered_file "$(path_suricata_yaml)" "$(suricata_render_yaml)" || return 1
 		write_rendered_file "$(path_suricata_logrotate)" "$(suricata_render_logrotate)" || return 1
 		docker_service_apply suricata
@@ -7502,15 +7729,14 @@ step_suricata_apply() {
 	fi
 
 	suricata_mode_files_apply || return 1
+	suricata_log_access || return 1
 
 	run systemctl enable --now "$SURICATA_UNIT" || return 1
 	# A changed unit, drop-in or yaml (IDS <-> IPS) is read only after a restart.
 	if ((was_configured)); then
 		run systemctl restart "$SURICATA_UNIT" || return 1
 	fi
-	local eve_json
-	eve_json=$(path_suricata_eve_json)
-	[[ -f "$eve_json" ]] && run chmod 0640 "$eve_json"
+	suricata_log_access || return 1
 
 	if [[ "${CONF[PIN_VERSIONS]:-no}" == "yes" && "${CONF[SURICATA_SOURCE]}" != "source" ]]; then
 		pkg_pin "$SURICATA_PACKAGE" || return 1
@@ -7925,12 +8151,24 @@ services:
 @@COMPOSE_SERVICES@@
 DPISTACK_BUNDLE_END
 put templates/dpistack-fw.service.tpl 644 <<'DPISTACK_BUNDLE_END'
-# Managed by dpistack. Puts the DPISTACK iptables chain back at boot when
-# the host is in IPS mode (NFQUEUE); in ids mode it removes a leftover one.
+# Managed by dpistack. Puts the NFQUEUE rules (the DPISTACK iptables chain or
+# the nft table dpistack) back at boot when the host is in IPS mode; in ids
+# mode it removes leftovers.
+#
+# Ordering, as systemd.special(7) asks of firewall units: before
+# network-pre.target, so the rules are in place before any interface is
+# configured and no packet passes uninspected; after local-fs.target, because
+# the config and dpistack-ctl are read from disk. DefaultDependencies=no
+# keeps it out of the cycle that basic.target would make with
+# network-pre.target.
 [Unit]
-Description=dpistack firewall chain DPISTACK
-After=network-pre.target
+Description=dpistack firewall rules for the Suricata queue
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target
 Wants=network-pre.target
+Conflicts=shutdown.target
+Before=shutdown.target
 
 [Service]
 Type=oneshot
@@ -8044,10 +8282,10 @@ put templates/logrotate.tpl 644 <<'DPISTACK_BUNDLE_END'
     notifempty
     compress
     delaycompress
-    create 0640 root root
+    create
     sharedscripts
     postrotate
-        /usr/bin/suricatasc -c reopen-log-files 2>/dev/null || true
+        @@REOPEN_CMD@@ 2>/dev/null || true
     endscript
 }
 DPISTACK_BUNDLE_END
@@ -9142,7 +9380,7 @@ host-mode: auto
 # the file name of the socket.
 unix-command:
   enabled: yes
-  filename: /var/run/suricata-command.socket
+  filename: @@COMMAND_SOCKET@@
 
 # Magic file. The extension .mgc is added to the value here.
 #magic-file: /usr/share/file/magic
