@@ -1,9 +1,25 @@
 #!/usr/bin/env bash
-# Mock for bats tests: records the call. `--state` exits with
+# Mock of firewall-cmd for bats tests: records the call and keeps the
+# permanent rich rules in ${MOCK_CALLS_LOG}.fwd. `--state` exits with
 # MOCK_FIREWALLD_STATE_EXIT (default 0, "running"); everything else with
 # MOCK_EXIT (default 0).
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+	state="${MOCK_CALLS_LOG}.fwd"
+	touch "$state"
+	case "${2:-}" in
+	--add-rich-rule=*)
+		grep -qxF "${2#--add-rich-rule=}" "$state" || echo "${2#--add-rich-rule=}" >>"$state"
+		;;
+	--remove-rich-rule=*)
+		grep -vxF "${2#--remove-rich-rule=}" "$state" >"$state.new" || true
+		mv "$state.new" "$state"
+		;;
+	--query-rich-rule=*)
+		grep -qxF "${2#--query-rich-rule=}" "$state"
+		exit $?
+		;;
+	esac
 fi
 [[ "${1:-}" == "--state" ]] && exit "${MOCK_FIREWALLD_STATE_EXIT:-0}"
 exit "${MOCK_EXIT:-0}"

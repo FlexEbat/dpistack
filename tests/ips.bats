@@ -303,3 +303,77 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	run_line=$(grep -n '^systemd-run --unit=dpistack-mode-rollback' "$MOCK_CALLS_LOG" | head -1 | cut -d: -f1)
 	[ "$reset" -lt "$run_line" ]
 }
+
+# A host with nft and no iptables (a minimal Rocky or Alma): the mocks
+# without iptables and ip6tables, and no real one in the path either.
+nft_only_path() {
+	NFT_ONLY_BIN="$(mktemp -d)"
+	local m
+	for m in "$REPO_DIR"/tests/mocks/*; do
+		case "$(basename "$m")" in iptables | ip6tables | iptables-save | ip6tables-save) ;; *) ln -s "$m" "$NFT_ONLY_BIN/" ;; esac
+	done
+	echo "$NFT_ONLY_BIN:/usr/bin:/bin"
+}
+
+@test "IPS without iptables: mode ips puts the queue into its own nft table, mode ids takes it out" {
+	installed
+	NFTPATH="$(nft_only_path)"
+	NFTSTATE="$MOCK_IPT_STATE.nft"
+	PATH="$NFTPATH" run "$CTL" mode ips
+	[ "$status" -eq 0 ]
+	# one table of its own, one base chain per hook, each queueing with bypass
+	grep -qx 'table inet dpistack {' "$NFTSTATE"
+	for hook in input output forward; do
+		grep -q "chain $hook {" "$NFTSTATE"
+		grep -q "type filter hook $hook priority -10; policy accept;" "$NFTSTATE"
+	done
+	[ "$(grep -c 'queue num 0 bypass' "$NFTSTATE")" -eq 3 ]
+	# nothing went to iptables and the host's own rules are as they were
+	if grep -q '^iptables' "$MOCK_CALLS_LOG"; then false; fi
+	grep -qx -- '-A INPUT -p tcp --dport 22 -j ACCEPT' "$STATE4"
+	PATH="$NFTPATH" run "$CTL" mode ids
+	[ "$status" -eq 0 ]
+	[ ! -e "$NFTSTATE" ]
+	rm -rf "$NFT_ONLY_BIN" "$NFTSTATE"
+}
+
+@test "IPS without iptables: IPS_NFQ_CHAINS limits the hooks, fw remove and uninstall delete the table" {
+	installed --set IPS_NFQ_CHAINS=FORWARD
+	NFTPATH="$(nft_only_path)"
+	NFTSTATE="$MOCK_IPT_STATE.nft"
+	PATH="$NFTPATH" run "$CTL" mode ips
+	[ "$status" -eq 0 ]
+	grep -q 'chain forward {' "$NFTSTATE"
+	if grep -q 'chain input {' "$NFTSTATE"; then false; fi
+	PATH="$NFTPATH" "$CTL" fw remove
+	[ ! -e "$NFTSTATE" ]
+	PATH="$NFTPATH" "$CTL" fw apply
+	[ -s "$NFTSTATE" ]
+	PATH="$NFTPATH" run bash "$REPO_DIR/install.sh" uninstall
+	[ "$status" -eq 0 ]
+	[ ! -e "$NFTSTATE" ]
+	rm -rf "$NFT_ONLY_BIN" "$NFTSTATE"
+}
+
+@test "IPS: when iptables is there a leftover nft table is removed, packets are never queued twice" {
+	installed
+	NFTSTATE="$MOCK_IPT_STATE.nft"
+	printf 'table inet dpistack {\n}\n' >"$NFTSTATE"
+	run "$CTL" mode ips
+	[ "$status" -eq 0 ]
+	[ ! -e "$NFTSTATE" ]
+	grep -qx -- '-A INPUT -j DPISTACK' "$STATE4"
+}
+
+@test "IPS: the refusal names both tools, and without either nothing is changed" {
+	installed
+	EMPTY_BIN="$(mktemp -d)"
+	for m in "$REPO_DIR"/tests/mocks/*; do
+		case "$(basename "$m")" in iptables | ip6tables | iptables-save | ip6tables-save | nft) ;; *) ln -s "$m" "$EMPTY_BIN/" ;; esac
+	done
+	PATH="$EMPTY_BIN:/usr/bin:/bin" run "$CTL" mode ips
+	[ "$status" -eq 3 ]
+	[[ "$output" == *"ни iptables, ни nft"* ]]
+	grep -q '^SURICATA_MODE=ids$' "$CONF_FILE"
+	rm -rf "$EMPTY_BIN"
+}

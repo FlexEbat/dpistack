@@ -5,9 +5,9 @@
     notifempty
     compress
     delaycompress
-    create 0640 root root
+    create
     sharedscripts
     postrotate
-        /usr/bin/suricatasc -c reopen-log-files 2>/dev/null || true
+        @@REOPEN_CMD@@ 2>/dev/null || true
     endscript
 }

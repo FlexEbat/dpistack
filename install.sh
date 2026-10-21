@@ -514,7 +514,7 @@ cmd_uninstall() {
 
 	if [[ "$DRY_RUN" == "1" ]]; then
 		# Everything below removes files with plain rm: a dry run only lists.
-		echo "dry-run: uninstall остановил бы и убрал таймеры и службы dpistack, цепочку DPISTACK, drop-in режима, конфиги ($(path_conf), $(path_secrets)), состояние ($(path_state_dir)) и копии программы; ничего не изменено"
+		echo "dry-run: uninstall остановил бы и убрал таймеры и службы dpistack, цепочку DPISTACK, drop-in режима (Suricata, запущенная в NFQ, перезапускается), правила ufw/firewalld, добавленные dpistack, конфиги ($(path_conf), $(path_secrets)), состояние ($(path_state_dir)) и копии программы; ничего не изменено"
 		[[ "$PURGE" == "1" ]] && echo "dry-run: с --purge ещё конфиги и данные компонентов (suricata.yaml, правила, ntopng, EveBox, TLS, данные метрик, пользователи)"
 		return 0
 	fi
@@ -531,8 +531,19 @@ cmd_uninstall() {
 		ips_fw_remove
 	fi
 	run systemctl disable dpistack-fw.service 2>/dev/null || true
+	# Suricata started by the IPS drop-in sits on the queue (-q 0). With the
+	# drop-in gone it must be started again, or it keeps listening to a queue
+	# that nothing feeds any more instead of capturing like a plain install.
+	local was_ips=0
+	[[ -e "$(path_suricata_mode_dropin)" ]] && was_ips=1
 	rm -f "$(path_fw_unit)" "$(path_suricata_mode_dropin)"
 	run systemctl daemon-reload
+	if [[ "$was_ips" == 1 && "${CONF[SURICATA_SOURCE]:-}" != "source" ]]; then
+		run systemctl restart "$SURICATA_UNIT" 2>/dev/null || true
+	fi
+
+	# ufw and firewalld rules that dpistack added (and only those).
+	access_firewall_forget || true
 
 	# The metrics backend is dpistack's own addition (unlike the packages of
 	# the stack): stopped, its unit and binaries removed; the series stay

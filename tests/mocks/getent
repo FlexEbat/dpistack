@@ -4,4 +4,6 @@
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
 fi
+# MOCK_GETENT_MISSING: names (users or groups) that the host does not have.
+[[ " ${MOCK_GETENT_MISSING:-} " == *" ${2:-} "* ]] && exit 2
 exit "${MOCK_EXIT:-0}"

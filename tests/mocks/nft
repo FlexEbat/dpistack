@@ -1,7 +1,30 @@
 #!/usr/bin/env bash
-# Mock for bats tests (tech.md 11): records the call and exits with
-# MOCK_EXIT (default 0), so steps never touch the real system in CI.
+# Stateful mock of nft for bats tests (tech.md 11): records the call and keeps
+# the script of the one table that dpistack loads with `nft -f -` in
+# $MOCK_NFT_STATE (default $MOCK_IPT_STATE.nft). Understands
+# `-f -`, `list table inet dpistack`, `delete table inet dpistack` and
+# `list tables`; anything else only exits with MOCK_EXIT (default 0).
+state="${MOCK_NFT_STATE:-${MOCK_IPT_STATE:-/tmp/mock-ipt}.nft}"
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
 fi
+case "$*" in
+"-f -")
+	script=$(cat)
+	[[ "${MOCK_EXIT:-0}" == 0 ]] || exit "$MOCK_EXIT"
+	# the table block is what stays; add/delete lines are the rebuild idiom
+	grep -q '^table inet dpistack {' <<<"$script" && printf '%s\n' "$script" | sed -n '/^table inet dpistack {/,$p' >"$state"
+	exit 0
+	;;
+"list table inet dpistack")
+	[[ -s "$state" ]] || exit 1
+	cat "$state"
+	exit 0
+	;;
+"delete table inet dpistack")
+	[[ -s "$state" ]] || exit 1
+	rm -f "$state"
+	exit 0
+	;;
+esac
 exit "${MOCK_EXIT:-0}"

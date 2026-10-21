@@ -53,6 +53,9 @@ type Stats struct {
 	Drops   uint64    // stats.capture.kernel_drops
 	Uptime  float64   // stats.uptime, seconds; 0 if absent
 	Time    time.Time // timestamp of the event
+	// NoKernel: the event has no stats.capture (Suricata in NFQUEUE mode).
+	// Packets is then stats.decoder.pkts and Drops is not known.
+	NoKernel bool
 }
 
 // Inputs is where the values come from. A nil function means the source is
@@ -177,7 +180,9 @@ func (c *Collector) rate(s *Sample, cur Stats) {
 		return
 	}
 	s.V[PPS] = float64(cur.Packets-prev.Packets) / dt
-	s.V[Drops] = float64(cur.Drops-prev.Drops) / dt
+	if !cur.NoKernel {
+		s.V[Drops] = float64(cur.Drops-prev.Drops) / dt
+	}
 }
 
 // Run samples every step until ctx ends, saves every SaveEvery and once more
