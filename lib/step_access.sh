@@ -126,51 +126,145 @@ access_selinux_ports() {
 	done
 }
 
-# access_allow_port <cidr> <port> - one rule in whichever firewall the
-# system has: ufw (Debian family) or firewalld (RHEL family).
-access_allow_port() {
-	local cidr="$1" port="$2"
+# The firewall rules dpistack added are written down in the state as
+# "cidr,port" pairs (state key access.fw.rules), and only those are ever
+# taken out again: a rule the administrator had before (or adds later) is
+# never touched. A change of ACCESS_MODE, LAN_CIDR or FIREWALL_MANAGE, and
+# uninstall, remove what is no longer wanted.
+ACCESS_FW_STATE_KEY="access.fw.rules"
+
+# access_fw_tool -> ufw | firewalld | (nothing)
+access_fw_tool() {
 	if command -v ufw >/dev/null 2>&1; then
-		run ufw allow from "$cidr" to any port "$port" proto tcp
+		echo ufw
+	elif command -v firewall-cmd >/dev/null 2>&1; then
+		echo firewalld
+	fi
+	return 0
+}
+
+access_fw_rich_rule() {
+	echo "rule family=ipv4 source address=${1} port port=${2} protocol=tcp accept"
+}
+
+# access_fw_has <cidr> <port> - the rule is there, whoever added it.
+access_fw_has() {
+	local cidr="$1" port="$2"
+	if [[ "$(access_fw_tool)" == "ufw" ]]; then
+		ufw show added 2>/dev/null | grep -qxF "ufw allow from $cidr to any port $port proto tcp"
 	else
-		run firewall-cmd --permanent \
-			"--add-rich-rule=rule family=ipv4 source address=${cidr} port port=${port} protocol=tcp accept"
+		firewall-cmd --permanent "--query-rich-rule=$(access_fw_rich_rule "$cidr" "$port")" >/dev/null 2>&1
 	fi
 }
 
-access_firewall_apply() {
+# access_fw_delete <cidr> <port> - take one of our rules out.
+access_fw_delete() {
+	local cidr="$1" port="$2"
+	if [[ "$(access_fw_tool)" == "ufw" ]]; then
+		run ufw --force delete allow from "$cidr" to any port "$port" proto tcp
+	else
+		run firewall-cmd --permanent "--remove-rich-rule=$(access_fw_rich_rule "$cidr" "$port")"
+	fi
+}
+
+# access_allow_port <cidr> <port> - one rule in whichever firewall the
+# system has: ufw (Debian family) or firewalld (RHEL family). A rule that
+# was already there and is not ours is left alone and not written down.
+access_allow_port() {
+	local cidr="$1" port="$2" rule="$1,$2" mine=1
+	if access_fw_has "$cidr" "$port" && [[ " $(state_read_value "$ACCESS_FW_STATE_KEY") " != *" $rule "* ]]; then
+		mine=0
+	fi
+	if [[ "$mine" == 1 ]]; then
+		if [[ "$(access_fw_tool)" == "ufw" ]]; then
+			run ufw allow from "$cidr" to any port "$port" proto tcp || return 1
+		else
+			run firewall-cmd --permanent "--add-rich-rule=$(access_fw_rich_rule "$cidr" "$port")" || return 1
+		fi
+		ACCESS_FW_OWNED+=("$rule")
+	fi
+	return 0
+}
+
+# access_fw_wanted - "cidr,port" for every port that should be open now.
+access_fw_wanted() {
 	[[ "${CONF[FIREWALL_MANAGE]:-no}" == "auto" ]] || return 0
-	if ! command -v ufw >/dev/null 2>&1 && ! command -v firewall-cmd >/dev/null 2>&1; then
-		echo "access: FIREWALL_MANAGE=auto, но ни ufw, ни firewalld не найдены - правила не применены" >&2
+	local cidr port
+	local -a ports=()
+	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
+	case "${CONF[ACCESS_MODE]:-localhost}" in
+	nginx)
+		ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
+		;;
+	lan)
+		ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
+		# The metrics backend binds 0.0.0.0 in lan mode (and nginx does not
+		# proxy it), so its own port is opened for LAN_CIDR too.
+		[[ "${CONF[METRICS_BACKEND]:-none}" != "none" ]] && ports+=("$(metrics_port "${CONF[METRICS_BACKEND]}")")
+		;;
+	esac
+	for port in "${ports[@]}"; do
+		echo "$cidr,$port"
+	done
+	return 0
+}
+
+# access_firewall_sync <wanted rules...> - make the rules we own equal the
+# wanted ones: take out what we added earlier and is no longer wanted, add
+# what is missing, write the result down. Returns 0 when nothing could be
+# done because the firewall is not there (the state stays as it was).
+access_firewall_sync() {
+	local -a wanted=("$@")
+	local tool old rule changed=0
+	tool=$(access_fw_tool)
+	old=$(state_read_value "$ACCESS_FW_STATE_KEY")
+	if [[ -z "$tool" ]]; then
+		[[ ${#wanted[@]} -gt 0 ]] && echo "access: FIREWALL_MANAGE=auto, но ни ufw, ни firewalld не найдены - правила не применены" >&2
 		return 0
 	fi
 	# firewalld installed but stopped: its permanent rules would be
 	# written, but --reload fails and the ports stay closed or open by
 	# accident. Say so and leave it to the administrator.
-	if ! command -v ufw >/dev/null 2>&1 && ! firewall-cmd --state >/dev/null 2>&1; then
-		echo "access: FIREWALL_MANAGE=auto, но firewalld не запущен - правила не применены (запустите firewalld и повторите reconfigure)" >&2
+	if [[ "$tool" == "firewalld" ]] && ! firewall-cmd --state >/dev/null 2>&1; then
+		if [[ ${#wanted[@]} -gt 0 || -n "$old" ]]; then
+			echo "access: firewalld не запущен - правила не применены (запустите firewalld и повторите reconfigure)" >&2
+		fi
 		return 0
 	fi
-	local cidr
-	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
-	local port
-	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
-		for port in "${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}"; do
-			access_allow_port "$cidr" "$port" || return 1
-		done
-	elif [[ "${CONF[ACCESS_MODE]:-localhost}" == "lan" ]]; then
-		local -a lan_ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
-		# The metrics backend binds 0.0.0.0 in lan mode (and nginx does not
-		# proxy it), so its own port is opened for LAN_CIDR too.
-		[[ "${CONF[METRICS_BACKEND]:-none}" != "none" ]] && lan_ports+=("$(metrics_port "${CONF[METRICS_BACKEND]}")")
-		for port in "${lan_ports[@]}"; do
-			access_allow_port "$cidr" "$port" || return 1
-		done
-	fi
+	ACCESS_FW_OWNED=()
+	for rule in $old; do
+		if [[ " ${wanted[*]} " == *" $rule "* ]]; then
+			ACCESS_FW_OWNED+=("$rule")
+		else
+			access_fw_delete "${rule%,*}" "${rule#*,}" || return 1
+			changed=1
+		fi
+	done
+	for rule in "${wanted[@]}"; do
+		[[ " ${ACCESS_FW_OWNED[*]} " == *" $rule "* ]] && continue
+		access_allow_port "${rule%,*}" "${rule#*,}" || return 1
+		changed=1
+	done
 	# firewalld keeps permanent rules apart from the running ones.
-	if ! command -v ufw >/dev/null 2>&1; then
+	if [[ "$tool" == "firewalld" && "$changed" == 1 ]]; then
 		run firewall-cmd --reload || return 1
 	fi
+	state_write_value "$ACCESS_FW_STATE_KEY" "${ACCESS_FW_OWNED[*]}"
+	return 0
+}
+
+access_firewall_apply() {
+	local -a wanted=()
+	local rule
+	while IFS= read -r rule; do
+		[[ -n "$rule" ]] && wanted+=("$rule")
+	done < <(access_fw_wanted)
+	access_firewall_sync "${wanted[@]}"
+}
+
+# access_firewall_forget - uninstall: take out every rule we added.
+access_firewall_forget() {
+	access_firewall_sync
 }
 
 step_access_check() {

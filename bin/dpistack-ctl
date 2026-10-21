@@ -670,7 +670,7 @@ mode_check_ips_possible() {
 	[[ "$(conf_get SURICATA_RUNTIME native)" == "native" ]] ||
 		fail 3 "mode ips: только для SURICATA_RUNTIME=native"
 	if [[ "$(conf_get IPS_METHOD nfq)" == "nfq" ]]; then
-		command -v iptables >/dev/null 2>&1 || fail 3 "mode ips: не найден iptables (нужен для цепочки DPISTACK)"
+		[[ -n "$(ips_backend)" ]] || fail 3 "mode ips: не найдены ни iptables, ни nft (нужны для очереди NFQUEUE)"
 	fi
 	command -v suricata >/dev/null 2>&1 || fail 4 "mode ips: suricata не установлена"
 }
@@ -763,7 +763,7 @@ cmd_mode() {
 		if ! ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)"; then
 			ips_fw_remove
 			conf_apply_value SURICATA_MODE ids
-			fail 1 "mode ips: правила iptables не применились, режим возвращён в ids"
+			fail 1 "mode ips: правила файрвола не применились, режим возвращён в ids"
 		fi
 	fi
 
@@ -807,7 +807,7 @@ cmd_fw() {
 	[[ $# -eq 1 ]] || fail 2 "fw: apply|remove|restore"
 	case "$1" in
 	apply)
-		ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw apply: iptables отказал"
+		ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw apply: файрвол отказал"
 		;;
 	remove) ips_fw_remove ;;
 	restore)
@@ -816,7 +816,7 @@ cmd_fw() {
 		if [[ -n "$(mode_pending_deadline)" ]]; then
 			cmd_mode_rollback
 		elif [[ "$(conf_get SURICATA_MODE ids)" == "ips" && "$(conf_get IPS_METHOD nfq)" == "nfq" ]]; then
-			ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw restore: iptables отказал"
+			ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw restore: файрвол отказал"
 		elif ips_fw_present; then
 			ips_fw_remove
 		fi

@@ -1,7 +1,25 @@
 #!/usr/bin/env bash
-# Mock for bats tests (tech.md 11): records the call and exits with
-# MOCK_EXIT (default 0), so steps never touch the real system in CI.
+# Mock of ufw for bats tests (tech.md 11): records the call and keeps the
+# user rules in ${MOCK_CALLS_LOG}.ufw, the way `ufw show added` lists them.
+# MOCK_EXIT (default 0) is the exit code of every other call.
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
+	state="${MOCK_CALLS_LOG}.ufw"
+	touch "$state"
+	case "$1 $2" in
+	"allow from")
+		grep -qxF "ufw $*" "$state" || echo "ufw $*" >>"$state"
+		;;
+	"--force delete")
+		shift 2
+		grep -vxF "ufw $*" "$state" >"$state.new" || true
+		mv "$state.new" "$state"
+		;;
+	"show added")
+		echo "Added user rules (see 'ufw status' for running firewall):"
+		cat "$state"
+		exit 0
+		;;
+	esac
 fi
 exit "${MOCK_EXIT:-0}"
