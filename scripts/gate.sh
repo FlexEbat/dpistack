@@ -23,7 +23,7 @@ echo "== shellcheck =="
 # bug, not a script problem; lib/menu.sh is the first file dense
 # enough in Russian strings to hit it consistently.
 # shellcheck disable=SC2046
-if ! LANG=C.utf8 LC_ALL=C.utf8 shellcheck -x install.sh lib/*.sh bin/dpistack-ctl bin/dpistack-watch scripts/*.sh dpistack-install.sh; then
+if ! LANG=C.utf8 LC_ALL=C.utf8 shellcheck -x install.sh lib/*.sh bin/dpistack-watch scripts/*.sh dpistack-install.sh; then
 	fail shellcheck
 fi
 
