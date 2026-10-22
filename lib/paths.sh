@@ -41,7 +41,10 @@ path_install_log() { echo "$(path_log_dir)/install.log"; }
 
 path_sbin_dir() { echo "${DPISTACK_ROOT}/usr/local/sbin"; }
 path_dpistack_bin() { echo "$(path_sbin_dir)/dpistack"; }
-path_ctl_bin() { echo "$(path_sbin_dir)/dpistack-ctl"; }
+# One command: the privileged verbs are verbs of dpistack itself. The old
+# name stays as a symlink so units written by an earlier version keep working.
+path_ctl_bin() { path_dpistack_bin; }
+path_ctl_legacy_bin() { echo "$(path_sbin_dir)/dpistack-ctl"; }
 path_watch_bin() { echo "$(path_sbin_dir)/dpistack-watch"; }
 path_watch_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.service"; }
 path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.timer"; }

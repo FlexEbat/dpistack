@@ -6,7 +6,7 @@
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-	CTL="$REPO_DIR/bin/dpistack-ctl"
+	CTL="$REPO_DIR/tests/helpers/dpistack-ctl"
 	DPISTACK_ROOT="$(mktemp -d)"
 	export DPISTACK_ROOT
 	mkdir -p "$DPISTACK_ROOT/etc"
@@ -126,7 +126,7 @@ teardown() {
 @test "criterion 3: a heavy change is refused with code 3 and a pointer to install.sh reconfigure" {
 	run bash -c "sed 's/^SURICATA_SOURCE=.*/SURICATA_SOURCE=distro/' '$CONF_FILE' | '$CTL' config-write dpistack.conf --apply"
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"install.sh reconfigure"* ]]
+	[[ "$output" == *"dpistack reconfigure"* ]]
 	# --dry-run only prints the plan and changes nothing.
 	run "$CTL" reconfigure --dry-run
 	[ "$status" -eq 0 ]

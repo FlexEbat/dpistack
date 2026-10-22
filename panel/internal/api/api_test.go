@@ -334,9 +334,9 @@ func TestUnavailableCtlGives502WithReadableText(t *testing.T) {
 		script string // empty: the helper does not exist
 		want   string
 	}{
-		"missing":   {"", "dpistack-ctl недоступен"},
+		"missing":   {"", "dpistack недоступен"},
 		"exit code": {"#!/bin/sh\necho 'sudo: a password is required' >&2\nexit 1\n", "a password is required"},
-		"not json":  {"#!/bin/sh\necho oops\n", "dpistack-ctl недоступен"},
+		"not json":  {"#!/bin/sh\necho oops\n", "dpistack недоступен"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := setup(t, func(c *Config, dir string) {

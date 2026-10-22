@@ -142,6 +142,7 @@ preflight_resolve_ports_interactive() {
 			fi
 			CONF[$key]="$answer"
 			echo "  $key = $answer" >&2
+			# shellcheck disable=SC2034 # read by lib/menu.sh
 			MENU_DIRTY=1
 			break
 		done

@@ -262,7 +262,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 	st, err := s.cfg.Ctl.Status(r.Context())
 	if err != nil {
 		detail := strings.TrimPrefix(err.Error(), ctl.ErrUnavailable.Error()+": ")
-		writeError(w, http.StatusBadGateway, "dpistack-ctl недоступен: "+detail)
+		writeError(w, http.StatusBadGateway, "dpistack недоступен: "+detail)
 		return
 	}
 	rep, err := health.Read(s.cfg.HealthFile)

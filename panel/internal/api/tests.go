@@ -104,7 +104,7 @@ func (s *server) testsRun(w http.ResponseWriter, r *http.Request) {
 	}
 	results, ok := parseTestResults(out)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "dpistack-ctl test не вернул результатов")
+		writeError(w, http.StatusInternalServerError, "dpistack test не вернул результатов")
 		return
 	}
 	writeJSON(w, http.StatusOK, results)

@@ -245,7 +245,7 @@ docker_suricata_reload() {
 }
 
 # docker_component_state <service> -> active|inactive|failed|absent, the
-# same words systemd gives, for dpistack-ctl status. A container that is
+# same words systemd gives, for dpistack status. A container that is
 # restarting counts as failed; one that exists but is not running, inactive.
 docker_component_state() {
 	local svc="$1" out

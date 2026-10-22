@@ -56,7 +56,7 @@ func (r *Runner) IfaceChange(ctx context.Context, verb, name string) (string, er
 // Suricata, and then the iptables rules.
 const ModeTimeout = 3 * time.Minute
 
-// Bounds of --confirm-timeout, the same as dpistack-ctl enforces.
+// Bounds of --confirm-timeout, the same as dpistack enforces.
 const (
 	ModeConfirmMin = 10
 	ModeConfirmMax = 3600

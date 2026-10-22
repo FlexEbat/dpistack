@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Test helper: runs the verbs of dpistack under the old name, which keeps the
+# old meaning of `reconfigure` (non-interactive, light only). The same code as
+# `dpistack <verb>`; the product has one command (tech.md 4.5).
+DPISTACK_CALLED_AS=dpistack-ctl exec bash "$(dirname "$(readlink -f "$0")")/../../install.sh" "$@"

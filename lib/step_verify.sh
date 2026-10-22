@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# "verify" step and the checks behind `dpistack-ctl test` (tech.md 10).
+# "verify" step and the checks behind `dpistack test` (tech.md 10).
 # The same functions serve the step (TEST_ON_INSTALL=yes) and the ctl
 # command, so the two cannot drift apart.
 #
@@ -280,7 +280,7 @@ step_verify_check() {
 
 step_verify_apply() {
 	if [[ "${DRY_RUN:-0}" == "1" ]]; then
-		echo "+ dpistack-ctl test all"
+		echo "+ dpistack test all"
 		return 0
 	fi
 	VERIFY_HTTPS_URL="${CONF[TEST_HTTPS_URL]:-https://example.com}"

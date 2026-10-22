@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # dpistack watchdog (tech.md 8): one run per call, started by
-# dpistack-watch.timer or by `dpistack-ctl health`. It writes
+# dpistack-watch.timer or by `dpistack health`. It writes
 # health.json atomically and a line to events.jsonl for every status
 # change. It repairs nothing unless WATCH_AUTORESTART=yes.
 #
 # Ready-made parts instead of new code: jq builds and reads the JSON,
-# flock keeps two runs apart, `dpistack-ctl status --json` gives the
+# flock keeps two runs apart, `dpistack status --json` gives the
 # component state through the runtime, and the schema supplies every
 # default threshold.
 set -uo pipefail
@@ -39,7 +39,8 @@ command -v jq >/dev/null 2>&1 || {
 # awk prints decimals by the locale; "5,00" would break the JSON values.
 export LC_NUMERIC=C
 
-CTL="$SCRIPT_DIR/dpistack-ctl"
+CTL="${DPISTACK_CTL:-$SCRIPT_DIR/dpistack}"
+[[ -x "$CTL" ]] || CTL="$SCRIPT_DIR/../install.sh"
 RESTARTS_PER_HOUR=3
 PORT_CRIT_AFTER_MISSES=3 # missing for more than two runs in a row
 

@@ -42,9 +42,9 @@ install_base() {
 @test "second run reports watch unchanged and does not touch the timer again" {
 	run install_base
 	[ "$status" -eq 0 ]
-	: >"$MOCK_CALLS_LOG"
 	run bash "$REPO_DIR/install.sh" status --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[[ "$output" == *"watch: в порядке"* ]]
+	: >"$MOCK_CALLS_LOG"
 	run install_base
 	[ "$status" -eq 0 ]
 	! grep -q "dpistack-watch.timer" "$MOCK_CALLS_LOG"

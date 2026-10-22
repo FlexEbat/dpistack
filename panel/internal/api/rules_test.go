@@ -13,7 +13,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 )
 
-// rulesCtl stands in for dpistack-ctl's rules commands, with state: the
+// rulesCtl stands in for dpistack's rules commands, with state: the
 // enabled sources, disable.conf and the ruleset live in files, and
 // rules-update rebuilds the ruleset without the sids disable.conf names, as
 // suricata-update does. A FAIL file makes the update fail and keep the old
@@ -62,13 +62,13 @@ rules-group)
   echo "группа $3: $2" ;;
 rules-search)
   if [ "$2" = probe ]; then i=1; while [ $i -le 60 ]; do printf '%s\tprobe rule\n' "$((9000+i))"; i=$((i+1)); done; exit 0; fi
-  if [ ! -f "$dir/suricata.rules" ]; then echo "dpistack-ctl: набора правил нет" >&2; exit 4; fi
+  if [ ! -f "$dir/suricata.rules" ]; then echo "dpistack: набора правил нет" >&2; exit 4; fi
   grep -i -- "$2" "$dir/suricata.rules" | awk -F'\t' '{print $1 "\t" $2}' ;;
 rules-update)
   if [ -f "$dir/HOLD" ]; then while [ -f "$dir/HOLD" ]; do sleep 0.05; done; fi
   if [ -f "$dir/FAIL" ]; then
     echo "suricata-update: не удалось скачать et/open: connection timed out"
-    echo "dpistack-ctl: rules-update не удался, прежний набор правил возвращён" >&2
+    echo "dpistack: rules-update не удался, прежний набор правил возвращён" >&2
     exit 1
   fi
   : > "$dir/new.rules"

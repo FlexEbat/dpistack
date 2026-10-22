@@ -1,45 +1,12 @@
 #!/usr/bin/env bash
-# Privileged helper invoked by the panel and watchdog via `sudo -n`
-# (tech.md 4.5). Slices 10-13 implement everything except mode and
-# mode-confirm, which ship with the slices that own them.
+# The privileged verbs of dpistack (tech.md 4.5): status, start, stop, config
+# editing, rules, interfaces, mode, tests, health, panel password. They are
+# part of the one `dpistack` command (install.sh dispatches here); the panel
+# and the watchdog reach them through `sudo -n dpistack <verb>`. Sourced by
+# install.sh after the other libraries; it defines functions only.
 #
 # Exit codes: 0 ok, 1 error, 2 usage, 3 check failed, 4 component
 # absent, 5 name outside the allowed list.
-set -uo pipefail
-
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
-# Repo checkout: bin/../lib. Installed copy: /usr/local/sbin/../lib/dpistack/installer/lib.
-for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
-	if [[ -r "$_lib/paths.sh" && -r "$_lib/common.sh" ]]; then
-		# shellcheck source=lib/paths.sh
-		source "$_lib/paths.sh"
-		# shellcheck source=lib/common.sh
-		source "$_lib/common.sh"
-		# shellcheck source=lib/state.sh
-		source "$_lib/state.sh"
-		# shellcheck source=lib/schema.sh
-		source "$_lib/schema.sh"
-		# shellcheck source=lib/config.sh
-		source "$_lib/config.sh"
-		# shellcheck source=lib/render.sh
-		source "$_lib/render.sh"
-		# shellcheck source=lib/runtime_docker.sh
-		source "$_lib/runtime_docker.sh"
-		# shellcheck source=lib/ips.sh
-		source "$_lib/ips.sh"
-		# shellcheck source=lib/step_rules.sh
-		source "$_lib/step_rules.sh"
-		# shellcheck source=lib/step_verify.sh
-		source "$_lib/step_verify.sh"
-		INSTALLER="$_lib/../install.sh"
-		break
-	fi
-done
-unset _lib
-if ! declare -F path_conf >/dev/null; then
-	echo "dpistack-ctl: не найден lib/paths.sh" >&2
-	exit 1
-fi
 
 COMPONENTS=(suricata evebox ntopng redis victoriametrics prometheus panel watch rules)
 LOGS_MAX=1000
@@ -52,9 +19,9 @@ MODE_ROLLBACK_UNIT="dpistack-mode-rollback"
 
 RULES_SEARCH_MAX=50
 
-usage() {
+ctl_usage() {
 	cat <<'USAGE'
-Использование: dpistack-ctl <команда> [аргументы]
+Использование: dpistack <команда> [аргументы]
 
   status [--json]                    состояние компонентов
   start|stop|restart <id>            управление компонентом
@@ -90,7 +57,7 @@ fail() {
 	# fail <code> <message>
 	local code="$1"
 	shift
-	echo "dpistack-ctl: $*" >&2
+	echo "dpistack: $*" >&2
 	exit "$code"
 }
 
@@ -215,7 +182,7 @@ json_escape() {
 	printf '%s' "$s"
 }
 
-cmd_status() {
+ctl_cmd_status() {
 	local json=0
 	case "${1:-}" in
 	"") ;;
@@ -512,7 +479,7 @@ cmd_config_read() {
 # apply_config <name> - reloads whatever reads the file.
 apply_config() {
 	case "$1" in
-	dpistack.conf) cmd_reconfigure ;;
+	dpistack.conf) ctl_cmd_reconfigure ;;
 	suricata.yaml)
 		cmd_control restart suricata
 		;;
@@ -586,10 +553,10 @@ cmd_config_revert() {
 	echo "восстановлено из $latest"
 }
 
-# cmd_reconfigure [--dry-run] - the installer does the diff, the step
+# ctl_cmd_reconfigure [--dry-run] - the installer does the diff, the step
 # selection and the re-render; it never installs packages here, because
 # --force is not passed and a heavy change stops with code 3.
-cmd_reconfigure() {
+ctl_cmd_reconfigure() {
 	[[ $# -le 1 ]] || fail 2 "reconfigure: лишние аргументы"
 	local -a args=(reconfigure -y)
 	case "${1:-}" in
@@ -597,7 +564,8 @@ cmd_reconfigure() {
 	--dry-run) args+=(--dry-run) ;;
 	*) fail 2 "reconfigure: неизвестный аргумент: $1" ;;
 	esac
-	[[ -r "${INSTALLER:-}" ]] || fail 1 "не найден install.sh"
+	INSTALLER="$SCRIPT_DIR/install.sh"
+	[[ -r "$INSTALLER" ]] || fail 1 "не найден install.sh"
 
 	# -y asks for an explicit ACCESS_CONFIRM when the access mode is not
 	# localhost. An unchanged mode is already confirmed; a changed one
@@ -611,7 +579,7 @@ cmd_reconfigure() {
 	bash "$INSTALLER" "${args[@]}"
 	local rc=$?
 	if ((rc == 3)); then
-		echo "dpistack-ctl: изменение требует переустановки или пересборки, выполните: install.sh reconfigure" >&2
+		echo "dpistack: изменение требует переустановки или пересборки, выполните: dpistack reconfigure" >&2
 	fi
 	return "$rc"
 }
@@ -641,7 +609,7 @@ conf_apply_value() {
 	fi
 	config_commit dpistack.conf "$staged"
 	rm -f "$staged"
-	if ! cmd_reconfigure; then
+	if ! ctl_cmd_reconfigure; then
 		cmd_config_revert dpistack.conf >/dev/null
 		fail 1 "reconfigure не удался, dpistack.conf возвращён"
 	fi
@@ -1037,8 +1005,11 @@ cmd_test() {
 	all) names=("${VERIFY_TESTS[@]}") ;;
 	*) fail 5 "неизвестный тест: $which" ;;
 	esac
+	# shellcheck disable=SC2034 # read by lib/step_verify.sh
 	VERIFY_HTTPS_URL=$(conf_get TEST_HTTPS_URL https://example.com)
+	# shellcheck disable=SC2034 # read by lib/step_verify.sh
 	VERIFY_BT_LIVE=$(conf_get TEST_BT_LIVE no)
+	# shellcheck disable=SC2034 # read by lib/step_verify.sh
 	VERIFY_IFACES=$(conf_get IFACES enp2s0)
 	verify_run "$json" "${names[@]}" || exit 1
 }
@@ -1054,7 +1025,7 @@ cmd_health() {
 	*) fail 2 "health: неизвестный аргумент" ;;
 	esac
 	[[ $# -le 1 ]] || fail 2 "health: лишние аргументы"
-	local watch="$SCRIPT_DIR/dpistack-watch"
+	local watch="$SCRIPT_DIR/bin/dpistack-watch"
 	[[ -x "$watch" ]] || fail 4 "dpistack-watch не установлен"
 	"$watch" || fail 1 "health: dpistack-watch завершился с ошибкой"
 	local file
@@ -1079,9 +1050,9 @@ cmd_panel_passwd() {
 	echo "пароль панели обновлён"
 }
 
-main() {
+ctl_main() {
 	if [[ $# -eq 0 ]]; then
-		usage
+		ctl_usage
 		exit 2
 	fi
 
@@ -1094,14 +1065,14 @@ main() {
 	local cmd="$1"
 	shift
 	case "$cmd" in
-	status) cmd_status "$@" ;;
+	status) ctl_cmd_status "$@" ;;
 	start | stop | restart) cmd_control "$cmd" "$@" ;;
 	reload) cmd_reload "$@" ;;
 	logs) cmd_logs "$@" ;;
 	config-read) cmd_config_read "$@" ;;
 	config-write) cmd_config_write "$@" ;;
 	config-revert) cmd_config_revert "$@" ;;
-	reconfigure) cmd_reconfigure "$@" ;;
+	reconfigure) ctl_cmd_reconfigure "$@" ;;
 	rules-update) cmd_rules_update "$@" ;;
 	rules-sources) cmd_rules_sources "$@" ;;
 	rules-group) cmd_rules_group "$@" ;;
@@ -1117,10 +1088,8 @@ main() {
 	health) cmd_health "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
 	*)
-		usage >&2
+		ctl_usage >&2
 		exit 2
 		;;
 	esac
 }
-
-main "$@"

@@ -6,10 +6,10 @@ import (
 	"unicode/utf8"
 )
 
-// The messages of dpistack-ctl are Russian, two bytes a letter: a cut at a
+// The messages of dpistack are Russian, two bytes a letter: a cut at a
 // fixed byte count must not leave half a letter at the end.
 func TestFirstLineDoesNotCutALetterInHalf(t *testing.T) {
-	long := "dpistack-ctl: " + strings.Repeat("я", 150) + "\nвторая строка"
+	long := "dpistack: " + strings.Repeat("я", 150) + "\nвторая строка"
 	got := firstLine(long)
 	if !utf8.ValidString(got) {
 		t.Fatalf("firstLine returned invalid UTF-8: %q", got)
@@ -17,7 +17,7 @@ func TestFirstLineDoesNotCutALetterInHalf(t *testing.T) {
 	if len(got) > 200 || len(got) < 198 {
 		t.Errorf("firstLine is %d bytes, want 198 or 200", len(got))
 	}
-	if strings.Contains(got, "\n") || strings.HasPrefix(got, "dpistack-ctl:") {
+	if strings.Contains(got, "\n") || strings.HasPrefix(got, "dpistack:") {
 		t.Errorf("firstLine = %q", got)
 	}
 }

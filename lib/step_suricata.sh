@@ -118,7 +118,7 @@ suricata_render_yaml() {
 }
 
 # suricata_command_socket - where Suricata creates its command socket, the
-# one `dpistack-ctl reload` and logrotate talk to. In a container it lies in
+# one `dpistack reload` and logrotate talk to. In a container it lies in
 # the mounted run directory, where docker_suricata_reload looks for it.
 suricata_command_socket() {
 	if docker_wanted suricata; then

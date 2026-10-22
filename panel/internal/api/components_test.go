@@ -19,7 +19,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 )
 
-// fakeCtl is a dpistack-ctl stand-in that logs every call. Like the real
+// fakeCtl is a dpistack stand-in that logs every call. Like the real
 // one it answers 4 for a component that is not installed and 5 for one that
 // does not exist, and its `logs --until-stdin-closed` runs until stdin closes.
 type fakeCtl struct {
@@ -38,14 +38,14 @@ case "$1" in
 status) printf '%s' '` + statusJSON + `' ;;
 start|stop|restart)
   case "$2" in
-  redis) echo "dpistack-ctl: компонент не установлен: redis" >&2; exit 4 ;;
+  redis) echo "dpistack: компонент не установлен: redis" >&2; exit 4 ;;
   suricata|panel|ntopng) echo "готово" ;;
-  *) echo "dpistack-ctl: неизвестный компонент: $2" >&2; exit 5 ;;
+  *) echo "dpistack: неизвестный компонент: $2" >&2; exit 5 ;;
   esac ;;
 reload) echo "правила перечитаны" ;;
 logs)
   case "$2" in
-  nosuch) echo "dpistack-ctl: неизвестный компонент: nosuch" >&2; exit 5 ;;
+  nosuch) echo "dpistack: неизвестный компонент: nosuch" >&2; exit 5 ;;
   esac
   case "$*" in
   *--until-stdin-closed*)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # IPS mode (slice 29): the DPISTACK chain and its jumps. Shared by
-# dpistack-ctl (mode, fw) and the installer (uninstall).
+# dpistack (mode, fw) and the installer (uninstall).
 #
 # The installer never flushes, deletes or reorders a chain that is not its
 # own. What it does add to the standard chains is one rule each, the jump

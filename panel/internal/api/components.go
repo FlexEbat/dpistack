@@ -14,7 +14,7 @@ import (
 )
 
 // componentID is only a sanity filter on the path: which components exist
-// is for dpistack-ctl to say (tech.md 4.1), not a list copied here.
+// is for dpistack to say (tech.md 4.1), not a list copied here.
 var componentID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
 // control handles POST /api/components/{id}/{start|stop|restart}.
@@ -75,7 +75,7 @@ func (s *server) reloadSuricata(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "output": out})
 }
 
-// ctlError turns what dpistack-ctl said into an HTTP answer with the text
+// ctlError turns what dpistack said into an HTTP answer with the text
 // it gave: 4 and 5 (no such component) are 404, 2 is 400, 3 is 409, any
 // other failure is 500; ctl not running at all is 502.
 func ctlError(w http.ResponseWriter, err error) {
@@ -104,7 +104,7 @@ func errText(err error) string {
 		if exit.Message != "" {
 			return exit.Message
 		}
-		return fmt.Sprintf("dpistack-ctl завершился с кодом %d", exit.Code)
+		return fmt.Sprintf("dpistack завершился с кодом %d", exit.Code)
 	}
-	return "dpistack-ctl недоступен: " + strings.TrimPrefix(err.Error(), ctl.ErrUnavailable.Error()+": ")
+	return "dpistack недоступен: " + strings.TrimPrefix(err.Error(), ctl.ErrUnavailable.Error()+": ")
 }

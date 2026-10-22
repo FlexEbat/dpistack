@@ -13,7 +13,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 )
 
-// opsCtl stands in for the tests and iface commands of dpistack-ctl. Files in
+// opsCtl stands in for the tests and iface commands of dpistack. Files in
 // its directory steer it: <name>.status for a test, GARBAGE, HOLD (wait),
 // FAIL (reconfigure fails), and ifaces and system for the interface lists.
 type opsCtl struct {
@@ -46,14 +46,14 @@ iface)
   case "$2" in
   list) cat "$dir/ifaces" ;;
   add)
-    grep -qx "$3" "$dir/system" || { echo "dpistack-ctl: интерфейса нет в системе: $3" >&2; exit 5; }
+    grep -qx "$3" "$dir/system" || { echo "dpistack: интерфейса нет в системе: $3" >&2; exit 5; }
     grep -qx "$3" "$dir/ifaces" && { echo "уже в списке: $3"; exit 0; }
     [ -f "$dir/HOLD" ] && while [ -f "$dir/HOLD" ]; do sleep 0.05; done
-    [ -f "$dir/FAIL" ] && { echo "dpistack-ctl: reconfigure не удался, dpistack.conf возвращён" >&2; exit 1; }
+    [ -f "$dir/FAIL" ] && { echo "dpistack: reconfigure не удался, dpistack.conf возвращён" >&2; exit 1; }
     echo "$3" >> "$dir/ifaces"; echo "interface $3 added" ;;
   remove)
-    grep -qx "$3" "$dir/ifaces" || { echo "dpistack-ctl: интерфейса нет в IFACES: $3" >&2; exit 5; }
-    [ "$(wc -l < "$dir/ifaces")" -gt 1 ] || { echo "dpistack-ctl: нельзя удалить последний интерфейс" >&2; exit 3; }
+    grep -qx "$3" "$dir/ifaces" || { echo "dpistack: интерфейса нет в IFACES: $3" >&2; exit 5; }
+    [ "$(wc -l < "$dir/ifaces")" -gt 1 ] || { echo "dpistack: нельзя удалить последний интерфейс" >&2; exit 3; }
     grep -vx "$3" "$dir/ifaces" > "$dir/i.tmp"; mv "$dir/i.tmp" "$dir/ifaces"; echo "interface $3 removed" ;;
   esac ;;
 mode)
@@ -65,13 +65,13 @@ mode)
   ids) rm -f "$dir/remaining"; echo ids > "$dir/mode"; echo "режим ids" ;;
   ips)
     [ -f "$dir/HOLD" ] && while [ -f "$dir/HOLD" ]; do sleep 0.05; done
-    [ -f "$dir/FAIL" ] && { echo "dpistack-ctl: mode ips: не найден iptables (нужен для цепочки DPISTACK)" >&2; exit 3; }
+    [ -f "$dir/FAIL" ] && { echo "dpistack: mode ips: не найден iptables (нужен для цепочки DPISTACK)" >&2; exit 3; }
     t=120; [ "$3" = "--confirm-timeout" ] && t="$4"
     echo ips > "$dir/mode"; echo "$t" > "$dir/remaining"
     echo "режим ips включён; подтвердите командой mode-confirm в течение $t с, иначе вернётся ids" ;;
   esac ;;
 mode-confirm)
-  [ -f "$dir/remaining" ] || { echo "dpistack-ctl: mode-confirm: нечего подтверждать" >&2; exit 3; }
+  [ -f "$dir/remaining" ] || { echo "dpistack: mode-confirm: нечего подтверждать" >&2; exit 3; }
   rm -f "$dir/remaining"; echo "режим ips подтверждён" ;;
 esac
 `

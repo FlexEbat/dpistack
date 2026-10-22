@@ -12,7 +12,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 )
 
-// configCtl stands in for dpistack-ctl's config commands. Content with BAD
+// configCtl stands in for dpistack's config commands. Content with BAD
 // in it fails the check, like a bad suricata.yaml fails `suricata -T`; a
 // dpistack.conf with HEAVY in it is a change reconfigure refuses.
 type configCtl struct {
@@ -46,7 +46,7 @@ config-write)
   cat > "$dir/.staged"
   if grep -q BAD "$dir/.staged"; then
     echo "validator: ошибка в строке 3"
-    echo "dpistack-ctl: $name: проверка не пройдена, файл не изменён" >&2
+    echo "dpistack: $name: проверка не пройдена, файл не изменён" >&2
     exit 3
   fi
   if [ "$3" = "--check" ]; then echo "проверка пройдена: suricata -T успешно"; exit 0; fi
@@ -54,7 +54,7 @@ config-write)
   cp "$dir/.staged" "$dir/$name"
   if [ "$3" = "--apply" ]; then
     if [ "$name" = dpistack.conf ] && grep -q HEAVY "$dir/.staged"; then
-      echo "dpistack-ctl: тяжёлое изменение (SURICATA_SOURCE): выполните install.sh reconfigure" >&2
+      echo "dpistack: тяжёлое изменение (SURICATA_SOURCE): выполните install.sh reconfigure" >&2
       exit 3
     fi
     echo "применено: $name"
@@ -62,7 +62,7 @@ config-write)
   echo "сохранено" ;;
 config-revert)
   if [ -f "$dir/$name.bak" ]; then cp "$dir/$name.bak" "$dir/$name"; echo "восстановлено из бэкапа"
-  else echo "dpistack-ctl: нет бэкапа для $name" >&2; exit 1; fi ;;
+  else echo "dpistack: нет бэкапа для $name" >&2; exit 1; fi ;;
 esac
 `
 	path := filepath.Join(dir, "ctl")

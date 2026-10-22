@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # "panel" step: the system user `dpistack`, the sudoers rule that lets it
-# run only dpistack-ctl (tech.md 4.2, 4.5), the panel binary (PANEL_SOURCE:
+# run only dpistack (tech.md 4.2, 4.5), the panel binary (PANEL_SOURCE:
 # built from panel/ with Go, or a ready dpistack-panel next to install.sh)
 # and the systemd unit with the resource budget (tech.md 9).
 
@@ -262,7 +262,7 @@ step_panel_apply() {
 }
 
 step_panel_plan() {
-	echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack-ctl), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), юнит $PANEL_SERVICE"
+	echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), юнит $PANEL_SERVICE"
 }
 
 # panel_report_metrics - the token of /metrics and a scrape_config entry

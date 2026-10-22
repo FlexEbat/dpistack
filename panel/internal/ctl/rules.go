@@ -35,7 +35,7 @@ type Rule struct {
 	Msg string `json:"msg"`
 }
 
-// MaxSearchResults is the limit dpistack-ctl applies to rules-search (4.5);
+// MaxSearchResults is the limit dpistack applies to rules-search (4.5);
 // the panel enforces it again so a changed helper cannot flood the screen.
 const MaxSearchResults = 50
 

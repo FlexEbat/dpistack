@@ -10,7 +10,7 @@ ExecStart=@@PANEL_BIN@@ @@ARGS@@
 Restart=on-failure
 RestartSec=5
 # Resource budget (tech.md 9). NoNewPrivileges and ProtectSystem are left
-# out on purpose: sudo inherits the unit's restrictions, and dpistack-ctl
+# out on purpose: sudo inherits the unit's restrictions, and dpistack
 # could not write to /etc under them.
 MemoryMax=64M
 CPUQuota=20%
