@@ -77,9 +77,38 @@ suricata_render_eve_log_block() {
 	suricata_render_eve_types_block
 }
 
+# suricata_series <X.Y.Z[-suffix]> -> "X.Y"
+suricata_series() {
+	local v="${1#suricata-}"
+	[[ "$v" =~ ^([0-9]+)\.([0-9]+) ]] || return 1
+	echo "${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+}
+
+# suricata_conf_version - the value of "suricata-version" in suricata.yaml:
+# the X.Y series of the Suricata that will read the file. The installed
+# binary wins (it is the one that parses the file, whatever the source
+# was); before the first install it is the series of the release the
+# source build will produce. The yaml is then checked with `suricata -T`.
+suricata_conf_version() {
+	local out series
+	if command -v suricata >/dev/null 2>&1; then
+		out=$(suricata -V 2>/dev/null | sed -n 's/^This is Suricata version \([^ ]*\).*/\1/p')
+		if series=$(suricata_series "$out"); then
+			echo "$series"
+			return 0
+		fi
+	fi
+	if [[ -n "${CONF[SURICATA_VERSION]:-}" ]] && series=$(suricata_series "${CONF[SURICATA_VERSION]}"); then
+		echo "$series"
+		return 0
+	fi
+	suricata_series "$SURICATA_STABLE_REF"
+}
+
 # suricata_render_yaml -> full suricata.yaml on stdout
 suricata_render_yaml() {
 	render_template "$SCRIPT_DIR/templates/suricata.yaml.tpl" \
+		"SURICATA_CONF_VERSION=$(suricata_conf_version)" \
 		"HOME_NET=$(suricata_home_net_value)" \
 		"STATS_INTERVAL=${CONF[STATS_INTERVAL_SEC]:-30}" \
 		"EVE_LOG_BLOCK=$(suricata_render_eve_log_block)" \
@@ -479,7 +508,19 @@ step_suricata_apply() {
 	local was_configured=0
 	[[ -f "$yaml_path" ]] && was_configured=1
 
-	write_rendered_file "$yaml_path" "$(suricata_render_yaml)"
+	# The rendered file is checked by the Suricata that will read it before
+	# it replaces anything: a template written for another release series
+	# (7.0 against an 8.0 binary, say) stops the step here, with Suricata's
+	# own words, and not at the first start of the service.
+	local rendered_yaml
+	rendered_yaml=$(suricata_render_yaml) || return 1
+	if [[ "${DRY_RUN:-0}" != "1" ]]; then
+		suricata_validate_render "$rendered_yaml" || {
+			echo "suricata: suricata -T отклонил отрисованный suricata.yaml (серия $(suricata_conf_version)); файл на диске не изменён" >&2
+			return 1
+		}
+	fi
+	write_rendered_file "$yaml_path" "$rendered_yaml"
 	write_rendered_file "$logrotate_path" "$(suricata_render_logrotate)"
 
 	if [[ "${CONF[SURICATA_SOURCE]}" == "source" ]]; then

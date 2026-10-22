@@ -18,6 +18,137 @@ preflight_port_busy() {
 	ss -ltn 2>/dev/null | awk '{print $4}' | grep -q ":${1}\$"
 }
 
+# preflight_port_owner <port> - the name of the process that listens on the
+# port, empty when it cannot be seen (ss shows other users' sockets only to
+# root, and the installer is root).
+preflight_port_owner() {
+	ss -ltnp 2>/dev/null | awk -v p=":${1}$" '$4 ~ p {print $NF}' |
+		sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | head -n 1
+}
+
+# PREFLIGHT_PORT_KEYS - every port key of dpistack.conf, with the step that
+# owns it (the owner's check says whether the port is dpistack's own).
+PREFLIGHT_PORT_KEYS=(NTOPNG_PORT:ntopng EVEBOX_PORT:evebox PANEL_PORT:panel METRICS_BACKEND_PORT:metrics)
+
+# preflight_port_taken_by_conf <port> <skip-key> - another key of the
+# configuration already uses this port, as a public port or, with nginx, as
+# the port behind it.
+preflight_port_taken_by_conf() {
+	local port="$1" skip="$2" pair key value
+	for pair in "${PREFLIGHT_PORT_KEYS[@]}"; do
+		key="${pair%%:*}"
+		[[ "$key" == "$skip" ]] && continue
+		value="${CONF[$key]:-}"
+		[[ -z "$value" ]] && continue
+		[[ "$value" == "$port" ]] && return 0
+		if [[ "$key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] &&
+			[[ "$(access_backend_port "$value")" == "$port" ]]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+# preflight_free_port <key> <from> - the first port from <from> upward that
+# nothing listens on and no other key of the configuration uses. With nginx
+# the port behind nginx (PORT+10000) has to be free too. Empty when none.
+preflight_free_port() {
+	local key="$1" candidate="$2" backend
+	while ((candidate <= 65535)); do
+		if ! preflight_port_busy "$candidate" && ! preflight_port_taken_by_conf "$candidate" "$key"; then
+			if [[ "$key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+				backend=$(access_backend_port "$candidate")
+				if ((backend <= 65535)) && ! preflight_port_busy "$backend" && ! preflight_port_taken_by_conf "$backend" "$key"; then
+					echo "$candidate"
+					return 0
+				fi
+			else
+				echo "$candidate"
+				return 0
+			fi
+		fi
+		candidate=$((candidate + 1))
+	done
+	return 1
+}
+
+# preflight_port_conflicts - one line per busy port: KEY|port|who|suggestion.
+# A port held by a service dpistack already installed is not a conflict on a
+# repeat run, so ports whose step is already applied are skipped. With
+# ACCESS_MODE=nginx both ports matter: nginx takes the public one (the
+# access step owns it), the service takes public+10000.
+preflight_port_conflicts() {
+	local pair port_key owner_step public port who
+	for pair in "${PREFLIGHT_PORT_KEYS[@]}"; do
+		port_key="${pair%%:*}"
+		owner_step="${pair#*:}"
+		public="${CONF[$port_key]:-}"
+		[[ -z "$public" ]] && continue
+		if [[ "$port_key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+			if ! step_access_check && preflight_port_busy "$public"; then
+				who=$(preflight_port_owner "$public")
+				echo "$port_key|$public|${who:-неизвестный процесс}|$(preflight_free_port "$port_key" "$((public + 1))")|nginx"
+			fi
+			port=$(access_backend_port "$public")
+		else
+			port="$public"
+		fi
+		if "step_${owner_step}_check"; then
+			continue
+		fi
+		if preflight_port_busy "$port"; then
+			who=$(preflight_port_owner "$port")
+			echo "$port_key|$port|${who:-неизвестный процесс}|$(preflight_free_port "$port_key" "$((public + 1))")|service"
+		fi
+	done
+}
+
+# preflight_resolve_ports_interactive - for every busy port: a warning with
+# the name of the process that holds it and the question which port to use
+# instead (Enter takes the suggested free one, "q" leaves the port as it is
+# and the preflight will stop on it). Reads through the menu's input, so it
+# runs inside the menu. Returns 0 when no conflicts remain unanswered.
+preflight_resolve_ports_interactive() {
+	local line key port who suggestion kind answer rc=0
+	while IFS= read -r line; do
+		[[ -z "$line" ]] && continue
+		IFS='|' read -r key port who suggestion kind <<<"$line"
+		echo >&2
+		echo "  ВНИМАНИЕ: порт $port ($key) уже занят: $who" >&2
+		while true; do
+			menu_read answer "  Другой порт для $key [${suggestion:-нет свободного}] (q: оставить): "
+			menu_die_on_eof
+			[[ -z "$answer" ]] && answer="$suggestion"
+			if [[ "$answer" == "q" || "$answer" == "й" ]]; then
+				rc=1
+				break
+			fi
+			if [[ ! "$answer" =~ ^[0-9]+$ ]] || ((10#$answer < 1 || 10#$answer > 65535)); then
+				echo "  нужно число от 1 до 65535" >&2
+				continue
+			fi
+			answer=$((10#$answer))
+			if preflight_port_busy "$answer" || preflight_port_taken_by_conf "$answer" "$key"; then
+				echo "  порт $answer тоже занят, выберите другой" >&2
+				continue
+			fi
+			if [[ "$kind" == "nginx" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] && [[ "$key" != "METRICS_BACKEND_PORT" ]]; then
+				local behind
+				behind=$(access_backend_port "$answer")
+				if ((behind > 65535)) || preflight_port_busy "$behind" || preflight_port_taken_by_conf "$behind" "$key"; then
+					echo "  с nginx за ним нужен ещё и порт $behind, он недоступен; выберите другой" >&2
+					continue
+				fi
+			fi
+			CONF[$key]="$answer"
+			echo "  $key = $answer" >&2
+			MENU_DIRTY=1
+			break
+		done
+	done < <(preflight_port_conflicts)
+	return "$rc"
+}
+
 # preflight_panel_reasons - the panel binary has to be obtainable before
 # the install starts: a ready file for prebuilt, Go (at least the version
 # panel/go.mod asks for) for build. A binary that is already installed and
@@ -165,36 +296,19 @@ step_preflight_reasons() {
 		fi
 	fi
 
-	# A port held by a service dpistack already installed is not a
-	# conflict on a repeat run, so ports whose step is already applied
-	# are skipped.
-	# With ACCESS_MODE=nginx both ports matter: nginx takes the public one
-	# (the access step owns it), the service takes public+10000.
-	local port_key port owner_step public
-	for port_key in NTOPNG_PORT EVEBOX_PORT PANEL_PORT METRICS_BACKEND_PORT; do
-		public="${CONF[$port_key]:-}"
-		[[ -z "$public" ]] && continue
-		case "$port_key" in
-		NTOPNG_PORT) owner_step=ntopng ;;
-		EVEBOX_PORT) owner_step=evebox ;;
-		PANEL_PORT) owner_step=panel ;;
-		METRICS_BACKEND_PORT) owner_step=metrics ;;
-		esac
-		if [[ "$port_key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
-			if ! step_access_check && preflight_port_busy "$public"; then
-				reasons+=("порт $public ($port_key) уже занят, а на нём должен слушать nginx")
-			fi
-			port=$(access_backend_port "$public")
+	# A busy port stops a run without a terminal; the menu asks for another
+	# one instead (preflight_resolve_ports_interactive). The reason names the
+	# holder and a free port to pass with --set.
+	local pline pkey pport pwho psuggest pkind
+	while IFS= read -r pline; do
+		[[ -z "$pline" ]] && continue
+		IFS='|' read -r pkey pport pwho psuggest pkind <<<"$pline"
+		if [[ "$pkind" == "nginx" ]]; then
+			reasons+=("порт $pport ($pkey) уже занят, а на нём должен слушать nginx (держит: $pwho)${psuggest:+; свободный: --set $pkey=$psuggest}")
 		else
-			port="$public"
+			reasons+=("порт $pport ($pkey) уже занят (держит: $pwho)${psuggest:+; свободный: --set $pkey=$psuggest}")
 		fi
-		if "step_${owner_step}_check"; then
-			continue
-		fi
-		if preflight_port_busy "$port"; then
-			reasons+=("порт $port ($port_key) уже занят")
-		fi
-	done
+	done < <(preflight_port_conflicts)
 
 	if command -v getenforce >/dev/null 2>&1; then
 		log "INFO" "SELinux: $(getenforce 2>/dev/null || echo неизвестно)"

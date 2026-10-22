@@ -116,3 +116,40 @@ load_step() {
 	run grep -c "apt-mark $(printf '%s' 'hold suricata')" "$MOCK_CALLS_LOG"
 	[ "$output" = "1" ]
 }
+
+@test "R155: suricata-version in the rendered yaml is the series of the installed binary" {
+	MOCK_SURICATA_VERSION=8.0.7 run load_step 'CONF[SURICATA_VERSION]=""' 'suricata_render_yaml'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *'suricata-version: "8.0"'* ]]
+	[[ "$output" != *'suricata-version: "7.0"'* ]]
+	MOCK_SURICATA_VERSION=7.0.3 run load_step 'CONF[SURICATA_VERSION]=""' 'suricata_render_yaml'
+	[[ "$output" == *'suricata-version: "7.0"'* ]]
+}
+
+@test "R155: without a binary the series comes from the pinned release, then from the stable ref" {
+	# an empty PATH entry for suricata: no mock is visible
+	run bash -c '
+		SCRIPT_DIR="'"$REPO_DIR"'"
+		source "'"$REPO_DIR"'/lib/paths.sh"; source "'"$REPO_DIR"'/lib/common.sh"
+		source "'"$REPO_DIR"'/lib/schema.sh"; source "'"$REPO_DIR"'/lib/config.sh"
+		source "'"$REPO_DIR"'/lib/render.sh"; source "'"$REPO_DIR"'/lib/step_suricata.sh"
+		config_reset; config_load_defaults
+		PATH=/usr/bin:/bin
+		command -v suricata >/dev/null 2>&1 && exit 77
+		CONF[SURICATA_VERSION]="suricata-7.0.11"; echo "pinned=$(suricata_conf_version)"
+		CONF[SURICATA_VERSION]=""; echo "default=$(suricata_conf_version)"
+	'
+	if [ "$status" -eq 77 ]; then skip "a real suricata is installed on this machine"; fi
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"pinned=7.0"* ]]
+	[[ "$output" == *"default=8.0"* ]]
+}
+
+@test "R155: a yaml that suricata -T rejects stops the step and leaves the old file alone" {
+	mkdir -p "$DPISTACK_ROOT/etc/suricata"
+	echo "old: yes" >"$DPISTACK_ROOT/etc/suricata/suricata.yaml"
+	MOCK_EXIT=1 run load_step 'CONF[SURICATA_SOURCE]=distro; DRY_RUN=0; OS_FAMILY=apt' '
+		suricata_validate_render "$(suricata_render_yaml)"; echo "rc=$?"'
+	[[ "$output" == *"rc=1"* ]]
+	[ "$(cat "$DPISTACK_ROOT/etc/suricata/suricata.yaml")" = "old: yes" ]
+}

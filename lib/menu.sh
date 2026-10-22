@@ -506,6 +506,8 @@ menu_main_screen() {
 				echo "  без пароля панели установка недоступна" >&2
 				continue
 			fi
+			# A busy port is a warning with a choice here, not a stop later.
+			preflight_resolve_ports_interactive || true
 			return 0
 			;;
 		*)
@@ -676,6 +678,7 @@ menu_reconfigure_screen() {
 		case "$choice" in
 		d) menu_diff_screen ;;
 		a)
+			preflight_resolve_ports_interactive || true
 			if menu_reconfigure_confirm_and_validate; then
 				return 0 # caller writes config.sh and applies the affected steps
 			fi

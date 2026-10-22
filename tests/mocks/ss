@@ -8,6 +8,12 @@ fi
 echo "State  Recv-Q Send-Q Local Address:Port Peer Address:Port"
 IFS=',' read -ra ports <<<"${MOCK_SS_LISTEN:-}"
 for p in "${ports[@]}"; do
-	[[ -n "$p" ]] && echo "LISTEN 0      128    127.0.0.1:${p}   0.0.0.0:*"
+	[[ -z "$p" ]] && continue
+	# With -p (ss -ltnp) the real ss adds the owner column; MOCK_SS_PROC names it.
+	if [[ "$*" == *p* && -n "${MOCK_SS_PROC:-}" ]]; then
+		echo "LISTEN 0      128    127.0.0.1:${p}   0.0.0.0:*  users:((\"${MOCK_SS_PROC}\",pid=4242,fd=3))"
+	else
+		echo "LISTEN 0      128    127.0.0.1:${p}   0.0.0.0:*"
+	fi
 done
 exit "${MOCK_EXIT:-0}"
