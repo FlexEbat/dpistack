@@ -9,6 +9,7 @@ import { start as startTests } from "./modules/tests.js";
 import { start as startAlerts } from "./modules/alerts.js";
 import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
+import { start as startSettings } from "./modules/settings.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -38,7 +39,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "components", "configs", "rules", "logs", "events", "metrics", "tests", "alerts"];
+const VIEWS = ["overview", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts"];
 let stopView = null;
 
 // Every screen starts when shown and returns a stop function, so a hidden
@@ -86,6 +87,25 @@ const SCREENS = {
       stopMode();
     };
   },
+  settings: () =>
+    startSettings(
+      api,
+      {
+        root: $("view-settings"),
+        error: $("settings-error"),
+        message: $("settings-message"),
+        result: $("settings-result"),
+        groups: $("settings-groups"),
+        count: $("settings-count"),
+        advanced: $("settings-advanced"),
+        check: $("settings-check"),
+        apply: $("settings-apply"),
+        revert: $("settings-revert"),
+        jobBox: $("settings-job-box"),
+        job: $("settings-job"),
+      },
+      showLogin,
+    ),
   configs: () =>
     startConfigs(
       api,
