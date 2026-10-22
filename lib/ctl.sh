@@ -29,6 +29,7 @@ ctl_usage() {
   logs <id> [-n N] [--follow]        журнал компонента, N до 1000 (--until-stdin-closed: для панели)
   config-read <имя>                  печатает текущий файл
   config-write <имя> [--apply|--check] новое содержимое со stdin; --check только проверяет
+  settings list [--json] | check K=V... | set [--apply|--apply-heavy] [--confirm-access] K=V... | secret KEY | job
   config-revert <имя>                возвращает последний бэкап
   reconfigure [--dry-run]            применяет текущий dpistack.conf
   rules-update                       обновить правила с откатом при ошибке
@@ -179,6 +180,10 @@ json_escape() {
 	local s="$1"
 	s="${s//\\/\\\\}"
 	s="${s//\"/\\\"}"
+	s="${s//$'\t'/\\t}"
+	s="${s//$'\r'/\\r}"
+	# the other control characters have no place in a JSON string
+	s=$(printf '%s' "$s" | tr -d '\000-\010\013\014\016-\037')
 	printf '%s' "$s"
 }
 
@@ -572,7 +577,8 @@ ctl_cmd_reconfigure() {
 	# must go through install.sh reconfigure.
 	local applied_access
 	applied_access=$(state_read_value "applied.ACCESS_MODE")
-	if [[ -n "$applied_access" && "$applied_access" == "$(conf_get ACCESS_MODE localhost)" ]]; then
+	if [[ -n "$applied_access" && "$applied_access" == "$(conf_get ACCESS_MODE localhost)" ]] ||
+		[[ "${DPISTACK_ACCESS_CONFIRM:-0}" == "1" ]]; then
 		args+=(--set ACCESS_CONFIRM=yes)
 	fi
 
@@ -582,6 +588,340 @@ ctl_cmd_reconfigure() {
 		echo "dpistack: изменение требует переустановки или пересборки, выполните: dpistack reconfigure" >&2
 	fi
 	return "$rc"
+}
+
+
+# -------------------------------------------------------------- settings
+# The dashboard's settings screen (tech.md 9): every key of the schema
+# (lib/schema.sh), its value, the checks of config_validate, and the
+# application of a change. The panel never edits dpistack.conf as text for
+# this; it sends KEY=VALUE pairs.
+
+SETTINGS_UNIT="dpistack-apply"
+
+settings_json_array() {
+	local IFS=',' item first=1
+	printf '['
+	for item in $1; do
+		((first)) || printf ','
+		first=0
+		printf '"%s"' "$(json_escape "$item")"
+	done
+	printf ']'
+}
+
+# settings_lines_json [max] - stdin lines as a JSON array of strings (the
+# last <max> of them); no interpreter besides bash.
+settings_lines_json() {
+	local max="${1:-200}" line first=1
+	local -a all=()
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		[[ -n "$line" ]] && all+=("$line")
+	done
+	local n=${#all[@]} i start=0
+	((n > max)) && start=$((n - max))
+	printf '['
+	for ((i = start; i < n; i++)); do
+		((first)) || printf ','
+		first=0
+		printf '"%s"' "$(json_escape "${all[i]}")"
+	done
+	printf ']'
+}
+
+# settings_secret_set <key> - whether secrets.conf holds a value for it.
+settings_secret_set() {
+	[[ -r "$(path_secrets)" ]] && grep -q "^$1=." "$(path_secrets)"
+}
+
+settings_list() {
+	local json=0 key first=1 type opts min max value secret set pattern
+	[[ "${1:-}" == "--json" ]] && json=1
+	if ((json)); then printf '{"keys":['; fi
+	for key in "${SCHEMA_KEYS[@]}"; do
+		type="${SCHEMA_TYPE[$key]}"
+		secret="${SCHEMA_SECRET[$key]}"
+		value=""
+		set=false
+		if [[ "$secret" == "yes" ]]; then
+			settings_secret_set "$key" && set=true
+		else
+			value=$(conf_get "$key" "${SCHEMA_DEFAULT[$key]}")
+		fi
+		if ((!json)); then
+			if [[ "$secret" == "yes" ]]; then
+				printf '%s=%s\n' "$key" "$([[ $set == true ]] && echo '(задан)' || echo '(не задан)')"
+			else
+				printf '%s=%s\n' "$key" "$value"
+			fi
+			continue
+		fi
+		((first)) || printf ','
+		first=0
+		opts="[]"
+		min="null"
+		max="null"
+		if [[ "$type" == "enum" ]]; then
+			opts=$(settings_json_array "${SCHEMA_OPTIONS[$key]}")
+		elif [[ "$type" == "int" ]]; then
+			min="${SCHEMA_OPTIONS[$key]%%..*}"
+			max="${SCHEMA_OPTIONS[$key]##*..}"
+		fi
+		pattern="${SCHEMA_PATTERN[$key]:-}"
+		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s"}' \
+			"$key" "$type" "$opts" "$min" "$max" "$(json_escape "${SCHEMA_DEFAULT[$key]}")" \
+			"${SCHEMA_LEVEL[$key]}" "${SCHEMA_GROUP[$key]}" "${SCHEMA_WEIGHT[$key]}" \
+			"$([[ $secret == yes ]] && echo true || echo false)" "$set" \
+			"$(json_escape "$value")" "$(json_escape "$pattern")"
+	done
+	if ((json)); then printf ']}\n'; fi
+}
+
+# settings_collect_pairs <args...> - SETTINGS_PAIRS: the KEY=VALUE pairs
+# from the arguments, or one per line from stdin when there are none. The
+# panel uses stdin: some values (a BPF filter, a rules URL) hold characters
+# that the argument check of every verb refuses, and the schema patterns
+# are the check that matters for them.
+settings_collect_pairs() {
+	SETTINGS_PAIRS=()
+	local line
+	if (($# > 0)); then
+		SETTINGS_PAIRS=("$@")
+		return 0
+	fi
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		[[ -n "$line" ]] && SETTINGS_PAIRS+=("$line")
+	done
+	return 0
+}
+
+# settings_stage <KEY=VALUE...> - dpistack.conf with the pairs applied, in
+# the staging directory; prints its path. Secrets and unknown keys are
+# refused here (code 3) so that no later step has to care.
+settings_stage() {
+	local staging staged pair key value
+	staging=$(path_staging_dir)
+	mkdir -p "$staging"
+	chmod 0700 "$staging"
+	staged="$staging/dpistack.conf"
+	cp "$(path_conf)" "$staged"
+	for pair in "$@"; do
+		[[ "$pair" == *=* ]] || fail 2 "settings: ожидается KEY=VALUE, получено: $pair"
+		key="${pair%%=*}"
+		value="${pair#*=}"
+		schema_known "$key" || fail 5 "неизвестный ключ: $key"
+		if schema_is_secret "$key"; then
+			fail 3 "$key: секрет, меняется командой settings secret"
+		fi
+		awk -v k="$key" -v v="$value" 'BEGIN{done=0} index($0, k "=")==1 {print k "=" v; done=1; next} {print} END{if(!done) print k "=" v}' \
+			"$staged" >"$staged.new" && mv "$staged.new" "$staged"
+	done
+	echo "$staged"
+}
+
+# settings_changed <KEY=VALUE...> - the keys whose value differs from the
+# current one, one per line.
+settings_changed() {
+	local pair key
+	for pair in "$@"; do
+		key="${pair%%=*}"
+		[[ "$(conf_get "$key" "${SCHEMA_DEFAULT[$key]}")" == "${pair#*=}" ]] || echo "$key"
+	done
+}
+
+settings_weight() {
+	local key
+	for key in "$@"; do
+		[[ "${SCHEMA_WEIGHT[$key]}" == "heavy" ]] && {
+			echo heavy
+			return
+		}
+	done
+	echo light
+}
+
+# settings_load_staged <file> - CONF as it will be after the change. The
+# validation runs in a command substitution and keeps nothing, so the port
+# checks load the staged file themselves.
+settings_load_staged() {
+	config_reset
+	config_load_defaults
+	config_load_kv_file "$1"
+	[[ -r "$(path_secrets)" ]] && config_load_kv_file "$(path_secrets)"
+	return 0
+}
+
+# settings_port_warnings <changed keys...> - lines KEY|port|holder|suggestion
+# for changed port keys whose port is already taken. Reads CONF as loaded
+# from the staged file by config_validate_staged.
+settings_port_warnings() {
+	local line key
+	while IFS= read -r line; do
+		[[ -z "$line" ]] && continue
+		key="${line%%|*}"
+		in_list "$key" "$@" && echo "$line"
+	done < <(preflight_port_conflicts)
+}
+
+settings_check() {
+	local staged out rc changed weight errors warnings first=1 key port who suggestion kind
+	settings_collect_pairs "$@"
+	[[ ${#SETTINGS_PAIRS[@]} -ge 1 ]] || fail 2 "settings check: нужен хотя бы один KEY=VALUE"
+	staged=$(settings_stage "${SETTINGS_PAIRS[@]}") || exit $?
+	changed=$(settings_changed "${SETTINGS_PAIRS[@]}")
+	# shellcheck disable=SC2086
+	weight=$(settings_weight $changed)
+	out=$(config_validate_staged dpistack.conf "$staged")
+	rc=$?
+	errors="[]"
+	if ((rc != 0)); then
+		errors=$(printf '%s\n' "$out" | settings_lines_json 50)
+	fi
+	warnings='['
+	if ((rc == 0)); then
+		settings_load_staged "$staged"
+		# shellcheck disable=SC2086
+		while IFS='|' read -r key port who suggestion kind; do
+			[[ -z "$key" ]] && continue
+			((first)) || warnings+=','
+			first=0
+			warnings+=$(printf '{"key":"%s","port":%s,"holder":"%s","suggestion":%s,"kind":"%s"}' \
+				"$key" "$port" "$(json_escape "$who")" "${suggestion:-null}" "$kind")
+		done < <(settings_port_warnings $changed)
+	fi
+	warnings+=']'
+	rm -f "$staged"
+	printf '{"ok":%s,"weight":"%s","changed":%s,"errors":%s,"warnings":%s}\n' \
+		"$([[ $rc -eq 0 ]] && echo true || echo false)" "$weight" \
+		"$(settings_json_array "$(paste -sd, <<<"$changed")")" "$errors" "$warnings"
+	return "$rc"
+}
+
+settings_set() {
+	local mode=commit confirm=0 arg
+	local -a pairs=()
+	for arg in "$@"; do
+		case "$arg" in
+		--apply) mode=apply ;;
+		--apply-heavy) mode=heavy ;;
+		--confirm-access) confirm=1 ;;
+		*) pairs+=("$arg") ;;
+		esac
+	done
+	settings_collect_pairs "${pairs[@]}"
+	pairs=("${SETTINGS_PAIRS[@]}")
+	[[ ${#pairs[@]} -ge 1 ]] || fail 2 "settings set: нужен хотя бы один KEY=VALUE"
+	local staged out rc changed weight warn
+	staged=$(settings_stage "${pairs[@]}") || exit $?
+	changed=$(settings_changed "${pairs[@]}")
+	if [[ -z "$changed" ]]; then
+		rm -f "$staged"
+		echo "без изменений"
+		return 0
+	fi
+	# shellcheck disable=SC2086
+	weight=$(settings_weight $changed)
+	out=$(config_validate_staged dpistack.conf "$staged")
+	rc=$?
+	if ((rc != 0)); then
+		rm -f "$staged"
+		[[ -n "$out" ]] && echo "$out"
+		fail 3 "settings: проверка не пройдена, dpistack.conf не изменён"
+	fi
+	# A busy port is a stop with a way out: the holder and a free port.
+	settings_load_staged "$staged"
+	# shellcheck disable=SC2086
+	warn=$(settings_port_warnings $changed | head -n 1)
+	if [[ -n "$warn" ]]; then
+		local key port who suggestion
+		IFS='|' read -r key port who suggestion _ <<<"$warn"
+		rm -f "$staged"
+		fail 3 "порт $port ($key) уже занят: $who${suggestion:+; свободный: $suggestion}"
+	fi
+	if [[ "$weight" == "heavy" && "$mode" == "apply" ]]; then
+		rm -f "$staged"
+		fail 3 "тяжёлое изменение ($(paste -sd, <<<"$changed")): нужен --apply-heavy"
+	fi
+	if ((confirm)); then
+		DPISTACK_ACCESS_CONFIRM=1
+		export DPISTACK_ACCESS_CONFIRM
+	fi
+	config_commit dpistack.conf "$staged"
+	rm -f "$staged"
+	case "$mode" in
+	commit) echo "dpistack.conf записан, не применён" ;;
+	apply)
+		if ! ctl_cmd_reconfigure; then
+			cmd_config_revert dpistack.conf >/dev/null
+			fail 1 "reconfigure не удался, dpistack.conf возвращён"
+		fi
+		;;
+	heavy) settings_start_job "$confirm" ;;
+	esac
+}
+
+# settings_start_job <confirm-access> - the heavy reconfigure runs as a
+# transient unit: packages and builds take minutes, longer than a request.
+settings_start_job() {
+	local -a args=(reconfigure -y --force)
+	[[ "$1" == "1" ]] && args+=(--set ACCESS_CONFIRM=yes)
+	case "$(systemctl is-active "$SETTINGS_UNIT.service" 2>/dev/null)" in
+	active | activating) fail 3 "применение уже идёт" ;;
+	esac
+	systemctl reset-failed "$SETTINGS_UNIT.service" >/dev/null 2>&1 || true
+	systemd-run --quiet --unit="$SETTINGS_UNIT" --description="dpistack: применение настроек" \
+		--collect "$SCRIPT_DIR/install.sh" "${args[@]}" >/dev/null ||
+		fail 1 "не удалось запустить применение"
+	echo "применение запущено: $SETTINGS_UNIT"
+}
+
+settings_job() {
+	local state result lines
+	state=$(systemctl is-active "$SETTINGS_UNIT.service" 2>/dev/null || true)
+	[[ -n "$state" ]] || state=unknown
+	result=$(systemctl show -p Result --value "$SETTINGS_UNIT.service" 2>/dev/null || true)
+	lines=$(journalctl -u "$SETTINGS_UNIT.service" -n 200 --no-pager -o cat 2>/dev/null | settings_lines_json 200)
+	printf '{"state":"%s","result":"%s","log":%s}\n' "$(json_escape "$state")" "$(json_escape "${result:-}")" "$lines"
+}
+
+# settings_secret <KEY> - the value comes on stdin and never in an argument.
+settings_secret() {
+	[[ $# -eq 1 ]] || fail 2 "settings secret: нужен KEY"
+	local key="$1" value tmp
+	if ! schema_known "$key" || ! schema_is_secret "$key"; then
+		fail 5 "$key: не секрет схемы"
+	fi
+	IFS= read -r value || true
+	if [[ -n "$value" ]]; then
+		schema_validate_one "$key" "$value" >/dev/null || fail 3 "$key: значение не подходит"
+	fi
+	ctl_lock
+	tmp=$(mktemp)
+	if [[ -r "$(path_secrets)" ]]; then
+		grep -v "^$key=" "$(path_secrets)" >"$tmp" || true
+	fi
+	if [[ -n "$value" ]]; then
+		printf '%s=%s\n' "$key" "$value" >>"$tmp"
+	fi
+	atomic_write "$(path_secrets)" 0600 <"$tmp"
+	rm -f "$tmp"
+	ctl_unlock
+	if ! ctl_cmd_reconfigure; then
+		fail 1 "reconfigure не удался, секрет записан"
+	fi
+}
+
+cmd_settings() {
+	local sub="${1:-}"
+	[[ $# -ge 1 ]] && shift
+	case "$sub" in
+	list) settings_list "$@" ;;
+	check) settings_check "$@" ;;
+	set) settings_set "$@" ;;
+	secret) settings_secret "$@" ;;
+	job) settings_job ;;
+	*) fail 2 "settings: list [--json] | check KEY=VALUE... | set [--apply|--apply-heavy] [--confirm-access] KEY=VALUE... | secret KEY | job" ;;
+	esac
 }
 
 # ----------------------------------------------------------------- iface
@@ -1072,6 +1412,7 @@ ctl_main() {
 	config-read) cmd_config_read "$@" ;;
 	config-write) cmd_config_write "$@" ;;
 	config-revert) cmd_config_revert "$@" ;;
+	settings) cmd_settings "$@" ;;
 	reconfigure) ctl_cmd_reconfigure "$@" ;;
 	rules-update) cmd_rules_update "$@" ;;
 	rules-sources) cmd_rules_sources "$@" ;;

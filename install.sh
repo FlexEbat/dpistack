@@ -711,7 +711,7 @@ require_root() {
 
 # The verbs that act on an installed system (tech.md 4.5). `status` and
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
-CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert
+CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
 	mode-confirm mode-rollback fw panel-passwd test health version)
 

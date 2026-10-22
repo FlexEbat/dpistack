@@ -23,6 +23,7 @@ type opState struct {
 	testsRunning bool
 	ifaceBusy    bool
 	modeBusy     bool
+	settingsBusy bool
 }
 
 func (o *opState) begin(flag *bool) bool {
