@@ -102,6 +102,7 @@ panel_args() {
 		[[ "${CONF[EVEBOX_DB]:-sqlite}" == "sqlite" ]] && disks+=",$(path_evebox_data_dir)"
 		args+=" -metrics-token-file $(path_metrics_token) -rules-file $(path_suricata_ruleset) -disk-paths ${disks}"
 	fi
+	[[ "${CONF[PANEL_MODE]:-limited}" == "unlimited" ]] && args+=" -max-streams 32"
 	echo "$args"
 }
 
@@ -111,7 +112,19 @@ panel_render_service() {
 	render_template "$SCRIPT_DIR/templates/dpistack-panel.service.tpl" \
 		"USER=$PANEL_USER" \
 		"PANEL_BIN=$(path_panel_bin)" \
+		"RESOURCE_LIMITS=$(panel_resource_limits)" \
 		"ARGS=$args"
+}
+
+# panel_resource_limits - the unit lines of the budget. PANEL_MODE=unlimited
+# leaves the panel without one (no MemoryMax, no CPUQuota) for a host that
+# has the room and a large Suricata to watch.
+panel_resource_limits() {
+	if [[ "${CONF[PANEL_MODE]:-limited}" == "unlimited" ]]; then
+		echo "# PANEL_MODE=unlimited: no MemoryMax and no CPUQuota"
+	else
+		printf 'MemoryMax=64M\nCPUQuota=20%%'
+	fi
 }
 
 panel_unit_matches() {

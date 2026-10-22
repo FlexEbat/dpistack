@@ -52,6 +52,8 @@ NTOPNG_RUNTIME=native
 NTOPNG_VERSION=
 PANEL_PORT=9800
 PANEL_SOURCE=auto
+# limited: the panel unit has a memory and CPU budget (64M, 20%); unlimited: none
+PANEL_MODE=limited
 PIN_VERSIONS=no
 RULES_GROUPS=emerging-p2p,emerging-policy
 RULES_SOURCES=et/open

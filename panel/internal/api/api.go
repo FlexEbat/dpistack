@@ -51,6 +51,9 @@ type Config struct {
 	ExportToken string           // the bearer token of GET /metrics
 	Web         fs.FS
 	Now         func() time.Time // nil means time.Now
+	// MaxStreams caps the open log streams (each is a sudo and a journalctl
+	// process); zero means the default, 4. PANEL_MODE=unlimited raises it.
+	MaxStreams int
 }
 
 type server struct {
@@ -60,6 +63,14 @@ type server struct {
 	streams  atomic.Int32 // open log streams, capped at maxStreams
 	rules    rulesState   // the last rules update started from this panel
 	ops      opState      // tests and interface changes, one at a time
+}
+
+// maxStreams is the cap of open log streams.
+func (s *server) maxStreams() int {
+	if s.cfg.MaxStreams > 0 {
+		return s.cfg.MaxStreams
+	}
+	return maxStreams
 }
 
 type ctxKey struct{}

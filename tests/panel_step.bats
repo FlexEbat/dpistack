@@ -387,3 +387,21 @@ release_binary_name() {
 	[ "$status" -eq 0 ]
 	grep -q "^go build" "$MOCK_CALLS_LOG"
 }
+
+@test "PANEL_MODE=unlimited: the unit has no MemoryMax and no CPUQuota and allows more log streams" {
+	run install_base --set PANEL_MODE=unlimited
+	[ "$status" -eq 0 ]
+	! grep -qE '^(MemoryMax|CPUQuota)=' "$(unit_file)"
+	grep -q -- ' -max-streams 32' "$(unit_file)"
+	grep -q '^ProtectHome=yes$' "$(unit_file)"
+}
+
+@test "PANEL_MODE=limited is the default and switching back restores the budget" {
+	run install_base
+	! grep -q -- '-max-streams' "$(unit_file)"
+	run install_base --set PANEL_MODE=unlimited
+	run install_base --set PANEL_MODE=limited
+	[ "$status" -eq 0 ]
+	grep -q '^MemoryMax=64M$' "$(unit_file)"
+	grep -q '^CPUQuota=20%$' "$(unit_file)"
+}

@@ -129,7 +129,7 @@ func (e *sse) finish() (began bool) {
 }
 
 func (s *server) takeStream() bool {
-	if s.streams.Add(1) > maxStreams {
+	if s.streams.Add(1) > int32(s.maxStreams()) {
 		s.streams.Add(-1)
 		return false
 	}

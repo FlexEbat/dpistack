@@ -301,6 +301,7 @@ scripts/
 | `ACCESS_MODE` | `localhost` | `localhost` `lan` `nginx` |
 | `LAN_CIDR` | авто | CIDR сети интерфейса по умолчанию |
 | `PANEL_PORT` | `9800` | 1..65535 |
+| `PANEL_MODE` | `limited` | `limited` (юнит панели с `MemoryMax=64M` и `CPUQuota=20%`, 4 потока логов) или `unlimited` (юнит без бюджета, до 32 потоков логов); лёгкое, затрагивает шаг `panel` |
 | `PANEL_SOURCE` | `auto` | `auto` (готовый бинарник рядом с установщиком, иначе сборка), `build` (нужен Go) или `prebuilt` (только готовый бинарник) |
 | `NGINX_MANAGE` | `snippet` | `yes` (правит и перезагружает системный nginx) или `snippet` (только пишет файл и печатает команду) |
 | `NGINX_TLS` | `none` | `none` `selfsigned` `existing` |
