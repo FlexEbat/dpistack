@@ -709,7 +709,7 @@ cmd_diag() {
 # root or not at all. The panel gets there through `sudo -n`, which makes
 # the process root as well.
 require_root() {
-	if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+	if [[ "$(id -u)" -ne 0 ]]; then
 		echo "dpistack: команда запускается только от root (sudo dpistack ...)" >&2
 		exit 1
 	fi

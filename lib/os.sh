@@ -191,7 +191,9 @@ pkg_update_once() {
 	apt) run apt-get update || return 1 ;;
 	dnf) run dnf -y makecache || return 1 ;;
 	zypper) run zypper --non-interactive refresh || return 1 ;;
-	# pacman: a bare -Sy is a partial upgrade, which Arch documents as unsupported
+	pacman)
+		# a bare -Sy is a partial upgrade, which Arch documents as unsupported
+		;;
 	esac
 	PKG_INDEX_FRESH=1
 }

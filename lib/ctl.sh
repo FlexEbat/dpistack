@@ -591,7 +591,6 @@ ctl_cmd_reconfigure() {
 	return "$rc"
 }
 
-
 # -------------------------------------------------------------- settings
 # The dashboard's settings screen (tech.md 9): every key of the schema
 # (lib/schema.sh), its value, the checks of config_validate, and the
@@ -649,7 +648,7 @@ settings_list() {
 		else
 			value=$(conf_get "$key" "${SCHEMA_DEFAULT[$key]}")
 		fi
-		if ((!json)); then
+		if ((json == 0)); then
 			if [[ "$secret" == "yes" ]]; then
 				printf '%s=%s\n' "$key" "$([[ $set == true ]] && echo '(задан)' || echo '(не задан)')"
 			else

@@ -208,10 +208,16 @@ dp_input() {
 }
 
 @test "dpistack refuses to run without root, whatever the command" {
-	run setpriv --reuid=65534 --regid=65534 --clear-groups bash "$REPO_DIR/install.sh" version
+	fake="$(mktemp -d)"
+	printf '#!/bin/sh\necho 1000\n' >"$fake/id"
+	chmod +x "$fake/id"
+	PATH="$fake:$PATH" run bash "$REPO_DIR/install.sh" version
 	[ "$status" -eq 1 ]
 	[[ "$output" == *"только от root"* ]]
-	run setpriv --reuid=65534 --regid=65534 --clear-groups bash "$REPO_DIR/install.sh" status --json
+	PATH="$fake:$PATH" run bash "$REPO_DIR/install.sh" status --json
+	[ "$status" -eq 1 ]
+	PATH="$fake:$PATH" run bash "$REPO_DIR/install.sh" settings list
+	rm -rf "$fake"
 	[ "$status" -eq 1 ]
 }
 

@@ -103,7 +103,10 @@ compose_cmd="docker compose -p dpistack -f"
 	for s in native docker; do for e in native docker; do for t in native docker; do for m in none-native none-docker; do for p in native docker; do
 		backend=none
 		mrt=native
-		[[ "$m" == none-docker ]] && { backend=victoriametrics; mrt=docker; }
+		if [[ "$m" == none-docker ]]; then
+			backend=victoriametrics
+			mrt=docker
+		fi
 		run install_base --dry-run --set SURICATA_RUNTIME=$s --set EVEBOX_RUNTIME=$e --set NTOPNG_RUNTIME=$t \
 			--set METRICS_BACKEND=$backend --set METRICS_BACKEND_RUNTIME=$mrt --set PANEL_RUNTIME=$p
 		if [ "$status" -ne 0 ]; then

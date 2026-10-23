@@ -744,7 +744,7 @@ cmd_diag() {
 # root or not at all. The panel gets there through `sudo -n`, which makes
 # the process root as well.
 require_root() {
-	if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+	if [[ "$(id -u)" -ne 0 ]]; then
 		echo "dpistack: команда запускается только от root (sudo dpistack ...)" >&2
 		exit 1
 	fi
@@ -2536,7 +2536,6 @@ ctl_cmd_reconfigure() {
 	return "$rc"
 }
 
-
 # -------------------------------------------------------------- settings
 # The dashboard's settings screen (tech.md 9): every key of the schema
 # (lib/schema.sh), its value, the checks of config_validate, and the
@@ -2594,7 +2593,7 @@ settings_list() {
 		else
 			value=$(conf_get "$key" "${SCHEMA_DEFAULT[$key]}")
 		fi
-		if ((!json)); then
+		if ((json == 0)); then
 			if [[ "$secret" == "yes" ]]; then
 				printf '%s=%s\n' "$key" "$([[ $set == true ]] && echo '(задан)' || echo '(не задан)')"
 			else
@@ -4641,7 +4640,9 @@ pkg_update_once() {
 	apt) run apt-get update || return 1 ;;
 	dnf) run dnf -y makecache || return 1 ;;
 	zypper) run zypper --non-interactive refresh || return 1 ;;
-	# pacman: a bare -Sy is a partial upgrade, which Arch documents as unsupported
+	pacman)
+		# a bare -Sy is a partial upgrade, which Arch documents as unsupported
+		;;
 	esac
 	PKG_INDEX_FRESH=1
 }
