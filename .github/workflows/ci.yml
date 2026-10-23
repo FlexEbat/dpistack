@@ -17,7 +17,7 @@ jobs:
   gate:
     name: gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       statuses: write # names failing checks, see "Report failing checks"
