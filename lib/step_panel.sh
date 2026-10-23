@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # "panel" step: the system user `dpistack`, the sudoers rule that lets it
-# run only dpistack-ctl (tech.md 4.2, 4.5), the panel binary (PANEL_SOURCE:
+# run only dpistack (tech.md 4.2, 4.5), the panel binary (PANEL_SOURCE:
 # built from panel/ with Go, or a ready dpistack-panel next to install.sh)
 # and the systemd unit with the resource budget (tech.md 9).
 
@@ -102,6 +102,7 @@ panel_args() {
 		[[ "${CONF[EVEBOX_DB]:-sqlite}" == "sqlite" ]] && disks+=",$(path_evebox_data_dir)"
 		args+=" -metrics-token-file $(path_metrics_token) -rules-file $(path_suricata_ruleset) -disk-paths ${disks}"
 	fi
+	[[ "${CONF[PANEL_MODE]:-limited}" == "unlimited" ]] && args+=" -max-streams 32"
 	echo "$args"
 }
 
@@ -111,7 +112,19 @@ panel_render_service() {
 	render_template "$SCRIPT_DIR/templates/dpistack-panel.service.tpl" \
 		"USER=$PANEL_USER" \
 		"PANEL_BIN=$(path_panel_bin)" \
+		"RESOURCE_LIMITS=$(panel_resource_limits)" \
 		"ARGS=$args"
+}
+
+# panel_resource_limits - the unit lines of the budget. PANEL_MODE=unlimited
+# leaves the panel without one (no MemoryMax, no CPUQuota) for a host that
+# has the room and a large Suricata to watch.
+panel_resource_limits() {
+	if [[ "${CONF[PANEL_MODE]:-limited}" == "unlimited" ]]; then
+		echo "# PANEL_MODE=unlimited: no MemoryMax and no CPUQuota"
+	else
+		printf 'MemoryMax=64M\nCPUQuota=20%%'
+	fi
 }
 
 panel_unit_matches() {
@@ -183,7 +196,17 @@ step_panel_check() {
 	[[ -f "$(path_metrics_json)" ]] || return 1
 	panel_token_matches || return 1
 	panel_bin_current || return 1
-	panel_unit_matches || return 1
+	if docker_wanted panel; then
+		docker_service_check panel || return 1
+		# the native unit must be gone, or it would hold the port
+		[[ "$(systemctl is-active "$PANEL_SERVICE" 2>/dev/null)" != "active" ]] || return 1
+	else
+		panel_unit_matches || return 1
+		# a container left from PANEL_RUNTIME=docker would hold the port
+		if [[ -f "$(path_compose_yaml)" ]] && docker_service_running panel 2>/dev/null; then
+			return 1
+		fi
+	fi
 	return 0
 }
 
@@ -249,6 +272,18 @@ step_panel_apply() {
 		panel_bin_install || return 1
 		restart=1
 	}
+	# PANEL_RUNTIME=docker: the panel is a compose service. The native unit
+	# goes first (it would hold the port), the image is built from the binary
+	# that was just installed, and compose recreates the container when the
+	# image or the flags changed.
+	if docker_wanted panel; then
+		runtime_release_native "$PANEL_SERVICE" || return 1
+		run rm -f "$(path_panel_service_unit)" || return 1
+		run systemctl daemon-reload || return 1
+		docker_service_apply panel || return 1
+		return 0
+	fi
+	runtime_release_docker panel || return 1
 	panel_unit_matches || restart=1
 	local unit
 	unit=$(panel_render_service) || return 1
@@ -262,7 +297,11 @@ step_panel_apply() {
 }
 
 step_panel_plan() {
-	echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack-ctl), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), юнит $PANEL_SERVICE"
+	if docker_wanted panel; then
+		echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), $(docker_service_plan panel)"
+		return 0
+	fi
+	echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), юнит $PANEL_SERVICE"
 }
 
 # panel_report_metrics - the token of /metrics and a scrape_config entry

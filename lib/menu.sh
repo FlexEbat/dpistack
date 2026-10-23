@@ -506,6 +506,8 @@ menu_main_screen() {
 				echo "  без пароля панели установка недоступна" >&2
 				continue
 			fi
+			# A busy port is a warning with a choice here, not a stop later.
+			preflight_resolve_ports_interactive || true
 			return 0
 			;;
 		*)
@@ -676,6 +678,7 @@ menu_reconfigure_screen() {
 		case "$choice" in
 		d) menu_diff_screen ;;
 		a)
+			preflight_resolve_ports_interactive || true
 			if menu_reconfigure_confirm_and_validate; then
 				return 0 # caller writes config.sh and applies the affected steps
 			fi
@@ -739,29 +742,34 @@ menu_run_reconfigure() {
 MENU_BACK_ENABLED=0
 MANAGE_COMPONENTS=(suricata evebox ntopng redis panel)
 
-# manage_ctl - the installed dpistack-ctl, or the one next to install.sh
-# when run from a clone.
+# manage_ctl - the installed dpistack, or the install.sh next to this file
+# when run from a clone (the verbs are the same).
 manage_ctl() {
+	# DPISTACK_CTL names another program that answers the verbs (tests).
+	if [[ -n "${DPISTACK_CTL:-}" && -x "$DPISTACK_CTL" ]]; then
+		echo "$DPISTACK_CTL"
+		return 0
+	fi
 	if [[ -x "$(path_ctl_bin)" ]]; then
 		path_ctl_bin
-	elif [[ -x "$SCRIPT_DIR/bin/dpistack-ctl" ]]; then
-		echo "$SCRIPT_DIR/bin/dpistack-ctl"
+	elif [[ -x "$SCRIPT_DIR/install.sh" ]]; then
+		echo "$SCRIPT_DIR/install.sh"
 	else
 		return 1
 	fi
 }
 
-# menu_manage_ctl <args...> - runs dpistack-ctl; an absent or failing
+# menu_manage_ctl <args...> - runs a dpistack verb; an absent or failing
 # helper prints the reason and leaves the menu running.
 menu_manage_ctl() {
 	local ctl rc
 	if ! ctl=$(manage_ctl); then
-		echo "  dpistack-ctl не найден, проверьте установку (шаг selfinstall)" >&2
+		echo "  dpistack не найден, проверьте установку (шаг selfinstall)" >&2
 		return 1
 	fi
 	"$ctl" "$@"
 	rc=$?
-	((rc == 0)) || echo "  dpistack-ctl вернул код $rc" >&2
+	((rc == 0)) || echo "  dpistack вернул код $rc" >&2
 	return "$rc"
 }
 
@@ -808,7 +816,7 @@ menu_manage_logs() {
 menu_manage_tests() {
 	local ctl out rc
 	ctl=$(manage_ctl) || {
-		echo "  dpistack-ctl не найден, проверьте установку (шаг selfinstall)" >&2
+		echo "  dpistack не найден, проверьте установку (шаг selfinstall)" >&2
 		return 1
 	}
 	out=$("$ctl" test all --json 2>&1)
@@ -835,7 +843,7 @@ menu_manage_password() {
 		return 0
 	fi
 	ctl=$(manage_ctl) || {
-		echo "  dpistack-ctl не найден, проверьте установку (шаг selfinstall)" >&2
+		echo "  dpistack не найден, проверьте установку (шаг selfinstall)" >&2
 		return 1
 	}
 	printf '%s\n' "$p1" | "$ctl" panel-passwd

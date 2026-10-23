@@ -5,7 +5,7 @@
 # Ordering, as systemd.special(7) asks of firewall units: before
 # network-pre.target, so the rules are in place before any interface is
 # configured and no packet passes uninspected; after local-fs.target, because
-# the config and dpistack-ctl are read from disk. DefaultDependencies=no
+# the config and dpistack are read from disk. DefaultDependencies=no
 # keeps it out of the cycle that basic.target would make with
 # network-pre.target.
 [Unit]

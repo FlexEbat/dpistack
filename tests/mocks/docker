@@ -5,11 +5,13 @@
 #   MOCK_DOCKER_PS        lines "service state" for `ps -a --format ...`
 #   MOCK_DOCKER_IMAGE     printed by `ps --format {{.Image}}`
 #   MOCK_DOCKER_COMPOSE_EXIT  exit of `docker compose version` (default 0)
+#   MOCK_DOCKER_IMAGE_ABSENT  `docker image inspect` fails (the image is not built yet)
 # Anything else exits with MOCK_EXIT (default 0).
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
 fi
 case "$*" in
+"image inspect"*) [[ -n "${MOCK_DOCKER_IMAGE_ABSENT:-}" ]] && exit 1 || exit 0 ;;
 "compose version"*) exit "${MOCK_DOCKER_COMPOSE_EXIT:-0}" ;;
 *" ps --status running --services"*)
 	[[ -n "${MOCK_DOCKER_RUNNING:-}" ]] && printf '%s\n' "${MOCK_DOCKER_RUNNING}" | tr ' ' '\n'

@@ -222,7 +222,7 @@ config_write_conf() {
 }
 
 # The applied config lives in state as applied.<KEY>=<value>, so a
-# later `dpistack-ctl reconfigure` can diff dpistack.conf (already
+# later `dpistack reconfigure` can diff dpistack.conf (already
 # edited by config-write) against what the system was last built from.
 config_snapshot_applied() {
 	local f tmp key lock_fd

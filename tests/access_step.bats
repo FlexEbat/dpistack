@@ -151,3 +151,54 @@ install_base() {
 	[ "$status" -eq 3 ]
 	[[ "$output" == *"порт 19800 (PANEL_PORT) уже занят"* ]]
 }
+
+# --- R156: a busy port is a warning with a choice, not only a stop ---------
+
+load_preflight() {
+	bash -c '
+		SCRIPT_DIR="'"$REPO_DIR"'"
+		for f in paths common state schema config render os step_access step_ntopng step_evebox step_panel step_metrics step_preflight menu; do
+			source "'"$REPO_DIR"'/lib/$f.sh"
+		done
+		config_reset; config_load_defaults
+		'"$1"'
+	'
+}
+
+@test "R156: a busy port names its holder and a free port to pass with --set" {
+	MOCK_SS_LISTEN=9800 MOCK_SS_PROC=nginx run load_preflight 'CONF[ACCESS_MODE]=localhost; step_preflight_reasons'
+	[[ "$output" == *"порт 9800 (PANEL_PORT) уже занят (держит: nginx); свободный: --set PANEL_PORT=9801"* ]]
+}
+
+@test "R156: the suggested port skips ports that are busy or used by another key" {
+	MOCK_SS_LISTEN=9800,9801 run load_preflight 'CONF[PANEL_PORT]=9800; CONF[EVEBOX_PORT]=9802; preflight_free_port PANEL_PORT 9801'
+	[ "$output" = "9803" ]
+}
+
+@test "R156: with nginx the suggested port needs its backend port free too" {
+	MOCK_SS_LISTEN=9800,19801 run load_preflight 'CONF[ACCESS_MODE]=nginx; CONF[PANEL_PORT]=9800; preflight_free_port PANEL_PORT 9801'
+	[ "$output" = "9802" ]
+}
+
+@test "R156: the menu asks for another port, Enter takes the suggestion, junk and busy answers are asked again" {
+	f="$(mktemp)"
+	printf '%s\n' 'abc' '9800' '' >"$f"
+	MOCK_SS_LISTEN=9800 run load_preflight 'exec 8<'"$f"'; MENU_INPUT_OPENED=1
+		CONF[ACCESS_MODE]=localhost; CONF[PANEL_PORT]=9800
+		preflight_resolve_ports_interactive; echo "rc=$? PANEL_PORT=${CONF[PANEL_PORT]}"'
+	rm -f "$f"
+	[[ "$output" == *"ВНИМАНИЕ: порт 9800 (PANEL_PORT) уже занят"* ]]
+	[[ "$output" == *"нужно число от 1 до 65535"* ]]
+	[[ "$output" == *"порт 9800 тоже занят"* ]]
+	[[ "$output" == *"rc=0 PANEL_PORT=9801"* ]]
+}
+
+@test "R156: answering q keeps the port and reports it" {
+	f="$(mktemp)"
+	printf '%s\n' 'q' >"$f"
+	MOCK_SS_LISTEN=9800 run load_preflight 'exec 8<'"$f"'; MENU_INPUT_OPENED=1
+		CONF[ACCESS_MODE]=localhost
+		preflight_resolve_ports_interactive; echo "rc=$? PANEL_PORT=${CONF[PANEL_PORT]}"'
+	rm -f "$f"
+	[[ "$output" == *"rc=1 PANEL_PORT=9800"* ]]
+}

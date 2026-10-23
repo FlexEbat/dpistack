@@ -5,7 +5,7 @@
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-	CTL="$REPO_DIR/bin/dpistack-ctl"
+	CTL="$REPO_DIR/tests/helpers/dpistack-ctl"
 	DPISTACK_ROOT="$(mktemp -d)"
 	export DPISTACK_ROOT
 	mkdir -p "$DPISTACK_ROOT/etc"
@@ -196,7 +196,7 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	if grep -q '^systemctl enable --now dpistack-fw.service' "$MOCK_CALLS_LOG"; then false; fi
 	installed
 	[ -f "$FWUNIT" ]
-	grep -q 'ExecStart=.*dpistack-ctl fw restore' "$FWUNIT"
+	grep -q 'ExecStart=.*dpistack fw restore' "$FWUNIT"
 	"$CTL" mode ips >/dev/null
 	"$CTL" mode-confirm >/dev/null
 	# a reboot empties iptables

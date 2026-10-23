@@ -1,4 +1,4 @@
-// Package ctl runs dpistack-ctl, the only privileged helper the panel may
+// Package ctl runs dpistack, the only privileged helper the panel may
 // call (tech.md 4.5). The panel never runs any other command.
 package ctl
 
@@ -39,10 +39,10 @@ const maxChecker = 64 << 10
 // stopGrace is how long a streamed ctl gets to exit after its stdin is closed.
 const stopGrace = 5 * time.Second
 
-// ErrUnavailable means dpistack-ctl could not be run or gave unusable output.
-var ErrUnavailable = errors.New("dpistack-ctl unavailable")
+// ErrUnavailable means dpistack could not be run or gave unusable output.
+var ErrUnavailable = errors.New("dpistack unavailable")
 
-// ExitError means dpistack-ctl ran and refused or failed. Code is its exit
+// ExitError means dpistack ran and refused or failed. Code is its exit
 // status (tech.md 4.5: 1 failure, 2 bad arguments, 3 not supported in this
 // mode, 4 component not installed, 5 argument not allowed) and Message the
 // first line it wrote to stderr, in Russian, fit to show to the user.
@@ -61,13 +61,18 @@ func (e *ExitError) Error() string {
 	return fmt.Sprintf("exit code %d", e.Code)
 }
 
-// Runner calls dpistack-ctl, through `sudo -n` when Sudo is set.
+// Runner calls dpistack, through `sudo -n` when Sudo is set.
 type Runner struct {
 	Path string
 	Sudo bool
+	// Prefix runs dpistack on the host from inside a container: the panel in
+	// Docker starts it through `nsenter -t 1 -m -u -i -n -p --`, and the
+	// caller is named in the environment so that dpistack gives it the verbs
+	// and no installer command, as it does for the sudo path.
+	Prefix []string
 }
 
-// Component is one entry of `dpistack-ctl status --json`.
+// Component is one entry of `dpistack status --json`.
 type Component struct {
 	ID      string `json:"id"`
 	Runtime string `json:"runtime"`
@@ -76,7 +81,7 @@ type Component struct {
 	Version string `json:"version"`
 }
 
-// Status is the output of `dpistack-ctl status --json`.
+// Status is the output of `dpistack status --json`.
 type Status struct {
 	Components []Component `json:"components"`
 	NDPIPlugin string      `json:"ndpi_plugin"`
@@ -255,7 +260,11 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 
 func (r *Runner) command(ctx context.Context, args ...string) *exec.Cmd {
 	name, argv := r.Path, args
-	if r.Sudo {
+	switch {
+	case len(r.Prefix) > 0:
+		name = r.Prefix[0]
+		argv = append(append(append([]string{}, r.Prefix[1:]...), "env", "DPISTACK_CALLER=panel", r.Path), args...)
+	case r.Sudo:
 		name, argv = "sudo", append([]string{"-n", r.Path}, args...)
 	}
 	cmd := exec.CommandContext(ctx, name, argv...)
@@ -309,13 +318,13 @@ func unavailable(err error) error {
 }
 
 // firstLine returns the first line of ctl's stderr, without the
-// "dpistack-ctl: " prefix it puts on its own messages.
+// "dpistack: " prefix it puts on its own messages.
 func firstLine(stderr string) string {
 	msg := strings.TrimSpace(stderr)
 	if i := strings.IndexByte(msg, '\n'); i >= 0 {
 		msg = msg[:i]
 	}
-	msg = strings.TrimPrefix(msg, "dpistack-ctl: ")
+	msg = strings.TrimPrefix(msg, "dpistack: ")
 	return cutUTF8(msg, 200)
 }
 

@@ -72,7 +72,7 @@ check "no mktemp -u (name race)" 'mktemp[^|;]*[[:space:]]-u'
 check "no \$\$-named temp files" '/tmp/[^[:space:]]*\$\$|\.\$\$'
 
 # 5. Every executable entry point is strict about unset variables.
-for f in install.sh bin/dpistack-ctl bin/dpistack-watch scripts/gate.sh scripts/security.sh; do
+for f in install.sh bin/dpistack-watch scripts/gate.sh scripts/security.sh; do
 	if ! grep -qE '^set -[a-z]*u' "$f"; then
 		fail "set -u missing in $f"
 	fi

@@ -8,7 +8,7 @@ setup() {
 	mkdir -p "$WORK/scripts" "$WORK/lib" "$WORK/bin"
 	cp "$REPO_DIR/scripts/security.sh" "$WORK/scripts/"
 	# A clean baseline: strict mode in every entry point.
-	for f in install.sh bin/dpistack-ctl bin/dpistack-watch scripts/gate.sh; do
+	for f in install.sh lib/ctl.sh bin/dpistack-watch scripts/gate.sh; do
 		printf '#!/usr/bin/env bash\nset -uo pipefail\n' >"$WORK/$f"
 	done
 	sed -i '1,2!d' "$WORK/scripts/gate.sh"

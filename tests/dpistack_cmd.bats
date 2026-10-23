@@ -36,6 +36,7 @@ install_base() {
 # stub_ctl - replaces the installed helper with one that logs its
 # arguments and exits with $STUB_RC.
 stub_ctl() {
+	rm -f "$SBIN/dpistack-ctl"
 	cat >"$SBIN/dpistack-ctl" <<'STUB'
 #!/usr/bin/env bash
 echo "$*" >>"$STUB_LOG"
@@ -43,6 +44,7 @@ echo "stub-out: $*"
 exit "${STUB_RC:-0}"
 STUB
 	chmod +x "$SBIN/dpistack-ctl"
+	export DPISTACK_CTL="$SBIN/dpistack-ctl"
 }
 
 # dp_input <lines...> - menu input, one line each
@@ -124,7 +126,7 @@ dp_input() {
 	dp_input 2 4 q
 	STUB_RC=3 DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"dpistack-ctl вернул код 3"* ]]
+	[[ "$output" == *"dpistack вернул код 3"* ]]
 	[ "$(grep -c . "$STUB_LOG")" -ge 2 ]
 }
 
@@ -192,35 +194,52 @@ dp_input() {
 	[[ "$output" == *"Управление установленным стендом"* ]]
 }
 
-@test "criterion 9: status, test and logs are the same as calling dpistack-ctl directly" {
+@test "criterion 9: the verbs of the privileged side are verbs of dpistack itself, the old name is a symlink" {
 	run install_base
-	stub_ctl
-	for args in "status" "test bittorrent" "logs suricata -n 50"; do
-		STUB_RC=3 run "$SBIN/dpistack-ctl" $args
-		direct_status="$status"
-		direct_output="$output"
-		STUB_RC=3 run "$SBIN/dpistack" $args
-		[ "$status" -eq "$direct_status" ]
-		[ "$output" = "$direct_output" ]
-	done
-	grep -qx "logs suricata -n 50" "$STUB_LOG"
+	[ -L "$SBIN/dpistack" ]
+	[ "$(readlink -f "$SBIN/dpistack-ctl")" = "$(readlink -f "$SBIN/dpistack")" ]
+	run "$SBIN/dpistack" version
+	[ "$status" -eq 0 ]
+	run "$SBIN/dpistack" logs suricata -n 5000
+	[ "$status" -eq 2 ]
+	run "$SBIN/dpistack" status --json
+	[ "$status" -eq 0 ]
+	[[ "$output" == *'"components"'* ]]
 }
 
-@test "install.sh keeps its own status and refuses test and logs" {
-	run bash "$REPO_DIR/install.sh" test all
+@test "dpistack refuses to run without root, whatever the command" {
+	fake="$(mktemp -d)"
+	printf '#!/bin/sh\necho 1000\n' >"$fake/id"
+	chmod +x "$fake/id"
+	PATH="$fake:$PATH" run bash "$REPO_DIR/install.sh" version
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"только от root"* ]]
+	PATH="$fake:$PATH" run bash "$REPO_DIR/install.sh" status --json
+	[ "$status" -eq 1 ]
+	PATH="$fake:$PATH" run bash "$REPO_DIR/install.sh" settings list
+	rm -rf "$fake"
+	[ "$status" -eq 1 ]
+}
+
+@test "the panel user gets the verbs and no installer command" {
+	SUDO_USER=dpistack run bash "$REPO_DIR/install.sh" uninstall
 	[ "$status" -eq 2 ]
-	run bash "$REPO_DIR/install.sh" logs suricata
+	SUDO_USER=dpistack run bash "$REPO_DIR/install.sh" install -y
 	[ "$status" -eq 2 ]
+	SUDO_USER=dpistack run bash "$REPO_DIR/install.sh" version
+	[ "$status" -eq 0 ]
 }
 
 @test "criterion 7 extra: the panel password from the menu goes to ctl panel-passwd via stdin" {
 	run install_base
+	rm -f "$SBIN/dpistack-ctl"
 	cat >"$SBIN/dpistack-ctl" <<'STUB'
 #!/usr/bin/env bash
 if [[ "$1" == "panel-passwd" ]]; then read -r pw; echo "len=${#pw}" >>"$STUB_LOG"; fi
 echo "$*" >>"$STUB_LOG"
 STUB
 	chmod +x "$SBIN/dpistack-ctl"
+	export DPISTACK_CTL="$SBIN/dpistack-ctl"
 	dp_input 7 "S3cret-pass" "S3cret-pass" q
 	DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
 	[ "$status" -eq 0 ]

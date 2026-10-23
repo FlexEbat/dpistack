@@ -18,7 +18,7 @@ const maxConfigBody = 1 << 20
 const writeAllowance = 4 * time.Minute
 
 // configNames are the files the editor may touch, in the order of the
-// screen. It is the list dpistack-ctl knows (4.5), repeated here so a name
+// screen. It is the list dpistack knows (4.5), repeated here so a name
 // outside it is refused before any privileged call is made.
 var configNames = []string{
 	"dpistack.conf", "suricata.yaml", "local.rules", "enable.conf",

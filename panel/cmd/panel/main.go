@@ -40,7 +40,7 @@ func run(args []string) error {
 	lanCIDR := fs.String("lan-cidr", "", "LAN_CIDR resolved to an address/length; required for lan")
 	authFile := fs.String("auth-file", "/etc/dpistack/panel.auth", "argon2id hash of the panel password")
 	healthFile := fs.String("health-file", "/var/lib/dpistack/health.json", "watchdog report")
-	ctlPath := fs.String("ctl", "/usr/local/sbin/dpistack-ctl", "dpistack-ctl path")
+	ctlPath := fs.String("ctl", "/usr/local/sbin/dpistack", "dpistack path")
 	eveFile := fs.String("eve-file", "", "eve.json to show on the Events screen; empty turns the viewer off (EVE_FILE=no)")
 	metricsFile := fs.String("metrics-file", "", "metrics.json: the graph history is restored from it and saved to it; empty keeps it in memory only")
 	tokenFile := fs.String("metrics-token-file", "", "file with the bearer token of GET /metrics; empty switches /metrics off (METRICS_EXPORT=no)")
@@ -48,7 +48,9 @@ func run(args []string) error {
 	eventsFile := fs.String("events-file", "", "events.jsonl: the Alerts screen")
 	rulesFile := fs.String("rules-file", "", "suricata.rules, for its age")
 	diskPaths := fs.String("disk-paths", "", "comma-separated directories whose free space /metrics reports")
-	useSudo := fs.Bool("sudo", true, "run dpistack-ctl through sudo -n")
+	maxStreams := fs.Int("max-streams", 0, "open log streams at once; 0 is the default of 4 (PANEL_MODE=unlimited passes more)")
+	ctlPrefix := fs.String("ctl-prefix", "", "comma-separated command that runs dpistack on the host from a container, e.g. nsenter,-t,1,-m,-u,-i,-n,-p,--; replaces sudo")
+	useSudo := fs.Bool("sudo", true, "run dpistack through sudo -n")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -110,7 +112,8 @@ func run(args []string) error {
 		Policy:      policy,
 		AuthFile:    *authFile,
 		HealthFile:  *healthFile,
-		Ctl:         &ctl.Runner{Path: *ctlPath, Sudo: *useSudo},
+		MaxStreams:  *maxStreams,
+		Ctl:         &ctl.Runner{Path: *ctlPath, Sudo: *useSudo, Prefix: splitPrefix(*ctlPrefix)},
 		Eve:         events,
 		Metrics:     collector,
 		TestsFile:   *testsFile,
@@ -161,4 +164,12 @@ func run(args []string) error {
 		}
 		return nil
 	}
+}
+
+// splitPrefix turns "a,b,c" into its words; empty is no prefix.
+func splitPrefix(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
 }

@@ -6,7 +6,7 @@
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 	WATCH="$REPO_DIR/bin/dpistack-watch"
-	CTL="$REPO_DIR/bin/dpistack-ctl"
+	CTL="$REPO_DIR/tests/helpers/dpistack-ctl"
 	DPISTACK_ROOT="$(mktemp -d)"
 	export DPISTACK_ROOT
 	NOW=1790000000

@@ -17,7 +17,7 @@ import (
 // write: longer than ctl.UpdateTimeout and the server's WriteTimeout.
 const updateAllowance = ctl.UpdateTimeout + time.Minute
 
-// The patterns repeat what dpistack-ctl accepts (4.5), so a bad value is
+// The patterns repeat what dpistack accepts (4.5), so a bad value is
 // refused with a readable sentence before any privileged call. ctl still has
 // the last word.
 var (

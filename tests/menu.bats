@@ -226,7 +226,7 @@ run_menu() {
 }
 
 @test "every menu screen header shows the program version, same as dpistack-ctl version" {
-	ver="$("$REPO_DIR/bin/dpistack-ctl" version)"
+	ver="$("$REPO_DIR/tests/helpers/dpistack-ctl" version)"
 	[[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 
 	run_menu "q\ny\n"

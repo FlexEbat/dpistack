@@ -41,8 +41,11 @@ for _step in "${STEPS_ORDER[@]}"; do
 	source "$LIB_DIR/step_${_step}.sh"
 done
 unset _step
+# shellcheck source=lib/ctl.sh
+source "$LIB_DIR/ctl.sh"
 
-BIN_NAME=$(basename -- "$0")
+BIN_NAME="${DPISTACK_CALLED_AS:-$(basename -- "$0")}"
+unset DPISTACK_CALLED_AS
 
 NON_INTERACTIVE=0
 ADVANCED=0
@@ -61,8 +64,12 @@ usage() {
 	cat <<'EOF'
 Использование: install.sh <команда> [опции]
 
-команды:  install | reconfigure | upgrade | uninstall | status | diag | test | logs
+установка:  install | reconfigure | upgrade | uninstall | diag
+управление: status [--json] | start|stop|restart <id> | reload suricata | logs <id> | test | health |
+            settings | config-read|config-write|config-revert | rules-* | iface | mode | fw |
+            panel-passwd | version   (полный список: dpistack help)
 dpistack без команды открывает меню: установки, если конфига нет, иначе управления.
+Запускается только от root (sudo dpistack ...).
 опции:
   --config FILE          путь к dpistack.conf (по умолчанию /etc/dpistack/dpistack.conf)
   --set KEY=VALUE        переопределить ключ, можно повторять
@@ -586,6 +593,8 @@ cmd_uninstall() {
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
 	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_sudoers)"
 	run systemctl disable --now "$PANEL_SERVICE" 2>/dev/null || true
+	# a panel that runs as a container goes with the program
+	runtime_release_docker panel || true
 	rm -f "$(path_panel_service_unit)" "$(path_panel_bin)"
 	run systemctl daemon-reload
 
@@ -594,7 +603,7 @@ cmd_uninstall() {
 	rm -rf "$(path_state_dir)"
 
 	# Last, because `dpistack uninstall` runs from the copy it removes.
-	rm -f "$(path_dpistack_bin)" "$(path_ctl_bin)" "$(path_watch_bin)"
+	rm -f "$(path_dpistack_bin)" "$(path_ctl_legacy_bin)" "$(path_watch_bin)"
 	rm -rf "$(path_installer_copy_dir)"
 
 	echo "готово"
@@ -612,17 +621,6 @@ cmd_status() {
 			echo "$name: расхождение"
 		fi
 	done
-}
-
-# exec_ctl <args...> - `dpistack status|test|logs` are thin wrappers:
-# same arguments, output and exit code as dpistack-ctl (5.2).
-exec_ctl() {
-	local ctl
-	ctl=$(manage_ctl) || {
-		echo "dpistack-ctl не найден" >&2
-		exit 1
-	}
-	exec "$ctl" "$@"
 }
 
 # cmd_diag - one text report for a bug report: system, versions,
@@ -707,12 +705,70 @@ cmd_diag() {
 	echo "отчёт сохранён: $out" >&2
 }
 
-main() {
-	if [[ "$BIN_NAME" == "dpistack" ]]; then
-		case "${1:-}" in
-		status | test | logs) exec_ctl "$@" ;;
-		esac
+# require_root - dpistack changes the system and reads secrets: it runs as
+# root or not at all. The panel gets there through `sudo -n`, which makes
+# the process root as well.
+require_root() {
+	if [[ "$(id -u)" -ne 0 ]]; then
+		echo "dpistack: команда запускается только от root (sudo dpistack ...)" >&2
+		exit 1
 	fi
+}
+
+# The verbs that act on an installed system (tech.md 4.5). `status` and
+# `reconfigure` also exist as installer commands: see dispatch_ctl.
+CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
+	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
+	mode-confirm mode-rollback fw panel-passwd test health version)
+
+# restricted_caller - the panel (and nothing else) comes through sudo as
+# the panel user. It gets the verbs above and no installer command: a stolen
+# panel session cannot run install, uninstall or upgrade.
+restricted_caller() {
+	[[ -n "${SUDO_USER:-}" && "$SUDO_USER" == "$PANEL_USER" ]] ||
+		[[ "${DPISTACK_CALLER:-}" == "panel" ]]
+}
+
+# dispatch_ctl <args...> - returns 0 after running a verb (the caller exits
+# with its code through exit inside ctl_main); returns 1 when the arguments
+# are an installer command.
+dispatch_ctl() {
+	local verb="${1:-}" arg
+	# Callers that predate the merge (units, scripts) use the old name and
+	# the old meaning of `reconfigure`; the panel is restricted.
+	if [[ "$BIN_NAME" == "dpistack-ctl" ]] || restricted_caller; then
+		ctl_main "$@"
+		exit $?
+	fi
+	in_list "$verb" "${CTL_VERBS[@]}" || return 1
+	case "$verb" in
+	reconfigure)
+		# `reconfigure --light` is the non-interactive, light-only form.
+		local -a rest=()
+		local light=0
+		shift
+		for arg in "$@"; do
+			if [[ "$arg" == "--light" ]]; then light=1; else rest+=("$arg"); fi
+		done
+		((light)) || return 1
+		ctl_main reconfigure "${rest[@]}"
+		exit $?
+		;;
+	status)
+		if [[ "${2:-}" == "--json" ]]; then
+			ctl_main "$@"
+			exit $?
+		fi
+		return 1
+		;;
+	esac
+	ctl_main "$@"
+	exit $?
+}
+
+main() {
+	require_root
+	dispatch_ctl "$@" || true
 	# No command: the menu that fits the state. Without a terminal or
 	# DPISTACK_INPUT parse_args prints the usage as before.
 	if [[ $# -eq 0 ]] && have_input_source; then
@@ -738,14 +794,20 @@ main() {
 		cmd_uninstall
 		;;
 	status)
+		# Components first (what runs), then the installer's own check of
+		# every step (what differs from the configuration).
+		ctl_main status
+		echo
+		echo "Шаги установки:"
 		cmd_status
 		;;
 	diag)
 		cmd_diag
 		;;
-	test | logs)
-		echo "$COMMAND доступна только через dpistack после установки, не через $BIN_NAME" >&2
-		exit 2
+	help | -h | --help)
+		usage
+		echo
+		ctl_usage
 		;;
 	*)
 		echo "неизвестная команда: $COMMAND" >&2

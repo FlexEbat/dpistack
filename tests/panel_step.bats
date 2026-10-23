@@ -32,10 +32,10 @@ install_base() {
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no "$@"
 }
 
-@test "sudoers rule names only dpistack-ctl, mode 0440, checked by visudo" {
+@test "sudoers rule names only dpistack, mode 0440, checked by visudo" {
 	run install_base
 	[ "$status" -eq 0 ]
-	[ "$(grep -v '^#' "$SUDOERS")" = "dpistack ALL=(root) NOPASSWD: $DPISTACK_ROOT/usr/local/sbin/dpistack-ctl" ]
+	[ "$(grep -v '^#' "$SUDOERS")" = "dpistack ALL=(root) NOPASSWD: $DPISTACK_ROOT/usr/local/sbin/dpistack" ]
 	[ "$(stat -c %a "$SUDOERS")" = "440" ]
 	grep -q "^visudo -cf " "$MOCK_CALLS_LOG"
 }
@@ -102,7 +102,7 @@ unit_file() {
 	[ "$status" -eq 0 ]
 	[ -x "$DPISTACK_ROOT/usr/local/bin/dpistack-panel" ]
 	grep -q "^go build .* -o .* ./cmd/panel" "$MOCK_CALLS_LOG"
-	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack-ctl -metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json -eve-file $DPISTACK_ROOT/var/log/suricata/eve.json -tests-file $DPISTACK_ROOT/var/lib/dpistack/tests-last.json -events-file $DPISTACK_ROOT/var/lib/dpistack/events.jsonl -metrics-token-file $DPISTACK_ROOT/etc/dpistack/metrics.token -rules-file $DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules -disk-paths $DPISTACK_ROOT/var/log/suricata,$DPISTACK_ROOT/var/lib/evebox" "$(unit_file)"
+	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack -metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json -eve-file $DPISTACK_ROOT/var/log/suricata/eve.json -tests-file $DPISTACK_ROOT/var/lib/dpistack/tests-last.json -events-file $DPISTACK_ROOT/var/lib/dpistack/events.jsonl -metrics-token-file $DPISTACK_ROOT/etc/dpistack/metrics.token -rules-file $DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules -disk-paths $DPISTACK_ROOT/var/log/suricata,$DPISTACK_ROOT/var/lib/evebox" "$(unit_file)"
 	grep -q "^systemctl enable --now dpistack-panel.service" "$MOCK_CALLS_LOG"
 }
 
@@ -386,4 +386,24 @@ release_binary_name() {
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set PANEL_SOURCE=build
 	[ "$status" -eq 0 ]
 	grep -q "^go build" "$MOCK_CALLS_LOG"
+}
+
+@test "PANEL_MODE=unlimited: the unit has no MemoryMax and no CPUQuota and allows more log streams" {
+	run install_base --set PANEL_MODE=unlimited
+	[ "$status" -eq 0 ]
+	run grep -qE '^(MemoryMax|CPUQuota)=' "$(unit_file)"
+	[ "$status" -ne 0 ]
+	grep -q -- ' -max-streams 32' "$(unit_file)"
+	grep -q '^ProtectHome=yes$' "$(unit_file)"
+}
+
+@test "PANEL_MODE=limited is the default and switching back restores the budget" {
+	run install_base
+	run grep -q -- '-max-streams' "$(unit_file)"
+	[ "$status" -ne 0 ]
+	run install_base --set PANEL_MODE=unlimited
+	run install_base --set PANEL_MODE=limited
+	[ "$status" -eq 0 ]
+	grep -q '^MemoryMax=64M$' "$(unit_file)"
+	grep -q '^CPUQuota=20%$' "$(unit_file)"
 }

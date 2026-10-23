@@ -51,6 +51,9 @@ type Config struct {
 	ExportToken string           // the bearer token of GET /metrics
 	Web         fs.FS
 	Now         func() time.Time // nil means time.Now
+	// MaxStreams caps the open log streams (each is a sudo and a journalctl
+	// process); zero means the default, 4. PANEL_MODE=unlimited raises it.
+	MaxStreams int
 }
 
 type server struct {
@@ -60,6 +63,14 @@ type server struct {
 	streams  atomic.Int32 // open log streams, capped at maxStreams
 	rules    rulesState   // the last rules update started from this panel
 	ops      opState      // tests and interface changes, one at a time
+}
+
+// maxStreams is the cap of open log streams.
+func (s *server) maxStreams() int {
+	if s.cfg.MaxStreams > 0 {
+		return s.cfg.MaxStreams
+	}
+	return maxStreams
 }
 
 type ctxKey struct{}
@@ -100,6 +111,11 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/alerts", s.authed(s.alertsList))
 	mux.HandleFunc("GET /api/iface", s.authed(s.ifaceList))
 	mux.HandleFunc("POST /api/iface/{action}", s.authed(s.ifaceChange))
+	mux.HandleFunc("GET /api/settings", s.authed(s.settingsList))
+	mux.HandleFunc("POST /api/settings/check", s.authed(s.settingsCheck))
+	mux.HandleFunc("POST /api/settings/apply", s.authed(s.settingsApply))
+	mux.HandleFunc("PUT /api/settings/secret/{key}", s.authed(s.settingsSecret))
+	mux.HandleFunc("GET /api/settings/job", s.authed(s.settingsJob))
 	mux.HandleFunc("GET /api/mode", s.authed(s.modeGet))
 	mux.HandleFunc("POST /api/mode", s.authed(s.modeSet))
 	mux.HandleFunc("POST /api/mode/confirm", s.authed(s.modeConfirm))
@@ -262,7 +278,7 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 	st, err := s.cfg.Ctl.Status(r.Context())
 	if err != nil {
 		detail := strings.TrimPrefix(err.Error(), ctl.ErrUnavailable.Error()+": ")
-		writeError(w, http.StatusBadGateway, "dpistack-ctl недоступен: "+detail)
+		writeError(w, http.StatusBadGateway, "dpistack недоступен: "+detail)
 		return
 	}
 	rep, err := health.Read(s.cfg.HealthFile)
