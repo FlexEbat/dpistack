@@ -196,7 +196,17 @@ step_panel_check() {
 	[[ -f "$(path_metrics_json)" ]] || return 1
 	panel_token_matches || return 1
 	panel_bin_current || return 1
-	panel_unit_matches || return 1
+	if docker_wanted panel; then
+		docker_service_check panel || return 1
+		# the native unit must be gone, or it would hold the port
+		[[ "$(systemctl is-active "$PANEL_SERVICE" 2>/dev/null)" != "active" ]] || return 1
+	else
+		panel_unit_matches || return 1
+		# a container left from PANEL_RUNTIME=docker would hold the port
+		if [[ -f "$(path_compose_yaml)" ]] && docker_service_running panel 2>/dev/null; then
+			return 1
+		fi
+	fi
 	return 0
 }
 
@@ -262,6 +272,18 @@ step_panel_apply() {
 		panel_bin_install || return 1
 		restart=1
 	}
+	# PANEL_RUNTIME=docker: the panel is a compose service. The native unit
+	# goes first (it would hold the port), the image is built from the binary
+	# that was just installed, and compose recreates the container when the
+	# image or the flags changed.
+	if docker_wanted panel; then
+		runtime_release_native "$PANEL_SERVICE" || return 1
+		run rm -f "$(path_panel_service_unit)" || return 1
+		run systemctl daemon-reload || return 1
+		docker_service_apply panel || return 1
+		return 0
+	fi
+	runtime_release_docker panel || return 1
 	panel_unit_matches || restart=1
 	local unit
 	unit=$(panel_render_service) || return 1
@@ -275,6 +297,10 @@ step_panel_apply() {
 }
 
 step_panel_plan() {
+	if docker_wanted panel; then
+		echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), $(docker_service_plan panel)"
+		return 0
+	fi
 	echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), юнит $PANEL_SERVICE"
 }
 

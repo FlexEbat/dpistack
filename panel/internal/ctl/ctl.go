@@ -65,6 +65,11 @@ func (e *ExitError) Error() string {
 type Runner struct {
 	Path string
 	Sudo bool
+	// Prefix runs dpistack on the host from inside a container: the panel in
+	// Docker starts it through `nsenter -t 1 -m -u -i -n -p --`, and the
+	// caller is named in the environment so that dpistack gives it the verbs
+	// and no installer command, as it does for the sudo path.
+	Prefix []string
 }
 
 // Component is one entry of `dpistack status --json`.
@@ -255,7 +260,11 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 
 func (r *Runner) command(ctx context.Context, args ...string) *exec.Cmd {
 	name, argv := r.Path, args
-	if r.Sudo {
+	switch {
+	case len(r.Prefix) > 0:
+		name = r.Prefix[0]
+		argv = append(append(append([]string{}, r.Prefix[1:]...), "env", "DPISTACK_CALLER=panel", r.Path), args...)
+	case r.Sudo:
 		name, argv = "sudo", append([]string{"-n", r.Path}, args...)
 	}
 	cmd := exec.CommandContext(ctx, name, argv...)

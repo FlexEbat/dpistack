@@ -10,8 +10,9 @@
 # eve.json stays at the same host path (/var/log/suricata), bind-mounted
 # into every container that needs it.
 #
-# Images and mount points are assumptions A6 (tech.md): not confirmed
-# against the real images yet.
+# The images and mount points follow the documentation of each image
+# (jasonish/suricata, jasonish/evebox, ntop/ntopng, redis, VictoriaMetrics,
+# Prometheus); the panel's own image is built on the host.
 
 DOCKER_PROJECT="dpistack"
 DOCKER_IMAGE_SURICATA="${DOCKER_IMAGE_SURICATA:-jasonish/suricata}"
@@ -21,7 +22,8 @@ DOCKER_IMAGE_REDIS="${DOCKER_IMAGE_REDIS:-redis}"
 DOCKER_IMAGE_VICTORIAMETRICS="${DOCKER_IMAGE_VICTORIAMETRICS:-victoriametrics/victoria-metrics}"
 DOCKER_IMAGE_PROMETHEUS="${DOCKER_IMAGE_PROMETHEUS:-prom/prometheus}"
 # Services in start order (ntopng needs redis).
-DOCKER_SERVICES_ORDER=(suricata evebox redis ntopng victoriametrics prometheus)
+DOCKER_PANEL_BASE_IMAGE="${DOCKER_PANEL_BASE_IMAGE:-alpine:3.21}"
+DOCKER_SERVICES_ORDER=(suricata evebox redis ntopng victoriametrics prometheus panel)
 
 # docker_service_runtime <service> - native or docker, from CONF.
 # redis follows ntopng: it is ntopng's own store (step_redis.sh).
@@ -38,6 +40,7 @@ docker_service_runtime() {
 			echo native
 		fi
 		;;
+	panel) echo "${CONF[PANEL_RUNTIME]:-native}" ;;
 	*) echo native ;;
 	esac
 }
@@ -61,7 +64,59 @@ docker_image() {
 	redis) echo "${DOCKER_IMAGE_REDIS}:${DOCKER_TAG_REDIS:-7-alpine}" ;;
 	victoriametrics) echo "${DOCKER_IMAGE_VICTORIAMETRICS}:${DOCKER_TAG_VICTORIAMETRICS:-$METRICS_VM_VERSION}" ;;
 	prometheus) echo "${DOCKER_IMAGE_PROMETHEUS}:${DOCKER_TAG_PROMETHEUS:-$METRICS_PROM_VERSION}" ;;
+	panel) echo "dpistack-panel:$(docker_panel_tag)" ;;
 	esac
+}
+
+# docker_panel_tag - the image of the panel is built on the host from the
+# installed binary and tagged with its hash: a new binary is a new image, an
+# unchanged one is not rebuilt.
+docker_panel_tag() {
+	local bin
+	bin=$(path_panel_bin)
+	if [[ -f "$bin" ]]; then
+		sha256sum "$bin" | cut -c1-12
+	else
+		echo "pending"
+	fi
+}
+
+# docker_panel_image_present - the image of the current binary exists.
+docker_panel_image_present() {
+	command -v docker >/dev/null 2>&1 || return 1
+	docker image inspect "$(docker_image panel)" >/dev/null 2>&1
+}
+
+# docker_panel_build_image - docker build from a scratch directory that holds
+# the binary and the Dockerfile; nothing else of the host is sent to Docker.
+docker_panel_build_image() {
+	docker_panel_image_present && return 0
+	local ctx
+	ctx=$(mktemp -d) || return 1
+	run install -m 0755 "$(path_panel_bin)" "$ctx/dpistack-panel" || {
+		rm -rf "$ctx"
+		return 1
+	}
+	render_template "$SCRIPT_DIR/templates/panel.Dockerfile.tpl" "PANEL_BASE_IMAGE=${DOCKER_PANEL_BASE_IMAGE}" >"$ctx/Dockerfile" || {
+		rm -rf "$ctx"
+		return 1
+	}
+	run docker build -t "$(docker_image panel)" "$ctx"
+	local rc=$?
+	rm -rf "$ctx"
+	return "$rc"
+}
+
+# docker_command_json <words...> - a YAML flow sequence of strings.
+docker_command_json() {
+	local w first=1
+	printf '['
+	for w in "$@"; do
+		((first)) || printf ', '
+		first=0
+		printf '"%s"' "$w"
+	done
+	printf ']'
 }
 
 # The argument vector of every compose call; callers wrap it in `run`
@@ -122,6 +177,27 @@ ${common}
     volumes:
       - ${root}/etc/ntopng:/etc/ntopng:ro
       - ${root}/var/lib/ntopng:/var/lib/ntopng
+BLOCK
+		;;
+	panel)
+		# The panel in a container: the same files at the same host paths,
+		# and the host's dpistack through nsenter into pid 1's namespaces
+		# (pid: host and privileged are what that needs; the panel is a
+		# privileged client on the native path too, through sudo).
+		local pargs
+		pargs=$(panel_args) || return 1
+		# shellcheck disable=SC2086
+		cat <<BLOCK
+${common}
+    pid: host
+    privileged: true
+    command: $(docker_command_json $pargs -sudo=false -ctl-prefix nsenter,-t,1,-m,-u,-i,-n,-p,--)
+    volumes:
+      - ${root}/etc/dpistack:${root}/etc/dpistack:ro
+      - ${root}/var/lib/dpistack:${root}/var/lib/dpistack
+      - ${root}/var/log/suricata:${root}/var/log/suricata:ro
+      - ${root}/var/lib/suricata:${root}/var/lib/suricata:ro
+      - ${root}/var/lib/evebox:${root}/var/lib/evebox:ro
 BLOCK
 		;;
 	victoriametrics | prometheus)
@@ -200,11 +276,14 @@ docker_service_apply() {
 	# Host directories the containers mount must exist, or Docker creates
 	# them as root-owned and the services of the host cannot write there.
 	local d
-	for d in var/lib/suricata var/log/suricata run/suricata var/lib/evebox var/lib/dpistack/redis var/lib/ntopng etc/suricata etc/evebox etc/ntopng; do
+	for d in var/lib/suricata var/log/suricata run/suricata var/lib/evebox var/lib/dpistack/redis var/lib/ntopng etc/suricata etc/evebox etc/ntopng etc/dpistack var/lib/dpistack; do
 		run mkdir -p "${DPISTACK_ROOT}/${d}" || return 1
 	done
 	write_rendered_file "$(path_compose_yaml)" "$(docker_render_compose)" || return 1
 	docker_compose_argv
+	if [[ "$svc" == "panel" ]]; then
+		docker_panel_build_image || return 1
+	fi
 	run "${DOCKER_COMPOSE_ARGV[@]}" up -d "$svc"
 }
 

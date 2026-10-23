@@ -121,7 +121,8 @@ teardown() {
 	SEC="$DPISTACK_ROOT/etc/dpistack/secrets.conf"
 	grep -qx 'ALERT_TG_TOKEN=123456:ABCdef' "$SEC"
 	[ "$(stat -c %a "$SEC")" = "600" ]
-	! grep -q 'ABCdef' "$CONF_FILE"
+	run grep -q 'ABCdef' "$CONF_FILE"
+	[ "$status" -ne 0 ]
 	run "$CTL" settings list
 	[[ "$output" == *"ALERT_TG_TOKEN=(задан)"* ]]
 	[[ "$output" != *ABCdef* ]]

@@ -52,6 +52,8 @@ NTOPNG_RUNTIME=native
 NTOPNG_VERSION=
 PANEL_PORT=9800
 PANEL_SOURCE=auto
+# native: a systemd unit; docker: a container (network host), the commands reach the host through nsenter
+PANEL_RUNTIME=native
 # limited: the panel unit has a memory and CPU budget (64M, 20%); unlimited: none
 PANEL_MODE=limited
 PIN_VERSIONS=no

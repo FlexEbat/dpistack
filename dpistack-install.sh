@@ -99,8 +99,12 @@ usage() {
 	cat <<'EOF'
 Использование: install.sh <команда> [опции]
 
-команды:  install | reconfigure | upgrade | uninstall | status | diag | test | logs
+установка:  install | reconfigure | upgrade | uninstall | diag
+управление: status [--json] | start|stop|restart <id> | reload suricata | logs <id> | test | health |
+            settings | config-read|config-write|config-revert | rules-* | iface | mode | fw |
+            panel-passwd | version   (полный список: dpistack help)
 dpistack без команды открывает меню: установки, если конфига нет, иначе управления.
+Запускается только от root (sudo dpistack ...).
 опции:
   --config FILE          путь к dpistack.conf (по умолчанию /etc/dpistack/dpistack.conf)
   --set KEY=VALUE        переопределить ключ, можно повторять
@@ -624,6 +628,8 @@ cmd_uninstall() {
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
 	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_sudoers)"
 	run systemctl disable --now "$PANEL_SERVICE" 2>/dev/null || true
+	# a panel that runs as a container goes with the program
+	runtime_release_docker panel || true
 	rm -f "$(path_panel_service_unit)" "$(path_panel_bin)"
 	run systemctl daemon-reload
 
@@ -754,7 +760,8 @@ CTL_VERBS=(status start stop restart reload logs config-read config-write config
 # the panel user. It gets the verbs above and no installer command: a stolen
 # panel session cannot run install, uninstall or upgrade.
 restricted_caller() {
-	[[ -n "${SUDO_USER:-}" && "$SUDO_USER" == "$PANEL_USER" ]]
+	[[ -n "${SUDO_USER:-}" && "$SUDO_USER" == "$PANEL_USER" ]] ||
+		[[ "${DPISTACK_CALLER:-}" == "panel" ]]
 }
 
 # dispatch_ctl <args...> - returns 0 after running a verb (the caller exits
@@ -831,6 +838,11 @@ main() {
 		;;
 	diag)
 		cmd_diag
+		;;
+	help | -h | --help)
+		usage
+		echo
+		ctl_usage
 		;;
 	*)
 		echo "неизвестная команда: $COMMAND" >&2
@@ -1343,7 +1355,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.21.0"
+DPISTACK_VERSION="0.22.0"
 
 : "${DRY_RUN:=0}"
 
@@ -2016,7 +2028,7 @@ unit_loaded() {
 # component_unit <id> - prints the unit that controls the component.
 component_unit() {
 	# docker runtime: no unit, the compose service is addressed as docker:<id>.
-	if [[ "$1" =~ ^(suricata|evebox|ntopng|redis|victoriametrics|prometheus)$ && "$(component_runtime "$1")" == "docker" ]]; then
+	if [[ "$1" =~ ^(suricata|evebox|ntopng|redis|victoriametrics|prometheus|panel)$ && "$(component_runtime "$1")" == "docker" ]]; then
 		echo "docker:$1"
 		return
 	fi
@@ -2056,6 +2068,7 @@ component_runtime() {
 	evebox) conf_get EVEBOX_RUNTIME native ;;
 	ntopng | redis) conf_get NTOPNG_RUNTIME native ;;
 	victoriametrics | prometheus) conf_get METRICS_BACKEND_RUNTIME native ;;
+	panel) conf_get PANEL_RUNTIME native ;;
 	*) echo native ;;
 	esac
 }
@@ -4458,8 +4471,18 @@ os_family_for() {
 		echo "dnf"
 		return
 		;;
+	*" opensuse"* | *" suse "* | *" sles "* | *" sled "*)
+		echo "zypper"
+		return
+		;;
+	*" arch "* | *" archlinux "* | *" manjaro "* | *" endeavouros "*)
+		echo "pacman"
+		return
+		;;
 	esac
-	echo "unknown"
+	# Any other Linux: no package manager of its own is driven. Components
+	# run in Docker, the installer needs systemd and a few base tools.
+	echo "generic"
 }
 
 os_detect() {
@@ -4478,8 +4501,9 @@ os_detect() {
 
 	OS_FAMILY=$(os_family_for "$OS_ID" "$OS_ID_LIKE")
 
-	if [[ "$OS_FAMILY" == "unknown" ]]; then
-		die 3 "unsupported distribution: id=$OS_ID id_like=$OS_ID_LIKE"
+	# dpistack manages its services as systemd units, on every family.
+	if [[ "$OS_FAMILY" == "generic" && ! -d "$(path_systemd_marker)" ]]; then
+		die 3 "$OS_ID: нужен systemd (нет $(path_systemd_marker)); на системах с другим init dpistack не работает"
 	fi
 
 	log "INFO" "detected $OS_ID $OS_VERSION_ID, family=$OS_FAMILY"
@@ -4508,6 +4532,16 @@ pkg_install() {
 		;;
 	dnf)
 		run dnf install -y "$@"
+		;;
+	zypper)
+		run zypper --non-interactive install --no-recommends "$@"
+		;;
+	pacman)
+		run pacman -S --noconfirm --needed "$@"
+		;;
+	generic)
+		echo "$OS_ID: пакеты этого дистрибутива установщик не ставит; установите вручную: $*" >&2
+		return 1
 		;;
 	*)
 		die 3 "pkg_install called before os_detect (family=$OS_FAMILY)"
@@ -4564,6 +4598,12 @@ pkg_pin() {
 		pkg_install python3-dnf-plugin-versionlock || return 1
 		run dnf versionlock add "$1"
 		;;
+	zypper)
+		run zypper --non-interactive addlock "$1"
+		;;
+	*)
+		echo "$OS_ID: закрепление версии пакета $1 здесь не поддерживается (PIN_VERSIONS пропущен)" >&2
+		;;
 	esac
 }
 
@@ -4573,7 +4613,8 @@ pkg_installed_version() {
 	local out
 	case "$OS_FAMILY" in
 	apt) out=$(dpkg-query -W -f='${Version}' "$1" 2>/dev/null) || return 1 ;;
-	dnf) out=$(rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null) || return 1 ;;
+	dnf | zypper) out=$(rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null) || return 1 ;;
+	pacman) out=$(pacman -Q "$1" 2>/dev/null | awk '{print $2}') && [[ -n "$out" ]] || return 1 ;;
 	*) return 1 ;;
 	esac
 	printf '%s' "$out"
@@ -4584,6 +4625,8 @@ pkg_upgrade() {
 	case "$OS_FAMILY" in
 	apt) run apt-get install --only-upgrade -y "$@" ;;
 	dnf) run dnf upgrade -y "$@" ;;
+	zypper) run zypper --non-interactive update "$@" ;;
+	pacman) run pacman -S --noconfirm --needed "$@" ;;
 	*) return 1 ;;
 	esac
 }
@@ -4597,6 +4640,8 @@ pkg_update_once() {
 	case "$OS_FAMILY" in
 	apt) run apt-get update || return 1 ;;
 	dnf) run dnf -y makecache || return 1 ;;
+	zypper) run zypper --non-interactive refresh || return 1 ;;
+	# pacman: a bare -Sy is a partial upgrade, which Arch documents as unsupported
 	esac
 	PKG_INDEX_FRESH=1
 }
@@ -4610,6 +4655,8 @@ pkg_available() {
 		[[ -n "$candidate" && "$candidate" != "(none)" ]]
 		;;
 	dnf) dnf -q list --available "$1" >/dev/null 2>&1 ;;
+	zypper) zypper --non-interactive info "$1" >/dev/null 2>&1 ;;
+	pacman) pacman -Si "$1" >/dev/null 2>&1 ;;
 	*) return 1 ;;
 	esac
 }
@@ -4636,6 +4683,29 @@ pkg_install_base() {
 			command -v "${pair%%:*}" >/dev/null 2>&1 || missing+=("${pair##*:}")
 		done
 		[[ "${#missing[@]}" -eq 0 ]] || pkg_install "${missing[@]}"
+		;;
+	zypper | pacman)
+		local -a missing=()
+		local pair gpgpkg=gnupg gitpkg=git
+		[[ "$OS_FAMILY" == "zypper" ]] && gpgpkg=gpg2 && gitpkg=git-core
+		for pair in curl:curl wget:wget gpg:"$gpgpkg" jq:jq git:"$gitpkg" openssl:openssl \
+			logrotate:logrotate ip:iproute2 visudo:sudo; do
+			command -v "${pair%%:*}" >/dev/null 2>&1 || missing+=("${pair##*:}")
+		done
+		[[ "${#missing[@]}" -eq 0 ]] || pkg_install "${missing[@]}"
+		;;
+	generic)
+		# The Docker runtimes need little from the host: the commands the
+		# steps call themselves. They are not installed for the person.
+		local -a lacking=()
+		local c
+		for c in ip visudo openssl jq; do
+			command -v "$c" >/dev/null 2>&1 || lacking+=("$c")
+		done
+		if [[ "${#lacking[@]}" -gt 0 ]]; then
+			echo "$OS_ID: не найдены команды: ${lacking[*]}; установите их пакетами дистрибутива и повторите" >&2
+			return 1
+		fi
 		;;
 	esac
 }
@@ -5007,6 +5077,8 @@ path_nginx_tls_dir() { echo "$(path_nginx_snippet_dir)/tls"; }
 path_nginx_confd() { echo "${DPISTACK_ROOT}/etc/nginx/conf.d/dpistack.conf"; }
 path_compose_yaml() { echo "${DPISTACK_ROOT}/opt/dpistack/compose/compose.yaml"; }
 path_os_release() { echo "${DPISTACK_ROOT}/etc/os-release"; }
+# Present when systemd is the init system of the running system.
+path_systemd_marker() { echo "${DPISTACK_ROOT}/run/systemd/system"; }
 path_rules_data_dir() { echo "${DPISTACK_ROOT}/var/lib/suricata"; }
 path_ndpi_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib"; }
 DPISTACK_BUNDLE_END
@@ -5088,8 +5160,9 @@ put lib/runtime_docker.sh 644 <<'DPISTACK_BUNDLE_END'
 # eve.json stays at the same host path (/var/log/suricata), bind-mounted
 # into every container that needs it.
 #
-# Images and mount points are assumptions A6 (tech.md): not confirmed
-# against the real images yet.
+# The images and mount points follow the documentation of each image
+# (jasonish/suricata, jasonish/evebox, ntop/ntopng, redis, VictoriaMetrics,
+# Prometheus); the panel's own image is built on the host.
 
 DOCKER_PROJECT="dpistack"
 DOCKER_IMAGE_SURICATA="${DOCKER_IMAGE_SURICATA:-jasonish/suricata}"
@@ -5099,7 +5172,8 @@ DOCKER_IMAGE_REDIS="${DOCKER_IMAGE_REDIS:-redis}"
 DOCKER_IMAGE_VICTORIAMETRICS="${DOCKER_IMAGE_VICTORIAMETRICS:-victoriametrics/victoria-metrics}"
 DOCKER_IMAGE_PROMETHEUS="${DOCKER_IMAGE_PROMETHEUS:-prom/prometheus}"
 # Services in start order (ntopng needs redis).
-DOCKER_SERVICES_ORDER=(suricata evebox redis ntopng victoriametrics prometheus)
+DOCKER_PANEL_BASE_IMAGE="${DOCKER_PANEL_BASE_IMAGE:-alpine:3.21}"
+DOCKER_SERVICES_ORDER=(suricata evebox redis ntopng victoriametrics prometheus panel)
 
 # docker_service_runtime <service> - native or docker, from CONF.
 # redis follows ntopng: it is ntopng's own store (step_redis.sh).
@@ -5116,6 +5190,7 @@ docker_service_runtime() {
 			echo native
 		fi
 		;;
+	panel) echo "${CONF[PANEL_RUNTIME]:-native}" ;;
 	*) echo native ;;
 	esac
 }
@@ -5139,7 +5214,59 @@ docker_image() {
 	redis) echo "${DOCKER_IMAGE_REDIS}:${DOCKER_TAG_REDIS:-7-alpine}" ;;
 	victoriametrics) echo "${DOCKER_IMAGE_VICTORIAMETRICS}:${DOCKER_TAG_VICTORIAMETRICS:-$METRICS_VM_VERSION}" ;;
 	prometheus) echo "${DOCKER_IMAGE_PROMETHEUS}:${DOCKER_TAG_PROMETHEUS:-$METRICS_PROM_VERSION}" ;;
+	panel) echo "dpistack-panel:$(docker_panel_tag)" ;;
 	esac
+}
+
+# docker_panel_tag - the image of the panel is built on the host from the
+# installed binary and tagged with its hash: a new binary is a new image, an
+# unchanged one is not rebuilt.
+docker_panel_tag() {
+	local bin
+	bin=$(path_panel_bin)
+	if [[ -f "$bin" ]]; then
+		sha256sum "$bin" | cut -c1-12
+	else
+		echo "pending"
+	fi
+}
+
+# docker_panel_image_present - the image of the current binary exists.
+docker_panel_image_present() {
+	command -v docker >/dev/null 2>&1 || return 1
+	docker image inspect "$(docker_image panel)" >/dev/null 2>&1
+}
+
+# docker_panel_build_image - docker build from a scratch directory that holds
+# the binary and the Dockerfile; nothing else of the host is sent to Docker.
+docker_panel_build_image() {
+	docker_panel_image_present && return 0
+	local ctx
+	ctx=$(mktemp -d) || return 1
+	run install -m 0755 "$(path_panel_bin)" "$ctx/dpistack-panel" || {
+		rm -rf "$ctx"
+		return 1
+	}
+	render_template "$SCRIPT_DIR/templates/panel.Dockerfile.tpl" "PANEL_BASE_IMAGE=${DOCKER_PANEL_BASE_IMAGE}" >"$ctx/Dockerfile" || {
+		rm -rf "$ctx"
+		return 1
+	}
+	run docker build -t "$(docker_image panel)" "$ctx"
+	local rc=$?
+	rm -rf "$ctx"
+	return "$rc"
+}
+
+# docker_command_json <words...> - a YAML flow sequence of strings.
+docker_command_json() {
+	local w first=1
+	printf '['
+	for w in "$@"; do
+		((first)) || printf ', '
+		first=0
+		printf '"%s"' "$w"
+	done
+	printf ']'
 }
 
 # The argument vector of every compose call; callers wrap it in `run`
@@ -5200,6 +5327,27 @@ ${common}
     volumes:
       - ${root}/etc/ntopng:/etc/ntopng:ro
       - ${root}/var/lib/ntopng:/var/lib/ntopng
+BLOCK
+		;;
+	panel)
+		# The panel in a container: the same files at the same host paths,
+		# and the host's dpistack through nsenter into pid 1's namespaces
+		# (pid: host and privileged are what that needs; the panel is a
+		# privileged client on the native path too, through sudo).
+		local pargs
+		pargs=$(panel_args) || return 1
+		# shellcheck disable=SC2086
+		cat <<BLOCK
+${common}
+    pid: host
+    privileged: true
+    command: $(docker_command_json $pargs -sudo=false -ctl-prefix nsenter,-t,1,-m,-u,-i,-n,-p,--)
+    volumes:
+      - ${root}/etc/dpistack:${root}/etc/dpistack:ro
+      - ${root}/var/lib/dpistack:${root}/var/lib/dpistack
+      - ${root}/var/log/suricata:${root}/var/log/suricata:ro
+      - ${root}/var/lib/suricata:${root}/var/lib/suricata:ro
+      - ${root}/var/lib/evebox:${root}/var/lib/evebox:ro
 BLOCK
 		;;
 	victoriametrics | prometheus)
@@ -5278,11 +5426,14 @@ docker_service_apply() {
 	# Host directories the containers mount must exist, or Docker creates
 	# them as root-owned and the services of the host cannot write there.
 	local d
-	for d in var/lib/suricata var/log/suricata run/suricata var/lib/evebox var/lib/dpistack/redis var/lib/ntopng etc/suricata etc/evebox etc/ntopng; do
+	for d in var/lib/suricata var/log/suricata run/suricata var/lib/evebox var/lib/dpistack/redis var/lib/ntopng etc/suricata etc/evebox etc/ntopng etc/dpistack var/lib/dpistack; do
 		run mkdir -p "${DPISTACK_ROOT}/${d}" || return 1
 	done
 	write_rendered_file "$(path_compose_yaml)" "$(docker_render_compose)" || return 1
 	docker_compose_argv
+	if [[ "$svc" == "panel" ]]; then
+		docker_panel_build_image || return 1
+	fi
 	run "${DOCKER_COMPOSE_ARGV[@]}" up -d "$svc"
 }
 
@@ -5480,6 +5631,7 @@ schema_init() {
 	_schema_add 'PANEL_PORT|int|9800|1..65535|advanced|access|access panel|light|no'
 	_schema_add 'NTOPNG_PORT|int|3000|1..65535|advanced|access|ntopng access|light|no'
 	_schema_add 'PANEL_SOURCE|enum|auto|auto,build,prebuilt|advanced|components|panel|heavy|no'
+	_schema_add 'PANEL_RUNTIME|enum|native|native,docker|basic|components|panel|heavy|no'
 	_schema_add 'PANEL_MODE|enum|limited|limited,unlimited|advanced|components|panel|light|no'
 	_schema_add 'NGINX_MANAGE|enum|snippet|yes,snippet|advanced|access|access panel|light|no'
 	_schema_add 'NGINX_TLS|enum|none|none,selfsigned,existing|advanced|access|access panel|light|no'
@@ -6961,7 +7113,17 @@ step_panel_check() {
 	[[ -f "$(path_metrics_json)" ]] || return 1
 	panel_token_matches || return 1
 	panel_bin_current || return 1
-	panel_unit_matches || return 1
+	if docker_wanted panel; then
+		docker_service_check panel || return 1
+		# the native unit must be gone, or it would hold the port
+		[[ "$(systemctl is-active "$PANEL_SERVICE" 2>/dev/null)" != "active" ]] || return 1
+	else
+		panel_unit_matches || return 1
+		# a container left from PANEL_RUNTIME=docker would hold the port
+		if [[ -f "$(path_compose_yaml)" ]] && docker_service_running panel 2>/dev/null; then
+			return 1
+		fi
+	fi
 	return 0
 }
 
@@ -7027,6 +7189,18 @@ step_panel_apply() {
 		panel_bin_install || return 1
 		restart=1
 	}
+	# PANEL_RUNTIME=docker: the panel is a compose service. The native unit
+	# goes first (it would hold the port), the image is built from the binary
+	# that was just installed, and compose recreates the container when the
+	# image or the flags changed.
+	if docker_wanted panel; then
+		runtime_release_native "$PANEL_SERVICE" || return 1
+		run rm -f "$(path_panel_service_unit)" || return 1
+		run systemctl daemon-reload || return 1
+		docker_service_apply panel || return 1
+		return 0
+	fi
+	runtime_release_docker panel || return 1
 	panel_unit_matches || restart=1
 	local unit
 	unit=$(panel_render_service) || return 1
@@ -7040,6 +7214,10 @@ step_panel_apply() {
 }
 
 step_panel_plan() {
+	if docker_wanted panel; then
+		echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), $(docker_service_plan panel)"
+		return 0
+	fi
 	echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), юнит $PANEL_SERVICE"
 }
 
@@ -7269,12 +7447,28 @@ step_preflight_reasons() {
 	fi
 
 	local key
-	for key in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME METRICS_BACKEND_RUNTIME; do
+	for key in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME METRICS_BACKEND_RUNTIME PANEL_RUNTIME; do
 		if [[ "${CONF[$key]:-}" == "docker" ]] && ! command -v docker >/dev/null 2>&1; then
 			reasons+=("$key=docker, но docker не найден")
 		fi
 	done
 
+	# Outside apt and dnf there are no packages of the project's components:
+	# they run in Docker, and the reason says which keys to set.
+	if [[ "$OS_FAMILY" != "apt" && "$OS_FAMILY" != "dnf" ]]; then
+		local nkey
+		for nkey in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME; do
+			if [[ "${CONF[$nkey]:-native}" == "native" ]]; then
+				reasons+=("$nkey=native: на $OS_ID пакетов компонента установщик не ставит, задайте --set $nkey=docker")
+			fi
+		done
+		if [[ "${CONF[METRICS_BACKEND]:-none}" != "none" && "${CONF[METRICS_BACKEND_RUNTIME]:-native}" == "native" ]]; then
+			reasons+=("METRICS_BACKEND_RUNTIME=native: на $OS_ID задайте --set METRICS_BACKEND_RUNTIME=docker")
+		fi
+		if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
+			reasons+=("NDPI_ENABLE=yes: плагину nDPI нужна Suricata, собранная на хосте; на $OS_ID задайте --set NDPI_ENABLE=no")
+		fi
+	fi
 	if [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "nfq" ]] && [[ -z "$(ips_backend)" ]]; then
 		reasons+=("SURICATA_MODE=ips с IPS_METHOD=nfq: не найдены ни iptables, ни nft (нужны для очереди NFQUEUE)")
 	fi
@@ -7283,7 +7477,7 @@ step_preflight_reasons() {
 	fi
 	if command -v docker >/dev/null 2>&1; then
 		local dkey
-		for dkey in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME; do
+		for dkey in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME PANEL_RUNTIME; do
 			if [[ "${CONF[$dkey]:-}" == "docker" ]] && ! docker compose version >/dev/null 2>&1; then
 				reasons+=("$dkey=docker, но у docker нет плагина compose (docker compose version не отвечает)")
 				break
@@ -8864,6 +9058,13 @@ put templates/ntopng.conf.tpl 644 <<'DPISTACK_BUNDLE_END'
 -w=@@NTOPNG_BIND@@
 -G=@@NTOPNG_PIDFILE@@
 --redis=127.0.0.1:6379
+DPISTACK_BUNDLE_END
+put templates/panel.Dockerfile.tpl 644 <<'DPISTACK_BUNDLE_END'
+# Managed by dpistack: the image of the panel. The base image supplies nsenter
+# (busybox), which is how the panel reaches dpistack on the host.
+FROM @@PANEL_BASE_IMAGE@@
+COPY dpistack-panel /usr/local/bin/dpistack-panel
+ENTRYPOINT ["/usr/local/bin/dpistack-panel"]
 DPISTACK_BUNDLE_END
 put templates/prometheus.service.tpl 644 <<'DPISTACK_BUNDLE_END'
 [Unit]

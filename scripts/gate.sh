@@ -44,6 +44,11 @@ if ! bash scripts/check-conf-example.sh; then
 	fail "conf example"
 fi
 
+echo "== config reference =="
+if ! bash scripts/gen-config-doc.sh --check; then
+	fail "config reference"
+fi
+
 echo "== bats =="
 if ! bats tests; then
 	fail bats

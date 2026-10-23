@@ -21,8 +21,18 @@ os_family_for() {
 		echo "dnf"
 		return
 		;;
+	*" opensuse"* | *" suse "* | *" sles "* | *" sled "*)
+		echo "zypper"
+		return
+		;;
+	*" arch "* | *" archlinux "* | *" manjaro "* | *" endeavouros "*)
+		echo "pacman"
+		return
+		;;
 	esac
-	echo "unknown"
+	# Any other Linux: no package manager of its own is driven. Components
+	# run in Docker, the installer needs systemd and a few base tools.
+	echo "generic"
 }
 
 os_detect() {
@@ -41,8 +51,9 @@ os_detect() {
 
 	OS_FAMILY=$(os_family_for "$OS_ID" "$OS_ID_LIKE")
 
-	if [[ "$OS_FAMILY" == "unknown" ]]; then
-		die 3 "unsupported distribution: id=$OS_ID id_like=$OS_ID_LIKE"
+	# dpistack manages its services as systemd units, on every family.
+	if [[ "$OS_FAMILY" == "generic" && ! -d "$(path_systemd_marker)" ]]; then
+		die 3 "$OS_ID: нужен systemd (нет $(path_systemd_marker)); на системах с другим init dpistack не работает"
 	fi
 
 	log "INFO" "detected $OS_ID $OS_VERSION_ID, family=$OS_FAMILY"
@@ -71,6 +82,16 @@ pkg_install() {
 		;;
 	dnf)
 		run dnf install -y "$@"
+		;;
+	zypper)
+		run zypper --non-interactive install --no-recommends "$@"
+		;;
+	pacman)
+		run pacman -S --noconfirm --needed "$@"
+		;;
+	generic)
+		echo "$OS_ID: пакеты этого дистрибутива установщик не ставит; установите вручную: $*" >&2
+		return 1
 		;;
 	*)
 		die 3 "pkg_install called before os_detect (family=$OS_FAMILY)"
@@ -127,6 +148,12 @@ pkg_pin() {
 		pkg_install python3-dnf-plugin-versionlock || return 1
 		run dnf versionlock add "$1"
 		;;
+	zypper)
+		run zypper --non-interactive addlock "$1"
+		;;
+	*)
+		echo "$OS_ID: закрепление версии пакета $1 здесь не поддерживается (PIN_VERSIONS пропущен)" >&2
+		;;
 	esac
 }
 
@@ -136,7 +163,8 @@ pkg_installed_version() {
 	local out
 	case "$OS_FAMILY" in
 	apt) out=$(dpkg-query -W -f='${Version}' "$1" 2>/dev/null) || return 1 ;;
-	dnf) out=$(rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null) || return 1 ;;
+	dnf | zypper) out=$(rpm -q --qf '%{VERSION}-%{RELEASE}' "$1" 2>/dev/null) || return 1 ;;
+	pacman) out=$(pacman -Q "$1" 2>/dev/null | awk '{print $2}') && [[ -n "$out" ]] || return 1 ;;
 	*) return 1 ;;
 	esac
 	printf '%s' "$out"
@@ -147,6 +175,8 @@ pkg_upgrade() {
 	case "$OS_FAMILY" in
 	apt) run apt-get install --only-upgrade -y "$@" ;;
 	dnf) run dnf upgrade -y "$@" ;;
+	zypper) run zypper --non-interactive update "$@" ;;
+	pacman) run pacman -S --noconfirm --needed "$@" ;;
 	*) return 1 ;;
 	esac
 }
@@ -160,6 +190,8 @@ pkg_update_once() {
 	case "$OS_FAMILY" in
 	apt) run apt-get update || return 1 ;;
 	dnf) run dnf -y makecache || return 1 ;;
+	zypper) run zypper --non-interactive refresh || return 1 ;;
+	# pacman: a bare -Sy is a partial upgrade, which Arch documents as unsupported
 	esac
 	PKG_INDEX_FRESH=1
 }
@@ -173,6 +205,8 @@ pkg_available() {
 		[[ -n "$candidate" && "$candidate" != "(none)" ]]
 		;;
 	dnf) dnf -q list --available "$1" >/dev/null 2>&1 ;;
+	zypper) zypper --non-interactive info "$1" >/dev/null 2>&1 ;;
+	pacman) pacman -Si "$1" >/dev/null 2>&1 ;;
 	*) return 1 ;;
 	esac
 }
@@ -199,6 +233,29 @@ pkg_install_base() {
 			command -v "${pair%%:*}" >/dev/null 2>&1 || missing+=("${pair##*:}")
 		done
 		[[ "${#missing[@]}" -eq 0 ]] || pkg_install "${missing[@]}"
+		;;
+	zypper | pacman)
+		local -a missing=()
+		local pair gpgpkg=gnupg gitpkg=git
+		[[ "$OS_FAMILY" == "zypper" ]] && gpgpkg=gpg2 && gitpkg=git-core
+		for pair in curl:curl wget:wget gpg:"$gpgpkg" jq:jq git:"$gitpkg" openssl:openssl \
+			logrotate:logrotate ip:iproute2 visudo:sudo; do
+			command -v "${pair%%:*}" >/dev/null 2>&1 || missing+=("${pair##*:}")
+		done
+		[[ "${#missing[@]}" -eq 0 ]] || pkg_install "${missing[@]}"
+		;;
+	generic)
+		# The Docker runtimes need little from the host: the commands the
+		# steps call themselves. They are not installed for the person.
+		local -a lacking=()
+		local c
+		for c in ip visudo openssl jq; do
+			command -v "$c" >/dev/null 2>&1 || lacking+=("$c")
+		done
+		if [[ "${#lacking[@]}" -gt 0 ]]; then
+			echo "$OS_ID: не найдены команды: ${lacking[*]}; установите их пакетами дистрибутива и повторите" >&2
+			return 1
+		fi
 		;;
 	esac
 }

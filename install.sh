@@ -64,8 +64,12 @@ usage() {
 	cat <<'EOF'
 Использование: install.sh <команда> [опции]
 
-команды:  install | reconfigure | upgrade | uninstall | status | diag | test | logs
+установка:  install | reconfigure | upgrade | uninstall | diag
+управление: status [--json] | start|stop|restart <id> | reload suricata | logs <id> | test | health |
+            settings | config-read|config-write|config-revert | rules-* | iface | mode | fw |
+            panel-passwd | version   (полный список: dpistack help)
 dpistack без команды открывает меню: установки, если конфига нет, иначе управления.
+Запускается только от root (sudo dpistack ...).
 опции:
   --config FILE          путь к dpistack.conf (по умолчанию /etc/dpistack/dpistack.conf)
   --set KEY=VALUE        переопределить ключ, можно повторять
@@ -589,6 +593,8 @@ cmd_uninstall() {
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
 	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_sudoers)"
 	run systemctl disable --now "$PANEL_SERVICE" 2>/dev/null || true
+	# a panel that runs as a container goes with the program
+	runtime_release_docker panel || true
 	rm -f "$(path_panel_service_unit)" "$(path_panel_bin)"
 	run systemctl daemon-reload
 
@@ -719,7 +725,8 @@ CTL_VERBS=(status start stop restart reload logs config-read config-write config
 # the panel user. It gets the verbs above and no installer command: a stolen
 # panel session cannot run install, uninstall or upgrade.
 restricted_caller() {
-	[[ -n "${SUDO_USER:-}" && "$SUDO_USER" == "$PANEL_USER" ]]
+	[[ -n "${SUDO_USER:-}" && "$SUDO_USER" == "$PANEL_USER" ]] ||
+		[[ "${DPISTACK_CALLER:-}" == "panel" ]]
 }
 
 # dispatch_ctl <args...> - returns 0 after running a verb (the caller exits
@@ -796,6 +803,11 @@ main() {
 		;;
 	diag)
 		cmd_diag
+		;;
+	help | -h | --help)
+		usage
+		echo
+		ctl_usage
 		;;
 	*)
 		echo "неизвестная команда: $COMMAND" >&2

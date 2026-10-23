@@ -198,12 +198,28 @@ step_preflight_reasons() {
 	fi
 
 	local key
-	for key in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME METRICS_BACKEND_RUNTIME; do
+	for key in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME METRICS_BACKEND_RUNTIME PANEL_RUNTIME; do
 		if [[ "${CONF[$key]:-}" == "docker" ]] && ! command -v docker >/dev/null 2>&1; then
 			reasons+=("$key=docker, но docker не найден")
 		fi
 	done
 
+	# Outside apt and dnf there are no packages of the project's components:
+	# they run in Docker, and the reason says which keys to set.
+	if [[ "$OS_FAMILY" != "apt" && "$OS_FAMILY" != "dnf" ]]; then
+		local nkey
+		for nkey in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME; do
+			if [[ "${CONF[$nkey]:-native}" == "native" ]]; then
+				reasons+=("$nkey=native: на $OS_ID пакетов компонента установщик не ставит, задайте --set $nkey=docker")
+			fi
+		done
+		if [[ "${CONF[METRICS_BACKEND]:-none}" != "none" && "${CONF[METRICS_BACKEND_RUNTIME]:-native}" == "native" ]]; then
+			reasons+=("METRICS_BACKEND_RUNTIME=native: на $OS_ID задайте --set METRICS_BACKEND_RUNTIME=docker")
+		fi
+		if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
+			reasons+=("NDPI_ENABLE=yes: плагину nDPI нужна Suricata, собранная на хосте; на $OS_ID задайте --set NDPI_ENABLE=no")
+		fi
+	fi
 	if [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "nfq" ]] && [[ -z "$(ips_backend)" ]]; then
 		reasons+=("SURICATA_MODE=ips с IPS_METHOD=nfq: не найдены ни iptables, ни nft (нужны для очереди NFQUEUE)")
 	fi
@@ -212,7 +228,7 @@ step_preflight_reasons() {
 	fi
 	if command -v docker >/dev/null 2>&1; then
 		local dkey
-		for dkey in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME; do
+		for dkey in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME PANEL_RUNTIME; do
 			if [[ "${CONF[$dkey]:-}" == "docker" ]] && ! docker compose version >/dev/null 2>&1; then
 				reasons+=("$dkey=docker, но у docker нет плагина compose (docker compose version не отвечает)")
 				break

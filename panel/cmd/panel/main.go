@@ -49,6 +49,7 @@ func run(args []string) error {
 	rulesFile := fs.String("rules-file", "", "suricata.rules, for its age")
 	diskPaths := fs.String("disk-paths", "", "comma-separated directories whose free space /metrics reports")
 	maxStreams := fs.Int("max-streams", 0, "open log streams at once; 0 is the default of 4 (PANEL_MODE=unlimited passes more)")
+	ctlPrefix := fs.String("ctl-prefix", "", "comma-separated command that runs dpistack on the host from a container, e.g. nsenter,-t,1,-m,-u,-i,-n,-p,--; replaces sudo")
 	useSudo := fs.Bool("sudo", true, "run dpistack through sudo -n")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -112,7 +113,7 @@ func run(args []string) error {
 		AuthFile:    *authFile,
 		HealthFile:  *healthFile,
 		MaxStreams:  *maxStreams,
-		Ctl:         &ctl.Runner{Path: *ctlPath, Sudo: *useSudo},
+		Ctl:         &ctl.Runner{Path: *ctlPath, Sudo: *useSudo, Prefix: splitPrefix(*ctlPrefix)},
 		Eve:         events,
 		Metrics:     collector,
 		TestsFile:   *testsFile,
@@ -163,4 +164,12 @@ func run(args []string) error {
 		}
 		return nil
 	}
+}
+
+// splitPrefix turns "a,b,c" into its words; empty is no prefix.
+func splitPrefix(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
 }

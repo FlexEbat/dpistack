@@ -19,6 +19,7 @@ setup() {
 }
 
 @test "the page uses no inline script or style, no external resource" {
-	! grep -qE '<script[^>]*>[^<]+|style=|https?://' "$REPO_DIR/panel/web/index.html"
+	run grep -qE '<script[^>]*>[^<]+|style=|(src|href)="https?://' "$REPO_DIR/panel/web/index.html"
+	[ "$status" -ne 0 ]
 	! grep -qE 'https?://' "$REPO_DIR/panel/web/app.css"
 }

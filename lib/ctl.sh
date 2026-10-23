@@ -83,7 +83,7 @@ unit_loaded() {
 # component_unit <id> - prints the unit that controls the component.
 component_unit() {
 	# docker runtime: no unit, the compose service is addressed as docker:<id>.
-	if [[ "$1" =~ ^(suricata|evebox|ntopng|redis|victoriametrics|prometheus)$ && "$(component_runtime "$1")" == "docker" ]]; then
+	if [[ "$1" =~ ^(suricata|evebox|ntopng|redis|victoriametrics|prometheus|panel)$ && "$(component_runtime "$1")" == "docker" ]]; then
 		echo "docker:$1"
 		return
 	fi
@@ -123,6 +123,7 @@ component_runtime() {
 	evebox) conf_get EVEBOX_RUNTIME native ;;
 	ntopng | redis) conf_get NTOPNG_RUNTIME native ;;
 	victoriametrics | prometheus) conf_get METRICS_BACKEND_RUNTIME native ;;
+	panel) conf_get PANEL_RUNTIME native ;;
 	*) echo native ;;
 	esac
 }

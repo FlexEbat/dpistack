@@ -90,10 +90,34 @@ EOF
 	[ "$output" = "dnf" ]
 }
 
-@test "unknown distro dies with code 3" {
-	write_os_release <<'EOF'
+@test "arch and opensuse have their own families" {
+	write_os_release <<'XEOF'
 ID=arch
-EOF
+XEOF
+	run detect_family
+	[ "$output" = "pacman" ]
+	write_os_release <<'XEOF'
+ID=opensuse-tumbleweed
+ID_LIKE="opensuse suse"
+XEOF
+	run detect_family
+	[ "$output" = "zypper" ]
+	write_os_release <<'XEOF'
+ID=endeavouros
+ID_LIKE=arch
+XEOF
+	run detect_family
+	[ "$output" = "pacman" ]
+}
+
+@test "any other distro is the generic family when systemd runs, and dies with code 3 without it" {
+	write_os_release <<'XEOF'
+ID=void
+XEOF
 	run detect_family
 	[ "$status" -eq 3 ]
+	mkdir -p "$DPISTACK_ROOT/run/systemd/system"
+	run detect_family
+	[ "$status" -eq 0 ]
+	[ "$output" = "generic" ]
 }

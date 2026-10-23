@@ -87,5 +87,7 @@ path_nginx_tls_dir() { echo "$(path_nginx_snippet_dir)/tls"; }
 path_nginx_confd() { echo "${DPISTACK_ROOT}/etc/nginx/conf.d/dpistack.conf"; }
 path_compose_yaml() { echo "${DPISTACK_ROOT}/opt/dpistack/compose/compose.yaml"; }
 path_os_release() { echo "${DPISTACK_ROOT}/etc/os-release"; }
+# Present when systemd is the init system of the running system.
+path_systemd_marker() { echo "${DPISTACK_ROOT}/run/systemd/system"; }
 path_rules_data_dir() { echo "${DPISTACK_ROOT}/var/lib/suricata"; }
 path_ndpi_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib"; }
