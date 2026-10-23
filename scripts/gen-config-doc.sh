@@ -47,7 +47,7 @@ HEAD
 			desc="${HINT[$key]:-}"
 			[[ "${SCHEMA_SECRET[$key]}" == "yes" ]] && values="секрет"
 			[[ "${SCHEMA_LEVEL[$key]}" == "advanced" ]] && desc="$desc (расширенный)"
-			printf '| `%s` | %s | %s | %s | %s |\n' "$key" "$values" "$default" "$weight" "$desc"
+			printf '| %s | %s | %s | %s | %s |\n' "\`$key\`" "$values" "$default" "$weight" "$desc"
 		done
 		echo
 	done
