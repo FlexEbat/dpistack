@@ -77,7 +77,7 @@ fam() {
 	MOCK_SEMANAGE_ADD_EXIT=1 MOCK_SEMANAGE_MOD_EXIT=1 MOCK_GETENFORCE=Enforcing \
 		run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"не удалось дать порту"* ]]
+	[[ "$output" == *"could not give port"* ]]
 }
 
 @test "criterion 2: with SELinux disabled nothing is labeled" {
@@ -137,7 +137,7 @@ fam() {
 @test "criterion 3: a stopped firewalld gets no rules and a message, the install goes on" {
 	MOCK_FIREWALLD_STATE_EXIT=1 run fam 'CONF[ACCESS_MODE]=lan; CONF[FIREWALL_MANAGE]=auto; CONF[LAN_CIDR]=192.168.10.0/24; access_firewall_apply'
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"firewalld не запущен"* ]]
+	[[ "$output" == *"firewalld is not running"* ]]
 	if grep -q -- '--add-rich-rule' "$MOCK_CALLS_LOG"; then false; fi
 	! grep -q -- '--reload' "$MOCK_CALLS_LOG"
 }

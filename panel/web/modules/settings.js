@@ -70,9 +70,9 @@ export function start(api, els, onError) {
     const input = el("input");
     input.type = "password";
     input.autocomplete = "new-password";
-    input.placeholder = k.set ? "задан; введите новое значение, чтобы заменить" : "не задан";
+    input.placeholder = k.set ? "set; enter a new value to replace it" : "not set";
     input.id = "set-" + k.key;
-    const save = el("button", "", "Сохранить");
+    const save = el("button", "", "Save");
     save.type = "button";
     save.addEventListener("click", async () => {
       if (!input.value) return;
@@ -81,10 +81,10 @@ export function start(api, els, onError) {
     });
     row.append(input, save);
     if (k.set) {
-      const del = el("button", "", "Удалить");
+      const del = el("button", "", "Remove");
       del.type = "button";
       del.addEventListener("click", async () => {
-        if (window.confirm("Удалить значение " + k.key + "?")) await secret(k, "");
+        if (window.confirm("Remove the value of " + k.key + "?")) await secret(k, "");
       });
       row.append(del);
     }
@@ -94,14 +94,14 @@ export function start(api, els, onError) {
   async function secret(k, value) {
     els.error.textContent = "";
     setBusy(true);
-    say("Применяю…");
+    say("Applying…");
     try {
       await api("/api/settings/secret/" + encodeURIComponent(k.key), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value }),
       });
-      say(value ? "Секрет сохранён." : "Секрет удалён.");
+      say(value ? "Secret saved." : "Secret removed.");
       await load();
     } catch (err) {
       fail(err);
@@ -123,8 +123,8 @@ export function start(api, els, onError) {
         label.htmlFor = "set-" + k.key;
         label.append(el("span", "", k.key));
         if (k.weight === "heavy") {
-          const b = el("span", "badge warn", "переустановка");
-          b.title = "Изменение запускает установку или пересборку компонента";
+          const b = el("span", "badge warn", "reinstall");
+          b.title = "This change starts an install or rebuild of the component";
           label.append(" ", b);
         }
         const body = el("div", "setting-body");
@@ -159,7 +159,7 @@ export function start(api, els, onError) {
     els.apply.disabled = n === 0;
     els.check.disabled = n === 0;
     els.revert.disabled = n === 0;
-    els.count.textContent = n ? "Изменено: " + n : "Нет изменений";
+    els.count.textContent = n ? "Changed: " + n : "No changes";
   }
 
   async function load() {
@@ -186,10 +186,10 @@ export function start(api, els, onError) {
     for (const w of res.warnings || []) {
       const p = el("p", "warn-line");
       p.append(
-        el("span", "", "Порт " + w.port + " (" + w.key + ") занят: " + w.holder + ". "),
+        el("span", "", "Port " + w.port + " (" + w.key + ") is busy: " + w.holder + ". "),
       );
       if (w.suggestion) {
-        const use = el("button", "", "Взять " + w.suggestion);
+        const use = el("button", "", "Use " + w.suggestion);
         use.type = "button";
         use.addEventListener("click", () => {
           edits[w.key] = String(w.suggestion);
@@ -200,13 +200,13 @@ export function start(api, els, onError) {
         });
         p.append(use);
       } else {
-        p.append(el("span", "muted", "Свободного порта рядом нет, введите другой."));
+        p.append(el("span", "muted", "No free port nearby, enter another one."));
       }
       els.result.append(p);
     }
     if (res.ok && !(res.warnings || []).length) {
       els.result.append(
-        el("p", "ok-line", res.weight === "heavy" ? "Проверка пройдена. Изменение тяжёлое: оно запустит переустановку." : "Проверка пройдена."),
+        el("p", "ok-line", res.weight === "heavy" ? "Check passed. This is a heavy change: it starts a reinstall." : "Check passed."),
       );
     }
   }
@@ -233,32 +233,32 @@ export function start(api, els, onError) {
     const values = pending();
     if (!Object.keys(values).length) return;
     setBusy(true);
-    say("Проверяю…");
+    say("Checking…");
     try {
       const res = await check();
       if (!res || !res.ok || (res.warnings || []).length) {
-        say(res && (res.warnings || []).length ? "Выберите другой порт." : "Исправьте отмеченное.", "error");
+        say(res && (res.warnings || []).length ? "Choose another port." : "Fix what is marked.", "error");
         return;
       }
       const confirmAccess = needsAccessConfirm(values, keys);
-      if (confirmAccess && !window.confirm("Панели станут доступны не только с этой машины (" + values.ACCESS_MODE + "). Продолжить?")) {
+      if (confirmAccess && !window.confirm("The panels will be reachable from more than this machine (" + values.ACCESS_MODE + "). Continue?")) {
         say("");
         return;
       }
-      if (res.weight === "heavy" && !window.confirm("Изменение запустит переустановку или пересборку компонентов. Это может занять минуты. Продолжить?")) {
+      if (res.weight === "heavy" && !window.confirm("This change starts a reinstall or rebuild of components. It can take minutes. Continue?")) {
         say("");
         return;
       }
-      say(res.weight === "heavy" ? "Запускаю применение…" : "Применяю…");
+      say(res.weight === "heavy" ? "Starting to apply…" : "Applying…");
       const out = await api("/api/settings/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ values, confirm_access: confirmAccess }),
       });
-      if (res.weight === "heavy" && out.output !== "без изменений") {
+      if (res.weight === "heavy" && out.output !== "no changes") {
         followJob();
       } else {
-        say("Применено.");
+        say("Applied.");
         els.result.replaceChildren();
         await load();
       }
@@ -284,15 +284,15 @@ export function start(api, els, onError) {
         els.job.textContent = (j.log || []).join("\n");
         els.job.scrollTop = els.job.scrollHeight;
         if (j.state === "active" || j.state === "activating") {
-          say("Идёт применение…");
+          say("Applying…");
           jobTimer = setTimeout(tick, 2000);
           return;
         }
         if (j.result === "success" || j.state === "inactive") {
-          say("Применено.");
+          say("Applied.");
           await load();
         } else {
-          say("Применение не удалось, подробности ниже.", "error");
+          say("Applying failed, details below.", "error");
         }
       } catch (err) {
         fail(err);

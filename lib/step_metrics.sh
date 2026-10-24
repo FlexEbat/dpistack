@@ -198,7 +198,7 @@ metrics_fetch_binary() {
 	local backend="$1" kind arch ver url tmp want got
 	kind=$(metrics_kind "$backend")
 	arch=$(metrics_arch) || {
-		echo "metrics: архитектура $(uname -m) не поддерживается (нужна amd64 или arm64)" >&2
+		echo "metrics: architecture $(uname -m) is not supported (amd64 or arm64 is needed)" >&2
 		return 1
 	}
 	ver=$(metrics_version "$backend")
@@ -211,13 +211,13 @@ metrics_fetch_binary() {
 	want="${!override:-${METRICS_SHA256[${kind}_${arch}]}}"
 	tmp=$(mktemp -d)
 	if ! run curl --proto '=https' --tlsv1.2 -fsSL -o "$tmp/archive.tar.gz" "$url"; then
-		echo "metrics: не удалось скачать $url" >&2
+		echo "metrics: could not download $url" >&2
 		rm -rf "$tmp"
 		return 1
 	fi
 	got=$(sha256sum "$tmp/archive.tar.gz" | awk '{print $1}')
 	if [[ "$got" != "$want" ]]; then
-		echo "metrics: контрольная сумма $url не совпала (ожидалась $want, получена $got), бинарник не установлен" >&2
+		echo "metrics: the checksum of $url did not match (expected $want, got $got), the binary is not installed" >&2
 		rm -rf "$tmp"
 		return 1
 	fi
@@ -288,16 +288,16 @@ step_metrics_plan() {
 	backend=$(metrics_backend)
 	installed=$(metrics_installed)
 	if [[ -n "$installed" && "$installed" != "$(metrics_marker "$backend")" ]]; then
-		echo "metrics: остановить ${installed} (данные остаются)"
+		echo "metrics: stop ${installed} (the data stays)"
 	fi
 	if [[ "$backend" == "none" ]]; then
-		[[ -z "$installed" ]] && echo "metrics: без изменений (METRICS_BACKEND=none, только эндпоинт /metrics)"
+		[[ -z "$installed" ]] && echo "metrics: no changes (METRICS_BACKEND=none, only the /metrics endpoint)"
 		return 0
 	fi
 	if [[ "$(metrics_runtime)" == "docker" ]]; then
 		docker_service_plan "$backend"
 	else
-		echo "metrics: $backend $(metrics_version "$backend") с релиза GitHub с проверкой sha256, юнит $(metrics_unit_name "$backend"), слушает $(metrics_listen "$backend"), хранение ${CONF[METRICS_RETENTION]:-30d}"
+		echo "metrics: $backend $(metrics_version "$backend") from a GitHub release with a sha256 check, unit $(metrics_unit_name "$backend"), listens on $(metrics_listen "$backend"), retention ${CONF[METRICS_RETENTION]:-30d}"
 	fi
-	echo "metrics: рендер $(path_scrape_yaml), цель $(metrics_scrape_target), токен из файла $(path_metrics_token)"
+	echo "metrics: render $(path_scrape_yaml), target $(metrics_scrape_target), token from file $(path_metrics_token)"
 }

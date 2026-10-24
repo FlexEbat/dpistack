@@ -52,7 +52,7 @@ install_base() {
 @test "criterion 3: EVE_FILE=no with sqlite is refused with code 2 and explains why" {
 	run install_base --set EVE_FILE=no
 	[ "$status" -eq 2 ]
-	[[ "$output" == *"EveBox не сможет читать события"* ]]
+	[[ "$output" == *"EveBox cannot read events"* ]]
 	[ ! -e "$CONF_YAML" ]
 }
 
@@ -75,13 +75,13 @@ install_base() {
 	[ -f "$CONF_YAML" ]
 	run bash "$REPO_DIR/install.sh" status --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"evebox: в порядке"* ]]
+	[[ "$output" == *"evebox: ok"* ]]
 }
 
 @test "preflight: a busy EVEBOX_PORT held by a stranger stops the install with code 3" {
 	MOCK_SS_LISTEN="5636" run install_base
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"порт 5636"* ]]
+	[[ "$output" == *"port 5636"* ]]
 }
 
 @test "preflight: ports held by our own already-installed services are not conflicts on a repeat run" {

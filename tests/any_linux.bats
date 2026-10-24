@@ -38,7 +38,7 @@ inst() {
 	os_release ID=arch
 	run inst --dry-run
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"SURICATA_RUNTIME=native: на arch пакетов компонента установщик не ставит, задайте --set SURICATA_RUNTIME=docker"* ]]
+	[[ "$output" == *"SURICATA_RUNTIME=native: on arch the installer does not install the component packages, set --set SURICATA_RUNTIME=docker"* ]]
 	[[ "$output" == *"EVEBOX_RUNTIME"* && "$output" == *"NTOPNG_RUNTIME"* ]]
 }
 
@@ -77,5 +77,5 @@ inst() {
 	os_release ID=alpine
 	run inst "${ALLDOCKER[@]}"
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"нужен systemd"* ]]
+	[[ "$output" == *"systemd is needed"* ]]
 }

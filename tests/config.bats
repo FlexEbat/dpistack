@@ -30,14 +30,14 @@ run_install() {
 @test "unknown key exits 2 with a readable message" {
 	run_install --set NOT_A_REAL_KEY=1
 	[ "$status" -eq 2 ]
-	[[ "$output" == *"неизвестный ключ: NOT_A_REAL_KEY"* ]]
+	[[ "$output" == *"unknown key: NOT_A_REAL_KEY"* ]]
 }
 
 @test "value outside options exits 2 with a readable message" {
 	run_install --set ACCESS_MODE=carrier-pigeon
 	[ "$status" -eq 2 ]
 	[[ "$output" == *"ACCESS_MODE=carrier-pigeon"* ]]
-	[[ "$output" == *"допустимо"* ]]
+	[[ "$output" == *"allowed"* ]]
 }
 
 @test "EVEBOX_DB=elasticsearch without EVEBOX_ES_URL exits 2" {
@@ -59,13 +59,13 @@ run_install() {
 @test "runtime docker is a supported value for every component, the metrics backend included" {
 	run_install --dry-run --set METRICS_BACKEND=victoriametrics --set METRICS_BACKEND_RUNTIME=docker
 	[ "$status" -eq 0 ]
-	[[ "$output" != *"пока не поддерживается"* ]]
+	[[ "$output" != *"not supported yet"* ]]
 }
 
 @test "ips mode is a supported value now, with its own preconditions checked" {
 	run_install --dry-run --set SURICATA_MODE=ips
 	[ "$status" -eq 0 ]
-	[[ "$output" != *"пока не поддерживается"* ]]
+	[[ "$output" != *"not supported yet"* ]]
 }
 
 @test "ACCESS_MODE=lan without confirmation exits 2 in non-interactive mode" {

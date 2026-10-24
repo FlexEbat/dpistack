@@ -53,7 +53,7 @@ evebox_repo_add() {
 		# The stable rpm repository is added by its release package
 		# (OISF tracker #3807, evebox.org downloads).
 		run dnf install -y "$EVEBOX_RPM_RELEASE_URL" || {
-			echo "evebox: не удалось подключить репозиторий $EVEBOX_RPM_RELEASE_URL. Поставьте EveBox с https://evebox.org/#downloads и повторите install --only evebox, либо пропустите шаг: --skip evebox" >&2
+			echo "evebox: could not add the repository $EVEBOX_RPM_RELEASE_URL. Install EveBox from https://evebox.org/#downloads and repeat install --only evebox, or skip the step: --skip evebox" >&2
 			return 1
 		}
 		run dnf -y makecache || return 1
@@ -92,7 +92,7 @@ step_evebox_apply() {
 		runtime_release_native "$EVEBOX_UNIT" || return 1
 		write_rendered_file "$(path_evebox_yaml)" "$(evebox_render_conf)" || return 1
 		docker_service_apply evebox || return 1
-		echo "evebox: в контейнере, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}"); встроенные TLS и аутентификация EveBox отключены, доступ ограничивается сетью (ACCESS_MODE/firewall)." >&2
+		echo "evebox: in a container, listens on $(access_effective_bind_host):$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}"); the built-in TLS and authentication of EveBox are off, access is limited by the network (ACCESS_MODE/firewall)." >&2
 		return 0
 	fi
 	runtime_release_docker evebox || return 1
@@ -111,18 +111,18 @@ step_evebox_apply() {
 	run systemctl enable --now "$EVEBOX_UNIT" || return 1
 
 	if [[ "${CONF[EVEBOX_DB]:-sqlite}" == "elasticsearch" ]]; then
-		echo "evebox: EVEBOX_RETENTION_DAYS работает только с SQLite, для Elasticsearch удаление старых событий настраивается на стороне Elasticsearch." >&2
+		echo "evebox: EVEBOX_RETENTION_DAYS works only with SQLite, for Elasticsearch deleting old events is configured on the Elasticsearch side." >&2
 	fi
-	echo "evebox: слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}"); встроенные TLS и аутентификация EveBox отключены, доступ ограничивается сетью (ACCESS_MODE/firewall)." >&2
+	echo "evebox: listens on $(access_effective_bind_host):$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}"); the built-in TLS and authentication of EveBox are off, access is limited by the network (ACCESS_MODE/firewall)." >&2
 	return 0
 }
 
 step_evebox_plan() {
 	if docker_wanted evebox; then
 		docker_service_plan evebox
-		echo "evebox: рендер $(path_evebox_yaml)"
+		echo "evebox: render $(path_evebox_yaml)"
 		return 0
 	fi
-	echo "evebox: репозиторий evebox.org, пакет $EVEBOX_PACKAGE, база ${CONF[EVEBOX_DB]:-sqlite}, порт ${CONF[EVEBOX_PORT]:-5636}, bind $(access_effective_bind_host)"
-	echo "evebox: рендер $(path_evebox_yaml)"
+	echo "evebox: repository evebox.org, package $EVEBOX_PACKAGE, database ${CONF[EVEBOX_DB]:-sqlite}, port ${CONF[EVEBOX_PORT]:-5636}, bind $(access_effective_bind_host)"
+	echo "evebox: render $(path_evebox_yaml)"
 }

@@ -117,21 +117,21 @@ has_update() { printf 'current=suricata-8.0.7\nlatest=suricata-8.0.9\nnewest=sur
 	watch_with "$(has_update)"
 	[ "$status" -eq 0 ]
 	grep -q '^build suricata-8.0.9$' "$CALLS"
-	grep -q 'issue create --title Suricata suricata-8.0.9 проверен: поднять SURICATA_STABLE_REF' "$CALLS"
+	grep -q 'issue create --title Suricata suricata-8.0.9 verified: raise SURICATA_STABLE_REF' "$CALLS"
 }
 
 @test "watch: a newer release that does not build is reported, the pin stays" {
 	FAKE_BUILD_FAIL="suricata-8.0.9" watch_with "$(has_update)"
 	[ "$status" -eq 0 ]
-	grep -q 'issue create --title Suricata suricata-8.0.9 не прошёл проверку сборки' "$CALLS"
-	run grep -c 'проверен: поднять' "$CALLS"
+	grep -q 'issue create --title Suricata suricata-8.0.9 failed the build check' "$CALLS"
+	run grep -c 'verified: raise' "$CALLS"
 	[ "$output" = "0" ]
 }
 
 @test "watch: a pinned release that stops building fails the run and opens an issue" {
 	FAKE_BUILD_FAIL="suricata-8.0.7" watch_with "$(up_to_date)"
 	[ "$status" -eq 1 ]
-	grep -q 'issue create --title Suricata suricata-8.0.7 (SURICATA_STABLE_REF) больше не собирается' "$CALLS"
+	grep -q 'issue create --title Suricata suricata-8.0.7 (SURICATA_STABLE_REF) no longer builds' "$CALLS"
 }
 
 @test "watch: an issue that is already open is not opened twice" {
@@ -144,7 +144,7 @@ has_update() { printf 'current=suricata-8.0.7\nlatest=suricata-8.0.9\nnewest=sur
 @test "watch: a newer series is announced" {
 	watch_with "$(printf 'current=suricata-8.0.7\nlatest=suricata-8.0.7\nnewest=suricata-9.0.0\nnewer_series=suricata-9.0.0\nstatus=up-to-date')"
 	[ "$status" -eq 0 ]
-	grep -q 'issue create --title Вышла новая серия Suricata: suricata-9.0.0' "$CALLS"
+	grep -q 'issue create --title A new Suricata series is out: suricata-9.0.0' "$CALLS"
 }
 
 @test "watch: no answer from the release check builds nothing and fails" {

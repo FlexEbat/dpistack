@@ -84,10 +84,10 @@ compose_cmd="docker compose -p dpistack -f"
 	[ -f "$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service" ]
 }
 
-@test "PANEL_RUNTIME=docker with PANEL_MODE=unlimited passes the stream cap to the container" {
-	run install_base --set PANEL_RUNTIME=docker --set PANEL_MODE=unlimited
+@test "PANEL_RUNTIME=docker with PANEL_EDITION=lite passes -lite to the container" {
+	run install_base --set PANEL_RUNTIME=docker --set PANEL_EDITION=lite
 	[ "$status" -eq 0 ]
-	grep -q -- '"-max-streams", "32"' "$COMPOSE"
+	grep -q -- '"-lite"' "$COMPOSE"
 }
 
 @test "the panel container asks for the verbs only: DPISTACK_CALLER=panel refuses installer commands" {

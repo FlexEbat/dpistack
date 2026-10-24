@@ -6,7 +6,7 @@ import "net/http"
 // is served: the ring holds a day and the screen asks for three views of it.
 func (s *server) metricsSeries(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.Metrics == nil {
-		writeError(w, http.StatusServiceUnavailable, "метрики не собираются")
+		writeError(w, http.StatusServiceUnavailable, "metrics are not collected")
 		return
 	}
 	rng := r.URL.Query().Get("range")
@@ -15,7 +15,7 @@ func (s *server) metricsSeries(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.cfg.Metrics.Query(rng)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "range: 1h, 6h или 24h")
+		writeError(w, http.StatusBadRequest, "range: 1h, 6h or 24h")
 		return
 	}
 	writeJSON(w, http.StatusOK, res)

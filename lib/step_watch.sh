@@ -63,8 +63,8 @@ step_watch_apply() {
 
 step_watch_plan() {
 	if watch_enabled; then
-		echo "watch: $(path_watch_bin), таймер каждые ${CONF[WATCH_INTERVAL_SEC]:-60} с"
+		echo "watch: $(path_watch_bin), timer every ${CONF[WATCH_INTERVAL_SEC]:-60} s"
 	else
-		echo "watch: WATCH_ENABLE=no, таймер не нужен"
+		echo "watch: WATCH_ENABLE=no, no timer is needed"
 	fi
 }

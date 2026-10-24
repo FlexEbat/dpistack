@@ -18,13 +18,13 @@ test("changedValues keeps only edits that differ and never a secret", () => {
 test("localProblem checks ranges, enums and newlines", () => {
   const n = K({ key: "N", type: "int", min: 5, max: 300, default: "30" });
   assert.equal(localProblem(n, "45"), "");
-  assert.match(localProblem(n, "4"), /не меньше 5/);
-  assert.match(localProblem(n, "301"), /не больше 300/);
-  assert.match(localProblem(n, "x"), /целое/);
+  assert.match(localProblem(n, "4"), /not less than 5/);
+  assert.match(localProblem(n, "301"), /not more than 300/);
+  assert.match(localProblem(n, "x"), /integer/);
   const e = K({ key: "E", type: "enum", options: ["a", "b"] });
   assert.equal(localProblem(e, "a"), "");
-  assert.match(localProblem(e, "c"), /вне списка/);
-  assert.match(localProblem(K({ key: "F" }), "a\nb"), /перевод/);
+  assert.match(localProblem(e, "c"), /not in the list/);
+  assert.match(localProblem(K({ key: "F" }), "a\nb"), /line break/);
 });
 
 test("widening access asks for confirmation, narrowing does not", () => {

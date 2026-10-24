@@ -72,7 +72,7 @@ fam() {
 @test "criterion 5: no COPR build for the release gives a preflight reason naming the chroot" {
 	os_release rocky "rhel centos fedora" 9.4
 	MOCK_CURL_FAIL_MATCH="epel-9" run fam 'CONF[SURICATA_SOURCE]=oisf; step_preflight_reasons'
-	[[ "$output" == *"репозиторий OISF COPR для epel-9 недоступен"* ]]
+	[[ "$output" == *"repository OISF COPR for epel-9 is unavailable"* ]]
 }
 
 @test "criterion 5: the install stops with code 3 before any step runs" {
@@ -80,7 +80,7 @@ fam() {
 	PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CURL_FAIL_MATCH="epel-9" MOCK_CALLS_LOG="$CALLS" \
 		run bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"OISF COPR для epel-9"* ]]
+	[[ "$output" == *"OISF COPR for epel-9"* ]]
 	if grep -q '^dnf copr enable' "$CALLS"; then false; fi
 	! grep -q '^dnf install' "$CALLS"
 }

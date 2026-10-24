@@ -53,7 +53,7 @@ os_detect() {
 
 	# dpistack manages its services as systemd units, on every family.
 	if [[ "$OS_FAMILY" == "generic" && ! -d "$(path_systemd_marker)" ]]; then
-		die 3 "$OS_ID: нужен systemd (нет $(path_systemd_marker)); на системах с другим init dpistack не работает"
+		die 3 "$OS_ID: systemd is needed (no $(path_systemd_marker)); dpistack does not work on systems with another init"
 	fi
 
 	log "INFO" "detected $OS_ID $OS_VERSION_ID, family=$OS_FAMILY"
@@ -90,7 +90,7 @@ pkg_install() {
 		run pacman -S --noconfirm --needed "$@"
 		;;
 	generic)
-		echo "$OS_ID: пакеты этого дистрибутива установщик не ставит; установите вручную: $*" >&2
+		echo "$OS_ID: the installer does not install packages on this distribution; install them by hand: $*" >&2
 		return 1
 		;;
 	*)
@@ -133,7 +133,7 @@ pkg_repo_add() {
 		run dnf -y makecache
 		;;
 	*)
-		die 3 "pkg_repo_add: неизвестная комбинация family=$OS_FAMILY repo=$name"
+		die 3 "pkg_repo_add: unknown combination family=$OS_FAMILY repo=$name"
 		;;
 	esac
 }
@@ -152,7 +152,7 @@ pkg_pin() {
 		run zypper --non-interactive addlock "$1"
 		;;
 	*)
-		echo "$OS_ID: закрепление версии пакета $1 здесь не поддерживается (PIN_VERSIONS пропущен)" >&2
+		echo "$OS_ID: pinning the version of package $1 is not supported here (PIN_VERSIONS skipped)" >&2
 		;;
 	esac
 }
@@ -255,7 +255,7 @@ pkg_install_base() {
 			command -v "$c" >/dev/null 2>&1 || lacking+=("$c")
 		done
 		if [[ "${#lacking[@]}" -gt 0 ]]; then
-			echo "$OS_ID: не найдены команды: ${lacking[*]}; установите их пакетами дистрибутива и повторите" >&2
+			echo "$OS_ID: commands not found: ${lacking[*]}; install them with the distribution packages and repeat" >&2
 			return 1
 		fi
 		;;
@@ -283,10 +283,10 @@ pkg_enable_extra_repos() {
 		# missing, and that fails with a clear message later.
 		pkg_install dnf-plugins-core "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${major}.noarch.rpm" || return 1
 		run subscription-manager repos "--enable=codeready-builder-for-rhel-${major}-$(uname -m)-rpms" ||
-			echo "rhel: репозиторий CodeReady Builder не включён (нужна подписка); для сборки из исходников включите его вручную" >&2
+			echo "rhel: the CodeReady Builder repository is not enabled (a subscription is needed); enable it by hand to build from source" >&2
 		;;
 	*)
-		echo "$OS_ID: включите EPEL и репозиторий -devel вручную, установщик их не трогает" >&2
+		echo "$OS_ID: enable EPEL and the -devel repository by hand, the installer does not touch them" >&2
 		;;
 	esac
 }
@@ -315,7 +315,7 @@ pkg_build_deps() {
 		pkg_install "${pkgs[@]}"
 		;;
 	*)
-		die 3 "pkg_build_deps: неизвестная семья пакетов: $OS_FAMILY"
+		die 3 "pkg_build_deps: unknown package family: $OS_FAMILY"
 		;;
 	esac
 }
@@ -358,7 +358,7 @@ pkg_select_rust() {
 	((${have:-0} >= SURICATA_RUST_MIN_MINOR)) && return 0
 	wanted=$(pkg_rust_versioned_minor)
 	if [[ -z "$wanted" ]]; then
-		echo "suricata: rustc 1.${have:-?} старше 1.${SURICATA_RUST_MIN_MINOR}, более новых пакетов rustc-1.N в репозиториях нет; сборка может упасть на configure (тогда SURICATA_SOURCE=oisf или distro)" >&2
+		echo "suricata: rustc 1.${have:-?} is older than 1.${SURICATA_RUST_MIN_MINOR}, there are no newer rustc-1.N packages in the repositories; the build may fail at configure (then use SURICATA_SOURCE=oisf or distro)" >&2
 		return 0
 	fi
 	pkg_install "rustc-1.$wanted" "cargo-1.$wanted" || return 1
@@ -502,7 +502,7 @@ selinux_port() {
 		[[ "$OS_FAMILY" == "dnf" ]] && pkg_install policycoreutils-python-utils
 	fi
 	if ! command -v semanage >/dev/null 2>&1; then
-		echo "selinux: semanage не найден, порт $port не получил тип $type" >&2
+		echo "selinux: semanage not found, port $port did not get the type $type" >&2
 		return 0
 	fi
 	if semanage port -l 2>/dev/null | awk -v t="$type" '$1 == t && $2 == "tcp" {$1 = ""; $2 = ""; gsub(/,/, " "); print}' | grep -qw -- "$port"; then
@@ -510,7 +510,7 @@ selinux_port() {
 	fi
 	run semanage port -a -t "$type" -p tcp "$port" ||
 		run semanage port -m -t "$type" -p tcp "$port" ||
-		echo "selinux: не удалось дать порту $port тип $type (возможно, у политики нет такого типа)" >&2
+		echo "selinux: could not give port $port the type $type (the policy may have no such type)" >&2
 	return 0
 }
 

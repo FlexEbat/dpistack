@@ -40,5 +40,5 @@ step_redis_plan() {
 		docker_service_plan redis
 		return 0
 	}
-	echo "redis: установка $REDIS_PACKAGE, systemctl enable --now $REDIS_UNIT"
+	echo "redis: installing $REDIS_PACKAGE, systemctl enable --now $REDIS_UNIT"
 }

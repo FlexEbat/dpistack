@@ -36,13 +36,13 @@ install_base() {
 	[ "$status" -eq 2 ]
 }
 
-@test "criterion 1: reconfigure with no changes prints 'изменений нет' and exits 0" {
+@test "criterion 1: reconfigure with no changes prints 'no changes' and exits 0" {
 	run install_base
 	[ "$status" -eq 0 ]
 	run bash "$REPO_DIR/install.sh" reconfigure -y \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"изменений нет"* ]]
+	[[ "$output" == *"no changes"* ]]
 }
 
 @test "criterion 2: changing IFACES redraws suricata.yaml and ntopng.conf, restarts both, leaves others alone" {
@@ -99,7 +99,7 @@ install_base() {
 	run env DPISTACK_INPUT="$input_file" bash "$REPO_DIR/install.sh" reconfigure \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set PIN_VERSIONS=yes
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"отменено"* ]]
+	[[ "$output" == *"cancelled"* ]]
 	after_sum=$(sha256sum "$CONF_FILE" | cut -d' ' -f1)
 	[ "$before_sum" = "$after_sum" ]
 	rm -f "$input_file"
@@ -131,7 +131,7 @@ install_base() {
 	[ "$status" -eq 0 ]
 	after_sum=$(sha256sum "$YAML_FILE" | cut -d' ' -f1)
 	[ "$before_sum" = "$after_sum" ]
-	[[ "$output" == *"изменён вручную"* ]]
+	[[ "$output" == *"was changed by hand"* ]]
 }
 
 @test "criterion 7: upgrade with PIN_VERSIONS=yes still calls apt (which itself skips held packages)" {
@@ -139,7 +139,7 @@ install_base() {
 	[ "$status" -eq 0 ]
 	run bash "$REPO_DIR/install.sh" upgrade
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"менеджер пакетов пропустит"* ]]
+	[[ "$output" == *"the package manager will skip"* ]]
 	run grep -c "apt-get install --only-upgrade" "$MOCK_CALLS_LOG"
 	[ "$output" = "1" ]
 }

@@ -1,51 +1,53 @@
-# Участие в разработке
+# Contributing
 
-Спасибо за интерес к dpistack. Ниже: как подготовить окружение, внести изменение и довести его до слияния. Для ИИ-агентов есть отдельная краткая памятка: [AGENTS.md](AGENTS.md).
+English | [Русский](CONTRIBUTING.ru.md)
 
-## Окружение
+Thank you for your interest in dpistack. Below: how to prepare the environment, make a change and take it to a merge. There is a separate short note for AI agents: [AGENTS.md](AGENTS.md).
 
-Нужны: `bash` 4.4+, `shfmt`, `shellcheck`, `bats`, `jq`, `argon2`, Go версии из `panel/go.mod`, Node.js (тесты интерфейса панели).
+## Environment
+
+You need: `bash` 4.4+, `shfmt`, `shellcheck`, `bats`, `jq`, `argon2`, Go of the version in `panel/go.mod`, Node.js (the panel interface tests).
 
 ```
 sudo apt-get install -y shfmt shellcheck bats jq argon2 nodejs
 ```
 
-Установка из клона для проверки руками делается на отдельной машине или снапшоте: установщик ставит пакеты и службы. Тесты ничего в системе не меняют.
+Installing from a clone to check by hand is done on a separate machine or a snapshot: the installer installs packages and services. The tests change nothing in the system.
 
-## Ветки и слияние
+## Branches and merging
 
-- `dev` рабочая ветка, `main` проверенное состояние.
-- Изменения идут в `dev` (или в ветку от `dev`), в `main` попадают pull request'ом после зелёного CI. Прямых коммитов в `main` нет.
-- Сообщение коммита описывает, что изменилось и зачем; номер записи журнала (`R<N>`) из tech.md ставится в начало, если запись есть.
+- `dev` is the working branch, `main` is the tested state.
+- Changes go to `dev` (or to a branch from `dev`) and reach `main` as a pull request after a green CI. There are no direct commits to `main`.
+- The commit message says what changed and why.
 
-## Перед pull request
+## Before a pull request
 
 ```
 bash scripts/gate.sh
 ```
 
-Гейт проходит: `shfmt`, `shellcheck`, проверки безопасности (`scripts/security.sh`), единый файл (`scripts/bundle.sh --check`), пример конфигурации и справочник параметров, `bats tests`, `gofmt`, `go vet`, `go test`, тесты интерфейса (`node --test`) и бюджет ресурсов панели. Те же проверки работают в CI на Ubuntu 22.04 и 24.04, плюс `actionlint`, `trivy` и `gitleaks`.
+The gate runs `shfmt`, `shellcheck`, the security checks (`scripts/security.sh`), the single file (`scripts/bundle.sh --check`), the config example and the reference of settings, `bats tests`, `gofmt`, `go vet`, `go test`, the interface tests (`node --test`) and the resource budget of the panel. The same checks run in CI on Ubuntu 22.04 and 24.04, plus `actionlint`, `trivy` and `gitleaks`.
 
-Если менялись `install.sh`, `lib/`, `templates/` или `bin/`, пересоберите единый файл: `bash scripts/bundle.sh`. Если менялась схема параметров, обновите пример конфигурации, подсказки экрана «Настройки», таблицу в tech.md и справочник (`bash scripts/gen-config-doc.sh`).
+If `install.sh`, `lib/`, `templates/` or `bin/` changed, rebuild the single file: `bash scripts/bundle.sh`. If the settings schema changed, update the config example, the hints of the Settings screen, the table in tech.md and the reference (`bash scripts/gen-config-doc.sh`).
 
-## Что должно быть в изменении
+## What a change must contain
 
-1. Код и тест: bats для оболочки, `go test` для Go, `node --test` для логики интерфейса. Внешние команды в тестах подменяются заглушками (`tests/mocks/`).
-2. Запись в tech.md: что и почему изменено, принятое решение, версия. Версия программы лежит в `lib/common.sh` и в заголовке tech.md.
-3. Документация: если меняется поведение, обновите соответствующий файл в `docs/` или README.
-4. Безопасность: ничего из секретов в журналах, аргументах команд, ответах API и коммитах; проверка значений по схеме перед использованием; интерфейс панели без внешних ресурсов.
+1. Code and a test: bats for the shell, `go test` for Go, `node --test` for the interface logic. External commands in tests are replaced by stubs (`tests/mocks/`).
+2. A note in tech.md: what changed and why, the decision taken, the version. The program version is in `lib/common.sh` and in the header of tech.md.
+3. Documentation: if the behavior changes, update the matching file in `docs/` or the README, in English and in Russian (`*.ru.md`).
+4. Security: no secrets in logs, command arguments, API answers or commits; values are checked against the schema before use; the panel interface has no external resources.
 
-## Стиль
+## Style
 
-- Shell: табуляции, `shfmt`, `shellcheck -x -S style` без замечаний. Функции небольшие, с комментарием о назначении. Сообщения пользователю на русском.
-- Go: `gofmt`, `go vet`; зависимости только действительно нужные.
-- Интерфейс: чистый JavaScript без сборки, модули в `panel/web/modules/`, логика без обращения к DOM выносится в отдельный файл и покрывается `node --test`.
-- Bats: `! команда` вне последней строки теста не работает, используйте `run` и проверку `$status`.
+- Shell: tabs, `shfmt`, `shellcheck -x -S style` with no remarks. Functions are small, with a comment on the purpose. Messages to the user are in English.
+- Go: `gofmt`, `go vet`; only the dependencies that are really needed.
+- Interface: plain JavaScript without a build, modules in `panel/web/modules/`, logic that does not touch the DOM goes to a separate file covered by `node --test`. Both panel editions keep the same features.
+- Bats: `! command` outside the last line of a test does not work, use `run` and check `$status`.
 
-## Зависимости и релизы
+## Dependencies and releases
 
-Версии действий GitHub закреплены по SHA; обновления приходят от Dependabot отдельными pull request'ами и сливаются после зелёного CI. Выпуск делается тегом `vX.Y.Z` на `main`: workflow собирает бинарники панели, единый файл установщика и подтверждает происхождение артефактов.
+The versions of GitHub actions are pinned by SHA; updates come from Dependabot as separate pull requests and are merged after a green CI. A release is made with the tag `vX.Y.Z` on `main`: a workflow builds the panel binaries and the single-file installer and attests where the artifacts came from.
 
-## Сообщения о проблемах
+## Reporting problems
 
-Ошибки и предложения оформляйте issue: версия (`dpistack version`), платформа, команда, вывод `dpistack diag` (секреты в отчёт не попадают, но просмотрите его перед отправкой). Об уязвимостях сообщайте по [SECURITY.md](SECURITY.md), не в открытом issue.
+File errors and suggestions as an issue: the version (`dpistack version`), the platform, the command, the output of `dpistack diag` (secrets do not get into the report, but look through it before sending). Report vulnerabilities as described in [SECURITY.md](SECURITY.md), not in a public issue.

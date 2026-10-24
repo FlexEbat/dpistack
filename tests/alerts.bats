@@ -110,7 +110,7 @@ port_down() { FAKE_LISTEN="3000 6379 9800"; }
 	at 2
 	[ "$(jq -r 'select(.check=="evebox.port") | .kind' "$EVENTS" | tail -1)" = "recovery" ]
 	[ "$(grep -c 'api.telegram.org' "$CURL_CFG")" -eq 2 ]
-	grep -q "восстановлено" "$LOGGER_LOG"
+	grep -q "recovered" "$LOGGER_LOG"
 }
 
 @test "criterion 1: a crit uses the err level in the log channel" {
@@ -159,7 +159,7 @@ port_down() { FAKE_LISTEN="3000 6379 9800"; }
 	at 0
 	FAKE_CURL_RC=22 FAKE_STOPPED="suricata.service" at 1
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"канал tg: отправка не удалась"* ]]
+	[[ "$output" == *"channel tg: sending failed"* ]]
 	[ "$(grep -c '"check":"suricata.process"' "$EVENTS")" -eq 1 ]
 	grep -q "suricata.process" "$LOGGER_LOG"
 	jq -e . "$HEALTH" >/dev/null
@@ -183,7 +183,7 @@ port_down() { FAKE_LISTEN="3000 6379 9800"; }
 	run bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no \
 		--set TEST_ON_INSTALL=no --set ALERT_CHANNELS=panel,sms
 	[ "$status" -eq 2 ]
-	[[ "$output" == *"неизвестный канал"* ]]
+	[[ "$output" == *"unknown channel"* ]]
 }
 
 @test "criterion 4: the watchdog with tg and an empty token reports it and carries on" {
@@ -192,7 +192,7 @@ port_down() { FAKE_LISTEN="3000 6379 9800"; }
 	at 0
 	FAKE_STOPPED="suricata.service" at 1
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"канал tg: не заданы ALERT_TG_TOKEN"* ]]
+	[[ "$output" == *"channel tg: ALERT_TG_TOKEN"* ]]
 	[ "$(grep -c '"check":"suricata.process"' "$EVENTS")" -eq 1 ]
 	grep -q "suricata.process" "$LOGGER_LOG"
 }

@@ -4,11 +4,11 @@
 
 const WAIT_MS = 3000;
 const WAIT_TRIES = 80; // about four minutes: the server gives a run three
-const STATUS = { pass: "пройден", fail: "провален", skip: "пропущен" };
+const STATUS = { pass: "passed", fail: "failed", skip: "skipped" };
 const BUTTONS = [
-  ["bittorrent", "Запустить BitTorrent"],
-  ["https", "Запустить HTTPS"],
-  ["all", "Запустить все"],
+  ["bittorrent", "Run BitTorrent"],
+  ["https", "Run HTTPS"],
+  ["all", "Run all"],
 ];
 
 function el(tag, className, text) {
@@ -31,7 +31,7 @@ function when(iso) {
 export function rows(results) {
   const t = el("table");
   const head = el("tr");
-  for (const h of ["Тест", "Статус", "Время, мс", "Причина", "Когда"]) head.append(el("th", "", h));
+  for (const h of ["Test", "Status", "Time, ms", "Reason", "When"]) head.append(el("th", "", h));
   t.append(head);
   for (const r of results) {
     const tr = el("tr");
@@ -56,7 +56,7 @@ export function start(api, els, onError) {
 
   function show(results, note) {
     els.note.textContent = note || "";
-    els.result.replaceChildren(results.length ? rows(results) : el("p", "muted", "Тесты ещё не запускались."));
+    els.result.replaceChildren(results.length ? rows(results) : el("p", "muted", "No tests have run yet."));
   }
 
   async function loadLast() {
@@ -64,7 +64,7 @@ export function start(api, els, onError) {
       const res = await api("/api/tests/last");
       if (!running) return null;
       els.error.textContent = "";
-      show(res.results, res.running ? "Тесты сейчас идут…" : "");
+      show(res.results, res.running ? "Tests are running…" : "");
       return res;
     } catch (err) {
       fail(err);
@@ -84,15 +84,15 @@ export function start(api, els, onError) {
   }
 
   async function run(which) {
-    if (!confirm("Запустить тест? HTTPS-тест делает запрос в сеть, прогон может занять до минуты.")) return;
+    if (!confirm("Run the test? The HTTPS test makes a network request and may take up to a minute.")) return;
     els.error.textContent = "";
     setBusy(true);
-    els.note.textContent = "Тест идёт, подождите…";
+    els.note.textContent = "The test is running, please wait…";
     try {
       const results = await api(`/api/tests/${which}`, { method: "POST" });
-      show(results, "Готово.");
+      show(results, "Done.");
       await loadLast(); // the file has the times
-      els.note.textContent = "Готово.";
+      els.note.textContent = "Done.";
     } catch (err) {
       if (err.status === 401) return onError(err);
       if (err.status === 409 || err.status === 502 || err.status === 504 || err instanceof TypeError) {

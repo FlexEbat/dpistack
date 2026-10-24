@@ -172,7 +172,7 @@ step_rules_apply() {
 	else
 		log "RUN" "$(rules_update_command)"
 		if ! "${RULES_UPDATE_ARGV[@]}"; then
-			echo "suricata-update завершился с ошибкой, прежний набор правил сохранён" >&2
+			echo "suricata-update failed, the previous rule set is kept" >&2
 			return 1
 		fi
 		[[ -z "$running_version" ]] || state_write_value "$RULES_VERSION_STATE_KEY" "$running_version"
@@ -184,11 +184,11 @@ step_rules_apply() {
 		if docker_wanted suricata; then
 			if docker_service_running suricata; then
 				run docker_suricata_reload ||
-					echo "предупреждение: Suricata не приняла перезагрузку правил, они применятся при перезапуске" >&2
+					echo "warning: Suricata did not accept the rule reload, they apply at the next restart" >&2
 			fi
 		elif [[ -S "$socket" ]]; then
 			run suricatasc -c ruleset-reload-nonblocking "$socket" ||
-				echo "предупреждение: Suricata не приняла перезагрузку правил, они применятся при перезапуске" >&2
+				echo "warning: Suricata did not accept the rule reload, they apply at the next restart" >&2
 		fi
 	fi
 
@@ -204,11 +204,11 @@ step_rules_apply() {
 }
 
 step_rules_plan() {
-	echo "rules: источники ${CONF[RULES_SOURCES]:-} + URL из RULES_URLS"
-	echo "rules: enable.conf из групп ${CONF[RULES_GROUPS]:-}"
+	echo "rules: sources ${CONF[RULES_SOURCES]:-} + URLs from RULES_URLS"
+	echo "rules: enable.conf from the groups ${CONF[RULES_GROUPS]:-}"
 	if [[ "${CONF[RULES_UPDATE]:-on}" == "on" ]]; then
-		echo "rules: таймер $RULES_TIMER, OnCalendar=${CONF[RULES_UPDATE_CALENDAR]:-weekly}"
+		echo "rules: timer $RULES_TIMER, OnCalendar=${CONF[RULES_UPDATE_CALENDAR]:-weekly}"
 	else
-		echo "rules: RULES_UPDATE=off, таймер не создаётся/удаляется"
+		echo "rules: RULES_UPDATE=off, the timer is not created/is removed"
 	fi
 }

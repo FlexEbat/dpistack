@@ -3,7 +3,7 @@
 
 const WAIT_MS = 3000;
 const WAIT_TRIES = 140; // a little over the 7 minutes the panel gives an update
-const PENDING = "Изменения вступят в силу после обновления правил: нажмите «Обновить сейчас».";
+const PENDING = "Changes take effect after the rules are updated: press \"Update now\".";
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -70,11 +70,11 @@ export function start(api, els, onError) {
 
   function renderLast(last, updating) {
     if (updating) {
-      els.last.textContent = "Идёт обновление правил…";
+      els.last.textContent = "Updating rules…";
     } else if (!last) {
-      els.last.textContent = "С запуска панели обновление отсюда не запускалось.";
+      els.last.textContent = "No update has been started from here since the panel started.";
     } else {
-      els.last.textContent = `Последнее обновление: ${when(last.time)}, ${last.ok ? "успешно" : "не удалось"}.`;
+      els.last.textContent = `Last update: ${when(last.time)}, ${last.ok ? "succeeded" : "failed"}.`;
     }
     els.updateOutput.className = last && !last.ok ? "result error" : "result";
     els.updateOutput.textContent = last ? [last.error, last.output].filter(Boolean).join("\n") : "";
@@ -83,13 +83,13 @@ export function start(api, els, onError) {
   function renderSources(list) {
     const t = el("table");
     const head = el("tr");
-    for (const h of ["Источник", "Описание", "Состояние", "Действия"]) head.append(el("th", "", h));
+    for (const h of ["Source", "Description", "State", "Actions"]) head.append(el("th", "", h));
     t.append(head);
     for (const s of list) {
       const tr = el("tr");
       const name = el("td", "", s.name);
-      const about = s.custom ? "свой источник (добавлен по адресу)" : [s.vendor, s.summary].filter(Boolean).join(": ");
-      tr.append(name, el("td", "", about), el("td", "", s.enabled ? "включён" : "выключен"));
+      const about = s.custom ? "custom source (added by address)" : [s.vendor, s.summary].filter(Boolean).join(": ");
+      tr.append(name, el("td", "", about), el("td", "", s.enabled ? "enabled" : "disabled"));
       const actions = el("td", "actions");
       const act = (action, text, ask) =>
         actions.append(
@@ -98,8 +98,8 @@ export function start(api, els, onError) {
             await change(() => post("/api/rules/sources", { action, name: s.name }), `${text}: ${s.name}`);
           }),
         );
-      act(s.enabled ? "disable" : "enable", s.enabled ? "Выключить" : "Включить");
-      if (s.custom) act("remove", "Удалить", `Удалить источник «${s.name}»?`);
+      act(s.enabled ? "disable" : "enable", s.enabled ? "Disable" : "Enable");
+      if (s.custom) act("remove", "Remove", `Remove source "${s.name}"?`);
       tr.append(actions);
       t.append(tr);
     }
@@ -108,7 +108,7 @@ export function start(api, els, onError) {
 
   function renderGroups(groups) {
     if (groups.length === 0) {
-      els.groups.replaceChildren(el("p", "muted", "Включённых вручную групп нет."));
+      els.groups.replaceChildren(el("p", "muted", "No groups enabled by hand."));
       return;
     }
     const t = el("table");
@@ -117,8 +117,8 @@ export function start(api, els, onError) {
       tr.append(el("td", "", g));
       const actions = el("td", "actions");
       actions.append(
-        button("Выключить", () =>
-          change(() => post(`/api/rules/groups/${encodeURIComponent(g)}/disable`), `Группа выключена: ${g}`),
+        button("Disable", () =>
+          change(() => post(`/api/rules/groups/${encodeURIComponent(g)}/disable`), `Group disabled: ${g}`),
         ),
       );
       tr.append(actions);
@@ -129,7 +129,7 @@ export function start(api, els, onError) {
 
   function renderDisabled(sids) {
     if (sids.length === 0) {
-      els.disabled.replaceChildren(el("p", "muted", "Отключённых правил нет."));
+      els.disabled.replaceChildren(el("p", "muted", "No disabled rules."));
       return;
     }
     const t = el("table");
@@ -137,7 +137,7 @@ export function start(api, els, onError) {
       const tr = el("tr");
       tr.append(el("td", "", sid));
       const actions = el("td", "actions");
-      actions.append(button("Включить", () => toggleSID(sid, "enable")));
+      actions.append(button("Enable", () => toggleSID(sid, "enable")));
       tr.append(actions);
       t.append(tr);
     }
@@ -146,24 +146,24 @@ export function start(api, els, onError) {
 
   function renderResults(res) {
     if (res.results.length === 0) {
-      els.results.replaceChildren(el("p", "muted", "Ничего не найдено."));
+      els.results.replaceChildren(el("p", "muted", "Nothing found."));
       return;
     }
     const t = el("table");
     const head = el("tr");
-    for (const h of ["sid", "Правило", "Действия"]) head.append(el("th", "", h));
+    for (const h of ["sid", "Rule", "Actions"]) head.append(el("th", "", h));
     t.append(head);
     for (const r of res.results) {
       const tr = el("tr");
       const off = disabled.has(r.sid);
-      tr.append(el("td", "", r.sid), el("td", "", off ? `${r.msg} (отключено)` : r.msg));
+      tr.append(el("td", "", r.sid), el("td", "", off ? `${r.msg} (disabled)` : r.msg));
       const actions = el("td", "actions");
-      actions.append(button(off ? "Включить" : "Отключить", () => toggleSID(r.sid, off ? "enable" : "disable")));
+      actions.append(button(off ? "Enable" : "Disable", () => toggleSID(r.sid, off ? "enable" : "disable")));
       tr.append(actions);
       t.append(tr);
     }
     const parts = [t];
-    if (res.truncated) parts.push(el("p", "muted", "Показаны первые 50 правил: уточните запрос."));
+    if (res.truncated) parts.push(el("p", "muted", "The first 50 rules are shown: narrow the query."));
     els.results.replaceChildren(...parts);
   }
 
@@ -211,7 +211,7 @@ export function start(api, els, onError) {
   function toggleSID(sid, verb) {
     return change(
       () => post(`/api/rules/sid/${sid}/${verb}`),
-      verb === "disable" ? `Правило ${sid} отключено` : `Правило ${sid} снова включено`,
+      verb === "disable" ? `Rule ${sid} disabled` : `Rule ${sid} enabled again`,
     );
   }
 
@@ -246,16 +246,16 @@ export function start(api, els, onError) {
   }
 
   async function update() {
-    if (!confirm("Обновить правила сейчас? Скачивание и проверка могут занять несколько минут.")) return;
+    if (!confirm("Update the rules now? Downloading and checking can take a few minutes.")) return;
     note("");
     setBusy(true);
-    els.last.textContent = "Идёт обновление правил…";
+    els.last.textContent = "Updating rules…";
     els.updateOutput.className = "result";
     els.updateOutput.textContent = "";
     try {
       const res = await post("/api/rules/update");
       renderLast(res.last_update, false);
-      note("Правила обновлены.");
+      note("Rules updated.");
     } catch (err) {
       if (err.status === 401) return onError(err);
       if (err.body && "output" in err.body) {
@@ -280,13 +280,13 @@ export function start(api, els, onError) {
   els.urlAdd.onclick = async () => {
     const url = els.url.value.trim();
     if (url === "") return;
-    if (await change(() => post("/api/rules/sources", { action: "add-url", url }), "Источник добавлен")) els.url.value = "";
+    if (await change(() => post("/api/rules/sources", { action: "add-url", url }), "Source added")) els.url.value = "";
   };
 
   els.groupAdd.onclick = async () => {
     const group = els.group.value.trim();
     if (group === "") return;
-    if (await change(() => post(`/api/rules/groups/${encodeURIComponent(group)}/enable`), `Группа включена: ${group}`)) {
+    if (await change(() => post(`/api/rules/groups/${encodeURIComponent(group)}/enable`), `Group enabled: ${group}`)) {
       els.group.value = "";
     }
   };

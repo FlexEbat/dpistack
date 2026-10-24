@@ -27,7 +27,7 @@ export function summarize(type, e) {
   switch (type) {
     case "alert": {
       const a = e.alert || {};
-      return [a.signature, a.severity ? `(важность ${a.severity})` : "", where, e.proto].filter(Boolean).join(" ");
+      return [a.signature, a.severity ? `(severity ${a.severity})` : "", where, e.proto].filter(Boolean).join(" ");
     }
     case "dns": {
       const d = e.dns || {};
@@ -58,7 +58,7 @@ export function start(api, els, onError) {
   function stopFollow() {
     source?.close();
     source = null;
-    els.follow.textContent = "Следить";
+    els.follow.textContent = "Follow";
   }
 
   function row(ev) {
@@ -66,7 +66,7 @@ export function start(api, els, onError) {
     tr.append(el("td", "", when(ev.time)), el("td", "", ev.type));
     const td = el("td");
     const details = el("details");
-    details.append(el("summary", "", summarize(ev.type, ev.event) || "(без описания)"));
+    details.append(el("summary", "", summarize(ev.type, ev.event) || "(no description)"));
     details.append(el("pre", "log", JSON.stringify(ev.event, null, 2)));
     td.append(details);
     tr.append(td);
@@ -78,7 +78,7 @@ export function start(api, els, onError) {
     if (!t) {
       t = el("table");
       const head = el("tr");
-      for (const h of ["Время", "Тип", "Событие"]) head.append(el("th", "", h));
+      for (const h of ["Time", "Type", "Event"]) head.append(el("th", "", h));
       t.append(head);
       els.list.replaceChildren(t);
     }
@@ -92,7 +92,7 @@ export function start(api, els, onError) {
   function fillTypes(types) {
     const chosen = els.type.value;
     const names = [...new Set(["alert", ...types])].sort();
-    els.type.replaceChildren(option("", "Все типы"), ...names.map((n) => option(n, n)));
+    els.type.replaceChildren(option("", "All types"), ...names.map((n) => option(n, n)));
     els.type.value = names.includes(chosen) || chosen === "" ? chosen : "alert";
   }
 
@@ -107,22 +107,22 @@ export function start(api, els, onError) {
       if (!running) return false;
       if (!res.available) {
         // The viewer is switched off: say so instead of showing an empty list.
-        note(res.reason || "Просмотр событий недоступен.");
+        note(res.reason || "Event view is unavailable.");
         els.show.disabled = els.follow.disabled = true;
         return false;
       }
       fillTypes(res.types);
       if (!res.file_present) {
-        note("Файла eve.json ещё нет: Suricata его не создала.");
+        note("eve.json does not exist yet: Suricata has not created it.");
         return true;
       }
       if (res.events.length === 0) {
-        note("Событий по этому запросу нет.");
+        note("No events match this query.");
         return true;
       }
       const t = el("table");
       const head = el("tr");
-      for (const h of ["Время", "Тип", "Событие"]) head.append(el("th", "", h));
+      for (const h of ["Time", "Type", "Event"]) head.append(el("th", "", h));
       t.append(head, ...res.events.map(row));
       els.list.replaceChildren(t);
       return true;
@@ -139,7 +139,7 @@ export function start(api, els, onError) {
     const text = els.q.value.trim().toLowerCase();
     const query = els.type.value ? `?type=${encodeURIComponent(els.type.value)}` : "";
     source = new EventSource(`/api/eve/stream${query}`);
-    els.follow.textContent = "Остановить слежение";
+    els.follow.textContent = "Stop following";
     source.onmessage = (message) => {
       let ev;
       try {
@@ -154,7 +154,7 @@ export function start(api, els, onError) {
       while (t.rows.length > MAX_ROWS + 1) t.deleteRow(-1);
     };
     source.addEventListener("error", (event) => {
-      els.error.textContent = event.data || "Соединение с потоком событий потеряно";
+      els.error.textContent = event.data || "The event stream connection was lost";
       stopFollow();
     });
   }

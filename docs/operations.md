@@ -1,79 +1,81 @@
-# Эксплуатация
+# Operations
 
-Все команды запускаются от root (`sudo dpistack ...`). `dpistack` без аргументов открывает меню управления; `dpistack help` печатает полный список команд.
+English | [Русский](operations.ru.md)
 
-## Состояние и управление
+All commands run as root (`sudo dpistack ...`). `dpistack` without arguments opens the control menu; `dpistack help` prints the full list of commands.
 
-| Команда | Действие |
+## State and control
+
+| Command | Action |
 | --- | --- |
-| `dpistack status [--json]` | состояние компонентов; без `--json` ещё и сверка каждого шага установки с конфигурацией |
-| `dpistack start\|stop\|restart <компонент>` | управление компонентом |
-| `dpistack reload suricata` | перечитать правила без остановки |
-| `dpistack logs <компонент> [-n N] [--follow]` | журнал компонента, N до 1000 |
-| `dpistack health [--json]` | один прогон watchdog |
-| `dpistack test bittorrent\|https\|all [--json]` | проверочные тесты |
-| `dpistack diag` | отчёт для разбора проблем: платформа, версии, конфигурация без секретов, службы, журналы |
-| `dpistack version` | версия набора |
+| `dpistack status [--json]` | the state of the components; without `--json` also a comparison of every install step with the config |
+| `dpistack start\|stop\|restart <component>` | control a component |
+| `dpistack reload suricata` | reload the rules without stopping |
+| `dpistack logs <component> [-n N] [--follow]` | the component log, N up to 1000 |
+| `dpistack health [--json]` | one watchdog run |
+| `dpistack test bittorrent\|https\|all [--json]` | check tests |
+| `dpistack diag` | a report for troubleshooting: platform, versions, config without secrets, services, logs |
+| `dpistack version` | the bundle version |
 
-Компоненты: `suricata`, `evebox`, `ntopng`, `redis`, `victoriametrics`, `prometheus`, `panel`, `watch`, `rules`. Компоненты в Docker управляются теми же командами.
+Components: `suricata`, `evebox`, `ntopng`, `redis`, `victoriametrics`, `prometheus`, `panel`, `watch`, `rules`. Components in Docker are controlled with the same commands.
 
-## Настройки
+## Settings
 
-| Команда | Действие |
+| Command | Action |
 | --- | --- |
-| `dpistack settings list [--json]` | все параметры с текущими значениями; секреты показываются как «задан» или «не задан» |
-| `dpistack settings check KEY=VALUE...` | проверка без записи: ошибки, вес изменения, занятые порты (JSON) |
-| `dpistack settings set [--apply\|--apply-heavy] [--confirm-access] KEY=VALUE...` | записать и применить |
-| `dpistack settings secret KEY` | записать секрет (значение со stdin) |
-| `dpistack settings job` | ход тяжёлого применения (JSON) |
+| `dpistack settings list [--json]` | every setting with its current value; secrets are shown as "set" or "not set" |
+| `dpistack settings check KEY=VALUE...` | a check without writing: errors, the weight of the change, busy ports (JSON) |
+| `dpistack settings set [--apply\|--apply-heavy] [--confirm-access] KEY=VALUE...` | write and apply |
+| `dpistack settings secret KEY` | write a secret (the value comes from stdin) |
+| `dpistack settings job` | the progress of a heavy apply (JSON) |
 
-Пары `KEY=VALUE` можно передать аргументами или построчно через stdin (так делает панель: значения вроде фильтра BPF содержат символы, которые проверка аргументов не пропускает; правила схемы проверяют их в любом случае). Без `--apply` изменение только записывается. Лёгкое изменение с `--apply` применяется сразу; тяжёлое требует `--apply-heavy` и идёт отдельной задачей `dpistack-apply`, за которой следит `settings job`. Смена `ACCESS_MODE` на расширяющий доступ требует `--confirm-access`. Занятый порт отклоняется с указанием процесса и свободного порта.
+`KEY=VALUE` pairs can be passed as arguments or line by line on stdin (the panel does it this way: values such as a BPF filter contain characters that the argument check does not let through; the schema rules check them anyway). Without `--apply` the change is only written. A light change with `--apply` applies at once; a heavy one needs `--apply-heavy` and runs as a separate `dpistack-apply` job that `settings job` follows. Changing `ACCESS_MODE` to a wider access needs `--confirm-access`. A busy port is refused with the process and a free port named.
 
-`dpistack reconfigure --light [--dry-run]` применяет текущий `dpistack.conf` без вопросов и только для лёгких изменений; тяжёлые завершаются кодом 3.
+`dpistack reconfigure --light [--dry-run]` applies the current `dpistack.conf` without questions and for light changes only; heavy ones end with code 3.
 
-## Конфигурационные файлы
+## Config files
 
 ```
 dpistack config-read suricata.yaml
-dpistack config-write suricata.yaml --check < новый.yaml     # только проверка
-dpistack config-write suricata.yaml --apply < новый.yaml     # проверка, резервная копия, применение
-dpistack config-revert suricata.yaml                          # вернуть последнюю копию
+dpistack config-write suricata.yaml --check < new.yaml     # a check only
+dpistack config-write suricata.yaml --apply < new.yaml     # check, backup, apply
+dpistack config-revert suricata.yaml                        # restore the latest copy
 ```
 
-Имена: `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `dpistack.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`. Файл, правленный вручную, установщик не перезаписывает без `--force`. Отрисованный `suricata.yaml` проверяется командой `suricata -T` до записи, а ключ `suricata-version` в нём соответствует серии установленной Suricata.
+Names: `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `dpistack.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`. The installer does not overwrite a hand-edited file without `--force`. The rendered `suricata.yaml` is checked with `suricata -T` before it is written, and its `suricata-version` key matches the series of the installed Suricata.
 
-## Правила
+## Rules
 
 ```
-dpistack rules-update                         # suricata-update с откатом, если suricata -T отклонил набор
-dpistack rules-sources list [--enabled]       # enable|disable|add-url|remove <имя>
-dpistack rules-group enable|disable <группа>
+dpistack rules-update                         # suricata-update with a rollback if suricata -T rejects the set
+dpistack rules-sources list [--enabled]       # enable|disable|add-url|remove <name>
+dpistack rules-group enable|disable <group>
 dpistack rules-sid enable|disable <sid>
-dpistack rules-search <запрос>                # до 50 правил по sid или тексту
+dpistack rules-search <query>                 # up to 50 rules by sid or text
 ```
 
-Таймер обновления правил включается ключом `RULES_UPDATE`, расписание задаёт `RULES_UPDATE_CALENDAR`.
+The rules update timer is turned on with the `RULES_UPDATE` key, the schedule is `RULES_UPDATE_CALENDAR`.
 
-## Интерфейсы захвата
+## Capture interfaces
 
 ```
 dpistack iface list
 dpistack iface add eth1
-dpistack iface remove eth1       # последний интерфейс удалить нельзя
+dpistack iface remove eth1       # the last interface cannot be removed
 ```
 
-## Режим IPS
+## IPS mode
 
-По умолчанию Suricata работает как IDS: смотрит трафик и ничего не блокирует. `dpistack mode ips` переводит её в IPS: через NFQUEUE (`IPS_METHOD=nfq`, правила в отдельной цепочке `DPISTACK`, которая восстанавливается при загрузке) или парами интерфейсов (`afpacket`). Правила идут с `--queue-bypass`, поэтому остановка Suricata не отрезает сеть. Переключение нужно подтвердить командой `dpistack mode-confirm` за 120 секунд (`--confirm-timeout`, от 10 до 3600): иначе режим сам вернётся в IDS и правила уберутся. `dpistack mode status [--json]` показывает режим, метод и обратный отсчёт. Чужие цепочки и правила не меняются; блокируют трафик ваши правила с действием `drop` (`drop.conf`), сами они не создаются.
+By default Suricata works as IDS: it watches traffic and blocks nothing. `dpistack mode ips` turns it into IPS: through NFQUEUE (`IPS_METHOD=nfq`, rules in a separate `DPISTACK` chain that is restored at boot) or with pairs of interfaces (`afpacket`). The rules use `--queue-bypass`, so stopping Suricata does not cut the network. The switch must be confirmed with `dpistack mode-confirm` within 120 seconds (`--confirm-timeout`, 10 to 3600): otherwise the mode goes back to IDS by itself and the rules are removed. `dpistack mode status [--json]` shows the mode, the method and the countdown. Other people's chains and rules are not touched; traffic is blocked by your rules with the `drop` action (`drop.conf`), none are created for you.
 
-## Watchdog и оповещения
+## Watchdog and alerts
 
-Таймер `dpistack-watch` раз в `WATCH_INTERVAL_SEC` проверяет службы, порты, свежесть `eve.json`, потери пакетов, место на диске и возраст правил (пороги `WATCH_*`). Упавший компонент перезапускается не чаще трёх раз в час (`WATCH_AUTORESTART`). Оповещения идут в каналы `ALERT_CHANNELS`: `panel`, `log`, `telegram`, `mail`. Токен Telegram и адрес SMTP хранятся как секреты.
+The `dpistack-watch` timer checks, every `WATCH_INTERVAL_SEC`, the services, the ports, the freshness of `eve.json`, packet drops, the disk space and the age of the rules (the `WATCH_*` thresholds). A failed component is restarted at most three times an hour (`WATCH_AUTORESTART`). Alerts go to the `ALERT_CHANNELS` channels: `panel`, `log`, `telegram`, `mail`. The Telegram token and the SMTP address are kept as secrets.
 
-## Метрики
+## Metrics
 
-См. раздел «Метрики» в [README.md](../README.md): эндпоинт `/metrics`, токен, готовая запись для `scrape_configs`, встроенное хранилище VictoriaMetrics или Prometheus.
+See the "Metrics" section of [README.md](../README.md): the `/metrics` endpoint, the token, a ready entry for `scrape_configs`, the built-in VictoriaMetrics or Prometheus storage.
 
-## Резервные копии
+## Backups
 
-Перед каждой записью конфигурации через `config-write` и `settings set` создаётся резервная копия; `config-revert` возвращает последнюю. Данные компонентов (правила, EveBox, ntopng, метрики) лежат в своих каталогах и удаляются только `uninstall --purge`.
+Before every config write through `config-write` and `settings set` a backup is made; `config-revert` restores the latest one. Component data (rules, EveBox, ntopng, metrics) lives in its own directories and is removed only by `uninstall --purge`.

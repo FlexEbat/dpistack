@@ -5,14 +5,14 @@
 
 MENU_GROUPS=(capture components eve rules access metrics watch tests)
 declare -A MENU_GROUP_TITLE=(
-	[capture]="Захват и режим"
-	[components]="Компоненты и источники"
-	[eve]="EVE и хранение"
-	[rules]="Правила"
-	[access]="Доступ"
-	[metrics]="Метрики"
-	[watch]="Наблюдение и оповещения"
-	[tests]="Тесты"
+	[capture]="Capture and mode"
+	[components]="Components and sources"
+	[eve]="EVE and storage"
+	[rules]="Rules"
+	[access]="Access"
+	[metrics]="Metrics"
+	[watch]="Watch and alerts"
+	[tests]="Tests"
 )
 
 MENU_SHOW_ADVANCED=0
@@ -50,7 +50,7 @@ menu_close_input() {
 # menu_on_interrupt - Ctrl+C: change nothing, leave no temp files.
 menu_on_interrupt() {
 	echo >&2
-	echo "прервано, ничего не изменено" >&2
+	echo "interrupted, nothing changed" >&2
 	menu_close_input
 	exit 130
 }
@@ -78,7 +78,7 @@ menu_read() {
 # spinning forever on "" being treated as an unknown choice.
 menu_die_on_eof() {
 	if [[ "$MENU_EOF" == "1" ]]; then
-		echo "конец ввода, выхожу без применения" >&2
+		echo "end of input, leaving without applying" >&2
 		menu_close_input
 		exit 2
 	fi
@@ -137,7 +137,7 @@ panel_password_apply() {
 	fi
 
 	command -v argon2 >/dev/null 2>&1 || pkg_install argon2
-	panel_auth_write "$plaintext" || die 1 "не удалось записать хэш пароля панели (argon2)"
+	panel_auth_write "$plaintext" || die 1 "could not write the panel password hash (argon2)"
 	MENU_PANEL_PASSWORD=""
 }
 
@@ -184,17 +184,17 @@ menu_group_summary() {
 	# One short line per group for the main screen's right column.
 	case "$1" in
 	capture) echo "${CONF[SURICATA_MODE]^^}, ${CONF[IFACES]:-?}" ;;
-	components) echo "Suricata: ${CONF[SURICATA_SOURCE]}, nDPI: $([[ ${CONF[NDPI_ENABLE]} == yes ]] && echo да || echo нет)" ;;
+	components) echo "Suricata: ${CONF[SURICATA_SOURCE]}, nDPI: $([[ ${CONF[NDPI_ENABLE]} == yes ]] && echo yes || echo no)" ;;
 	eve)
 		local n
 		n=$(tr ',' '\n' <<<"${CONF[EVE_TYPES]}" | grep -c .)
-		echo "$n типов, ротация ${CONF[EVE_ROTATE]}"
+		echo "$n types, rotation ${CONF[EVE_ROTATE]}"
 		;;
 	rules) echo "${CONF[RULES_SOURCES]}, ${CONF[RULES_UPDATE_CALENDAR]}" ;;
 	access) echo "${CONF[ACCESS_MODE]}" ;;
-	metrics) echo "экспорт: $([[ ${CONF[METRICS_EXPORT]} == yes ]] && echo да || echo нет), бэкенд: ${CONF[METRICS_BACKEND]}" ;;
+	metrics) echo "export: $([[ ${CONF[METRICS_EXPORT]} == yes ]] && echo yes || echo no), backend: ${CONF[METRICS_BACKEND]}" ;;
 	watch) echo "${CONF[ALERT_CHANNELS]}" ;;
-	tests) echo "после установки: $([[ ${CONF[TEST_ON_INSTALL]} == yes ]] && echo да || echo нет)" ;;
+	tests) echo "after install: $([[ ${CONF[TEST_ON_INSTALL]} == yes ]] && echo yes || echo no)" ;;
 	esac
 }
 
@@ -207,19 +207,19 @@ menu_edit_key() {
 	while true; do
 		local current="${CONF[$key]:-}"
 		local opts="${SCHEMA_OPTIONS[$key]}"
-		echo "$key (сейчас: ${current:-<пусто>}, умолчание: ${SCHEMA_DEFAULT[$key]:-<пусто>})" >&2
-		[[ -n "$opts" ]] && echo "  варианты: $opts" >&2
+		echo "$key (now: ${current:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		[[ -n "$opts" ]] && echo "  options: $opts" >&2
 		local answer
 		if schema_is_secret "$key"; then
-			menu_read_secret answer "Новое значение (Enter - оставить, - сброс, ? подсказка): "
+			menu_read_secret answer "New value (Enter keeps, - resets, ? help): "
 		else
-			menu_read answer "Новое значение (Enter - оставить, - сброс, ? подсказка): "
+			menu_read answer "New value (Enter keeps, - resets, ? help): "
 		fi
 		menu_die_on_eof
 		case "$answer" in
 		"") return 0 ;;
 		"?")
-			echo "  ${key}: группа ${SCHEMA_GROUP[$key]}, тип ${SCHEMA_TYPE[$key]}" >&2
+			echo "  ${key}: group ${SCHEMA_GROUP[$key]}, type ${SCHEMA_TYPE[$key]}" >&2
 			continue
 			;;
 		"-")
@@ -269,21 +269,21 @@ menu_section_screen() {
 			mark=$(menu_mark_for_key "$key")
 			local shown
 			if schema_is_secret "$key"; then
-				shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo задан || echo "не задан")
+				shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
 			else
 				shown="${CONF[$key]:-}"
 			fi
 			printf '  %2d) %-28s = %s %s\n' "$i" "$key" "$shown" "$mark" >&2
 			i=$((i + 1))
 		done
-		echo "  a) $([[ $MENU_SHOW_ADVANCED == 1 ]] && echo "скрыть" || echo "показать") advanced   0) назад   ?) справка   q) выйти" >&2
+		echo "  a) $([[ $MENU_SHOW_ADVANCED == 1 ]] && echo "hide" || echo "show") advanced   0) back   ?) help   q) quit" >&2
 		local problems
 		problems=$(menu_problems_count)
 		if [[ "$problems" -gt 0 ]]; then
-			menu_red "Проблем: $problems" >&2
+			menu_red "Problems: $problems" >&2
 			echo >&2
 		else
-			echo "Проблем: $problems" >&2
+			echo "Problems: $problems" >&2
 		fi
 		local choice
 		menu_read choice "> "
@@ -296,7 +296,7 @@ menu_section_screen() {
 			continue
 			;;
 		'?')
-			echo "  Номер - править ключ; Enter/0 - назад; a - показать/скрыть advanced." >&2
+			echo "  Number - edit a key; Enter/0 - back; a - show/hide advanced." >&2
 			continue
 			;;
 		*)
@@ -304,7 +304,7 @@ menu_section_screen() {
 			if [[ "$choice" =~ ^[0-9]+$ ]] && ((10#$choice >= 1 && 10#$choice <= ${#keys[@]})); then
 				menu_edit_key "${keys[$((10#$choice - 1))]}"
 			else
-				echo "  непонятный пункт: $choice" >&2
+				echo "  unclear choice: $choice" >&2
 			fi
 			;;
 		esac
@@ -314,22 +314,22 @@ menu_section_screen() {
 menu_quit_confirm() {
 	[[ "$MENU_DIRTY" != "1" ]] && return 0
 	local answer
-	menu_read answer "Есть неприменённые правки. Выйти без применения? [y/N] "
-	[[ "$answer" =~ ^[yYдД] ]]
+	menu_read answer "There are unapplied edits. Leave without applying? [y/N] "
+	[[ "$answer" =~ ^[yY] ]]
 }
 
 menu_panel_password_screen() {
 	while true; do
 		local p1 p2
-		menu_read_secret p1 "Пароль панели: "
+		menu_read_secret p1 "Panel password: "
 		menu_die_on_eof
 		if [[ -z "$p1" ]]; then
-			echo "  пустой пароль не принимается" >&2
+			echo "  an empty password is not accepted" >&2
 			continue
 		fi
-		menu_read_secret p2 "Повторите пароль: "
+		menu_read_secret p2 "Repeat the password: "
 		if [[ "$p1" != "$p2" ]]; then
-			echo "  пароли не совпадают" >&2
+			echo "  the passwords do not match" >&2
 			continue
 		fi
 		MENU_PANEL_PASSWORD="$p1"
@@ -339,12 +339,12 @@ menu_panel_password_screen() {
 	done
 }
 
-# menu_quick_install - 5.1 "Быстрая установка": interfaces (ip -o link,
-# no lo, default-route one marked), Suricata source, access mode, panel
-# password; everything else keeps its default.
+# menu_quick_install - 5.1 "Quick install": interfaces (ip -o link,
+# no lo, default-route one marked), Suricata source, access mode, which
+# panel (full or lite), panel password; everything else keeps its default.
 menu_quick_install() {
 	echo >&2
-	menu_bold "Быстрая установка" >&2
+	menu_bold "Quick install" >&2
 	echo >&2
 	local default_iface
 	default_iface=$(ip -4 route show default 2>/dev/null | awk '/default/{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
@@ -360,12 +360,12 @@ menu_quick_install() {
 	local i=1 name
 	for name in "${ifaces[@]}"; do
 		local tag=""
-		[[ "$name" == "$default_iface" ]] && tag=" (маршрут по умолчанию)"
+		[[ "$name" == "$default_iface" ]] && tag=" (default route)"
 		echo "  $i) $name$tag" >&2
 		i=$((i + 1))
 	done
 	local sel
-	menu_read sel "Интерфейсы (номера через запятую): "
+	menu_read sel "Interfaces (numbers, comma separated): "
 	local -a chosen=()
 	local n
 	IFS=',' read -ra sel_nums <<<"$sel"
@@ -384,7 +384,7 @@ menu_quick_install() {
 	fi
 
 	local src
-	menu_read src "Способ Suricata [source/oisf/distro, Enter=${CONF[SURICATA_SOURCE]}]: "
+	menu_read src "Suricata source [source/oisf/distro, Enter=${CONF[SURICATA_SOURCE]}]: "
 	if [[ -n "$src" ]]; then
 		local err
 		if err=$(schema_validate_one SURICATA_SOURCE "$src"); then
@@ -396,7 +396,7 @@ menu_quick_install() {
 	fi
 
 	local mode
-	menu_read mode "Режим доступа [localhost/lan/nginx, Enter=${CONF[ACCESS_MODE]}]: "
+	menu_read mode "Access mode [localhost/lan/nginx, Enter=${CONF[ACCESS_MODE]}]: "
 	if [[ -n "$mode" ]]; then
 		local err2
 		if err2=$(schema_validate_one ACCESS_MODE "$mode"); then
@@ -404,6 +404,19 @@ menu_quick_install() {
 			MENU_DIRTY=1
 		else
 			echo "  $err2" >&2
+		fi
+	fi
+
+	echo "  Panel: full (rich design, effects) or lite (same features, plain light page)" >&2
+	local edition
+	menu_read edition "Panel [full/lite, Enter=${CONF[PANEL_EDITION]}]: "
+	if [[ -n "$edition" ]]; then
+		local err3
+		if err3=$(schema_validate_one PANEL_EDITION "$edition"); then
+			config_set_kv PANEL_EDITION "$edition"
+			MENU_DIRTY=1
+		else
+			echo "  $err3" >&2
 		fi
 	fi
 
@@ -416,73 +429,73 @@ menu_check_system_screen() {
 	reasons=$(step_preflight_reasons)
 	echo >&2
 	if [[ -z "$reasons" ]]; then
-		echo "preflight: без замечаний" >&2
+		echo "preflight: no remarks" >&2
 	else
 		echo "preflight:" >&2
 		echo "  ${reasons//$'\n'/$'\n  '}" >&2
 	fi
 	local _enter
-	menu_read _enter "Enter для продолжения"
+	menu_read _enter "Enter to continue"
 }
 
 menu_plan_screen() {
 	echo >&2
 	run_plan >&2
 	local _enter
-	menu_read _enter "Enter для продолжения"
+	menu_read _enter "Enter to continue"
 }
 
 menu_save_to_file_screen() {
 	local path
-	menu_read path "Путь к файлу: "
+	menu_read path "File path: "
 	[[ -z "$path" ]] && return 0
 	config_write_conf "$path"
-	echo "  сохранено в $path" >&2
+	echo "  saved to $path" >&2
 }
 
 menu_load_from_file_screen() {
 	local path
-	menu_read path "Путь к файлу: "
+	menu_read path "File path: "
 	[[ -z "$path" || ! -f "$path" ]] && {
-		echo "  файл не найден" >&2
+		echo "  file not found" >&2
 		return 0
 	}
 	config_load_kv_file "$path"
 	local errs
 	errs=$(config_validate)
 	if [[ -n "$errs" ]]; then
-		echo "  в загруженном файле есть ошибки:" >&2
+		echo "  the loaded file has errors:" >&2
 		echo "  $errs" >&2
 	fi
 	MENU_DIRTY=1
 	menu_draft_save
 }
 
-# menu_main_screen -> 0 (user chose "Установить") or exits the process.
+# menu_main_screen -> 0 (user chose "Install") or exits the process.
 menu_main_screen() {
 	while true; do
 		echo >&2
-		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}") | $OS_ID ${OS_VERSION_ID:-}, $(uname -m) | systemd: $(command -v systemctl >/dev/null && echo да || echo нет)" >&2
-		echo "Установка. Конфиг: $(path_conf) (не создан)" >&2
+		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}") | $OS_ID ${OS_VERSION_ID:-}, $(uname -m) | systemd: $(command -v systemctl >/dev/null && echo yes || echo no)" >&2
+		echo "Install. Config: $(path_conf) (not created)" >&2
 		echo >&2
-		echo "  1) Быстрая установка" >&2
+		echo "  1) Quick install" >&2
 		local i=2 g
 		for g in "${MENU_GROUPS[@]}"; do
 			printf '  %2d) %-30s %s\n' "$i" "${MENU_GROUP_TITLE[$g]}" "$(menu_group_summary "$g")" >&2
 			i=$((i + 1))
 		done
-		printf '  %2d) %-30s %s\n' "$i" "Пароль панели" "$([[ $MENU_PANEL_PASSWORD_SET == 1 ]] && echo "задан" || echo "не задан")" >&2
+		printf '  %2d) %-30s %s\n' "$i" "Panel password" "$([[ $MENU_PANEL_PASSWORD_SET == 1 ]] && echo "set" || echo "not set")" >&2
 		echo >&2
-		echo "  c) Проверить систему   p) План   s) Сохранить в файл   l) Загрузить из файла" >&2
-		echo "  i) Установить          q) Выйти" >&2
+		echo "  c) Check the system   p) Plan   s) Save to file   l) Load from file" >&2
+		echo "  i) Install             q) Quit" >&2
 		local problems
 		problems=$(menu_problems_count)
 		echo >&2
 		if [[ "$problems" -gt 0 ]]; then
-			menu_red "Проблемы ($problems): $(menu_problems | head -1)" >&2
+			menu_red "Problems ($problems): $(menu_problems | head -1)" >&2
 			echo >&2
 		else
-			echo "Проблемы ($problems)" >&2
+			echo "Problems ($problems)" >&2
 		fi
 		local choice
 		menu_read choice "> "
@@ -499,11 +512,11 @@ menu_main_screen() {
 		} ;;
 		i)
 			if [[ "$problems" != "0" ]]; then
-				echo "  нельзя установить, пока есть проблемы" >&2
+				echo "  cannot install while there are problems" >&2
 				continue
 			fi
 			if [[ "$MENU_PANEL_PASSWORD_SET" != "1" ]]; then
-				echo "  без пароля панели установка недоступна" >&2
+				echo "  installation is unavailable without a panel password" >&2
 				continue
 			fi
 			# A busy port is a warning with a choice here, not a stop later.
@@ -520,7 +533,7 @@ menu_main_screen() {
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 2))" ]]; then
 				menu_panel_password_screen
 			else
-				echo "  непонятный пункт: $choice" >&2
+				echo "  unclear choice: $choice" >&2
 			fi
 			;;
 		esac
@@ -530,9 +543,9 @@ menu_main_screen() {
 menu_found_install_screen() {
 	while true; do
 		echo >&2
-		menu_bold "dpistack v${DPISTACK_VERSION} | Найдена установка" >&2
+		menu_bold "dpistack v${DPISTACK_VERSION} | Installation found" >&2
 		echo >&2
-		echo "  1) Настроить   2) Применить текущий конфиг заново   3) Меню управления   4) Выйти" >&2
+		echo "  1) Configure   2) Apply the current config again   3) Control menu   4) Quit" >&2
 		local choice
 		menu_read choice "> "
 		menu_die_on_eof
@@ -544,13 +557,13 @@ menu_found_install_screen() {
 			menu_close_input
 			exit 0
 			;;
-		*) echo "  непонятный пункт: $choice" >&2 ;;
+		*) echo "  unclear choice: $choice" >&2 ;;
 		esac
 	done
 }
 
 # menu_run_install - entry point for `install.sh install` without -y.
-# Returns 0 once the user chose "Установить"; the caller continues
+# Returns 0 once the user chose "Install"; the caller continues
 # into the normal validate/summary/preflight/apply pipeline (5.1 item
 # 1 onward), the same code -y runs directly.
 menu_run_install() {
@@ -568,11 +581,11 @@ menu_run_install() {
 			menu_run_manage
 			exit 0
 		fi
-		# rc=10 (настроить) falls through to the reconfigure menu below.
+		# rc=10 (configure) falls through to the reconfigure menu below.
 	elif [[ -f "$(path_conf_draft)" ]]; then
 		local answer
-		menu_read answer "Продолжить черновик? [Y/n] "
-		if [[ "$answer" =~ ^[nNнН] ]]; then
+		menu_read answer "Continue the draft? [Y/n] "
+		if [[ "$answer" =~ ^[nN] ]]; then
 			menu_draft_delete
 			config_reset
 			config_load_defaults
@@ -605,17 +618,17 @@ MENU_ALREADY_CONFIRMED=0
 menu_reconfigure_confirm_and_validate() {
 	config_diff_and_steps "$(path_conf)" >/dev/null
 	if [[ "$CONFIG_CHANGE_WEIGHT" == "none" ]]; then
-		echo "  изменений нет" >&2
+		echo "  no changes" >&2
 		return 1
 	fi
 
 	if [[ "$CONFIG_CHANGE_WEIGHT" == "heavy" ]]; then
-		echo "  Тяжёлые изменения затронут шаги: ${CONFIG_AFFECTED_STEPS[*]}" >&2
+		echo "  Heavy changes will affect the steps: ${CONFIG_AFFECTED_STEPS[*]}" >&2
 		local answer
-		menu_read answer "  Продолжить? [y/N] "
+		menu_read answer "  Continue? [y/N] "
 		menu_die_on_eof
-		if [[ ! "$answer" =~ ^[yYдД] ]]; then
-			echo "  отменено" >&2
+		if [[ ! "$answer" =~ ^[yY] ]]; then
+			echo "  cancelled" >&2
 			return 1
 		fi
 	fi
@@ -624,7 +637,7 @@ menu_reconfigure_confirm_and_validate() {
 	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
 		if [[ "$step" == "suricata" ]]; then
 			if ! suricata_validate_render "$(suricata_render_yaml)"; then
-				echo "  suricata -T упал на новом suricata.yaml, правки остаются в меню (см. вывод выше)" >&2
+				echo "  suricata -T failed on the new suricata.yaml, the edits stay in the menu (see the output above)" >&2
 				return 1
 			fi
 		fi
@@ -639,28 +652,28 @@ menu_diff_screen() {
 	echo >&2
 	config_diff_and_steps "$(path_conf)" >&2
 	local _enter
-	menu_read _enter "Enter для продолжения"
+	menu_read _enter "Enter to continue"
 }
 
-# menu_reconfigure_screen - 5.3's section screen. `0) Назад` only makes
+# menu_reconfigure_screen - 5.3's section screen. `0) Back` only makes
 # sense when opened from the control menu (not built until slice 15),
 # so a direct `dpistack reconfigure` behaves like `q` there, per spec.
 menu_reconfigure_screen() {
 	while true; do
 		echo >&2
 		menu_bold "dpistack v${DPISTACK_VERSION}" >&2
-		echo " | Настройка существующей установки" >&2
-		echo "Конфиг: $(path_conf)" >&2
+		echo " | Configuring an existing installation" >&2
+		echo "Config: $(path_conf)" >&2
 		echo >&2
 		local i=1 g
 		for g in "${MENU_GROUPS[@]}"; do
 			printf '  %2d) %-30s %s\n' "$i" "${MENU_GROUP_TITLE[$g]}" "$(menu_group_summary "$g")" >&2
 			i=$((i + 1))
 		done
-		printf '  %2d) %-30s %s\n' "$i" "Пароль панели" "сменить" >&2
+		printf '  %2d) %-30s %s\n' "$i" "Panel password" "change" >&2
 		echo >&2
-		echo "  d) Изменения (diff)   a) Применить   r) Отменить правки" >&2
-		echo "  s) Сохранить в файл   l) Загрузить из файла   q) Выйти$([[ "$MENU_BACK_ENABLED" == "1" ]] && echo "   b) Назад")" >&2
+		echo "  d) Changes (diff)   a) Apply   r) Discard edits" >&2
+		echo "  s) Save to file   l) Load from file   q) Quit$([[ "$MENU_BACK_ENABLED" == "1" ]] && echo "   b) Back")" >&2
 		local changed=0 key
 		for key in "${!CONF[@]}"; do
 			[[ "${CONF[$key]}" != "${MENU_OLD_CONF[$key]:-}" ]] && changed=$((changed + 1))
@@ -668,9 +681,9 @@ menu_reconfigure_screen() {
 		local rc_problems
 		rc_problems=$(menu_problems_count)
 		if [[ "$rc_problems" -gt 0 ]]; then
-			echo "Правки: $changed ключ(ей). $(menu_red "Проблемы: $rc_problems")" >&2
+			echo "Edits: $changed key(s). $(menu_red "Problems: $rc_problems")" >&2
 		else
-			echo "Правки: $changed ключ(ей). Проблемы: $rc_problems" >&2
+			echo "Edits: $changed key(s). Problems: $rc_problems" >&2
 		fi
 		local choice
 		menu_read choice "> "
@@ -685,8 +698,8 @@ menu_reconfigure_screen() {
 			;;
 		r)
 			local answer
-			menu_read answer "Сбросить все неприменённые правки? [y/N] "
-			if [[ "$answer" =~ ^[yYдД] ]]; then
+			menu_read answer "Discard all unapplied edits? [y/N] "
+			if [[ "$answer" =~ ^[yY] ]]; then
 				# shellcheck disable=SC2004 # CONF is associative (config.sh); $key is required, not arithmetic noise
 				for key in "${!MENU_OLD_CONF[@]}"; do CONF[$key]="${MENU_OLD_CONF[$key]}"; done
 				MENU_DIRTY=0
@@ -699,7 +712,7 @@ menu_reconfigure_screen() {
 			if [[ "$MENU_BACK_ENABLED" == "1" ]]; then
 				return 20
 			fi
-			echo "  непонятный пункт: $choice" >&2
+			echo "  unclear choice: $choice" >&2
 			;;
 		q) menu_quit_confirm && {
 			menu_close_input
@@ -713,7 +726,7 @@ menu_reconfigure_screen() {
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 1))" ]]; then
 				menu_panel_password_screen
 			else
-				echo "  непонятный пункт: $choice" >&2
+				echo "  unclear choice: $choice" >&2
 			fi
 			;;
 		esac
@@ -721,7 +734,7 @@ menu_reconfigure_screen() {
 }
 
 # menu_run_reconfigure - entry point for `install.sh reconfigure`
-# without -y. Returns 0 once the user chose "Применить".
+# without -y. Returns 0 once the user chose "Apply".
 menu_run_reconfigure() {
 	menu_open_input
 	for key in "${!CONF[@]}"; do MENU_OLD_CONF[$key]="${CONF[$key]}"; done
@@ -764,26 +777,26 @@ manage_ctl() {
 menu_manage_ctl() {
 	local ctl rc
 	if ! ctl=$(manage_ctl); then
-		echo "  dpistack не найден, проверьте установку (шаг selfinstall)" >&2
+		echo "  dpistack not found, check the installation (the selfinstall step)" >&2
 		return 1
 	fi
 	"$ctl" "$@"
 	rc=$?
-	((rc == 0)) || echo "  dpistack вернул код $rc" >&2
+	((rc == 0)) || echo "  dpistack returned code $rc" >&2
 	return "$rc"
 }
 
 menu_manage_summary() {
-	local ctl out active total health="нет данных"
+	local ctl out active total health="no data"
 	if ctl=$(manage_ctl) && out=$("$ctl" status --json 2>/dev/null) && command -v jq >/dev/null 2>&1; then
 		total=$(jq '[.components[] | select(.state != "absent")] | length' <<<"$out" 2>/dev/null)
 		active=$(jq '[.components[] | select(.state == "active")] | length' <<<"$out" 2>/dev/null)
-		printf 'компоненты: %s из %s активны' "${active:-?}" "${total:-?}"
+		printf 'components: %s of %s active' "${active:-?}" "${total:-?}"
 	else
-		printf 'компоненты: нет данных'
+		printf 'components: no data'
 	fi
 	if [[ -f "$(path_health_json)" ]] && command -v jq >/dev/null 2>&1; then
-		health=$(jq -r '.overall // "нет данных"' "$(path_health_json)" 2>/dev/null)
+		health=$(jq -r '.overall // "no data"' "$(path_health_json)" 2>/dev/null)
 	fi
 	printf '  |  health: %s' "$health"
 }
@@ -794,16 +807,16 @@ menu_manage_logs() {
 		printf '  %d) %s\n' "$i" "$id" >&2
 		i=$((i + 1))
 	done
-	menu_read choice "Компонент (номер, Enter - назад): "
+	menu_read choice "Component (number, Enter - back): "
 	menu_die_on_eof
 	[[ "$choice" =~ ^[0-9]+$ ]] || return 0
 	((10#$choice >= 1 && 10#$choice <= ${#MANAGE_COMPONENTS[@]})) || {
-		echo "  нет такого номера" >&2
+		echo "  no such number" >&2
 		return 0
 	}
 	id="${MANAGE_COMPONENTS[$((10#$choice - 1))]}"
 	menu_manage_ctl logs "$id" -n 200
-	menu_read choice "f - следить за журналом (Ctrl+C - выход), Enter - назад: "
+	menu_read choice "f - follow the log (Ctrl+C - exit), Enter - back: "
 	if [[ "$choice" == "f" ]]; then
 		# A no-op handler, not "ignore": the child keeps the default
 		# Ctrl+C and stops, the menu itself stays.
@@ -816,34 +829,34 @@ menu_manage_logs() {
 menu_manage_tests() {
 	local ctl out rc
 	ctl=$(manage_ctl) || {
-		echo "  dpistack не найден, проверьте установку (шаг selfinstall)" >&2
+		echo "  dpistack not found, check the installation (the selfinstall step)" >&2
 		return 1
 	}
 	out=$("$ctl" test all --json 2>&1)
 	rc=$?
 	if command -v jq >/dev/null 2>&1 && jq -e . >/dev/null 2>&1 <<<"$out"; then
-		jq -r '.[] | "  \(.name): \(.status) (\(.duration_ms) мс) - \(.detail)"' <<<"$out"
+		jq -r '.[] | "  \(.name): \(.status) (\(.duration_ms) ms) - \(.detail)"' <<<"$out"
 	else
 		printf '%s\n' "$out" >&2
 	fi
-	((rc == 0)) || echo "  есть непройденные тесты (код $rc)" >&2
+	((rc == 0)) || echo "  some tests failed (code $rc)" >&2
 }
 
 menu_manage_password() {
 	local p1 p2 ctl
-	menu_read_secret p1 "Новый пароль панели: "
+	menu_read_secret p1 "New panel password: "
 	menu_die_on_eof
 	[[ -n "$p1" ]] || {
-		echo "  пустой пароль не принимается" >&2
+		echo "  an empty password is not accepted" >&2
 		return 0
 	}
-	menu_read_secret p2 "Повторите пароль: "
+	menu_read_secret p2 "Repeat the password: "
 	if [[ "$p1" != "$p2" ]]; then
-		echo "  пароли не совпадают, ничего не изменено" >&2
+		echo "  the passwords do not match, nothing changed" >&2
 		return 0
 	fi
 	ctl=$(manage_ctl) || {
-		echo "  dpistack не найден, проверьте установку (шаг selfinstall)" >&2
+		echo "  dpistack not found, check the installation (the selfinstall step)" >&2
 		return 1
 	}
 	printf '%s\n' "$p1" | "$ctl" panel-passwd
@@ -852,19 +865,19 @@ menu_manage_password() {
 # menu_manage_uninstall - returns 0 only when the stack was removed.
 menu_manage_uninstall() {
 	local word mode
-	menu_read word "Введите слово «удалить» для подтверждения: "
+	menu_read word "Type the word \"remove\" to confirm: "
 	menu_die_on_eof
-	if [[ "$word" != "удалить" ]]; then
-		echo "  отменено" >&2
+	if [[ "$word" != "remove" ]]; then
+		echo "  cancelled" >&2
 		return 1
 	fi
-	echo "  1) обычное удаление   2) удаление с данными (--purge)" >&2
+	echo "  1) normal removal   2) removal with data (--purge)" >&2
 	menu_read mode "> "
 	case "$mode" in
 	1) (cmd_uninstall) ;;
 	2) (PURGE=1 cmd_uninstall) ;;
 	*)
-		echo "  отменено" >&2
+		echo "  cancelled" >&2
 		return 1
 		;;
 	esac
@@ -875,18 +888,18 @@ menu_run_manage() {
 	local choice rc answer
 	while true; do
 		echo >&2
-		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}")  |  Управление установленным стендом" >&2
-		echo "Конфиг: $(path_conf)  |  $(menu_manage_summary)" >&2
+		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}")  |  Managing the installed stand" >&2
+		echo "Config: $(path_conf)  |  $(menu_manage_summary)" >&2
 		echo >&2
-		echo "  1) Настроить                     разделы конфига, diff, применение" >&2
-		echo "  2) Статус компонентов" >&2
-		echo "  3) Логи" >&2
-		echo "  4) Запустить тесты" >&2
-		echo "  5) Обновить пакеты (upgrade)" >&2
-		echo "  6) Удалить (uninstall)" >&2
-		echo "  7) Пароль панели" >&2
+		echo "  1) Configure                     config sections, diff, apply" >&2
+		echo "  2) Component status" >&2
+		echo "  3) Logs" >&2
+		echo "  4) Run tests" >&2
+		echo "  5) Upgrade packages" >&2
+		echo "  6) Uninstall" >&2
+		echo "  7) Panel password" >&2
 		echo >&2
-		echo "  q) Выйти" >&2
+		echo "  q) Quit" >&2
 		menu_read choice "> "
 		menu_die_on_eof
 		case "$choice" in
@@ -896,15 +909,15 @@ menu_run_manage() {
 				cmd_reconfigure
 			)
 			rc=$?
-			((rc == 0)) || echo "  настройка завершилась с кодом $rc" >&2
+			((rc == 0)) || echo "  configuration finished with code $rc" >&2
 			;;
 		2) menu_manage_ctl status ;;
 		3) menu_manage_logs ;;
 		4) menu_manage_tests ;;
 		5)
-			menu_read answer "Обновить пакеты? [y/N] "
-			if [[ "$answer" =~ ^[yYдД] ]]; then
-				(cmd_upgrade) || echo "  upgrade завершился с ошибкой" >&2
+			menu_read answer "Upgrade packages? [y/N] "
+			if [[ "$answer" =~ ^[yY] ]]; then
+				(cmd_upgrade) || echo "  upgrade failed" >&2
 			fi
 			;;
 		6)
@@ -918,7 +931,7 @@ menu_run_manage() {
 			menu_close_input
 			return 0
 			;;
-		*) echo "  непонятный пункт: $choice" >&2 ;;
+		*) echo "  unclear choice: $choice" >&2 ;;
 		esac
 	done
 }

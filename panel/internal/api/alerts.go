@@ -38,14 +38,14 @@ func (s *server) alertsList(w http.ResponseWriter, r *http.Request) {
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 || n > alertsMax {
-			writeError(w, http.StatusBadRequest, "limit: целое число от 1 до "+strconv.Itoa(alertsMax))
+			writeError(w, http.StatusBadRequest, "limit: an integer from 1 to "+strconv.Itoa(alertsMax))
 			return
 		}
 		limit = n
 	}
 	check := r.URL.Query().Get("check")
 	if check != "" && !checkID.MatchString(check) {
-		writeError(w, http.StatusBadRequest, "check: идентификатор проверки, например disk.free")
+		writeError(w, http.StatusBadRequest, "check: a check id, for example disk.free")
 		return
 	}
 

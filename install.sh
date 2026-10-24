@@ -62,28 +62,28 @@ COMMAND=""
 usage() {
 	echo "dpistack v${DPISTACK_VERSION}"
 	cat <<'EOF'
-Использование: install.sh <команда> [опции]
+Usage: install.sh <command> [options]
 
-установка:  install | reconfigure | upgrade | uninstall | diag
-управление: status [--json] | start|stop|restart <id> | reload suricata | logs <id> | test | health |
+setup:      install | reconfigure | upgrade | uninstall | diag
+control:    status [--json] | start|stop|restart <id> | reload suricata | logs <id> | test | health |
             settings | config-read|config-write|config-revert | rules-* | iface | mode | fw |
-            panel-passwd | version   (полный список: dpistack help)
-dpistack без команды открывает меню: установки, если конфига нет, иначе управления.
-Запускается только от root (sudo dpistack ...).
-опции:
-  --config FILE          путь к dpistack.conf (по умолчанию /etc/dpistack/dpistack.conf)
-  --set KEY=VALUE        переопределить ключ, можно повторять
-  --non-interactive, -y  без вопросов; недостающее берётся из умолчаний
-  --advanced             спрашивать все ключи, а не только уровень basic
-  --dry-run              показать план, ничего не менять
-  --only STEP[,STEP]     выполнить только указанные шаги
-  --skip STEP[,STEP]     пропустить шаги
-  --force                перезаписать вручную изменённые файлы (с бэкапом)
-  --purge                для uninstall: удалить также данные и конфиги
-  --no-color             без ANSI-цветов в меню и выводе
+            panel-passwd | version   (full list: dpistack help)
+dpistack without a command opens the menu: install if there is no config, control otherwise.
+Runs as root only (sudo dpistack ...).
+options:
+  --config FILE          path to dpistack.conf (default /etc/dpistack/dpistack.conf)
+  --set KEY=VALUE        override a key, may be repeated
+  --non-interactive, -y  no questions; missing values take their defaults
+  --advanced             ask every key, not only the basic level
+  --dry-run              show the plan, change nothing
+  --only STEP[,STEP]     run only the given steps
+  --skip STEP[,STEP]     skip steps
+  --force                overwrite hand-edited files (with a backup)
+  --purge                for uninstall: also remove data and configs
+  --no-color             no ANSI colors in the menu and output
 
-diag собирает отчёт для разбора проблем (платформа, версии, репозитории, конфиг без секретов,
-службы, журналы) в stdout и в файл DIAG_OUT (по умолчанию новый временный файл, путь печатается).
+diag collects a report for troubleshooting (platform, versions, repositories, config without secrets,
+services, logs) to stdout and to the DIAG_OUT file (by default a new temporary file, its path is printed).
 EOF
 }
 
@@ -91,7 +91,7 @@ EOF
 # and got none: `shift 2` would not move and the loop would spin forever.
 require_value() {
 	if (($2 < 2)); then
-		echo "у опции $1 нет значения" >&2
+		echo "option $1 needs a value" >&2
 		usage
 		exit 2
 	fi
@@ -156,7 +156,7 @@ parse_args() {
 			exit 0
 			;;
 		*)
-			echo "неизвестная опция: $1" >&2
+			echo "unknown option: $1" >&2
 			usage
 			exit 2
 			;;
@@ -189,7 +189,7 @@ validate_step_names() {
 			[[ "$s" == "$name" ]] && known=1
 		done
 		if [[ "$known" -ne 1 ]]; then
-			die 2 "$label: неизвестный шаг $name"
+			die 2 "$label: unknown step $name"
 		fi
 	done
 }
@@ -221,7 +221,7 @@ maybe_run_install_menu() {
 		return 0
 	fi
 	if ! have_input_source; then
-		die 2 "нет терминала для меню, используйте -y или DPISTACK_INPUT"
+		die 2 "no terminal for the menu, use -y or DPISTACK_INPUT"
 	fi
 	MENU_SHOW_ADVANCED=$([[ "$ADVANCED" == "1" ]] && echo 1 || echo 0)
 	menu_run_install
@@ -232,11 +232,11 @@ maybe_run_reconfigure_menu() {
 		return 0
 	fi
 	if ! have_input_source; then
-		die 2 "нет терминала для меню, используйте -y или DPISTACK_INPUT"
+		die 2 "no terminal for the menu, use -y or DPISTACK_INPUT"
 	fi
 	MENU_SHOW_ADVANCED=$([[ "$ADVANCED" == "1" ]] && echo 1 || echo 0)
 	menu_run_reconfigure
-	# "Назад" from the management menu: nothing to apply.
+	# "Back" from the management menu: nothing to apply.
 	[[ $? -eq 20 ]] && exit 0
 }
 
@@ -245,7 +245,7 @@ validate_or_die() {
 	out=$(config_validate)
 	rc=$?
 	if [[ "$rc" -ne 0 ]]; then
-		echo "Конфиг не прошёл проверку:" >&2
+		echo "The config failed validation:" >&2
 		echo "$out" >&2
 		exit 2
 	fi
@@ -259,10 +259,10 @@ run_plan() {
 		i=$((i + 1))
 		step_selected "$name" || continue
 		if "step_${name}_check"; then
-			echo "[$i/$total] $name ... без изменений"
+			echo "[$i/$total] $name ... no changes"
 		else
 			any_pending=1
-			echo "[$i/$total] $name ... нужно применить"
+			echo "[$i/$total] $name ... needs applying"
 			"step_${name}_plan" | sed 's/^/    /'
 		fi
 	done
@@ -278,7 +278,7 @@ autodetect_iface() {
 	local found
 	found=$(net_default_iface)
 	[[ -n "$found" ]] || return 0
-	echo "IFACES: интерфейса enp2s0 нет, взят $found (интерфейс маршрута по умолчанию)" >&2
+	echo "IFACES: interface enp2s0 does not exist, took $found (the default-route interface)" >&2
 	CONF[IFACES]="$found"
 }
 
@@ -288,9 +288,9 @@ autodetect_iface() {
 ensure_preflight_tools() {
 	[[ "$DRY_RUN" == "1" || "${EUID:-$(id -u)}" -ne 0 ]] && return 0
 	command -v ss >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && return 0
-	pkg_update_once || die 1 "обновление индекса пакетов не прошло"
+	pkg_update_once || die 1 "updating the package index failed"
 	case "$OS_FAMILY" in
-	apt) pkg_install iproute2 curl ca-certificates || die 1 "не удалось поставить iproute2 и curl" ;;
+	apt) pkg_install iproute2 curl ca-certificates || die 1 "could not install iproute2 and curl" ;;
 	esac
 }
 
@@ -300,9 +300,9 @@ ensure_preflight_tools() {
 # to dpistack.conf and checked against the preflight again (a build needs
 # more disk than a package).
 prepare_packages() {
-	pkg_update_once || die 1 "обновление индекса пакетов не прошло"
-	pkg_install_base || die 1 "не удалось поставить базовые пакеты"
-	pkg_enable_extra_repos || die 1 "не удалось подключить дополнительные репозитории (EPEL, CRB)"
+	pkg_update_once || die 1 "updating the package index failed"
+	pkg_install_base || die 1 "could not install the base packages"
+	pkg_enable_extra_repos || die 1 "could not enable the extra repositories (EPEL, CRB)"
 	local fallback=0
 	suricata_resolve_source && fallback=1
 	ndpi_resolve_source && fallback=1
@@ -325,16 +325,16 @@ run_apply() {
 			continue
 		fi
 		if ! "step_${name}_apply"; then
-			die 1 "шаг $name упал, продолжить: install.sh install --only $name"
+			die 1 "step $name failed, to continue: install.sh install --only $name"
 		fi
 		if "step_${name}_check"; then
 			state_set_step_done "$name"
-			echo "[$i/$total] $name ... готово"
+			echo "[$i/$total] $name ... done"
 		else
 			# A step can legitimately still report drift after a clean
 			# apply (5.4: a manually edited file is left alone with a
 			# notice, not overwritten) - that isn't a failed apply.
-			echo "[$i/$total] $name ... применено частично, см. заметки выше"
+			echo "[$i/$total] $name ... partly applied, see the notes above"
 		fi
 	done
 }
@@ -352,10 +352,10 @@ cmd_install() {
 	validate_or_die
 	autodetect_iface
 
-	echo "Итоговый конфиг:"
+	echo "Final config:"
 	config_print_summary
 	if [[ "$PANEL_PASSWORD_JUST_GENERATED" == "1" ]]; then
-		echo "Создан пароль панели (сохраните — больше нигде не показывается, на диске остаётся только хэш): $PANEL_PASSWORD_GENERATED_VALUE"
+		echo "Panel password created (save it: it is shown nowhere else, only a hash stays on disk): $PANEL_PASSWORD_GENERATED_VALUE"
 	fi
 
 	if [[ "$DRY_RUN" != "1" ]]; then
@@ -376,7 +376,7 @@ cmd_install() {
 	local pending=$?
 
 	if [[ "$DRY_RUN" == "1" ]]; then
-		echo "dry-run: план показан, конфиг не записан"
+		echo "dry-run: the plan is shown, the config is not written"
 		return 0
 	fi
 
@@ -386,7 +386,7 @@ cmd_install() {
 	fi
 	verify_final_report
 	panel_report_metrics
-	echo "установка завершена"
+	echo "installation finished"
 	return 0
 }
 
@@ -397,7 +397,7 @@ cmd_reconfigure() {
 	os_detect
 
 	if [[ ! -f "$(path_conf)" ]]; then
-		die 2 "конфиг не найден, сначала выполните: install.sh install"
+		die 2 "config not found, run first: install.sh install"
 	fi
 
 	layer_config_common
@@ -408,7 +408,7 @@ cmd_reconfigure() {
 	config_diff_and_steps "$(path_conf)"
 
 	if [[ "$CONFIG_CHANGE_WEIGHT" == "none" ]]; then
-		echo "изменений нет"
+		echo "no changes"
 		return 0
 	fi
 
@@ -425,10 +425,10 @@ cmd_reconfigure() {
 		if [[ "$CONFIG_CHANGE_WEIGHT" == "heavy" ]]; then
 			if [[ "$NON_INTERACTIVE" == "1" ]]; then
 				if [[ "$FORCE" != "1" ]]; then
-					die 3 "тяжёлые изменения в неинтерактивном режиме требуют --force"
+					die 3 "heavy changes in non-interactive mode need --force"
 				fi
 			else
-				die 3 "тяжёлые изменения требуют подтверждения, нет терминала для вопроса"
+				die 3 "heavy changes need confirmation, there is no terminal to ask"
 			fi
 		fi
 
@@ -440,7 +440,7 @@ cmd_reconfigure() {
 		for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
 			if [[ "$step" == "suricata" ]]; then
 				if ! suricata_validate_render "$(suricata_render_yaml)"; then
-					die 1 "suricata -T упал на новом suricata.yaml, изменения не применены (см. вывод выше)"
+					die 1 "suricata -T failed on the new suricata.yaml, changes not applied (see the output above)"
 				fi
 			fi
 		done
@@ -453,18 +453,18 @@ cmd_reconfigure() {
 
 	# A changed key can make a step install a package (nginx, a new version).
 	if [[ "${#CONFIG_AFFECTED_STEPS[@]}" -gt 0 ]]; then
-		pkg_update_once || die 1 "обновление индекса пакетов не прошло"
+		pkg_update_once || die 1 "updating the package index failed"
 	fi
 	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
 		step_selected "$step" || continue
 		if ! "step_${step}_apply"; then
-			die 1 "шаг $step упал при reconfigure"
+			die 1 "step $step failed during reconfigure"
 		fi
 	done
 	selinux_relabel_installed
 
 	panel_report_metrics
-	echo "конфиг применён"
+	echo "config applied"
 	return 0
 }
 
@@ -472,7 +472,7 @@ cmd_upgrade() {
 	lock_acquire
 	os_detect
 	if [[ ! -f "$(path_conf)" ]]; then
-		die 2 "конфиг не найден, сначала выполните: install.sh install"
+		die 2 "config not found, run first: install.sh install"
 	fi
 	layer_config_common
 
@@ -485,23 +485,23 @@ cmd_upgrade() {
 	command -v evebox >/dev/null 2>&1 && packages+=("$EVEBOX_PACKAGE")
 
 	if [[ "${#packages[@]}" -eq 0 ]]; then
-		echo "нечего обновлять"
+		echo "nothing to upgrade"
 		return 0
 	fi
 
 	if [[ "${CONF[PIN_VERSIONS]:-no}" == "yes" ]]; then
-		echo "upgrade: PIN_VERSIONS=yes - менеджер пакетов пропустит закреплённые пакеты (apt-mark hold, dnf versionlock): ${packages[*]}"
+		echo "upgrade: PIN_VERSIONS=yes - the package manager will skip pinned packages (apt-mark hold, dnf versionlock): ${packages[*]}"
 	fi
 	# Without a fresh index an upgrade never sees a newer version.
-	pkg_update_once || die 1 "обновление индекса пакетов не прошло"
-	pkg_upgrade "${packages[@]}" || die 1 "обновление пакетов не прошло"
+	pkg_update_once || die 1 "updating the package index failed"
+	pkg_upgrade "${packages[@]}" || die 1 "upgrading packages failed"
 	return 0
 }
 
 # uninstall removes only what dpistack itself created (its own units,
 # its own rendered nginx snippet, its own conf/state). It never stops,
 # disables, or removes the underlying Suricata/Redis/ntopng/EveBox
-# packages or services - "оставляет данные и конфиги" (5.7) reads most
+# packages or services - "keeps data and configs" (5.7) reads most
 # safely as "leave the working stack alone", not as "tear down a
 # production IDS because its manager was uninstalled". --purge extends
 # this to those components' own rendered configs/data, but still never
@@ -513,7 +513,7 @@ cmd_uninstall() {
 	os_detect
 
 	if [[ ! -f "$(path_conf)" ]]; then
-		echo "нечего удалять"
+		echo "nothing to remove"
 		return 0
 	fi
 
@@ -521,8 +521,8 @@ cmd_uninstall() {
 
 	if [[ "$DRY_RUN" == "1" ]]; then
 		# Everything below removes files with plain rm: a dry run only lists.
-		echo "dry-run: uninstall остановил бы и убрал таймеры и службы dpistack, цепочку DPISTACK, drop-in режима (Suricata, запущенная в NFQ, перезапускается), правила ufw/firewalld, добавленные dpistack, конфиги ($(path_conf), $(path_secrets)), состояние ($(path_state_dir)) и копии программы; ничего не изменено"
-		[[ "$PURGE" == "1" ]] && echo "dry-run: с --purge ещё конфиги и данные компонентов (suricata.yaml, правила, ntopng, EveBox, TLS, данные метрик, пользователи)"
+		echo "dry-run: uninstall would stop and remove the dpistack timers and services, the DPISTACK chain, the mode drop-in (Suricata running in NFQ is restarted), the ufw/firewalld rules dpistack added, the configs ($(path_conf), $(path_secrets)), the state ($(path_state_dir)) and the program copies; nothing changed"
+		[[ "$PURGE" == "1" ]] && echo "dry-run: with --purge also the configs and component data (suricata.yaml, rules, ntopng, EveBox, TLS, metrics data, users)"
 		return 0
 	fi
 
@@ -533,7 +533,7 @@ cmd_uninstall() {
 	# The DPISTACK chain and the boot unit that restores it are dpistack's
 	# own; foreign chains and rules are not touched (lib/ips.sh).
 	if [[ "$DRY_RUN" == "1" ]]; then
-		echo "dry-run: iptables: убрать переходы в DPISTACK и саму цепочку, удалить $(path_fw_unit)"
+		echo "dry-run: iptables: remove the jumps to DPISTACK and the chain itself, delete $(path_fw_unit)"
 	else
 		ips_fw_remove
 	fi
@@ -587,7 +587,7 @@ cmd_uninstall() {
 		if id "$PANEL_USER" >/dev/null 2>&1; then
 			run userdel "$PANEL_USER" || true
 		fi
-		echo "uninstall --purge: конфиги и данные компонентов удалены (пакеты не трогал)"
+		echo "uninstall --purge: configs and component data removed (packages untouched)"
 	fi
 
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
@@ -606,7 +606,7 @@ cmd_uninstall() {
 	rm -f "$(path_dpistack_bin)" "$(path_ctl_legacy_bin)" "$(path_watch_bin)"
 	rm -rf "$(path_installer_copy_dir)"
 
-	echo "готово"
+	echo "done"
 	return 0
 }
 
@@ -616,9 +616,9 @@ cmd_status() {
 	local name
 	for name in "${STEPS_ORDER[@]}"; do
 		if "step_${name}_check"; then
-			echo "$name: в порядке"
+			echo "$name: ok"
 		else
-			echo "$name: расхождение"
+			echo "$name: mismatch"
 		fi
 	done
 }
@@ -641,7 +641,7 @@ diag_tool_versions() {
 			printf '%s: ' "$tool"
 			"$tool" --version 2>&1 | head -n 1
 		else
-			echo "$tool: нет"
+			echo "$tool: missing"
 		fi
 	done
 }
@@ -675,22 +675,22 @@ diag_units() {
 
 diag_report() {
 	echo "dpistack v${DPISTACK_VERSION}, $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-	diag_section "платформа" bash -c "echo \"$OS_ID $OS_VERSION_ID family=$OS_FAMILY уровень=\$1\"; cat \"$(path_os_release)\"; uname -a; nproc; free -m | sed -n 1,2p; df -h / | tail -n 1" _ "$(os_support_level)"
-	diag_section "версии" diag_tool_versions
+	diag_section "platform" bash -c "echo \"$OS_ID $OS_VERSION_ID family=$OS_FAMILY level=\$1\"; cat \"$(path_os_release)\"; uname -a; nproc; free -m | sed -n 1,2p; df -h / | tail -n 1" _ "$(os_support_level)"
+	diag_section "versions" diag_tool_versions
 	if command -v suricata >/dev/null 2>&1; then
 		diag_section "suricata --build-info" bash -c 'suricata --build-info 2>&1 | grep -E "^This is|Rust|nDPI|AF_PACKET|Features"'
 	fi
-	diag_section "пакеты" diag_packages
-	diag_section "репозитории" diag_repos
+	diag_section "packages" diag_packages
+	diag_section "repositories" diag_repos
 	diag_section "dpistack.conf" cat "$(path_conf)"
-	diag_section "состояние" bash -c "grep -vE '^(file_hash|applied)\\.' \"$(path_state_file)\" 2>/dev/null"
-	diag_section "службы" diag_units
-	diag_section "сеть" bash -c "ip -br addr 2>/dev/null; ss -ltn 2>/dev/null | head -n 25"
-	diag_section "SELinux и фаервол" bash -c "getenforce 2>&1; (ufw status 2>/dev/null || firewall-cmd --state 2>&1) | head -n 8"
+	diag_section "state" bash -c "grep -vE '^(file_hash|applied)\\.' \"$(path_state_file)\" 2>/dev/null"
+	diag_section "services" diag_units
+	diag_section "network" bash -c "ip -br addr 2>/dev/null; ss -ltn 2>/dev/null | head -n 25"
+	diag_section "SELinux and firewall" bash -c "getenforce 2>&1; (ufw status 2>/dev/null || firewall-cmd --state 2>&1) | head -n 8"
 	if command -v suricata >/dev/null 2>&1 && [[ -f "$(path_suricata_yaml)" ]]; then
 		diag_section "suricata -T" bash -c "suricata -T -c \"$(path_suricata_yaml)\" 2>&1 | tail -n 12"
 	fi
-	diag_section "журнал dpistack (последние 80 строк)" bash -c "tail -n 80 \"$(path_install_log)\" 2>&1"
+	diag_section "dpistack log (last 80 lines)" bash -c "tail -n 80 \"$(path_install_log)\" 2>&1"
 	if command -v journalctl >/dev/null 2>&1; then
 		diag_section "journalctl (suricata, evebox, ntopng)" bash -c 'journalctl -u suricata -u evebox -u ntopng -n 40 --no-pager 2>&1'
 	fi
@@ -700,9 +700,9 @@ cmd_diag() {
 	os_detect >/dev/null 2>&1 || true
 	local out="${DIAG_OUT:-$(mktemp -t dpistack-diag.XXXXXX)}"
 	diag_report 2>&1 |
-		sed -E 's/((TOKEN|PASSWORD|PASS|SECRET)[A-Z_]*=).*/\1<скрыто>/; s#(://)[^/@[:space:]]+:[^/@[:space:]]+@#\1<скрыто>@#g' |
+		sed -E 's/((TOKEN|PASSWORD|PASS|SECRET)[A-Z_]*=).*/\1<hidden>/; s#(://)[^/@[:space:]]+:[^/@[:space:]]+@#\1<hidden>@#g' |
 		tee "$out"
-	echo "отчёт сохранён: $out" >&2
+	echo "report saved: $out" >&2
 }
 
 # require_root - dpistack changes the system and reads secrets: it runs as
@@ -710,7 +710,7 @@ cmd_diag() {
 # the process root as well.
 require_root() {
 	if [[ "$(id -u)" -ne 0 ]]; then
-		echo "dpistack: команда запускается только от root (sudo dpistack ...)" >&2
+		echo "dpistack: the command runs as root only (sudo dpistack ...)" >&2
 		exit 1
 	fi
 }
@@ -798,7 +798,7 @@ main() {
 		# every step (what differs from the configuration).
 		ctl_main status
 		echo
-		echo "Шаги установки:"
+		echo "Install steps:"
 		cmd_status
 		;;
 	diag)
@@ -810,7 +810,7 @@ main() {
 		ctl_usage
 		;;
 	*)
-		echo "неизвестная команда: $COMMAND" >&2
+		echo "unknown command: $COMMAND" >&2
 		usage
 		exit 2
 		;;

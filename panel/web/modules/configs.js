@@ -60,25 +60,25 @@ export function start(api, els, onError) {
   els.check.onclick = () =>
     run(
       () => api(path() + "/check", { method: "POST", headers: { "Content-Type": "text/plain" }, body: els.editor.value }),
-      "Проверка пройдена, файл не изменён.",
+      "Check passed, the file is unchanged.",
     );
 
   els.save.onclick = async () => {
-    if (await run(send("?apply=0"), "Сохранено.")) loaded = els.editor.value;
+    if (await run(send("?apply=0"), "Saved.")) loaded = els.editor.value;
   };
 
   els.apply.onclick = async () => {
-    if (!confirm(`Сохранить ${els.name.value} и применить? Компонент будет перезагружен.`)) return;
-    if (await run(send("?apply=1"), "Сохранено и применено.")) loaded = els.editor.value;
+    if (!confirm(`Save ${els.name.value} and apply? The component will be reloaded.`)) return;
+    if (await run(send("?apply=1"), "Saved and applied.")) loaded = els.editor.value;
   };
 
   els.revert.onclick = async () => {
-    if (!confirm(`Вернуть предыдущую сохранённую версию ${els.name.value}? Несохранённые правки пропадут.`)) return;
-    if (await run(() => api(path() + "/revert", { method: "POST" }), "Возвращена предыдущая версия.")) await load(true);
+    if (!confirm(`Restore the previous saved version of ${els.name.value}? Unsaved edits will be lost.`)) return;
+    if (await run(() => api(path() + "/revert", { method: "POST" }), "Previous version restored.")) await load(true);
   };
 
   els.name.onchange = async () => {
-    if (dirty() && !confirm("Есть несохранённые правки. Открыть другой файл?")) {
+    if (dirty() && !confirm("There are unsaved edits. Open another file?")) {
       els.name.value = els.name.dataset.current;
       return;
     }

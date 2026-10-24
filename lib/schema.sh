@@ -14,7 +14,7 @@
 #   LEVEL   basic | advanced (5.0)
 #   GROUP   capture|components|eve|rules|access|metrics|watch|tests (5.0)
 #   STEPS   space separated step ids this key's change touches (5.3)
-#   WEIGHT  light | heavy (5.3, "лёгкое"/"тяжёлое")
+#   WEIGHT  light | heavy (5.3, "light"/"heavy")
 #   SECRET  yes | no (yes = lives in secrets.conf, never in dpistack.conf)
 
 # shellcheck disable=SC2034 # SCHEMA_DEFAULT/GROUP/STEPS/WEIGHT are read by lib/config.sh
@@ -25,7 +25,7 @@ SCHEMA_KEYS=()
 # Key/value combinations whose implementation does not exist yet
 # (tech.md 4.3: "docker", "ips", METRICS_BACKEND other than "none").
 # Present as valid enum members so the schema does not reject them
-# outright, but installer rejects them with "пока не поддерживается".
+# outright, but installer rejects them with "not supported yet".
 # Shape of every free-text key. These values end up in YAML, nginx and
 # systemd files, in curl and suricata-update arguments, all of them run
 # or read by root, and `dpistack-ctl config-write` lets the panel change
@@ -133,7 +133,7 @@ schema_init() {
 	_schema_add 'NTOPNG_PORT|int|3000|1..65535|advanced|access|ntopng access|light|no'
 	_schema_add 'PANEL_SOURCE|enum|auto|auto,build,prebuilt|advanced|components|panel|heavy|no'
 	_schema_add 'PANEL_RUNTIME|enum|native|native,docker|basic|components|panel|heavy|no'
-	_schema_add 'PANEL_MODE|enum|limited|limited,unlimited|advanced|components|panel|light|no'
+	_schema_add 'PANEL_EDITION|enum|full|full,lite|basic|components|panel|light|no'
 	_schema_add 'NGINX_MANAGE|enum|snippet|yes,snippet|advanced|access|access panel|light|no'
 	_schema_add 'NGINX_TLS|enum|none|none,selfsigned,existing|advanced|access|access panel|light|no'
 	_schema_add 'NGINX_CERT|free|||advanced|access|access panel|light|no'
@@ -191,12 +191,12 @@ schema_validate_one() {
 	local key="$1" value="$2"
 
 	if ! schema_known "$key"; then
-		echo "неизвестный ключ: $key"
+		echo "unknown key: $key"
 		return 1
 	fi
 
 	if schema_not_yet_supported "$key" "$value"; then
-		echo "$key=$value: пока не поддерживается"
+		echo "$key=$value: not supported yet"
 		return 1
 	fi
 
@@ -215,7 +215,7 @@ schema_validate_one() {
 			[[ "$value" == "$opt" ]] && ok=1
 		done
 		if [[ "$ok" -ne 1 ]]; then
-			echo "$key=$value: недопустимое значение, допустимо: $opts"
+			echo "$key=$value: invalid value, allowed: $opts"
 			return 1
 		fi
 		;;
@@ -223,14 +223,14 @@ schema_validate_one() {
 		# No leading zeros: bash reads "08" as a bad octal number, "010" as
 		# eight, and a value kept as "08" breaks every later calculation.
 		if ! [[ "$value" =~ ^(0|-?[1-9][0-9]*)$ ]]; then
-			echo "$key=$value: ожидалось целое число без ведущих нулей"
+			echo "$key=$value: an integer without leading zeros expected"
 			return 1
 		fi
 		local range="${SCHEMA_OPTIONS[$key]}"
 		if [[ -n "$range" ]]; then
 			local min="${range%..*}" max="${range#*..}"
 			if ((value < min || value > max)); then
-				echo "$key=$value: вне диапазона $range"
+				echo "$key=$value: out of range $range"
 				return 1
 			fi
 		fi
@@ -240,15 +240,15 @@ schema_validate_one() {
 		if [[ -n "$pattern" && ! "$value" =~ $pattern ]]; then
 			# A secret is never echoed back, not even in an error.
 			if schema_is_secret "$key"; then
-				echo "$key: недопустимый формат значения"
+				echo "$key: invalid value format"
 			else
-				echo "$key=$value: недопустимые символы или формат"
+				echo "$key=$value: invalid characters or format"
 			fi
 			return 1
 		fi
 		;;
 	*)
-		echo "$key: неизвестный тип схемы $type"
+		echo "$key: unknown schema type $type"
 		return 1
 		;;
 	esac

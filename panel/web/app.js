@@ -26,7 +26,7 @@ async function api(path, options = {}) {
   const res = await fetch(path, { ...options, headers });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(body.error || "Ошибка " + res.status);
+    const err = new Error(body.error || "Error " + res.status);
     err.status = res.status;
     err.body = body; // a refusal carries the checker's words in body.output
     throw err;
@@ -191,6 +191,8 @@ const SCREENS = {
 };
 
 function showView(name) {
+  const btn = document.querySelector(`#nav button[data-view="${name}"]`);
+  if (btn) $("page-title").textContent = btn.textContent.trim();
   show("overview"); // the signed-in page
   stopView?.();
   for (const v of VIEWS) $("view-" + v).hidden = v !== name;

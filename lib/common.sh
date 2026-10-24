@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.22.0"
+DPISTACK_VERSION="0.23.0"
 
 : "${DRY_RUN:=0}"
 
@@ -93,7 +93,7 @@ selinux_restore() {
 	done
 	((${#existing[@]} > 0)) || return 0
 	run restorecon -RF "${existing[@]}" ||
-		echo "selinux: restorecon не прошёл для: ${existing[*]}" >&2
+		echo "selinux: restorecon failed for: ${existing[*]}" >&2
 	return 0
 }
 
@@ -157,7 +157,7 @@ write_rendered_file() {
 		on_disk_hash=$(state_hash_content <"$path")
 		last_hash=$(state_file_hash "$path")
 		if [[ -n "$last_hash" && "$on_disk_hash" != "$last_hash" && "${FORCE:-0}" != "1" ]]; then
-			echo "  $path изменён вручную, оставляю как есть (нужен --force)" >&2
+			echo "  $path was changed by hand, leaving it as it is (--force is needed)" >&2
 			return 0
 		fi
 		if [[ "$on_disk_hash" == "$new_hash" ]]; then

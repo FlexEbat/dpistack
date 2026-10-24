@@ -64,7 +64,7 @@ func TestIfaceAddAndRemoveGoThroughCtl(t *testing.T) {
 	}
 
 	// Adding what is already there is not an error.
-	if code, a := ifaceCall(e, "POST", "/api/iface/add", `{"name":"eth1"}`, cookies, csrf); code != 200 || !strings.Contains(a.Output, "уже в списке") {
+	if code, a := ifaceCall(e, "POST", "/api/iface/add", `{"name":"eth1"}`, cookies, csrf); code != 200 || !strings.Contains(a.Output, "already in the list") {
 		t.Errorf("add twice: %d %+v", code, a)
 	}
 }
@@ -78,21 +78,21 @@ func TestIfaceRefusalsAreSentences(t *testing.T) {
 	cookies, csrf := e.login()
 
 	code, a := ifaceCall(e, "POST", "/api/iface/add", `{"name":"eth9"}`, cookies, csrf)
-	if code != http.StatusBadRequest || !strings.Contains(a.Error, "интерфейса нет в системе") {
+	if code != http.StatusBadRequest || !strings.Contains(a.Error, "the interface is not in the system") {
 		t.Errorf("no such interface: %d %+v", code, a)
 	}
 	code, a = ifaceCall(e, "POST", "/api/iface/remove", `{"name":"enp2s0"}`, cookies, csrf)
-	if code != http.StatusConflict || !strings.Contains(a.Error, "последний интерфейс") {
+	if code != http.StatusConflict || !strings.Contains(a.Error, "the last interface") {
 		t.Errorf("last interface: %d %+v", code, a)
 	}
 	code, a = ifaceCall(e, "POST", "/api/iface/remove", `{"name":"br0"}`, cookies, csrf)
-	if code != http.StatusBadRequest || !strings.Contains(a.Error, "нет в IFACES") {
+	if code != http.StatusBadRequest || !strings.Contains(a.Error, "not in IFACES") {
 		t.Errorf("not in the list: %d %+v", code, a)
 	}
 
 	c.write(t, "FAIL", "")
 	code, a = ifaceCall(e, "POST", "/api/iface/add", `{"name":"eth1"}`, cookies, csrf)
-	if code != http.StatusInternalServerError || !strings.Contains(a.Error, "dpistack.conf возвращён") {
+	if code != http.StatusInternalServerError || !strings.Contains(a.Error, "dpistack.conf restored") {
 		t.Errorf("failed reconfigure: %d %+v", code, a)
 	}
 	if c.ifaces(t) != "enp2s0" {

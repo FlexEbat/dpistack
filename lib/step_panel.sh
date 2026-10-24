@@ -2,7 +2,8 @@
 # "panel" step: the system user `dpistack`, the sudoers rule that lets it
 # run only dpistack (tech.md 4.2, 4.5), the panel binary (PANEL_SOURCE:
 # built from panel/ with Go, or a ready dpistack-panel next to install.sh)
-# and the systemd unit with the resource budget (tech.md 9).
+# and the systemd unit (tech.md 9). PANEL_EDITION picks the panel: full, or
+# lite with the same features and a plain, light page.
 
 PANEL_USER="dpistack"
 PANEL_SERVICE="dpistack-panel.service"
@@ -72,6 +73,11 @@ panel_token_matches() {
 	fi
 }
 
+# panel_is_lite - 0 when PANEL_EDITION=lite.
+panel_is_lite() {
+	[[ "${CONF[PANEL_EDITION]:-full}" == "lite" ]]
+}
+
 # panel_args - the flags of the panel (tech.md 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
@@ -84,13 +90,14 @@ panel_args() {
 		if [[ "$mode" == "lan" && -z "$cidr" ]]; then
 			# The same closed fallback as the access step: nobody but the
 			# host itself gets in until LAN_CIDR is set by hand.
-			echo "panel: LAN_CIDR не определить, панель открыта только для 127.0.0.1 (задайте LAN_CIDR)" >&2
+			echo "panel: LAN_CIDR cannot be determined, the panel is open for 127.0.0.1 only (set LAN_CIDR)" >&2
 			cidr="127.0.0.1/32"
 		fi
 	fi
 	args="-addr ${host}:${port} -access ${mode}"
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
 	args+=" -auth-file $(path_panel_auth) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json)"
+	panel_is_lite && args+=" -lite"
 	# Without the flag the panel shows that viewing events is off.
 	[[ "${CONF[EVE_FILE]:-yes}" == "yes" ]] && args+=" -eve-file $(path_suricata_eve_json)"
 	# The Tests and Alerts screens read these two files whatever /metrics does.
@@ -102,7 +109,6 @@ panel_args() {
 		[[ "${CONF[EVEBOX_DB]:-sqlite}" == "sqlite" ]] && disks+=",$(path_evebox_data_dir)"
 		args+=" -metrics-token-file $(path_metrics_token) -rules-file $(path_suricata_ruleset) -disk-paths ${disks}"
 	fi
-	[[ "${CONF[PANEL_MODE]:-limited}" == "unlimited" ]] && args+=" -max-streams 32"
 	echo "$args"
 }
 
@@ -112,19 +118,7 @@ panel_render_service() {
 	render_template "$SCRIPT_DIR/templates/dpistack-panel.service.tpl" \
 		"USER=$PANEL_USER" \
 		"PANEL_BIN=$(path_panel_bin)" \
-		"RESOURCE_LIMITS=$(panel_resource_limits)" \
 		"ARGS=$args"
-}
-
-# panel_resource_limits - the unit lines of the budget. PANEL_MODE=unlimited
-# leaves the panel without one (no MemoryMax, no CPUQuota) for a host that
-# has the room and a large Suricata to watch.
-panel_resource_limits() {
-	if [[ "${CONF[PANEL_MODE]:-limited}" == "unlimited" ]]; then
-		echo "# PANEL_MODE=unlimited: no MemoryMax and no CPUQuota"
-	else
-		printf 'MemoryMax=64M\nCPUQuota=20%%'
-	fi
 }
 
 panel_unit_matches() {
@@ -163,7 +157,7 @@ panel_bin_install() {
 	if ! (cd "$ORIGIN_DIR/panel" &&
 		run env CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$tmp" ./cmd/panel); then
 		rm -f "$tmp"
-		log "ERROR" "panel: сборка не удалась (нужен Go не старее версии в panel/go.mod; готовый бинарник: PANEL_SOURCE=prebuilt)"
+		log "ERROR" "panel: the build failed (Go not older than the version in panel/go.mod is needed; a ready binary: PANEL_SOURCE=prebuilt)"
 		return 1
 	fi
 	run install -D -m 0755 "$tmp" "$bin" || {
@@ -240,7 +234,7 @@ step_panel_apply() {
 	tfile=$(path_metrics_token)
 	if panel_token_wanted; then
 		if [[ "${DRY_RUN:-0}" == "1" ]]; then
-			echo "+ записать $tfile (0640 root:$PANEL_USER)"
+			echo "+ write $tfile (0640 root:$PANEL_USER)"
 		else
 			printf '%s\n' "${SECRETS[METRICS_TOKEN]}" | atomic_write "$tfile" 0640 || return 1
 			run chown "root:$PANEL_USER" "$tfile" || return 1
@@ -258,7 +252,7 @@ step_panel_apply() {
 		printf '%s\n' "$content" >"$tmp"
 		if ! visudo -cf "$tmp" >&2; then
 			rm -f "$tmp"
-			log "ERROR" "panel: visudo отклонил правило sudoers"
+			log "ERROR" "panel: visudo rejected the sudoers rule"
 			return 1
 		fi
 		rm -f "$tmp"
@@ -298,10 +292,10 @@ step_panel_apply() {
 
 step_panel_plan() {
 	if docker_wanted panel; then
-		echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), $(docker_service_plan panel)"
+		echo "panel: user $PANEL_USER, sudoers $(path_sudoers) (dpistack only), binary $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), $(docker_service_plan panel)"
 		return 0
 	fi
-	echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), юнит $PANEL_SERVICE"
+	echo "panel: user $PANEL_USER, sudoers $(path_sudoers) (dpistack only), binary $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), unit $PANEL_SERVICE"
 }
 
 # panel_report_metrics - the token of /metrics and a scrape_config entry
@@ -312,11 +306,11 @@ panel_report_metrics() {
 	panel_token_wanted || return 0
 	local mode="${CONF[ACCESS_MODE]:-localhost}" port="${CONF[PANEL_PORT]:-9800}" scheme="http" host="127.0.0.1"
 	if [[ "$mode" != "localhost" ]]; then
-		host="<адрес-сервера>"
+		host="<server-address>"
 	fi
 	[[ "$mode" == "nginx" && "${CONF[NGINX_TLS]:-none}" != "none" ]] && scheme="https"
-	echo "Создан METRICS_TOKEN для GET /metrics (сохраните: он больше нигде не показывается): ${SECRETS[METRICS_TOKEN]}"
-	echo "Строка для scrape_configs (Prometheus и VictoriaMetrics):"
+	echo "METRICS_TOKEN created for GET /metrics (save it: it is shown nowhere else): ${SECRETS[METRICS_TOKEN]}"
+	echo "Line for scrape_configs (Prometheus and VictoriaMetrics):"
 	cat <<EOF
   - job_name: dpistack
     metrics_path: /metrics

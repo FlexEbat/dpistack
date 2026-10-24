@@ -1,49 +1,53 @@
 # dpistack
 
-Установщик и панель управления для лаборатории DPI/IDS на одном хосте: **nDPI + Suricata + EveBox + ntopng**. Одна команда `dpistack` ставит стек, настраивает его и обслуживает; веб-панель показывает состояние и меняет любые параметры без командной строки.
+English | [Русский](README.ru.md)
 
-## Возможности
+Installer and control panel for a DPI/IDS lab on a single host: **nDPI + Suricata + EveBox + ntopng**. One command, `dpistack`, installs the stack, configures it and looks after it; the web panel shows the state and changes any setting without the command line.
 
-- **Одна команда `dpistack`.** Установка, обновление, удаление, управление службами, правила, интерфейсы, режим IDS/IPS, проверочные тесты и настройки: всё в одной программе (`dpistack help`). Запускается только от root.
-- **Панель.** Состояние компонентов, **все параметры стека** на экране «Настройки» (с проверкой перед применением), редактор конфигов с откатом, правила, журналы, события, метрики, оповещения. Два режима: `PANEL_MODE=limited` (с бюджетом ресурсов) и `unlimited` (без него). Подробнее: [docs/dashboard.md](docs/dashboard.md).
-- **Любое сочетание развёртывания.** Suricata, EveBox, ntopng, хранилище метрик и сама панель независимо запускаются на хосте или в Docker. Подробнее: [docs/deployment.md](docs/deployment.md).
-- **Любой Linux с systemd.** Ubuntu, Debian, Rocky, Alma, Fedora, RHEL на хосте или в Docker; openSUSE, Arch и любые другие дистрибутивы с компонентами в Docker. Подробнее: [docs/platforms.md](docs/platforms.md).
-- **Занятые порты.** Предупреждение с именем процесса и предложением свободного порта; можно выбрать другой.
-- **Проверка конфигурации.** Отрисованный `suricata.yaml` соответствует серии установленной Suricata и проверяется `suricata -T` до записи.
+## Features
 
-## Документация
+- **One command, `dpistack`.** Install, upgrade, uninstall, service control, rules, interfaces, IDS/IPS mode, check tests and settings, all in one program (`dpistack help`). It runs as root only.
+- **Two panels, your choice.** `PANEL_EDITION=full` is the rich dark console with a quiet particle background; `lite` is the same panel with every feature on a plain, light page for small hosts. The panel shows component state, **every setting of the stack** on the Settings screen (checked before it is applied), a config editor with rollback, rules, logs, events, metrics and alerts. Details: [docs/dashboard.md](docs/dashboard.md).
+- **Any deployment mix.** Suricata, EveBox, ntopng, the metrics storage and the panel itself each run on the host or in Docker, independently. Details: [docs/deployment.md](docs/deployment.md).
+- **Any Linux with systemd.** Ubuntu, Debian, Rocky, Alma, Fedora, RHEL on the host or in Docker; openSUSE, Arch and any other distribution with the components in Docker. Details: [docs/platforms.md](docs/platforms.md).
+- **Busy ports.** A warning with the name of the process and a free port to take; you can pick another one.
+- **Config check.** The rendered `suricata.yaml` matches the series of the installed Suricata and is checked with `suricata -T` before it is written.
 
-| Документ | О чём |
+## Documentation
+
+Every document comes in English and Russian (`*.ru.md`).
+
+| Document | What it covers |
 | --- | --- |
-| [docs/installation.md](docs/installation.md) | установка, обновление, удаление, занятые порты |
-| [docs/configuration.md](docs/configuration.md) | справочник всех параметров `dpistack.conf` |
-| [docs/dashboard.md](docs/dashboard.md) | экраны панели, настройки, безопасность |
-| [docs/deployment.md](docs/deployment.md) | runtime каждого компонента, панель в Docker, режимы панели, доступ |
-| [docs/platforms.md](docs/platforms.md) | поддерживаемые дистрибутивы |
-| [docs/operations.md](docs/operations.md) | команды, настройки, правила, IPS, watchdog, метрики |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | типичные сообщения и что делать |
-| [tech.md](tech.md) | спецификация, контракты, журнал решений |
-| [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) | разработка |
-| [SECURITY.md](SECURITY.md) | сообщения об уязвимостях |
+| [docs/installation.md](docs/installation.md) | install, upgrade, uninstall, busy ports |
+| [docs/configuration.md](docs/configuration.md) | reference of every `dpistack.conf` setting |
+| [docs/dashboard.md](docs/dashboard.md) | panel screens, editions, settings, security |
+| [docs/deployment.md](docs/deployment.md) | the runtime of each component, the panel in Docker, access |
+| [docs/platforms.md](docs/platforms.md) | supported distributions |
+| [docs/operations.md](docs/operations.md) | commands, settings, rules, IPS, watchdog, metrics |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | common messages and what to do |
+| [tech.md](tech.md) | specification and decisions |
+| [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) | development |
+| [SECURITY.md](SECURITY.md) | reporting vulnerabilities |
 
-## Ограничение топологии
+## Topology limit
 
-Хост видит только трафик своего интерфейса. Пассивный захват (`af-packet`) не покажет остальную сеть, пока трафик не приходит на этот хост: нужны зеркальный порт на коммутаторе, шлюз или включение в разрыв (режим IPS). Хост вне разрыва сети защищает и показывает только себя. Установщик напоминает об этом при выборе интерфейсов.
+The host sees only the traffic of its own interface. Passive capture (`af-packet`) will not show the rest of the network unless that traffic reaches this host: you need a mirror port on a switch, a gateway, or an in-line position (IPS mode). A host outside the path of the network protects and shows only itself. The installer reminds you of this when you choose interfaces.
 
-## Модель угроз
+## Threat model
 
-- Редактор конфигов панели равен root-доступу к хосту: правки `suricata.yaml` и запуск компонентов позволяют выполнить чужой код. Взлом панели равен взлому хоста.
-- Поэтому по умолчанию `ACCESS_MODE=localhost`, вход по паролю обязателен и не отключается. Режимы `lan` и `nginx` включаются только после явного подтверждения предупреждения.
-- Сама панель отдаёт HTTP без TLS. В режиме `lan` пароль и токен `/metrics` видны в сети: используйте `nginx` с TLS или SSH-туннель.
-- `eve.json` содержит метаданные трафика (SNI, DNS-имена, адреса), права `0640`, читают Suricata и пользователь `dpistack`.
-- Команды `dpistack` запускаются только от root. Панель работает не от root и привилегированные действия выполняет только через `sudo -n dpistack <команда>`: `dpistack` пускает пользователя панели лишь к командам управления (не к `install`, `upgrade`, `uninstall`) и сверяет каждый аргумент со списками. Правило `sudoers` разрешает пользователю `dpistack` только этот файл.
-- Секреты (`ALERT_TG_TOKEN`, `ALERT_SMTP_URL`, `METRICS_TOKEN`) лежат только в `/etc/dpistack/secrets.conf` (`0600`). Пароль панели хранится как хэш argon2id.
+- The panel's config editor equals root access to the host: edits of `suricata.yaml` and starting components allow running foreign code. A hacked panel is a hacked host.
+- That is why `ACCESS_MODE=localhost` is the default, signing in with a password is required and cannot be turned off. The `lan` and `nginx` modes are enabled only after you explicitly confirm the warning.
+- The panel itself serves HTTP without TLS. In `lan` mode the password and the `/metrics` token are visible on the network: use `nginx` with TLS or an SSH tunnel.
+- `eve.json` holds traffic metadata (SNI, DNS names, addresses), mode `0640`, readable by Suricata and the `dpistack` user.
+- `dpistack` commands run as root only. The panel does not run as root and does privileged things only through `sudo -n dpistack <command>`: `dpistack` lets the panel user reach the control commands only (not `install`, `upgrade`, `uninstall`) and checks every argument against lists. The `sudoers` rule allows the `dpistack` user this one file only.
+- Secrets (`ALERT_TG_TOKEN`, `ALERT_SMTP_URL`, `METRICS_TOKEN`) live only in `/etc/dpistack/secrets.conf` (`0600`). The panel password is stored as an argon2id hash.
 
-Сообщения об уязвимостях: [SECURITY.md](SECURITY.md).
+Reporting vulnerabilities: [SECURITY.md](SECURITY.md).
 
-## Быстрая установка
+## Quick install
 
-Нужен root и чистая машина (или снапшот): установщик ставит пакеты и репозитории.
+You need root and a clean machine (or a snapshot): the installer installs packages and repositories.
 
 ```
 git clone https://github.com/FlexEbat/dpistack.git
@@ -51,29 +55,29 @@ cd dpistack
 sudo ./install.sh install
 ```
 
-На терминале откроется меню; без терминала или с `-y` вопросов нет:
+On a terminal a menu opens (it asks which panel you want, `full` or `lite`); without a terminal, or with `-y`, there are no questions:
 
 ```
-sudo ./install.sh install -y --set IFACES=eth0 --set ACCESS_MODE=localhost
-sudo ./install.sh install --dry-run -y     # только план
+sudo ./install.sh install -y --set IFACES=eth0 --set ACCESS_MODE=localhost --set PANEL_EDITION=lite
+sudo ./install.sh install --dry-run -y     # the plan only
 ```
 
-Итоговый отчёт один раз показывает сгенерированный пароль панели (на диске остаётся только хэш). Панель слушает `http://127.0.0.1:9800`, EveBox `5636`, ntopng `3000`; с другой машины: `ssh -L 9800:127.0.0.1:9800 user@host`. Одним файлом: `dpistack-install.sh`. Подробности: [docs/installation.md](docs/installation.md).
+The final report shows the generated panel password once (only a hash stays on disk). The panel listens on `http://127.0.0.1:9800`, EveBox on `5636`, ntopng on `3000`; from another machine: `ssh -L 9800:127.0.0.1:9800 user@host`. As a single file: `dpistack-install.sh`. Details: [docs/installation.md](docs/installation.md).
 
-## Конфиг
+## Config
 
-Параметры лежат в `/etc/dpistack/dpistack.conf` (формат `KEY=VALUE`), секреты отдельно в `/etc/dpistack/secrets.conf` (`0600`). Пример: [dpistack.conf.example](dpistack.conf.example), справочник: [docs/configuration.md](docs/configuration.md). Менять параметры можно на экране «Настройки», командой `dpistack settings set` или через `dpistack reconfigure`; лёгкое изменение применяется сразу, тяжёлое (установка или пересборка компонента) отдельной задачей.
+Settings live in `/etc/dpistack/dpistack.conf` (`KEY=VALUE` format), secrets apart in `/etc/dpistack/secrets.conf` (`0600`). Example: [dpistack.conf.example](dpistack.conf.example), reference: [docs/configuration.md](docs/configuration.md). You can change settings on the Settings screen, with `dpistack settings set` or through `dpistack reconfigure`; a light change applies at once, a heavy one (an install or a rebuild of a component) runs as a separate job.
 
-## Команды
+## Commands
 
-После установки доступна `dpistack` (копия установщика в `/usr/local/sbin`). Без аргументов она открывает меню управления.
+After installation `dpistack` is available (a copy of the installer in `/usr/local/sbin`). Without arguments it opens the control menu.
 
 ```
-dpistack status [--json]                 # компоненты и шаги установки
-dpistack start|stop|restart <компонент>
-dpistack logs <компонент> [-n N] [--follow]
+dpistack status [--json]                 # components and install steps
+dpistack start|stop|restart <component>
+dpistack logs <component> [-n N] [--follow]
 dpistack settings list|check|set|secret|job
-dpistack reconfigure                     # применить dpistack.conf
+dpistack reconfigure                     # apply dpistack.conf
 dpistack upgrade | uninstall [--purge]
 dpistack rules-update | rules-sources | rules-group | rules-sid | rules-search
 dpistack iface list|add|remove
@@ -82,21 +86,21 @@ dpistack test bittorrent|https|all
 dpistack diag
 ```
 
-Старое имя `dpistack-ctl` осталось символической ссылкой на `dpistack` для служб, созданных прежними версиями. Все команды: [docs/operations.md](docs/operations.md).
+The old name `dpistack-ctl` stays as a symbolic link to `dpistack` for services created by earlier versions. All commands: [docs/operations.md](docs/operations.md).
 
-## Режим IPS
+## IPS mode
 
-По умолчанию Suricata работает как IDS: смотрит трафик и ничего не блокирует. `dpistack mode ips` (или кнопка «Включить IPS» на экране «Компоненты») переводит её в IPS: через NFQUEUE (`IPS_METHOD=nfq`, правила в отдельной цепочке `DPISTACK`, которая восстанавливается при загрузке) или парами интерфейсов (`afpacket`). Правила идут с `--queue-bypass`, поэтому остановка Suricata не отрезает сеть. Переключение нужно подтвердить командой `mode-confirm` (кнопкой «Подтвердить IPS») за 120 секунд (`--confirm-timeout`, от 10 до 3600): иначе режим сам вернётся в IDS и правила уберутся. Чужие цепочки и правила не меняются. Решения о блокировке принимают ваши правила с действием `drop` (`drop.conf`), сами они не создаются. Хост вне разрыва сети защищает только себя.
+By default Suricata works as IDS: it watches traffic and blocks nothing. `dpistack mode ips` (or the "Enable IPS" button on the Components screen) turns it into IPS: through NFQUEUE (`IPS_METHOD=nfq`, rules in a separate `DPISTACK` chain that is restored at boot) or with pairs of interfaces (`afpacket`). The rules use `--queue-bypass`, so stopping Suricata does not cut the network. The switch must be confirmed with `mode-confirm` (the "Confirm IPS" button) within 120 seconds (`--confirm-timeout`, 10 to 3600): otherwise the mode goes back to IDS by itself and the rules are removed. Other people's chains and rules are not touched. The decision to block is made by your rules with the `drop` action (`drop.conf`); none are created for you. A host outside the path of the network protects only itself.
 
-## Метрики
+## Metrics
 
-Панель отдаёт `GET /metrics` в формате Prometheus с токеном в заголовке `Authorization: Bearer` (`METRICS_EXPORT=yes` по умолчанию, токен создаётся при установке). Пример `curl`:
+The panel serves `GET /metrics` in the Prometheus format with a token in the `Authorization: Bearer` header (`METRICS_EXPORT=yes` by default, the token is created at install). Example `curl`:
 
 ```
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9800/metrics
 ```
 
-Запись для `scrape_configs` (Prometheus и VictoriaMetrics; при `ACCESS_MODE=nginx` с TLS схема `https`, а адрес и порт это те, которыми вы открываете панель):
+An entry for `scrape_configs` (Prometheus and VictoriaMetrics; with `ACCESS_MODE=nginx` and TLS the scheme is `https`, and the address and port are the ones you open the panel with):
 
 ```yaml
 scrape_configs:
@@ -110,16 +114,16 @@ scrape_configs:
       - targets: ['127.0.0.1:9800']
 ```
 
-`credentials_file` держит токен вне конфига. Установщик в итоговом отчёте печатает ту же запись с `credentials: <токен>` вместо файла. Для `vmagent` берите тот же блок `scrape_configs` в файле, который указан флагом `-promscrape.config`, и добавьте `-remoteWrite.url` с адресом вашей VictoriaMetrics; одиночная VictoriaMetrics принимает такой файл флагом `-promscrape.config` сама.
+`credentials_file` keeps the token out of the config. In the final report the installer prints the same entry with `credentials: <token>` instead of a file. For `vmagent` take the same `scrape_configs` block in the file named by the `-promscrape.config` flag and add `-remoteWrite.url` with the address of your VictoriaMetrics; a single-node VictoriaMetrics accepts such a file with its own `-promscrape.config` flag.
 
-По умолчанию `METRICS_BACKEND=none`: есть только эндпоинт, сбор настраиваете вы. Можно поручить это установщику: `METRICS_BACKEND=victoriametrics` или `prometheus` (бинарник с релиза проекта с проверкой sha256, либо контейнер при `METRICS_BACKEND_RUNTIME=docker`). Он кладёт `scrape.yaml` с этой целью, читает токен из файла, держит данные `METRICS_RETENTION` (число с суффиксом `h`, `d`, `w` или `y`, по умолчанию `30d`) в `/var/lib/dpistack-metrics` и слушает по правилам `ACCESS_MODE` (при `localhost` только на `127.0.0.1`; порт `METRICS_BACKEND_PORT`, по умолчанию 8428 и 9090). Смена бэкенда или `none` останавливает прежний и оставляет его данные, их удаляет только `uninstall --purge`.
+By default `METRICS_BACKEND=none`: there is only the endpoint and you set up the collecting. You can leave it to the installer: `METRICS_BACKEND=victoriametrics` or `prometheus` (a binary from the project's release with a sha256 check, or a container with `METRICS_BACKEND_RUNTIME=docker`). It puts `scrape.yaml` with this target, reads the token from a file, keeps `METRICS_RETENTION` of data (a number with the suffix `h`, `d`, `w` or `y`, `30d` by default) in `/var/lib/dpistack-metrics` and listens by the rules of `ACCESS_MODE` (with `localhost` on `127.0.0.1` only; port `METRICS_BACKEND_PORT`, 8428 and 9090 by default). Changing the backend or `none` stops the old one and leaves its data; only `uninstall --purge` removes it.
 
-## Разработка
+## Development
 
 ```
 bash scripts/gate.sh
 ```
 
-Гейт запускает `shfmt`, `shellcheck`, проверки безопасности, `bats` и, если есть Go, `gofmt`, `go vet`, `go test`, тесты интерфейса и проверку бюджета ресурсов панели. Ветка `dev` для работы, `main` для проверенного состояния; слияние в `main` идёт через pull request после зелёного гейта. Подробнее: [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), tech.md (разделы 12 и 17).
+The gate runs `shfmt`, `shellcheck`, the security checks, `bats` and, if Go is there, `gofmt`, `go vet`, `go test`, the interface tests and the check of the panel's resource budget. The `dev` branch is for work, `main` for the tested state; merging into `main` goes through a pull request after a green gate. More: [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), tech.md.
 
-Лицензия: [MIT](LICENSE).
+License: [MIT](LICENSE).

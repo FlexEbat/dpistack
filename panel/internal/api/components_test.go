@@ -38,14 +38,14 @@ case "$1" in
 status) printf '%s' '` + statusJSON + `' ;;
 start|stop|restart)
   case "$2" in
-  redis) echo "dpistack: компонент не установлен: redis" >&2; exit 4 ;;
-  suricata|panel|ntopng) echo "готово" ;;
-  *) echo "dpistack: неизвестный компонент: $2" >&2; exit 5 ;;
+  redis) echo "dpistack: component not installed: redis" >&2; exit 4 ;;
+  suricata|panel|ntopng) echo "done" ;;
+  *) echo "dpistack: unknown component: $2" >&2; exit 5 ;;
   esac ;;
-reload) echo "правила перечитаны" ;;
+reload) echo "rules reloaded" ;;
 logs)
   case "$2" in
-  nosuch) echo "dpistack: неизвестный компонент: nosuch" >&2; exit 5 ;;
+  nosuch) echo "dpistack: unknown component: nosuch" >&2; exit 5 ;;
   esac
   case "$*" in
   *--until-stdin-closed*)
@@ -163,8 +163,8 @@ func TestActionOnMissingComponentIs404WithText(t *testing.T) {
 	cookies, csrf := e.login()
 
 	for path, want := range map[string]string{
-		"/api/components/nosuch/stop": "неизвестный компонент",
-		"/api/components/redis/start": "не установлен",
+		"/api/components/nosuch/stop": "unknown component",
+		"/api/components/redis/start": "not installed",
 	} {
 		w := e.do(post(path, cookies, csrf))
 		if w.Code != http.StatusNotFound {
@@ -347,7 +347,7 @@ func TestLogStreamOfUnknownComponentIsAPlainError(t *testing.T) {
 	}
 	var body struct{ Error string }
 	_ = json.NewDecoder(resp.Body).Decode(&body)
-	if !strings.Contains(body.Error, "неизвестный компонент") {
+	if !strings.Contains(body.Error, "unknown component") {
 		t.Errorf("error text: %q", body.Error)
 	}
 }

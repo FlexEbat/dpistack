@@ -48,7 +48,7 @@ func run(args []string) error {
 	eventsFile := fs.String("events-file", "", "events.jsonl: the Alerts screen")
 	rulesFile := fs.String("rules-file", "", "suricata.rules, for its age")
 	diskPaths := fs.String("disk-paths", "", "comma-separated directories whose free space /metrics reports")
-	maxStreams := fs.Int("max-streams", 0, "open log streams at once; 0 is the default of 4 (PANEL_MODE=unlimited passes more)")
+	lite := fs.Bool("lite", false, "lite edition (PANEL_EDITION=lite): the same features with a plain, light page")
 	ctlPrefix := fs.String("ctl-prefix", "", "comma-separated command that runs dpistack on the host from a container, e.g. nsenter,-t,1,-m,-u,-i,-n,-p,--; replaces sudo")
 	useSudo := fs.Bool("sudo", true, "run dpistack through sudo -n")
 	if err := fs.Parse(args); err != nil {
@@ -112,7 +112,7 @@ func run(args []string) error {
 		Policy:      policy,
 		AuthFile:    *authFile,
 		HealthFile:  *healthFile,
-		MaxStreams:  *maxStreams,
+		Lite:        *lite,
 		Ctl:         &ctl.Runner{Path: *ctlPath, Sudo: *useSudo, Prefix: splitPrefix(*ctlPrefix)},
 		Eve:         events,
 		Metrics:     collector,

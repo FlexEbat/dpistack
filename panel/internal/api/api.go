@@ -51,26 +51,18 @@ type Config struct {
 	ExportToken string           // the bearer token of GET /metrics
 	Web         fs.FS
 	Now         func() time.Time // nil means time.Now
-	// MaxStreams caps the open log streams (each is a sudo and a journalctl
-	// process); zero means the default, 4. PANEL_MODE=unlimited raises it.
-	MaxStreams int
+	// Lite is PANEL_EDITION=lite: the same API and screens, served with the
+	// plain stylesheet and without the background effects.
+	Lite bool
 }
 
 type server struct {
 	cfg      Config
 	sessions *auth.Sessions
 	limiter  *auth.Limiter
-	streams  atomic.Int32 // open log streams, capped at maxStreams
+	streams  atomic.Int32 // open log streams, capped at maxStreams (logs.go)
 	rules    rulesState   // the last rules update started from this panel
 	ops      opState      // tests and interface changes, one at a time
-}
-
-// maxStreams is the cap of open log streams.
-func (s *server) maxStreams() int {
-	if s.cfg.MaxStreams > 0 {
-		return s.cfg.MaxStreams
-	}
-	return maxStreams
 }
 
 type ctxKey struct{}
@@ -126,10 +118,10 @@ func New(cfg Config) http.Handler {
 	// Every other /api path answers 401 without a session, so the API
 	// does not reveal which paths exist.
 	mux.HandleFunc("/api/", s.authed(func(w http.ResponseWriter, _ *http.Request) {
-		writeError(w, http.StatusNotFound, "нет такого метода")
+		writeError(w, http.StatusNotFound, "no such method")
 	}))
 	if cfg.Web != nil {
-		mux.Handle("/", static(http.FileServerFS(cfg.Web)))
+		mux.Handle("/", static(edition(cfg.Lite, http.FileServerFS(cfg.Web))))
 	}
 	return s.guard(mux)
 }
@@ -140,10 +132,33 @@ func static(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
-			writeError(w, http.StatusMethodNotAllowed, "метод не поддерживается")
+			writeError(w, http.StatusMethodNotAllowed, "method not supported")
 			return
 		}
 		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// edition picks the page's look: the full edition gets full.css and the
+// background effects, lite gets lite.css and an empty script. The page always
+// asks for app.css and fx.js, so nothing else differs between the two.
+func edition(lite bool, next http.Handler) http.Handler {
+	css, js := "/full.css", "/fx.js"
+	if lite {
+		css, js = "/lite.css", "/nofx.js"
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app.css":
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = css
+			r = r2
+		case "/fx.js":
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = js
+			r = r2
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -162,7 +177,7 @@ func (s *server) guard(next http.Handler) http.Handler {
 
 		peer, client, err := s.cfg.Policy.ClientIP(r.RemoteAddr, r.Header.Values("X-Forwarded-For"))
 		if err != nil || !s.cfg.Policy.Allowed(peer, client) {
-			writeError(w, http.StatusForbidden, "доступ с этого адреса запрещён")
+			writeError(w, http.StatusForbidden, "access from this address is forbidden")
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxKey{}, origin{peer: peer, client: client})
@@ -180,14 +195,14 @@ func (s *server) authed(next http.HandlerFunc) http.HandlerFunc {
 			csrf, ok = s.sessions.Get(c.Value)
 		}
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "требуется вход")
+			writeError(w, http.StatusUnauthorized, "sign-in required")
 			return
 		}
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
 			if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(csrf)) != 1 {
-				writeError(w, http.StatusForbidden, "неверный CSRF-токен")
+				writeError(w, http.StatusForbidden, "wrong CSRF token")
 				return
 			}
 		}
@@ -202,37 +217,37 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	if ok, wait := s.limiter.Attempt(o.client); !ok {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		log.Printf("login: too many attempts from %s", o.client)
-		writeError(w, http.StatusTooManyRequests, "слишком много попыток входа, повторите позже")
+		writeError(w, http.StatusTooManyRequests, "too many sign-in attempts, try again later")
 		return
 	}
 
 	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
-		writeError(w, http.StatusUnsupportedMediaType, "нужен Content-Type: application/json")
+		writeError(w, http.StatusUnsupportedMediaType, "Content-Type: application/json is required")
 		return
 	}
 	var body struct {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "неверный запрос")
+		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 
 	good, err := auth.VerifyFile(s.cfg.AuthFile, body.Password)
 	switch {
 	case errors.Is(err, auth.ErrNoPassword):
-		writeError(w, http.StatusInternalServerError, "пароль панели не задан: задайте его пунктом «Пароль панели» команды dpistack")
+		writeError(w, http.StatusInternalServerError, "the panel password is not set: set it with the \"Panel password\" item of the dpistack command")
 		return
 	case errors.Is(err, auth.ErrHashTooHeavy):
-		writeError(w, http.StatusInternalServerError, "хэш пароля требует больше памяти, чем доступно панели: задайте пароль заново пунктом «Пароль панели» команды dpistack")
+		writeError(w, http.StatusInternalServerError, "the password hash needs more memory than the panel has: set the password again with the \"Panel password\" item of the dpistack command")
 		return
 	case err != nil:
 		log.Printf("login: %v", err)
-		writeError(w, http.StatusInternalServerError, "не удалось проверить пароль: файл пароля повреждён или недоступен")
+		writeError(w, http.StatusInternalServerError, "could not check the password: the password file is damaged or unreadable")
 		return
 	case !good:
 		log.Printf("login: wrong password from %s", o.client)
-		writeError(w, http.StatusUnauthorized, "неверный пароль")
+		writeError(w, http.StatusUnauthorized, "wrong password")
 		return
 	}
 
@@ -278,12 +293,12 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 	st, err := s.cfg.Ctl.Status(r.Context())
 	if err != nil {
 		detail := strings.TrimPrefix(err.Error(), ctl.ErrUnavailable.Error()+": ")
-		writeError(w, http.StatusBadGateway, "dpistack недоступен: "+detail)
+		writeError(w, http.StatusBadGateway, "dpistack is unavailable: "+detail)
 		return
 	}
 	rep, err := health.Read(s.cfg.HealthFile)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "не удалось прочитать health.json: "+err.Error())
+		writeError(w, http.StatusBadGateway, "could not read health.json: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, statusResponse{Components: st.Components, NDPIPlugin: st.NDPIPlugin, Health: rep})

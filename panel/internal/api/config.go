@@ -38,7 +38,7 @@ func knownConfig(name string) bool {
 func configName(w http.ResponseWriter, r *http.Request) (string, bool) {
 	name := r.PathValue("name")
 	if !knownConfig(name) {
-		writeError(w, http.StatusNotFound, "нет такого файла конфигурации")
+		writeError(w, http.StatusNotFound, "no such config file")
 		return "", false
 	}
 	return name, true
@@ -77,7 +77,7 @@ func (s *server) configPut(w http.ResponseWriter, r *http.Request) {
 	case "1":
 		mode = "--apply"
 	default:
-		writeError(w, http.StatusBadRequest, "apply: 0 или 1")
+		writeError(w, http.StatusBadRequest, "apply: 0 or 1")
 		return
 	}
 	s.configWrite(w, r, name, mode)
@@ -98,10 +98,10 @@ func (s *server) configWrite(w http.ResponseWriter, r *http.Request, name, mode 
 	if err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			writeError(w, http.StatusRequestEntityTooLarge, "файл больше 1 МБ")
+			writeError(w, http.StatusRequestEntityTooLarge, "the file is larger than 1 MB")
 			return
 		}
-		writeError(w, http.StatusBadRequest, "не удалось прочитать тело запроса")
+		writeError(w, http.StatusBadRequest, "could not read the request body")
 		return
 	}
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(writeAllowance))

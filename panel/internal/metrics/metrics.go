@@ -218,18 +218,18 @@ func (c *Collector) available(i Series) (bool, string) {
 	switch i {
 	case PPS, Drops:
 		if c.cfg.Stats == nil {
-			return false, "просмотр событий выключен (EVE_FILE=no)"
+			return false, "event view is off (EVE_FILE=no)"
 		}
 		if !c.statsSeen {
-			return false, "в eve.json нет событий stats: добавьте stats в EVE_TYPES"
+			return false, "eve.json has no stats events: add stats to EVE_TYPES"
 		}
 	case EveSize, Disk:
 		if (i == EveSize && c.cfg.EveSize == nil) || (i == Disk && c.cfg.DiskFree == nil) {
-			return false, "просмотр событий выключен (EVE_FILE=no)"
+			return false, "event view is off (EVE_FILE=no)"
 		}
 	case CPU, RSS:
 		if c.cfg.Proc == nil {
-			return false, "нет данных о процессе панели"
+			return false, "no data about the panel process"
 		}
 	}
 	return true, ""

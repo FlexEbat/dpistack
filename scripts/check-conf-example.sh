@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Slice 25, criterion 5: every key in dpistack.conf.example is in the
-# tech.md 4.3 table, and the other way round. Secrets (the "секрет" rows)
+# tech.md 4.3 table, and the other way round. Secrets (the "secret" rows)
 # are not dpistack.conf keys and must not appear in the example. Also
 # checks that each key's example value equals the default in lib/schema.sh,
 # so the example can't drift from what the installer really does.
@@ -14,13 +14,13 @@ techmd=tech.md
 status=0
 
 # Keys of the 4.3 table: backticked UPPER_CASE names in the first column,
-# from the table header to the "Проверки при загрузке" line.
+# from the table header to the "Load-time checks" line.
 bt=$(printf '\140')
 tech_keys=$(awk '
 	/^### 4\.3 /          { in43 = 1; next }
-	in43 && /^Проверки при загрузке/ { exit }
+	in43 && /^Load-time checks/ { exit }
 	in43 && /^\| `/        { print }
-' "$techmd" | sed -E 's/^\| ([^|]*)\|.*/\1/' | grep -v '^секрет' |
+' "$techmd" | sed -E 's/^\| ([^|]*)\|.*/\1/' | grep -v "^secret" |
 	grep -oE "${bt}[A-Z][A-Z0-9_]+${bt}" | tr -d "$bt" | sort -u)
 
 example_keys=$(grep -E '^[A-Z][A-Z0-9_]*=' "$example" | cut -d= -f1 | sort -u)

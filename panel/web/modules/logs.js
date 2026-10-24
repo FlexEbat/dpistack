@@ -15,7 +15,7 @@ export function start(api, els, onError) {
   function stopFollow() {
     source?.close();
     source = null;
-    els.follow.textContent = "Следить";
+    els.follow.textContent = "Follow";
   }
 
   function show(lines) {
@@ -48,12 +48,12 @@ export function start(api, els, onError) {
     els.output.textContent = "";
     const n = encodeURIComponent(els.lines.value);
     source = new EventSource(`/api/logs/${encodeURIComponent(els.component.value)}/stream?lines=${n}`);
-    els.follow.textContent = "Остановить слежение";
+    els.follow.textContent = "Stop following";
     source.onmessage = (event) => append(event.data);
     source.addEventListener("error", (event) => {
       // An error event sent by the server carries text; a dropped
       // connection does not.
-      els.error.textContent = event.data || "Соединение с потоком логов потеряно";
+      els.error.textContent = event.data || "The log stream connection was lost";
       stopFollow();
     });
     source.addEventListener("end", () => stopFollow());

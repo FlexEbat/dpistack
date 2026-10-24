@@ -131,7 +131,7 @@ enable_p2p() {
 	run "$CTL" test bittorrent --json
 	[ "$status" -eq 1 ]
 	[ "$(echo "$output" | jq -r '.[0].status')" = "fail" ]
-	[[ "$(echo "$output" | jq -r '.[0].detail')" == *"не дал алерта"* ]]
+	[[ "$(echo "$output" | jq -r '.[0].detail')" == *"gave no BitTorrent alert"* ]]
 }
 
 @test "criterion 4: https passes when curl produces a tls event with the right sni" {
@@ -148,7 +148,7 @@ enable_p2p() {
 	[ "$(echo "$output" | jq -r '.[0].status')" = "fail" ]
 	detail="$(echo "$output" | jq -r '.[0].detail')"
 	[[ "$detail" == *"sni=example.com"* ]]
-	[[ "$detail" == *"curl идёт через eth9"* ]]
+	[[ "$detail" == *"curl goes through eth9"* ]]
 }
 
 @test "criterion 4: an event for another host does not count" {
@@ -160,12 +160,12 @@ enable_p2p() {
 @test "criterion 4: a failed curl and a missing eve.json each give their own reason" {
 	FAKE_CURL_RC=6 run "$CTL" test https --json
 	[ "$status" -eq 1 ]
-	[[ "$(echo "$output" | jq -r '.[0].detail')" == *"curl не прошёл (код 6)"* ]]
+	[[ "$(echo "$output" | jq -r '.[0].detail')" == *"curl failed (code 6)"* ]]
 
 	rm -f "$EVE"
 	run "$CTL" test https --json
 	[ "$status" -eq 1 ]
-	[[ "$(echo "$output" | jq -r '.[0].detail')" == *"не найден"* ]]
+	[[ "$(echo "$output" | jq -r '.[0].detail')" == *"not found"* ]]
 }
 
 @test "criterion 5: tests-last.json keeps the last result of each test and replaces a re-run" {
@@ -205,7 +205,7 @@ enable_p2p() {
 	sed -i 's/^TEST_BT_LIVE=.*/TEST_BT_LIVE=yes/' "$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
 	run "$CTL" test bittorrent --json
 	[ "$status" -eq 0 ]
-	[[ "$(echo "$output" | jq -r '.[0].detail')" == *"живой прогон через enp2s0"* ]]
+	[[ "$(echo "$output" | jq -r '.[0].detail')" == *"live run through enp2s0"* ]]
 	grep -q "tcpreplay -i enp2s0 .*bittorrent.pcap" "$FAKE_LOG"
 }
 
@@ -221,8 +221,8 @@ enable_p2p() {
 @test "criterion 6: install runs all tests; a failing test does not cancel the install and is reported" {
 	run bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"ВНИМАНИЕ: проверочные тесты не прошли"* ]]
-	[[ "$output" == *"установка завершена"* ]]
+	[[ "$output" == *"WARNING: the check tests failed"* ]]
+	[[ "$output" == *"installation finished"* ]]
 	[ "$(jq '.results | length' "$LAST")" -eq 2 ]
 
 	# Nothing re-runs on an unchanged system.
@@ -237,5 +237,5 @@ enable_p2p() {
 		--set NDPI_ENABLE=no --set TEST_ON_INSTALL=no
 	[ "$status" -eq 0 ]
 	[ ! -e "$LAST" ]
-	[[ "$output" != *"ВНИМАНИЕ"* ]]
+	[[ "$output" != *"WARNING"* ]]
 }

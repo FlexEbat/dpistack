@@ -55,7 +55,7 @@ install_base() {
 	run install_base
 	[ "$status" -eq 0 ]
 	run bash "$REPO_DIR/install.sh" status --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
-	[[ "$output" == *"panel: в порядке"* ]]
+	[[ "$output" == *"panel: ok"* ]]
 
 	echo "# hand edit" >>"$SUDOERS"
 	run install_base
@@ -146,7 +146,7 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	run install_base
 	[ "$status" -eq 0 ]
 	token=$(token_of)
-	[[ "$output" == *"Создан METRICS_TOKEN для GET /metrics"*"$token"* ]]
+	[[ "$output" == *"METRICS_TOKEN created for GET /metrics"*"$token"* ]]
 	[[ "$output" == *"job_name: dpistack"* ]]
 	[[ "$output" == *"credentials: $token"* ]]
 	[[ "$output" == *"targets: ['127.0.0.1:9800']"* ]]
@@ -164,7 +164,7 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	[ ! -e "$DPISTACK_ROOT/etc/dpistack/metrics.token" ]
 	[ ! -e "$DPISTACK_ROOT/etc/dpistack/secrets.conf" ]
 	if echo "$output" | grep -Eq '[0-9a-f]{64}'; then false; fi
-	[[ "$output" != *"Создан METRICS_TOKEN"* ]]
+	[[ "$output" != *"METRICS_TOKEN created"* ]]
 	[[ "$output" != *"credentials:"* ]]
 }
 
@@ -212,29 +212,27 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 @test "criterion 1: the generated password is shown once and never stored in plain text" {
 	run install_base
 	[ "$status" -eq 0 ]
-	pw="$(printf '%s\n' "$output" | sed -n 's/^Создан пароль панели .*: \([A-Za-z0-9]\{24\}\)$/\1/p')"
+	pw="$(printf '%s\n' "$output" | sed -n 's/^Panel password created .*: \([A-Za-z0-9]\{24\}\)$/\1/p')"
 	[ -n "$pw" ]
 	[ "$(printf '%s\n' "$output" | grep -c "$pw")" -eq 1 ]
 	if grep -rqF "$pw" "$DPISTACK_ROOT"; then false; fi
 	if grep -qF "$pw" "$MOCK_CALLS_LOG"; then false; fi
 
 	run install_base
-	[[ "$output" != *"Создан пароль панели"* ]]
+	[[ "$output" != *"Panel password created"* ]]
 }
 
 @test "criterion 1: a password from DPISTACK_PANEL_PASSWORD is not printed" {
 	DPISTACK_PANEL_PASSWORD="my-own-secret-pass" run install_base
 	[ "$status" -eq 0 ]
 	[[ "$output" != *"my-own-secret-pass"* ]]
-	[[ "$output" != *"Создан пароль панели"* ]]
+	[[ "$output" != *"Panel password created"* ]]
 }
 
-@test "criterion 4: the unit has MemoryMax and CPUQuota, no NoNewPrivileges, no ProtectSystem" {
+@test "criterion 4: the unit has no resource limits, no NoNewPrivileges, no ProtectSystem" {
 	run install_base
 	[ "$status" -eq 0 ]
-	grep -q '^MemoryMax=64M$' "$(unit_file)"
-	grep -q '^CPUQuota=20%$' "$(unit_file)"
-	! grep -qE '^(NoNewPrivileges|ProtectSystem)' "$(unit_file)"
+	! grep -qE '^(MemoryMax|CPUQuota|NoNewPrivileges|ProtectSystem)' "$(unit_file)"
 }
 
 @test "the unit follows ACCESS_MODE: lan binds all addresses with the resolved CIDR" {
@@ -261,7 +259,7 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 @test "criterion 5: PANEL_SOURCE=prebuilt without a ready binary stops preflight with code 3" {
 	run install_base --set PANEL_SOURCE=prebuilt
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"нет готового бинарника dpistack-panel"* ]]
+	[[ "$output" == *"no ready dpistack-panel binary"* ]]
 	[ ! -e "$(unit_file)" ]
 	! grep -q "^apt-get install" "$MOCK_CALLS_LOG"
 }
@@ -280,8 +278,8 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 @test "a Go older than panel/go.mod and no ready binary stop preflight with code 3" {
 	MOCK_GO_VERSION=go1.20.1 run install_base
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"Go 1.20.1 старше требуемого"* ]]
-	[[ "$output" == *"нет готового бинарника"* ]]
+	[[ "$output" == *"Go 1.20.1 is older than the required"* ]]
+	[[ "$output" == *"ready binary"* ]]
 }
 
 @test "a failing build stops the install and leaves no unit behind" {
@@ -300,7 +298,7 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	if grep -q "^go build" "$MOCK_CALLS_LOG"; then false; fi
 	if grep -q "dpistack-panel.service" "$MOCK_CALLS_LOG"; then false; fi
 	run bash "$REPO_DIR/install.sh" status --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
-	[[ "$output" == *"panel: в порядке"* ]]
+	[[ "$output" == *"panel: ok"* ]]
 }
 
 @test "a changed source rebuilds the binary and restarts the unit" {
@@ -388,22 +386,36 @@ release_binary_name() {
 	grep -q "^go build" "$MOCK_CALLS_LOG"
 }
 
-@test "PANEL_MODE=unlimited: the unit has no MemoryMax and no CPUQuota and allows more log streams" {
-	run install_base --set PANEL_MODE=unlimited
+@test "PANEL_EDITION=lite passes -lite to the panel, full (the default) does not, and both keep the same flags otherwise" {
+	run install_base
 	[ "$status" -eq 0 ]
+	run grep -q -- ' -lite' "$(unit_file)"
+	[ "$status" -ne 0 ]
+	grep -q -- ' -metrics-file ' "$(unit_file)"
+	run install_base --set PANEL_EDITION=lite
+	[ "$status" -eq 0 ]
+	grep -q -- ' -lite' "$(unit_file)"
+	grep -q -- ' -metrics-file ' "$(unit_file)"
 	run grep -qE '^(MemoryMax|CPUQuota)=' "$(unit_file)"
 	[ "$status" -ne 0 ]
-	grep -q -- ' -max-streams 32' "$(unit_file)"
-	grep -q '^ProtectHome=yes$' "$(unit_file)"
 }
 
-@test "PANEL_MODE=limited is the default and switching back restores the budget" {
-	run install_base
-	run grep -q -- '-max-streams' "$(unit_file)"
-	[ "$status" -ne 0 ]
-	run install_base --set PANEL_MODE=unlimited
-	run install_base --set PANEL_MODE=limited
+@test "switching PANEL_EDITION back to full drops -lite again" {
+	run install_base --set PANEL_EDITION=lite
+	run install_base --set PANEL_EDITION=full
 	[ "$status" -eq 0 ]
-	grep -q '^MemoryMax=64M$' "$(unit_file)"
-	grep -q '^CPUQuota=20%$' "$(unit_file)"
+	run grep -q -- ' -lite' "$(unit_file)"
+	[ "$status" -ne 0 ]
+}
+
+@test "PANEL_EDITION rejects a value that is neither full nor lite" {
+	run install_base --set PANEL_EDITION=huge
+	[ "$status" -eq 2 ]
+}
+
+@test "an old dpistack.conf with PANEL_MODE still loads: the retired key is dropped" {
+	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
+	printf 'PANEL_MODE=unlimited\n' >"$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+	run install_base
+	[ "$status" -eq 0 ]
 }

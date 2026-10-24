@@ -1,44 +1,53 @@
-# Панель управления
+# Control panel
 
-Веб-панель показывает состояние стека и позволяет им управлять без командной строки. Адрес по умолчанию: `http://127.0.0.1:9800` (см. «Доступ» в [deployment.md](deployment.md)). Вход по паролю обязателен; пароль хранится как хэш argon2id, сменить его можно командой `dpistack panel-passwd` или в меню управления.
+English | [Русский](dashboard.ru.md)
 
-Интерфейс адаптивный: на широком экране навигация слева, на узком сверху. Тема светлая или тёмная по настройке системы. Страница не загружает внешних шрифтов, скриптов и картинок и работает в сети без выхода в интернет.
+The web panel shows the state of the stack and lets you control it without the command line. The default address is `http://127.0.0.1:9800` (see "Access" in [deployment.md](deployment.md)). Signing in with a password is required; the password is stored as an argon2id hash, and you can change it with `dpistack panel-passwd` or in the control menu.
 
-## Экраны
+The interface is responsive: on a wide screen the navigation is on the left, on a narrow one on top. The page loads no external fonts, scripts or images and works on a network without internet access.
 
-| Экран | Что на нём |
+## Editions
+
+`PANEL_EDITION` chooses which panel is served. Both editions have exactly the same screens, API and features; only the look and the work done in the browser differ. The installer menu asks which one you want, and you can change it later on the Settings screen.
+
+| Edition | Look | When to choose it |
+| --- | --- | --- |
+| `full` (default) | a dark console: matte surfaces, one cool-blue accent, a sidebar, staggered entrance animations and a quiet particle background (it stops when the tab is hidden and respects `prefers-reduced-motion`) | a workstation or any host where the browser has room to spare |
+| `lite` | a plain, light page: system fonts, no background canvas, no animations, a small stylesheet | a small host, an old browser or a slow remote link |
+
+The server sends the stylesheet and the background script of the chosen edition, so a lite page never downloads the full one.
+
+## Screens
+
+| Screen | What is on it |
 | --- | --- |
-| Обзор | общий статус стека, состояние компонентов, ключевые показатели |
-| Компоненты | запуск, остановка и перезапуск каждого компонента, режим IDS/IPS с подтверждением и обратным отсчётом, интерфейсы захвата |
-| Настройки | все параметры `dpistack.conf` и секреты |
-| Конфиги | редактор файлов `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`; проверка, сохранение с резервной копией и откат |
-| Правила | источники правил, группы, отдельные правила по sid, поиск, обновление с откатом при ошибке |
-| Логи | журналы компонентов с потоковым просмотром |
-| События | события из `eve.json` с фильтрами и выгрузкой |
-| Метрики | графики по статистике Suricata и состоянию хоста |
-| Тесты | проверочные тесты (BitTorrent, HTTPS) |
-| Оповещения | сообщения watchdog и каналы доставки |
+| Overview | the overall status of the stack, the state of the components, key figures |
+| Components | start, stop and restart of every component, the IDS/IPS mode with a confirmation and a countdown, capture interfaces |
+| Settings | every `dpistack.conf` setting and the secrets |
+| Configs | an editor for `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`; check, save with a backup, and roll back |
+| Rules | rule sources, groups, single rules by sid, search, an update with a rollback on error |
+| Logs | component logs with live following |
+| Events | events from `eve.json` with filters |
+| Metrics | charts of the Suricata statistics and the state of the host |
+| Tests | check tests (BitTorrent, HTTPS) |
+| Alerts | watchdog messages and delivery channels |
 
-## Экран «Настройки»
+## The Settings screen
 
-Экран строится из схемы параметров, которую отдаёт сама программа, поэтому показывает ровно те ключи, которые знает установленная версия: те, что раньше были разделены между установщиком и командой управления, теперь в одном месте.
+The screen is built from the settings schema that the program itself serves, so it shows exactly the keys the installed version knows: what used to be split between the installer and the control command is now in one place.
 
-- Параметры сгруппированы: захват трафика, компоненты и установка, события и хранение, правила, доступ и порты, метрики, контроль и оповещения, проверочные тесты. Под каждым параметром короткое описание. Основные параметры видны сразу, остальные появляются по переключателю «Расширенные настройки».
-- Поле подходит типу параметра: список для перечислений, число с границами для целых, текст для остальных. Очевидные ошибки видны сразу, окончательная проверка за сервером.
-- **Проверить** ничего не записывает: показывает ошибки по ключам, вес изменения и занятые порты. **Применить** проверяет, записывает и применяет; **Сбросить** возвращает введённые значения.
-- Метка «переустановка» у параметра значит, что изменение запускает установку или пересборку компонента. Перед этим панель просит подтверждение, а ход применения показывается в журнале на этом же экране.
-- Занятый порт панель показывает вместе с именем процесса и кнопкой «Взять N» для ближайшего свободного.
-- Расширение доступа (`ACCESS_MODE` не `localhost`) требует отдельного подтверждения.
-- Секреты (`ALERT_TG_TOKEN`, `ALERT_SMTP_URL`, `METRICS_TOKEN`) никогда не показываются: видно только «задан» или «не задан». Новое значение вводится в отдельное поле, пустое удаляет секрет.
+- Settings are grouped: traffic capture, components and installation, events and storage, rules, access and ports, metrics, watch and alerts, test checks. Each setting has a short description. The main settings are visible at once, the rest appear with the "Advanced settings" switch.
+- The field fits the type of the setting: a list for enumerations, a number with bounds for integers, text for the rest. Obvious errors show at once, the final check is done by the server.
+- **Check** writes nothing: it shows the errors by key, the weight of the change and the busy ports. **Apply** checks, writes and applies; **Reset** brings back the entered values.
+- The "reinstall" mark on a setting means the change starts an install or a rebuild of a component. The panel asks for a confirmation first, and the progress of applying is shown in a log on the same screen.
+- A busy port is shown with the name of the process and a "Use N" button for the nearest free one.
+- Widening access (`ACCESS_MODE` other than `localhost`) needs its own confirmation.
+- Secrets (`ALERT_TG_TOKEN`, `ALERT_SMTP_URL`, `METRICS_TOKEN`) are never shown: you see only "set" or "not set". A new value goes into a separate field, an empty one removes the secret.
 
-Те же действия доступны из командной строки: `dpistack settings list|check|set|secret|job` (см. [operations.md](operations.md)).
+The same actions are available from the command line: `dpistack settings list|check|set|secret|job` (see [operations.md](operations.md)).
 
-## Режимы работы панели
+## Panel security
 
-Параметр `PANEL_MODE`: `limited` (по умолчанию, бюджет ресурсов юнита 64 МБ памяти и 20% процессора) или `unlimited` (без бюджета). Подробнее и про запуск панели в контейнере: [deployment.md](deployment.md).
-
-## Безопасность панели
-
-- Панель работает не от root; привилегированные действия выполняет вызовом `sudo -n dpistack <команда>`, где `dpistack` пускает пользователя панели только к командам управления и сверяет аргументы со списками.
-- Редактор конфигов равен root-доступу к хосту: правки `suricata.yaml` позволяют выполнить чужой код. Не открывайте панель в сеть без необходимости; режимы `lan` и `nginx` требуют подтверждения, для `lan` HTTP без TLS виден в сети, используйте `nginx` с TLS или SSH-туннель.
-- Каждый изменяющий запрос защищён токеном CSRF; сессия по cookie.
+- The panel does not run as root; it does privileged things by calling `sudo -n dpistack <command>`, where `dpistack` lets the panel user reach the control commands only and checks the arguments against lists.
+- The config editor equals root access to the host: edits of `suricata.yaml` allow running foreign code. Do not open the panel to the network without need; the `lan` and `nginx` modes need a confirmation, and in `lan` the HTTP without TLS is visible on the network, so use `nginx` with TLS or an SSH tunnel.
+- Every request that changes something is protected by a CSRF token; the session is a cookie.

@@ -67,7 +67,7 @@ teardown() {
 	before="$(sha256sum "$YAML" | cut -d' ' -f1)"
 	run bash -c "{ cat '$YAML'; echo '# only a check'; } | '$CTL' config-write suricata.yaml --check"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"проверка пройдена"* ]]
+	[[ "$output" == *"check passed"* ]]
 
 	run bash -c "echo 'INVALID: true' | '$CTL' config-write suricata.yaml --check 2>/dev/null"
 	[ "$status" -eq 3 ]
@@ -120,7 +120,7 @@ teardown() {
 
 	run "$CTL" reconfigure
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"изменений нет"* ]]
+	[[ "$output" == *"no changes"* ]]
 }
 
 @test "criterion 3: a heavy change is refused with code 3 and a pointer to install.sh reconfigure" {
@@ -130,7 +130,7 @@ teardown() {
 	# --dry-run only prints the plan and changes nothing.
 	run "$CTL" reconfigure --dry-run
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Тип изменения: heavy"* ]]
+	[[ "$output" == *"Change type: heavy"* ]]
 }
 
 @test "criterion 4: a non-numeric sid and an unknown config name give 5 and run nothing" {
@@ -286,7 +286,7 @@ FAKE
 	echo "INVALID" >>"$YAML"
 	run bash -c "'$CTL' rules-update 2>/dev/null"
 	[ "$status" -eq 1 ]
-	[[ "$output" == *"suricata -T не принял новый набор правил"* ]]
+	[[ "$output" == *"suricata -T did not accept the new rule set"* ]]
 	grep -q "keep me" "$ruleset"
 }
 
@@ -308,7 +308,7 @@ FAKE
 	[[ "$(cat "$auth")" == '$argon2id$'* ]]
 	[ "$(stat -c %a "$auth")" = "640" ]
 	grep -q "^chown root:dpistack $auth" "$MOCK_CALLS_LOG"
-	# 16 MiB: the panel unit has MemoryMax=64M, so a 64 MiB hash could not be checked there.
+	# 16 MiB: keeps the hash check light for the panel.
 	grep -q -- "^argon2 .* -id -t 3 -m 14 -p 4 -l 32 -e" "$MOCK_CALLS_LOG"
 	if grep -q "$pw" "$MOCK_CALLS_LOG"; then false; fi
 	if grep -rq "$pw" "$DPISTACK_ROOT/var/log" 2>/dev/null; then false; fi

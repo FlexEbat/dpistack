@@ -7,7 +7,7 @@
 # 3=components, 4=eve, 5=rules, 6=access, 7=metrics, 8=watch, 9=tests,
 # 10=panel password. The reconfigure menu has no quick-install item,
 # so there it's 1=capture .. 8=tests, 9=panel password.
-# Every screen that shows "Enter для продолжения" (the diff screen)
+# Every screen that shows "Enter to continue" (the diff screen)
 # consumes one extra input line by itself.
 
 setup() {
@@ -46,14 +46,14 @@ run_menu() {
 	run bash "$REPO_DIR/install.sh" install -y \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
-	[[ "$output" != *"Быстрая установка"* ]]
+	[[ "$output" != *"Quick install"* ]]
 }
 
 @test "criterion 1: install with DPISTACK_INPUT shows the main menu" {
 	run_menu "q\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Установка"* ]]
-	[[ "$output" == *"Быстрая установка"* ]]
+	[[ "$output" == *"Install"* ]]
+	[[ "$output" == *"Quick install"* ]]
 }
 
 @test "criterion 2: no terminal, no DPISTACK_INPUT, no -y exits 2 with a hint about -y" {
@@ -70,8 +70,8 @@ run_menu() {
 	run bash -c "echo 'not for the menu' | env DPISTACK_TTY_DEV='$tty_file' bash '$REPO_DIR/install.sh' install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no"
 	rm -f "$tty_file"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Быстрая установка"* ]]
-	[[ "$output" != *"нет терминала"* ]]
+	[[ "$output" == *"Quick install"* ]]
+	[[ "$output" != *"no terminal"* ]]
 }
 
 @test "curl | bash: reconfigure menu also finds the terminal device" {
@@ -82,13 +82,13 @@ run_menu() {
 	printf 'SURICATA_SOURCE=oisf\nNDPI_ENABLE=no\n' >"$CONF_FILE"
 	run bash -c "echo x | env DPISTACK_TTY_DEV='$tty_file' bash '$REPO_DIR/install.sh' reconfigure"
 	rm -f "$tty_file"
-	[[ "$output" != *"нет терминала"* ]]
+	[[ "$output" != *"no terminal"* ]]
 }
 
 @test "criterion 3: an invalid value is rejected with the allowed list, old value kept" {
 	run_menu "3\n1\nbogus-value\n\n0\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"недопустимое значение, допустимо: native,docker"* ]]
+	[[ "$output" == *"invalid value, allowed: native,docker"* ]]
 	[ ! -e "$CONF_FILE" ]
 }
 
@@ -107,12 +107,12 @@ run_menu() {
 @test "criterion 5: 'i' is refused while a cross-check problem exists" {
 	run_menu "4\na\n9\nelasticsearch\n0\ni\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"нельзя установить, пока есть проблемы"* ]]
-	[[ "$output" == *"требует EVEBOX_ES_URL"* ]]
+	[[ "$output" == *"cannot install while there are problems"* ]]
+	[[ "$output" == *"needs EVEBOX_ES_URL"* ]]
 	[ ! -e "$CONF_FILE" ]
 }
 
-@test "criterion 7: an existing dpistack.conf shows 'Найдена установка', not a silent overwrite" {
+@test "criterion 7: an existing dpistack.conf shows 'Installation found', not a silent overwrite" {
 	run bash "$REPO_DIR/install.sh" install -y \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
@@ -120,7 +120,7 @@ run_menu() {
 
 	run_menu "4\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Найдена установка"* ]]
+	[[ "$output" == *"Installation found"* ]]
 	after_sum=$(sha256sum "$CONF_FILE" | cut -d' ' -f1)
 	[ "$before_sum" = "$after_sum" ]
 }
@@ -147,7 +147,7 @@ run_menu() {
 @test "criterion 9: quitting with unapplied edits asks for confirmation; 'n' returns to the menu" {
 	run_menu "6\n1\nlan\n0\nq\nn\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Выйти без применения"* ]]
+	[[ "$output" == *"Leave without applying"* ]]
 	[ ! -e "$CONF_FILE" ]
 }
 
@@ -158,14 +158,14 @@ run_menu() {
 # other never saw the signal reach the right process. Verified
 # manually instead, repeatedly, outside bats: `kill -INT` on install.sh
 # while it is blocked in the menu consistently exits 130, prints
-# "прервано, ничего не изменено", and creates neither dpistack.conf
+# "interrupted, nothing changed", and creates neither dpistack.conf
 # nor a draft. menu_on_interrupt (lib/menu.sh) is what makes this
 # work - a SIGINT trap installed only while the menu's input fd is open.
 
-@test "criterion 10: a secret is shown as 'не задан'/'задан', never its value" {
+@test "criterion 10: a secret is shown as 'not set'/'set', never its value" {
 	run_menu "8\na\nq\ny\n" --set ALERT_CHANNELS=panel,log,tg --set ALERT_TG_TOKEN=super-secret-xyz
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"ALERT_TG_TOKEN               = задан"* ]]
+	[[ "$output" == *"ALERT_TG_TOKEN               = set"* ]]
 	[[ "$output" != *"super-secret-xyz"* ]]
 }
 
@@ -186,7 +186,7 @@ run_menu() {
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	rm -f "$f"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"suricata -T упал"* ]]
+	[[ "$output" == *"suricata -T failed"* ]]
 	[[ "$output" == *"IFACES: enp2s0 -> eth7"* ]]
 	after_sum=$(sha256sum "$CONF_FILE" | cut -d' ' -f1)
 	[ "$before_sum" = "$after_sum" ]
@@ -241,14 +241,14 @@ run_menu() {
 	run env DPISTACK_INPUT="$f" bash "$REPO_DIR/install.sh" reconfigure \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	rm -f "$f"
-	[[ "$output" == *"dpistack v$ver | Настройка существующей установки"* ]]
+	[[ "$output" == *"dpistack v$ver | Configuring an existing installation"* ]]
 
 	f="$(mktemp)"
 	printf '4\n' >"$f"
 	run env DPISTACK_INPUT="$f" bash "$REPO_DIR/install.sh" install \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	rm -f "$f"
-	[[ "$output" == *"dpistack v$ver | Найдена установка"* ]]
+	[[ "$output" == *"dpistack v$ver | Installation found"* ]]
 }
 
 @test "a menu choice that is not a number is refused, it does not end the menu (R136)" {
@@ -258,8 +258,8 @@ run_menu() {
 	run env DPISTACK_INPUT="$in" bash "$REPO_DIR/install.sh" install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	rm -f "$in"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"непонятный пункт: zz"* ]]
-	[[ "$output" == *"непонятный пункт: 1 2"* ]]
+	[[ "$output" == *"unclear choice: zz"* ]]
+	[[ "$output" == *"unclear choice: 1 2"* ]]
 	[[ "$output" != *"value too great"* && "$output" != *"syntax error"* ]]
 }
 
@@ -272,16 +272,16 @@ run_menu() {
 	run env DPISTACK_INPUT="$in" bash "$REPO_DIR/install.sh" reconfigure
 	rm -f "$in"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"непонятный пункт: zz"* ]]
+	[[ "$output" == *"unclear choice: zz"* ]]
 	[[ "$output" != *"value too great"* ]]
 }
 
 @test "a number with a leading zero is a decimal number in the menu, not a bad octal one (R142)" {
 	run_menu "3\n01\nbogus-value\n\n0\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"недопустимое значение, допустимо: native,docker"* ]]
+	[[ "$output" == *"invalid value, allowed: native,docker"* ]]
 	run_menu "3\n09\n0\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"непонятный пункт: 09"* ]]
+	[[ "$output" == *"unclear choice: 09"* ]]
 	[[ "$output" != *"value too great"* ]]
 }

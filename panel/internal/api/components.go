@@ -26,14 +26,14 @@ var componentID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 func (s *server) control(w http.ResponseWriter, r *http.Request) {
 	id, action := r.PathValue("id"), r.PathValue("action")
 	if !componentID.MatchString(id) || (action != "start" && action != "stop" && action != "restart") {
-		writeError(w, http.StatusNotFound, "нет такого компонента или действия")
+		writeError(w, http.StatusNotFound, "no such component or action")
 		return
 	}
 
 	if id == "panel" && action != "start" {
 		if r.URL.Query().Get("confirm") != "yes" {
 			writeJSON(w, http.StatusConflict, map[string]any{
-				"error":            "это остановит саму панель, нужно отдельное подтверждение",
+				"error":            "this would stop the panel itself, a separate confirmation is needed",
 				"confirm_required": true,
 			})
 			return
@@ -41,7 +41,7 @@ func (s *server) control(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusAccepted, map[string]any{
 			"ok":       true,
 			"detached": true,
-			"output":   "команда отправлена, панель сейчас перезапустится или остановится",
+			"output":   "command sent, the panel is about to restart or stop",
 		})
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
@@ -104,7 +104,7 @@ func errText(err error) string {
 		if exit.Message != "" {
 			return exit.Message
 		}
-		return fmt.Sprintf("dpistack завершился с кодом %d", exit.Code)
+		return fmt.Sprintf("dpistack exited with code %d", exit.Code)
 	}
-	return "dpistack недоступен: " + strings.TrimPrefix(err.Error(), ctl.ErrUnavailable.Error()+": ")
+	return "dpistack is unavailable: " + strings.TrimPrefix(err.Error(), ctl.ErrUnavailable.Error()+": ")
 }

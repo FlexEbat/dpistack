@@ -46,7 +46,7 @@ func TestModeIPSNeedsAnAcknowledgement(t *testing.T) {
 	cookies, csrf := e.login()
 
 	code, m := modeCall(e, "POST", "/api/mode", `{"mode":"ips"}`, cookies, csrf)
-	if code != http.StatusBadRequest || !strings.Contains(str(m, "error"), "подтвердить") {
+	if code != http.StatusBadRequest || !strings.Contains(str(m, "error"), "confirmed") {
 		t.Fatalf("without acknowledgement: %d %v", code, m)
 	}
 	for _, call := range c.calls(t) {
@@ -99,7 +99,7 @@ func TestModeConfirmEndsTheCountdown(t *testing.T) {
 	}
 	// nothing is left to confirm: ctl says 3, the panel says conflict
 	code, m = modeCall(e, "POST", "/api/mode/confirm", ``, cookies, csrf)
-	if code != http.StatusConflict || !strings.Contains(str(m, "error"), "нечего подтверждать") {
+	if code != http.StatusConflict || !strings.Contains(str(m, "error"), "nothing to confirm") {
 		t.Errorf("second confirmation: %d %v", code, m)
 	}
 }

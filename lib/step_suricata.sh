@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Suricata IDS: package install from distro/oisf, suricata.yaml and
 # logrotate rendering, systemd unit (tech.md slice 2). Source builds
-# and nDPI are schema.sh "пока не поддерживается" until slice 4.
+# and nDPI are schema.sh "not supported yet" until slice 4.
 
 SURICATA_PACKAGE="suricata"
 SURICATA_UNIT="suricata.service"
@@ -219,7 +219,7 @@ suricata_resolve_source() {
 		local fallback=distro
 		[[ "$OS_FAMILY" == "dnf" ]] && fallback=oisf
 		if [[ "$fallback" == "oisf" ]] || pkg_available "$SURICATA_PACKAGE"; then
-			echo "suricata: для сборки нужен Rust 1.${SURICATA_RUST_MIN_MINOR}, в репозиториях его нет; взят пакет Suricata ($fallback), nDPI выключен (плагин nDPI есть только в сборке из исходников)" >&2
+			echo "suricata: the build needs Rust 1.${SURICATA_RUST_MIN_MINOR}, which the repositories lack; took the Suricata package ($fallback), nDPI is off (the nDPI plugin exists only in a build from source)" >&2
 			CONF[SURICATA_SOURCE]=$fallback
 			CONF[NDPI_ENABLE]=no
 			return 0
@@ -227,13 +227,13 @@ suricata_resolve_source() {
 	fi
 	[[ "$source" == "distro" || "$source" == "oisf" ]] || return 1
 	if [[ "$source" == "oisf" && "$OS_FAMILY" == "apt" && "$OS_ID" != "ubuntu" ]]; then
-		reason="PPA OISF существует только для Ubuntu"
+		reason="the OISF PPA exists for Ubuntu only"
 	elif [[ "$source" == "distro" ]] && ! pkg_available "$SURICATA_PACKAGE"; then
-		reason="пакета $SURICATA_PACKAGE нет в репозиториях"
+		reason="package $SURICATA_PACKAGE is not in the repositories"
 	else
 		return 1
 	fi
-	echo "suricata: $reason, SURICATA_SOURCE=$source заменён на source (сборка из исходников)" >&2
+	echo "suricata: $reason, SURICATA_SOURCE=$source is replaced by source (build from source)" >&2
 	CONF[SURICATA_SOURCE]=source
 }
 
@@ -289,7 +289,7 @@ suricata_build_from_source() {
 	)
 	local rc=$?
 	if [[ "$rc" -ne 0 ]]; then
-		echo "suricata: сборка из исходников упала (autogen/configure/make)" >&2
+		echo "suricata: the build from source failed (autogen/configure/make)" >&2
 		return 1
 	fi
 
@@ -516,7 +516,7 @@ step_suricata_apply() {
 	rendered_yaml=$(suricata_render_yaml) || return 1
 	if [[ "${DRY_RUN:-0}" != "1" ]]; then
 		suricata_validate_render "$rendered_yaml" || {
-			echo "suricata: suricata -T отклонил отрисованный suricata.yaml (серия $(suricata_conf_version)); файл на диске не изменён" >&2
+			echo "suricata: suricata -T rejected the rendered suricata.yaml (series $(suricata_conf_version)); the file on disk is unchanged" >&2
 			return 1
 		}
 	fi
@@ -554,22 +554,22 @@ step_suricata_apply() {
 step_suricata_plan() {
 	if docker_wanted suricata; then
 		docker_service_plan suricata
-		echo "suricata: рендер $(path_suricata_yaml) для интерфейсов ${CONF[IFACES]:-}"
-		echo "suricata: рендер $(path_suricata_logrotate)"
+		echo "suricata: render $(path_suricata_yaml) for interfaces ${CONF[IFACES]:-}"
+		echo "suricata: render $(path_suricata_logrotate)"
 		return 0
 	fi
 	if [[ "${CONF[SURICATA_SOURCE]:-}" == "source" ]]; then
-		echo "suricata: сборка из исходников ($SURICATA_REPO_URL, ref=$(suricata_target_ref), nDPI=${CONF[NDPI_ENABLE]:-no})"
+		echo "suricata: build from source ($SURICATA_REPO_URL, ref=$(suricata_target_ref), nDPI=${CONF[NDPI_ENABLE]:-no})"
 	else
-		echo "suricata: установка/обновление пакета ($OS_FAMILY, источник ${CONF[SURICATA_SOURCE]:-distro})"
+		echo "suricata: installing/upgrading the package ($OS_FAMILY, source ${CONF[SURICATA_SOURCE]:-distro})"
 	fi
-	echo "suricata: рендер $(path_suricata_yaml) для интерфейсов ${CONF[IFACES]:-}"
-	echo "suricata: рендер $(path_suricata_logrotate)"
+	echo "suricata: render $(path_suricata_yaml) for interfaces ${CONF[IFACES]:-}"
+	echo "suricata: render $(path_suricata_logrotate)"
 	if suricata_mode_dropin_wanted; then
-		echo "suricata: режим ips через NFQUEUE (drop-in $(path_suricata_mode_dropin), очередь ${IPS_QUEUE_NUM})"
+		echo "suricata: ips mode through NFQUEUE (drop-in $(path_suricata_mode_dropin), queue ${IPS_QUEUE_NUM})"
 	elif [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" ]]; then
-		echo "suricata: режим ips через af-packet copy-mode (интерфейсы парами)"
+		echo "suricata: ips mode through af-packet copy-mode (interfaces in pairs)"
 	fi
-	echo "suricata: юнит $(path_fw_unit) восстанавливает цепочку DPISTACK при загрузке"
+	echo "suricata: unit $(path_fw_unit) restores the DPISTACK chain at boot"
 	echo "suricata: systemctl enable --now $SURICATA_UNIT"
 }

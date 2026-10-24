@@ -45,7 +45,7 @@ issue() {
 	if [[ "${open:-0}" == "0" ]]; then
 		"$gh_cmd" issue create --title "$title" --body "$body${run_url:+
 
-Прогон: $run_url}"
+Run: $run_url}"
 	else
 		echo "suricata-watch: issue \"$title\" is already open"
 	fi
@@ -55,25 +55,25 @@ result=0
 
 echo "== pinned release: $current"
 if ! bash "$build" "$current"; then
-	issue "Suricata $current (SURICATA_STABLE_REF) больше не собирается" \
-		"Закреплённый релиз не прошёл проверку сборки с nDPI и плагином. Возможные причины: изменился Rust или образ раннера, nDPI, зависимости. Нужно разобраться до следующего релиза."
+	issue "Suricata $current (SURICATA_STABLE_REF) no longer builds" \
+		"The pinned release failed the build check with nDPI and the plugin. Possible causes: Rust or the runner image changed, nDPI, dependencies. Sort it out before the next release."
 	result=1
 fi
 
 if [[ "$status" == "update" && -n "$latest" ]]; then
 	echo "== newer release of the same series: $latest"
 	if bash "$build" "$latest"; then
-		issue "Suricata $latest проверен: поднять SURICATA_STABLE_REF" \
-			"Новый релиз $latest собирается с nDPI и плагином и загружает конфигурацию установщика. Чтобы принять: поменять SURICATA_STABLE_REF в lib/step_suricata.sh на $latest, обновить версию в tech.md и пройти обычный путь dev, гейт, PR в main."
+		issue "Suricata $latest verified: raise SURICATA_STABLE_REF" \
+			"The new release $latest builds with nDPI and the plugin and loads the installer's configuration. To accept it: change SURICATA_STABLE_REF in lib/step_suricata.sh to $latest, update the version in tech.md and go the usual way: dev, gate, PR to main."
 	else
-		issue "Suricata $latest не прошёл проверку сборки" \
-			"Новый релиз $latest не собрался с nDPI и плагином или не загрузил конфигурацию. SURICATA_STABLE_REF остаётся $current. Нужно понять, что изменилось (минимальный Rust, API плагина nDPI), и поправить установщик."
+		issue "Suricata $latest failed the build check" \
+			"The new release $latest did not build with nDPI and the plugin or did not load the configuration. SURICATA_STABLE_REF stays $current. Find out what changed (minimum Rust, the nDPI plugin API) and fix the installer."
 	fi
 fi
 
 if [[ -n "$newer_series" ]]; then
-	issue "Вышла новая серия Suricata: $newer_series" \
-		"Стабильная серия $newer_series новее закреплённой ($current). Переход на серию это отдельное решение: нужны проверка плагина nDPI, COPR OISF и PPA соответствующей серии. SURICATA_COPR в lib/os.sh привязан к серии."
+	issue "A new Suricata series is out: $newer_series" \
+		"The stable series $newer_series is newer than the pinned one ($current). Moving to a new series is a separate decision: it needs a check of the nDPI plugin, the OISF COPR and the PPA of that series. SURICATA_COPR in lib/os.sh is tied to the series."
 fi
 
 exit "$result"

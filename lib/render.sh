@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Template rendering (tech.md section 3: "подстановка @@KEY@@ и блоков
-# в templates/"). One implementation for every step, instead of a
+# Template rendering (tech.md section 3: "substitution of @@KEY@@ and blocks
+# in templates/"). One implementation for every step, instead of a
 # private awk in each step file.
 #
 #   render_template <template-file> [KEY=VALUE ...]
@@ -16,7 +16,7 @@ render_template() {
 	local tpl="$1"
 	shift
 	[[ -r "$tpl" ]] || {
-		echo "render: шаблон не найден: $tpl" >&2
+		echo "render: template not found: $tpl" >&2
 		return 1
 	}
 
@@ -44,7 +44,7 @@ render_template() {
 				fi
 			done
 			if ((!found)); then
-				echo "render: нет значения для блока @@${key}@@ в $tpl" >&2
+				echo "render: no value for the block @@${key}@@ in $tpl" >&2
 				rc=1
 			fi
 			continue
@@ -54,7 +54,7 @@ render_template() {
 			line="${line//@@${keys[$i]}@@/${values[$i]}}"
 		done
 		if [[ "$line" =~ @@[A-Z0-9_]+@@ ]]; then
-			echo "render: нет значения для ${BASH_REMATCH[0]} в $tpl" >&2
+			echo "render: no value for ${BASH_REMATCH[0]} in $tpl" >&2
 			rc=1
 		fi
 		printf '%s\n' "$line"

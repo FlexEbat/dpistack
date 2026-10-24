@@ -1,2134 +1,336 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Версия документа: v31** (2026-10-21)
-**Версия программы: v0.22.0** (слайсы 0–31 реализованы; см. раздел «Changelog программы» ниже)
+English | [Русский](tech.ru.md)
 
-Changelog программы (что сделано по слайсам из раздела 17):
-- v0.1.0 (слайсы 0–7): каркас установщика (`install.sh`, схема `dpistack.conf`, послойный конфиг, блокировка); Suricata (`distro`/`oisf`/`source`, рендер `suricata.yaml`, logrotate, systemd); nDPI (пакет или сборка из исходников); правила (`suricata-update`, безопасное обновление с сохранением прежнего набора, таймер); Redis и ntopng; EveBox (официальный репозиторий, `evebox.yaml`, retention); доступ (`localhost`/`lan`/`nginx`, TLS, `ufw`). Гейт (`shfmt`+`shellcheck`+`bats`) зелёный. `docs/prototype.md` и `docs/real-test-guide.md`.
-- v0.2.0 (слайсы 8–9): `reconfigure` — настоящий транзакционный поток (diff, лёгкое/тяжёлое, проверка `suricata -T` на временном файле до записи на диск, применяются только затронутые шаги); `upgrade` (`apt-get install --only-upgrade`, закреплённые версии пропускает сам apt); `uninstall`/`--purge` (удаляет только созданное самим dpistack, пакеты и сервисы компонентов не трогает — решение, не буквальное прочтение спеки, см. `docs/prototype.md`); текстовое меню `install`/`reconfigure` (без диалоговых библиотек) — быстрая установка, разделы по группам ключей, черновик, пароль панели, подтверждения. `lib/render.sh` — общий рендер `@@KEY@@` вместо рассинхронизированных `awk` по шагам. Гейт: 95 bats, зелёный.
-- v0.3.0 (слайсы 10–13): `dpistack-ctl` (статус, управление, логи, конфиги с бэкапом и откатом, `reconfigure`, правила, `iface`, `panel-passwd`, `test`, `health`); шаг `panel` (пользователь `dpistack`, `sudoers` с проверкой `visudo`); проверочные тесты BitTorrent и HTTPS и шаг `verify`; `dpistack-watch` с шагом `watch` и юнитами. Пароль панели хранится как argon2id (пакет `argon2`), `reconfigure` сравнивает конфиг со снимком применённого состояния. Гейт: 164 bats, зелёный. Модули `selfinstall` (слайс 15) ещё нет, поэтому юнит watchdog пропускает запуск до появления копии установщика.
-- v0.20.0 (слайс 30, раздел 3): единый файл. `scripts/bundle.sh` собирает `dpistack-install.sh` (в репозитории, корень): `install.sh`, `lib/`, `templates/`, `bin/` и `tests/data/` (двоичный pcap через base64) в виде heredoc без изменения логики; файл при запуске распаковывается во временный каталог и запускает оттуда настоящий `install.sh` с теми же аргументами и кодом возврата, каталог удаляется при выходе. Панель (готовый бинарник `dpistack-panel-linux-<arch>` или каталог `panel/`) ищется рядом с самим файлом через `DPISTACK_ORIGIN_DIR` (в модульной версии это каталог `install.sh`, поведение прежнее). `bundle.sh --check` в гейте падает, если файл не соответствует исходникам; `dpistack-install.sh` проходит `shellcheck` в гейте. Тесты `tests/bundle.bats` (14). 
-- v0.20.1 (полное ревью после слайса 30, раздел 18.21): настоящий NFQUEUE проверен в сетевых пространствах имён со Suricata 7.0.3 (drop, alert-only, `--queue-bypass`, `--user`); исправлены зависание опций без значения, `uninstall --dry-run`, запись хэша при dry-run, порядок шагов `reconfigure`, меню при `curl | bash`, стирание ошибки в блоке режима, `reset-failed` таймера отката; `dpistack-install.sh` и бинарники панели в релизе; тесты экрана режима на `node --test` в гейте.
-- v0.22.0 (R159-R165, раздел 18.23): экран «Настройки» со всеми ключами схемы и новой таблицей стилей, глаголы `settings`, `PANEL_MODE`, `PANEL_RUNTIME=docker`, семейства `zypper`, `pacman` и `generic`, документация в `docs/`, `AGENTS.md`, `CONTRIBUTING.md`.
-- v0.21.0 (R155-R158, раздел 18.23): одна команда `dpistack` вместо `dpistack` и `dpistack-ctl` (старое имя осталось ссылкой), запуск только от root, `suricata-version` в `suricata.yaml` по серии установленного Suricata и проверка `suricata -T` перед записью, занятый порт даёт предупреждение и выбор другого.
-- v0.20.4 (R154, раздел 18.22): экраны панели с опросом (Overview, Components, Metrics, Alerts) больше не показывают более старый ответ поверх нового и не заводят второй цикл опроса, если запрос уже в пути, когда нажата кнопка диапазона или вкладка снова видна (`modules/poll.js`, `test/poll.test.mjs`). Сверены ключи `evebox.yaml.tpl` с официальным `examples/evebox.yaml` EveBox.
-- v0.20.3 (продолжение ревью, раздел 18.22): R144–R153. Ротация `eve.json` больше не делает его `root:root 0640` (панель и EveBox теряли чтение), группа `suricata` создаётся там, где её нет (Debian, Ubuntu), каталог логов отдаётся ей (setgid 2750), `eve-log` пишет `filemode: 0640`; сокет команд Suricata один и тот же в `suricata.yaml`, `dpistack-ctl reload`, шаге правил и logrotate (раньше `reload` ходил в несуществующий сокет); `postrotate` вызывает `suricatasc` с явным сокетом (в docker через `compose exec`); в режиме NFQ панель берёт пакеты из `stats.decoder.pkts`, а не рисует нули; IPS работает и без `iptables`, через таблицу `nft` `inet dpistack`; правила `ufw` и `firewalld`, которые добавил `access`, убираются при смене режима доступа и при `uninstall` (только свои, список в состоянии `access.fw.rules`); `uninstall` перезапускает Suricata, запущенную в NFQ; `dpistack-fw.service` стоит перед `network-pre.target`. Тесты: `tests/suricata_logs.bats` (5), `tests/firewall_rules.bats` (6), четыре теста `nft` в `tests/ips.bats`, Go-тесты на NFQ-статистику, обрезку UTF-8 и бесконечность в `Save`; Go-тесты идут на Go 1.27.3 с настоящим `go.mod`.
-- v0.20.2 (продолжение ревью, раздел 18.21): R133–R143: перечитывание правил после периодического обновления, `install-conf` только при первой сборке, панель `prebuilt` при `reconfigure`, нечисловой выбор в меню, повторная загрузка бэкенда метрик при смене версии, действующие отрицательные проверки в тестах, остановка прежнего экземпляра при смене runtime.
-- v0.19.0 (слайс 29, раздел 6): режим IPS. `SURICATA_MODE=ips` принимается. `dpistack-ctl mode ids|ips [--confirm-timeout S]` (10–3600, по умолчанию 120), `mode status [--json]`, `mode-confirm`, внутренние `mode-rollback` и `fw apply|remove|restore`. `ips`: `IPS_METHOD=nfq` ставит цепочку `DPISTACK` с одним правилом `NFQUEUE --queue-bypass` и по одному переходу `-j DPISTACK` в каждую цепочку из `IPS_NFQ_CHAINS` (iptables и ip6tables), Suricata запускается с `-q 0` через drop-in; `afpacket` включает `copy-mode: ips` с парами интерфейсов. Откат запускает таймер `systemd-run`; без `mode-confirm` режим возвращается в `ids`, правила убираются. `dpistack-fw.service` при загрузке восстанавливает правила (неподтверждённое переключение при перезагрузке откатывается). Чужие цепочки и правила не трогаются. Панель: блок «Режим Suricata» (подтверждение, обратный отсчёт, кнопка «Подтвердить IPS»), `GET|POST /api/mode`, `POST /api/mode/confirm`. Тесты `tests/ips.bats` (14) и `panel/internal/api/mode_test.go` (8). 
-- v0.18.0 (слайс 28, раздел 5.1): бэкенд метрик. `METRICS_BACKEND=victoriametrics|prometheus` принимается; `lib/step_metrics.sh` ставит бинарник с релиза проекта на GitHub (VictoriaMetrics v1.153.0, Prometheus v3.15.0) с проверкой sha256 архива, который закреплён в коде (A10 подтверждено по файлам контрольных сумм этих релизов), создаёт пользователя `dpistack-metrics` в группе `dpistack`, пишет `scrape.yaml` (одна цель `/metrics` панели, токен из `credentials_file`) и юнит `dpistack-vm.service` или `prometheus.service` с `METRICS_RETENTION`. Адрес привязки следует `ACCESS_MODE` (в `lan` 0.0.0.0 и порт открывается для `LAN_CIDR`, иначе 127.0.0.1). `METRICS_BACKEND_RUNTIME=docker` идёт через compose (образы `victoriametrics/victoria-metrics` и `prom/prometheus` с тегом версии). Смена бэкенда или `none` останавливает прежний, данные в `/var/lib/dpistack-metrics` остаются, `uninstall` убирает юнит и бинарник, `--purge` ещё и данные. `disk.free` в `dpistack-watch` учитывает каталог данных. Срок хранения с бэкендом проверяется строже: только `h`, `d`, `w`, `y`. Тесты `tests/metrics_step.bats` (18). 
-- v0.17.0 (слайс 27, раздел 5.1): Docker runtime. `SURICATA_RUNTIME`, `EVEBOX_RUNTIME` и `NTOPNG_RUNTIME` принимают `docker` (redis за ntopng идёт следом за `NTOPNG_RUNTIME`; `METRICS_BACKEND_RUNTIME=docker` по-прежнему отклоняется до слайса 28). `lib/runtime_docker.sh` рендерит один compose-проект `dpistack` (`/opt/dpistack/compose/compose.yaml`, `templates/compose.yaml.tpl`) только из docker-компонентов; все сервисы с `network_mode: host`, Suricata с `NET_ADMIN`, `NET_RAW`, `SYS_NICE`, тома на те же пути хоста (`/var/log/suricata`, `/etc/suricata`, `/etc/evebox`, `/etc/ntopng`). Шаги `suricata`, `evebox`, `ntopng`, `redis` в docker-режиме не ставят пакеты и репозитории, а пишут конфиги на хост и делают `docker compose up -d <сервис>`. `dpistack-ctl`: `status` (состояние контейнера в словах systemd, образ как версия), `start|stop|restart`, `logs` (`docker compose logs`), `reload suricata` (`exec` в контейнер), проверка `suricata.yaml` и правил в контейнере, `rules-update` через контейнер. `preflight`: нет плагина `compose` и `SURICATA_RUNTIME=docker` при `NDPI_ENABLE=yes` дают код 3. Реплей BitTorrent при Suricata в контейнере пропускается с причиной. Тесты `tests/runtime_docker.bats` (18). 
-- v0.16.0 (слайс 26, раздел 5.5): SELinux на RHEL-семействе: порты nginx (`NTOPNG_PORT`, `EVEBOX_PORT`, `PANEL_PORT`) получают `http_port_t`, порт ntopng, если он не 3000 и не 3001 (в режиме `nginx` это `PORT+10000`), получает `ntop_port_t` через `semanage port` (`-a`, при отказе `-m`; готовый тип пропускается; нет типа в политике: предупреждение, не отказ); каждый записанный установщиком или `ctl` файл получает метку политики (`restorecon -F` в `atomic_write`), в конце `install` и `reconfigure` один проход `restorecon -RF` по существующим путям dpistack и компонентов. `FIREWALL_MANAGE=auto` при остановленном `firewalld` не пишет правила и не падает, а говорит об этом. `preflight` проверяет COPR OISF для сборки именно этой версии ОС (`epel-N` или `fedora-N`) и останавливает установку кодом 3 до `dnf copr enable`. Тесты `tests/selinux.bats` (12) и `tests/pkg_dnf.bats` (7). 
-- v0.15.0 (слайс 25 и R81): `README.md` (что это, ограничение топологии, модель угроз, быстрая установка, конфиг, `install`/`reconfigure`/`upgrade`/`uninstall`, `dpistack-ctl`, `scrape_configs` для Prometheus, VictoriaMetrics и `vmagent`, разработка); `scripts/check-conf-example.sh` в гейте сверяет ключи и умолчания `dpistack.conf.example` с таблицей 4.3 и `lib/schema.sh` (нашёл пять расхождений, исправлены). `install --dry-run` больше не пишет `/etc/dpistack/panel.auth`, не ставит `argon2` и не печатает пароль панели (R81). 
-- v0.14.0 (слайс 24, раздел 9): экран Тесты (запуск `bittorrent`, `https`, `all`, результат построчно со статусом и причиной, последний результат читается из `tests-last.json` и переживает перезапуск панели), экран Оповещения (`events.jsonl`, новые сверху, фильтр по проверке), блок «Интерфейсы захвата» на экране Компоненты (добавление и удаление через `ctl iface`). 
-- v0.13.0 (слайс 23, раздел 9): `GET /metrics` в формате Prometheus 0.0.4 по разделу 4.9 с токеном `METRICS_TOKEN` в заголовке `Authorization: Bearer`; без данных метрика не выдаётся; диск читается не чаще раза в секунду; токен попадает в панель через файл `/etc/dpistack/metrics.token` (`0640 root:dpistack`), не через флаг. Установщик больше не печатает токен при `--dry-run` (раньше печатал); итоговый отчёт показывает токен вместе с готовой записью для `scrape_configs`, один раз, и при `reconfigure`, который включил экспорт. 
-- v0.12.0 (слайс 22, раздел 9): экран Метрики: шесть графиков (пакеты в секунду, потери, CPU и память панели, размер `eve.json`, свободное место) за 1, 6 и 24 часа. Пакет `panel/internal/metrics`: кольцо 24 часа по 30 секунд, снимок в `metrics.json` раз в час и при остановке, восстановление после перезапуска; сброс счётчиков Suricata пропускает интервал, а не даёт отрицательное значение; недоступный ряд помечен причиной, а не нулём. Панель получила флаг `-metrics-file`; установщик создаёт только этот файл для пользователя панели. 
-- v0.11.0 (слайс 21, раздел 9): экран События: последние события `eve.json` по типу (по умолчанию `alert`), фильтр по тексту и времени, сырой JSON по клику, живой хвост по SSE. Пакет `panel/internal/eve`: чтение с сохранённого смещения, ротация без потери событий, битая и неполная строки пропускаются, в памяти не больше 5000 событий. Панель получила флаг `-eve-file`; при `EVE_FILE=no` его нет и экран пишет, что просмотр выключен. `EVE_FILE` теперь перерисовывает и юнит панели при `reconfigure`. 
-- v0.10.0 (слайс 20, раздел 9): экран Правила: источники (включить, выключить, добавить по адресу, удалить свой), группы, отключение и возврат правила по `sid`, поиск до 50 правил, кнопка «Обновить сейчас» с результатом, временем и причиной сбоя. `ctl rules-sources list --enabled`; `ctl rules-update` печатает в stdout, что сказали `suricata-update` и проверки. 
-- v0.9.0 (слайс 19, раздел 9): экран Конфиги (выбор файла из списка, редактор, «Проверить», «Сохранить», «Сохранить и применить», «Откатить»). `ctl config-write` получил `--check`. Тело `PUT` ограничено 1 МиБ. 
-- v0.8.0 (слайс 18, раздел 9): экраны Компоненты и Логи. Кнопки start, stop, restart и «Перечитать правила» через `ctl` с подтверждением, остановка и перезапуск самой панели требуют второго подтверждения и выполняются после ответа; журнал последних N строк (до 1000) и живой хвост по SSE. `ctl logs` получил ключ `--until-stdin-closed`. 
-- v0.7.1 (решения по открытым вопросам слайса 17): в режиме `nginx` сервисы слушают на `PORT+10000` за nginx, который держит `PORT` (раньше оба хотели один порт); `PANEL_SOURCE=auto` по умолчанию берёт готовый `dpistack-panel-linux-<arch>` рядом с `install.sh`, иначе собирает; архив релиза теперь содержит готовые бинарники панели для amd64 и arm64. 
-- v0.7.0 (слайс 17, раздел 9): установка панели шагом `panel` (бинарник по `PANEL_SOURCE`, юнит `dpistack-panel.service` с `MemoryMax=64M`, `CPUQuota=20%`, привязка по `ACCESS_MODE`), экран Обзор (общий `overall`, компоненты, проверки сторожа; опрос раз в 10 с только у видимой вкладки), проверка бюджета ресурсов `scripts/panel-budget.sh` в гейте, `uninstall` убирает юнит и бинарник панели. Исправлено: сгенерированный пароль панели теперь печатается в отчёте один раз (раньше флаг выставлялся, но не читался). 
-- v0.6.0 (слайс 16, раздел 9): сервер панели на Go (`panel/`): вход по argon2id, сессии на 12 часов, CSRF, не более 5 попыток входа за 5 минут на IP, политика адресов по `ACCESS_MODE`, `GET /api/status` из `ctl status` и `health.json`, минимальная оболочка (вход и пустой Обзор), статика встроена в бинарник. Хэш пароля теперь `-m 14` (16 МиБ) вместо 64 МиБ: проверка пароля на 64 МиБ не помещалась в `MemoryMax=64M` панели. 
-- v0.5.1 (ответы владельца, раздел 12.4): Rocky и AlmaLinux от 8, Debian от 12, Ubuntu LTS от 22.04; RHEL и CentOS Stream с предупреждением; автоматическая проверка релизов Suricata раз в неделю.
-- v0.5.0 (платформы Ubuntu, Debian, RHEL, раздел 18.5): стабильные версии вместо сборок разработки (Suricata 8.0.7, ntop.org `apt-stable`), `contrib` на Debian, COPR OISF и `/etc/sysconfig/suricata` на RHEL-семействе, RPM-репозиторий EveBox, проверка поддерживаемых платформ и репозиториев в `preflight`, удаление пользователя панели при `--purge`.
-- v0.4.0 (реальные установки на Ubuntu 24.04 и dnf-семейство, раздел 18.4): интерфейс определяется сам, `iproute2` и `curl` ставятся до preflight, nDPI по умолчанию закреплён на 4.14, плагин nDPI ставится в `/usr/lib/suricata`, `make install-conf`, откат на пакет Suricata там, где нет Rust 1.85; слой dnf (EPEL/CRB, `rpm`, `versionlock`, `firewalld`, `setsebool`, репозиторий ntop.org) без проверки на реальном хосте.
-- v0.3.3 (пакеты и сборка, раздел 18.3): один `apt-get update` в начале `install`, `reconfigure` и `upgrade`; базовые пакеты и зависимости сборки ставятся сами; нет пакета Suricata или nDPI — сборка из исходников; репозиторий ntop.org для Debian по имени релиза; Rust 1.85 из `rustc-1.N`; gitleaks в CI бинарником.
-- v0.3.2 (повторное ревью, раздел 18.2): рендер конфигов сохраняет права (раньше `evebox.yaml`, юниты и `logrotate` получали 0600), сбой `run` в шагах останавливает шаг, `universe` только на Ubuntu, снимок `applied` под блокировкой `state`.
-- v0.3.1 (слайсы 14–15 и полное ревью): каналы оповещений (`log`, `tg`, `mail`, `panel`), `selfinstall` с командой `dpistack` и меню управления; исправления из раздела 18.1: `run` возвращает настоящий код ошибки, запись файлов не оставляет обрезанный результат, `state` защищён блокировкой, свободные ключи `dpistack.conf` проверяются шаблонами, `*_VERSION` для ntopng и EveBox действуют, CI закреплён по SHA.
+**Document version: v32** (2026-10-24)
+**Program version: v0.23.0**
 
-Changelog_tech:
-- v28: слайс 30. Единый файл `dpistack-install.sh` (раздел 3 и «Слайс 30. Результат»), `ORIGIN_DIR`, стадия `bundle` гейта (12), тесты в разделе 11, ревью слайса 30 (18.20).
-- v27: слайс 29. Режим IPS (раздел 6, 4.5), ключи `IPS_*` читаются, раздел «Слайс 29. Результат», тесты в разделе 11, ревью слайса 29 (18.19).
-- v26: слайс 28. Бэкенд метрик (4.3, 5.1), A10 закрыто, срок хранения (4.3), раздел «Слайс 28. Результат», тесты в разделе 11, ревью слайса 28 (18.18).
-- v25: слайс 27. Docker runtime (5.1, 4.3, 4.5), A6 остаётся допущением, раздел «Слайс 27. Результат», тесты в разделе 11, ревью слайса 27 (18.17).
-- v24: слайс 26. SELinux и firewalld на RHEL-семействе, проверка COPR по версии ОС в `preflight` (5.5), раздел «Слайс 26. Результат», новые тесты в разделе 11, ревью слайса 26 (18.16).
-- v23: слайс 25 и R81. Гейт получил стадию `conf example` (12), пробный запуск не трогает `panel.auth` и не печатает пароль (5, пункт 5, и 4.5), решения «выбирай сам» по README и лицензии (слайс 25, A11), ревью слайса 25 (18.15), R81 закрыт.
-- v22: слайс 24. Ответы `/api/tests/*`, `/api/alerts`, `/api/iface` (4.8; `GET /api/iface` добавлен: экрану нужен список), раздел 9 «Тесты, оповещения и интерфейсы», флаги `-tests-file` и `-events-file` теперь всегда, ревью слайса 24 (18.14).
-- v21: слайс 23. Токен `/metrics`: схема `Bearer`, файл токена, `Content-Type` (4.9), флаги `-metrics-token-file`, `-tests-file`, `-rules-file`, `-disk-paths` и раздел 9 «Экспорт метрик», `METRICS_TOKEN` затрагивает шаг `panel`, итоговый отчёт (раздел 5, пункт 8), ревью слайса 23 (18.13).
-- v20: слайс 22. Ответ `/api/metrics` (4.8), раздел 9 «Метрики для графиков», флаг `-metrics-file`, панель пишет `metrics.json` (раздел 3), ревью слайса 22 (18.12).
-- v19: слайс 21. Флаг `-eve-file` (раздел 9, «Запуск»), ответы `/api/eve` и `/api/eve/stream` (4.8), раздел 9 «События EVE», `EVE_FILE` теперь затрагивает и шаг `panel` (`lib/schema.sh`), ревью слайса 21 (18.11).
-- v18: слайс 20. `rules-sources list --enabled` и вывод `rules-update` (4.5), тела и ответы `/api/rules/*` (4.8), раздел 9 «Правила в панели», ревью слайса 20 (18.10).
-- v17: слайс 19. `config-write --check` (4.5), `GET /api/config` и `POST /api/config/{name}/check` (4.8), раздел 9 «Редактор конфигов», ревью слайса 19 (18.9).
-- v16: слайс 18. Правила API компонентов и логов, ключ `--until-stdin-closed` в `ctl logs` (4.5), раздел 9 «Компоненты и логи», ревью слайса 18 (18.8).
-- v15: порты в режиме `nginx` (раздел 7, 9, 18.7), `PANEL_SOURCE=auto` и готовые бинарники в архиве релиза (раздел 4.3, 9, 12), закрыты открытые вопросы 1 и 2 из 18.7.
-- v14: слайс 17. Установка панели и юнит (раздел 9, «Установка панели»), проверка Go и готового бинарника в `preflight`, `scripts/panel-budget.sh` в гейте (раздел 12), что кладёт в архив релиза `release.yml`, открытые вопросы 18.7.
-- v13: слайс 16. Параметры запуска панели и встроенная статика (раздел 9, раздел 3), схема CSRF и правило «последняя запись `X-Forwarded-For`» (раздел 9), argon2id `-m 14` (4.5), зависимости `golang.org/x/crypto` v0.58.0 и `golang.org/x/sys` v0.49.0, минимум Go 1.26 (раздел 2), `actions/setup-go` в `gate` (раздел 12), ревью тестов: убраны три бесполезных, результат ревью слайса 16 (18.6).
-- v12: платформы по ответам владельца (раздел 1 пункт 3 и 11, раздел 2, раздел 11), «dev» это нестабильные версии, автопроверка релизов Suricata (12.4), правило про образы Docker.
-- v11: проект полноценный, не MVP (раздел 1, пункт 11), матрица платформ и их приёмка (раздел 11), стабильные каналы (5.1), раздел 18.5.
-- v10: раздел 18.4 (реальные установки), `NDPI_VERSION` пусто = 4.14 (раздел 3, ключи), автоопределение `IFACES`, dnf-семейство в 5.1 и 5.5, `tests/families.bats` в разделе 11.
-- v9: подготовка пакетов (5.1 шаг 4а), откат на сборку из исходников и зависимости сборки (5.5), gitleaks без стороннего action (12.1), результат ревью 18.3; закрыт открытый пункт про `apt-get update` из 18.1.
-- v8: защита ветки `main` и слияние через pull request (12.3), результат повторного ревью (18.2).
-- v7: порядок веток и слияния dev в main (12.3); полное ревью кода и CI (18.1); шаблоны свободных ключей (4.3), правила `ctl` для секретов, блокировки и `logs -n` (4.5), закрепление действий по SHA и проверка тега на `main` (12.1).
-- v6: слайсы 14 и 15 (каналы оповещений, `selfinstall` и меню управления), CI/CD и проверки безопасности (12.1, 12.2), структура репозитория дополнена `.github/`, `scripts/security.sh`, `SECURITY.md`. Ревью и поиск ошибок: результат записан в разделе 18.
-- v5: решения по слайсам 10–13, внесённые владельцем разрешением «выбирай сам». (1) Допущение A2 закрыто: в смерженном плагине nDPI нет отдельных полей `ndpi.*` в EVE, nDPI виден через `alert.signature` и `alert.metadata`; тест BitTorrent при плагине подкладывает своё правило `ndpi-protocol:BitTorrent` (раздел 10, 4.7). (2) Допущение A8 закрыто: режима проверки конфига у EveBox и ntopng нет, проверяется непустота (4.5). (3) Описан формат `tests-last.json` (4.6). (4) Состояние применённого конфига хранится в `state` как `applied.<KEY>`, по нему `reconfigure` определяет разницу (4.2, 4.5). (5) Хэш пароля панели argon2id считает CLI `argon2` (4.5). (6) Раздел 8 дополнен: порог даёт худший статус, смысл состояний `process` и `port`, `jq` как зависимость. (7) Переменные окружения для тестов описаны в разделе 11.
-- v4: `install.sh` устанавливает себя как персистентную команду `dpistack` (`/usr/local/sbin/dpistack`, новый шаг `selfinstall`). Без аргументов `dpistack` открывает CLI-меню: установка при отсутствии конфига, иначе меню управления (Настроить, Статус, Логи, Тесты, Обновить, Удалить, Пароль панели) — раздел 5.2. Раздел 5 перенумерован (5.0–5.7). Новый слайс 15 «персистентная команда `dpistack` и меню управления»; слайсы 15–29 сдвинуты на +1 (стало 31 слайс, 0–30), стадия 4 переименована в «управление и панель» (15–25), стадия 5 — 26–30.
-- v3: `install` и `reconfigure` — это текстовое меню (раздел 5.0), а не только линейный прогон по конфигу. Новый слайс 9 «меню install и reconfigure»; все слайсы с прежним номером 9 и далее сдвинуты на +1 (было 28 слайсов, стало 29), границы стадий 2–5 пересчитаны.
-- v2: удалён LXD (runtime только `native` и `docker`). Добавлены экспорт метрик `/metrics` и бэкенды VictoriaMetrics/Prometheus (ключи `METRICS_*`, раздел 4.9), команда `reconfigure` и пошаговое описание `install`/`reconfigure` (раздел 5), retention EveBox, модель угроз (раздел 1), слайс 0 (ручной прототип), слайс README и LICENSE. Крупные слайсы разбиты, стадия 5 отнесена к «после MVP». Умолчания изменены: `NDPI_ENABLE=yes`, `SURICATA_SOURCE=source`.
-- v1: первая версия. Структура и дисциплина взяты из tech.md сайта заметок (слайсы, гейт, DoD, `CONTRACT GAP`). Предметная область, стек и контракты написаны заново.
+This is the source of truth of the project: names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The full history of slices, reviews and the old changelog (versions up to v0.22.0) is in the git history: it was removed from this file on 2026-10-24 (the last commit that has it is `02929a8`, file `tech.md`).
 
----
+## 1. Project
 
-## Предметная область (кратко)
+dpistack is an installer, two service scripts and a web panel for a home or small DPI/IDS lab: **nDPI + Suricata + EveBox + ntopng** on one host with one administrator. The goal is a working bundle that one command sets up, that is managed from a browser and reports its own failures. It is a finished, full project, not an MVP. It is not a SIEM, not a multi-host platform and not a replacement for an industrial NDR.
 
-- **DPI (deep packet inspection):** определение прикладного протокола потока по содержимому пакетов, а не по номеру порта. Библиотека **nDPI** (ntop) делает это и ставит потокам «риски» (самоподписанный сертификат, протокол на нестандартном порту и т.д.).
-- **Suricata:** движок сигнатур. В режиме **IDS** смотрит копию трафика и только сообщает, в режиме **IPS** стоит в разрыве и может отбрасывать пакеты. Плагин nDPI добавляет ключевые слова правил `ndpi-protocol` и `ndpi-risk`. Плагин появляется только в сборке Suricata с `--enable-ndpi`.
-- **EVE JSON:** построчный JSON-журнал Suricata (`alert`, `flow`, `dns`, `tls`, `http`, `stats` и др.). Единый источник данных для EveBox, панели, watchdog и тестов.
-- **EveBox:** веб-просмотр алертов Suricata («Inbox»), хранит события во встроенном SQLite или в Elasticsearch.
-- **ntopng:** веб-монитор трафика в реальном времени (хосты, потоки, протоколы), использует Redis и собственную копию nDPI.
-- **Правила:** наборы сигнатур. Источник по умолчанию: Emerging Threats Open через `suricata-update`. Группы `emerging-p2p` и `emerging-policy` ловят BitTorrent и нарушения политики.
-- **Метрики:** числовые ряды во времени. Формат Prometheus (`/metrics`) читают Prometheus, VictoriaMetrics и `vmagent`.
-- **Точка съёма трафика:** пассивный захват (`af-packet`) видит только пакеты, проходящие через интерфейс самого хоста. Чтобы видеть всю сеть, нужны зеркальный порт, шлюз или inline-включение. Хост вне разрыва сети с NFQUEUE в цепочках `INPUT`/`OUTPUT` защищает только себя.
+- **Topology limit.** The host sees only the traffic of its own interface. Passive capture (`af-packet`) shows the rest of the network only if that traffic reaches this host (a mirror port, a gateway, an in-line position). A host outside the path with NFQUEUE in `INPUT`/`OUTPUT` protects only itself. The installer prints this when interfaces are chosen.
+- **Threat model.** The config editor of the panel equals root access to the host. A hacked panel is a hacked host. So `ACCESS_MODE=localhost` is the default, signing in is required and cannot be turned off; `lan` and `nginx` are enabled only after an explicit confirmation. The panel serves HTTP without TLS (use `nginx` with TLS or an SSH tunnel). `eve.json` holds traffic metadata and is `0640`. `dpistack` commands run as root only; the panel reaches only the control verbs through `sudo -n dpistack <verb>` and every argument is checked against lists. Secrets live only in `secrets.conf` (`0600`); the panel password is an argon2id hash.
+- **Not in scope:** a multi-user panel, own SSO, Grafana dashboards, ntopng Enterprise, podman, LXD, an i18n layer in the program, capturing a whole network without a suitable topology.
 
-## ТЗ (кратко)
+## 2. Stack and platforms
 
-1. **Установщик** `install.sh` на Bash: интерактивный (CLI-меню) и неинтерактивный режимы, идемпотентный, есть `--dry-run`, `reconfigure`, `upgrade`, `uninstall`. После установки доступен как персистентная команда `dpistack` с тем же меню для настройки, статуса, логов, тестов, обновления и удаления.
-2. **Ставит** nDPI, Suricata, Redis, ntopng, EveBox, systemd-юниты, конфиг EVE, logrotate. Источник Suricata (пакеты дистрибутива, OISF, исходники), пиннинг версий и способ развёртывания каждого компонента (`native` или `docker`) выбирает пользователь.
-3. **ОС:** Ubuntu LTS от 22.04, Debian от 12, Rocky Linux и AlmaLinux от 8 (решение владельца, v12). RHEL и CentOS Stream пока не цель: запускаются с предупреждением, поддержка добавляется отдельным решением. Fedora запускается с предупреждением.
-4. **Захват:** режим IDS по умолчанию, IPS опционально. Интерфейсы: список, по умолчанию `enp2s0`, добавление и удаление без переустановки. Есть офлайн-реплей pcap.
-5. **Правила:** ET Open плюс дополнительные и свои источники, автообновление раз в неделю (настраивается), группы p2p и policy включены.
-6. **Доступ к веб-интерфейсам:** `localhost`, `lan` или через `nginx`. Внешний SSO не нужен.
-7. **Проверки:** BitTorrent (реплей pcap) и обычный HTTPS (живой запрос) с автоматическим вердиктом.
-8. **Watchdog:** проверяет процессы, порты, свежесть `eve.json`, drop rate, место на диске, возраст правил. Оповещения: панель, лог, Telegram, почта, каналы комбинируются.
-9. **Метрики:** панель отдаёт `/metrics` в формате Prometheus. Опционально установщик ставит VictoriaMetrics или Prometheus и настраивает сбор.
-10. **Личная панель:** лёгкая по ресурсам, современный вид. Возможности: статус компонентов, start/stop/restart, редактор конфигов с валидацией (`suricata -T`), управление правилами, запуск тестов, просмотр логов и EVE-событий, графики метрик.
-11. **Это готовый и полноценный проект, а не MVP.** Каждая заявленная возможность доводится до рабочего состояния на каждой поддерживаемой платформе и проверяется на стенде; пунктов «сделаем после MVP» в плане нет. Обязательные платформы: Ubuntu LTS от 22.04, Debian от 12, Rocky Linux и AlmaLinux от 8 (раздел 11, матрица платформ). Только стабильные версии: сборки разработки (`master`, `nightly`, `latest`, `dev`) по умолчанию не используются нигде. Выпуск 1.0 возможен, когда закрыты все стадии 0–5 и каждая платформа прошла приёмку. Порядок стадий задаёт очерёдность работ, а не объём; слайс 26 (RHEL-семейство) выполняется вне очереди, потому что платформа обязательная.
-12. **Не входит:** мультипользовательская панель, свой SSO, дашборды Grafana, ntopng Enterprise, podman, LXD, i18n, перехват трафика всей сети без подходящей топологии.
+- Installer and `dpistack-watch`: Bash 4.4+, no Python or Perl. External tools: `curl`, `jq`, `ss`, `ip`, `systemctl`, `sed`, `awk`, `tar`, `flock`; the `preflight` step installs what is missing.
+- Panel: Go (the version in `panel/go.mod`), the standard library `net/http` plus `golang.org/x/crypto` (argon2id) v0.58.0 and its `golang.org/x/sys` v0.49.0. The `/metrics` text is written by hand. Front end: plain ES modules and CSS, no bundler, no framework, no icon fonts, no external resources.
+- Tests: `bats` for Bash, `go test` for the panel, `node --test` for the interface logic. Checks: `shellcheck`, `shfmt`, `gofmt`, `go vet`.
+- Platforms (required): Ubuntu LTS from 22.04, Debian from 12, Rocky Linux and AlmaLinux from 8. RHEL and CentOS Stream start with a warning. openSUSE, Arch and any other systemd Linux run with the components in Docker. Older releases are refused by `preflight` with code 3 (override at your own risk: `DPISTACK_ALLOW_UNSUPPORTED=1`). Package managers: `apt`, `dnf` on the host; `zypper`, `pacman`, `generic` need Docker for the components.
+- Only stable versions are used by default: no `master`, `nightly`, `latest`, `dev`. Suricata comes from the last tested release of the 8.0 series (`SURICATA_STABLE_REF`, now `suricata-8.0.7`), nDPI 4.14 (`NDPI_COMPAT_REF`), ntop.org from its stable channel, EveBox from `stable`. Docker images use pinned tags.
+- Architectures: `amd64`, `arm64`. Containers: Docker with the `compose` plugin only.
 
----
+## 3. Repository layout
 
-## 0. Как читать этот файл
-
-Это источник истины проекта. Читай его перед каждой задачей и подчиняйся дословно.
-
-- Имена ключей конфига, путей, команд, метрик, полей и эндпоинтов берутся отсюда. Свои варианты не придумывай.
-- Нужного контракта здесь нет → СТОП, выдай блок `CONTRACT GAP` (раздел 15). Код с выдуманным ключом или полем не пиши.
-- Файл меняет только владелец проекта. Каждое изменение контракта поднимает версию сверху файла.
-- Работаешь один слайс за заход. Стадии и слайсы в разделе 17, иди сверху вниз.
-
----
-
-## 1. Проект
-
-Набор из установщика, двух служебных скриптов и панели для домашней или небольшой лаборатории DPI/IDS. Один хост, один администратор.
-
-Цель: работающая связка, которую поднимает одна команда, которой управляют из браузера и которая сама сообщает о поломках. Не SIEM, не платформа для нескольких хостов, не замена промышленного NDR.
-
-Ограничение топологии: хост видит только трафик своего интерфейса. Установщик печатает это предупреждение при выборе интерфейсов и не обещает видимость всей сети.
-
-**Модель угроз (коротко):**
-
-- Редактор конфигов панели даёт доступ уровня root к хосту: правки `suricata.yaml` и запуск компонентов позволяют выполнить чужой код. Белый список в `dpistack-ctl` защищает от произвольных команд, но не от вредных правок конфигов. Взлом панели равен взлому хоста.
-- Поэтому `ACCESS_MODE=localhost` по умолчанию, вход по паролю обязателен и не отключается. `lan` и `nginx` установщик включает только после явного подтверждения предупреждения.
-- Сама панель отдаёт HTTP без TLS. Пароль и токен `/metrics` в `lan` видны в сети, поэтому установщик рекомендует `nginx` с TLS или SSH-туннель.
-- `eve.json` содержит метаданные трафика (SNI, DNS-имена, адреса). Права: `0640`, группа доступа только у Suricata и пользователя `dpistack`.
-- Персистентная команда `dpistack` (раздел 5.2) рассчитана на прямой запуск администратором от root: у неё нет белого списка, она ставит пакеты, меняет `dpistack.conf` и удаляет набор. Это не проблема безопасности сама по себе (эквивалент root-доступа к хосту уже есть у того, кто её запускает), но `dpistack` не должна вызываться сервисным пользователем `dpistack` или другим непривилегированным процессом — этим занимается только `dpistack-ctl`.
-
----
-
-## 2. Стек и платформы
-
-- Установщик, `dpistack-ctl`, `dpistack-watch`: Bash 4.4+, без Python и Perl. Внешние утилиты: `curl`, `jq`, `ss`, `ip`, `systemctl`, `sed`, `awk`, `tar`, `flock`. Установщик доставит недостающие пакеты на шаге `preflight`.
-- Панель: Go 1.26+, только `net/http` из стандартной библиотеки. Единственная внешняя зависимость: `golang.org/x/crypto` (argon2id) v0.58.0 (последняя на 2026-10-12; тянет `golang.org/x/sys` v0.49.0). Минимум Go задан директивой `go` в `panel/go.mod`: ему следует `actions/setup-go` в CI, а `PANEL_SOURCE=prebuilt` не требует Go на хосте. Формат `/metrics` пишется вручную, без `client_golang`. Фронт: ванильные ES-модули и CSS, без сборщика, без фреймворков, без иконочных шрифтов.
-- Тесты: `bats` для Bash, `go test` для панели.
-- Проверки: `shellcheck`, `shfmt`, `gofmt`, `go vet`.
-- Менеджеры пакетов: `apt` (Ubuntu, Debian), `dnf` (Rocky Linux, AlmaLinux; RHEL, CentOS Stream и Fedora с предупреждением). Поддерживаются: Ubuntu LTS от 22.04 (22.04, 24.04, 26.04, дальше по LTS), Debian от 12, Rocky Linux и AlmaLinux от 8. Релизы старше этих `preflight` отклоняет кодом 3 (Ubuntu 20.04 и старше, Debian 11 и старше, EL 7 и старше), обойти можно на свой риск через `DPISTACK_ALLOW_UNSUPPORTED=1`. Промежуточные релизы Ubuntu, RHEL и CentOS Stream от 8, Fedora, производные (Mint) запускаются с предупреждением. SUSE, Arch и Alpine не поддерживаются.
-- Архитектуры: `amd64`, `arm64`.
-- Контейнеры: только Docker с плагином `compose`.
-
-Без ORM, без БД у панели, без Node/npm в рантайме, без CSS-фреймворков.
-
----
-
-## 3. Структура репозитория
-
-```
-install.sh                    точка входа: разбор аргументов, загрузка lib/, запуск шагов
-dpistack.conf.example         пример конфига со всеми ключами
-README.md  LICENSE  SECURITY.md
-.github/
-  workflows/ci.yml            гейт на каждый push и pull request (12.1)
-  workflows/security.yml      gitleaks, security.sh, trivy (12.1)
-  workflows/release.yml       сборка и публикация по тегу vX.Y.Z (12.1)
-  dependabot.yml
-docs/
-lib/
-  paths.sh                    все пути системы из префикса DPISTACK_ROOT
-  common.sh                   log, run (учитывает dry-run), die, lock, atomic_write, backup
-  schema.sh                   таблица ключей: имя|тип|умолчание|варианты|уровень|затрагиваемые шаги|подсказка
-  config.sh                   загрузка, проверка по schema, вопросы, сохранение, diff старого и нового
-  menu.sh                     текстовое меню install и reconfigure (раздел 5.0)
-  os.sh                       определение ОС, обёртки pkg_install/pkg_repo_add/pkg_pin
-  state.sh                    состояние шагов и хэши отрендеренных файлов
-  render.sh                   подстановка @@KEY@@ и блоков в templates/
-  step_preflight.sh
-  step_selfinstall.sh          копия install.sh, lib/, templates/ в систему и бинарник /usr/local/sbin/dpistack
-  step_ndpi.sh
-  step_suricata.sh
-  step_rules.sh
-  step_redis.sh
-  step_ntopng.sh
-  step_evebox.sh
-  step_metrics.sh             VictoriaMetrics или Prometheus и настройка сбора
-  step_access.sh              bind-режимы, nginx, firewall, SELinux
-  step_panel.sh
-  step_watch.sh
-  step_verify.sh              итоговые тесты после установки
-  runtime_native.sh           systemd
-  runtime_docker.sh           compose
-templates/
-  suricata.yaml.tpl
-  suricata-test.yaml.tpl      минимальный конфиг для офлайн-тестов
-  evebox.yaml.tpl
-  ntopng.conf.tpl
-  nginx.conf.tpl
-  compose.yaml.tpl
-  scrape.yaml.tpl             конфиг сбора метрик для VictoriaMetrics и Prometheus
-  logrotate.tpl
-  sudoers.tpl
-  *.service.tpl  *.timer.tpl
-bin/
-  dpistack-ctl                привилегированный помощник (раздел 4.5)
-  dpistack-watch              watchdog (раздел 8)
-panel/
-  go.mod
-  cmd/panel/main.go
-  internal/{api,auth,ctl,eve,metrics,health}/
-  web/                        index.html, app.css, app.js, modules/*.js, embed.go (go:embed: статика в бинарнике)
-tests/
-  data/bittorrent.pcap        handshake, документационные IP
-  data/README.md              как записан pcap
-  mocks/                      заглушки внешних команд для bats
-  *.bats
-scripts/
-  gate.sh
-  security.sh
-  bundle.sh                   склейка в один файл dpistack-install.sh
-```
-
-Правила размещения:
-
-- Пути к системным файлам строятся только в `lib/paths.sh` из префикса `DPISTACK_ROOT` (по умолчанию пустой). Тесты подставляют временный каталог. Прямых `/etc/...` в шагах нет.
-- Шаг не вызывает системные команды напрямую, только через `run` из `common.sh` (dry-run и лог).
-- Логика, зависящая от ОС, живёт в `os.sh`. Шаги вызывают `pkg_install`, а не `apt-get` или `dnf`.
-- Логика, зависящая от способа развёртывания, живёт в `runtime_*.sh`. Шаги вызывают `rt_start`, `rt_stop`, `rt_exec`, а не `systemctl` или `docker` напрямую.
-- Панель не запускает команды кроме `sudo -n dpistack-ctl <verb>`. Сама панель читает только `eve.json`, `health.json`, `events.jsonl`, `tests-last.json`, `metrics.json` (его же и пишет), делает `stat` на `suricata.rules` и `statfs` на каталоги данных.
-
----
-
-## 4. Контракты (заморожены)
-
-### 4.1 Компоненты
-
-| id | что это | runtime | unit / контейнер |
-| --- | --- | --- | --- |
-| `suricata` | движок IDS/IPS | native, docker | `suricata.service` |
-| `evebox` | просмотр алертов | native, docker | `evebox.service` |
-| `ntopng` | монитор трафика | native, docker | `ntopng.service` |
-| `redis` | хранилище ntopng, всегда там же, где `ntopng` | как у `ntopng` | `redis.service` (rpm) или `redis-server.service` (deb), разрешает `os.sh` |
-| `victoriametrics` | бэкенд метрик, только при `METRICS_BACKEND=victoriametrics` | native, docker | `dpistack-vm.service` |
-| `prometheus` | бэкенд метрик, только при `METRICS_BACKEND=prometheus` | native, docker | `prometheus.service` |
-| `panel` | личная панель | только native | `dpistack-panel.service` |
-| `watch` | watchdog | только native | `dpistack-watch.timer` |
-| `rules` | обновление правил | только native | `dpistack-rules.timer` |
-
-`ndpi` компонентом не является: это библиотека, а плагин `ndpi.so` часть `suricata`. Его состояние показывает `dpistack-ctl status` отдельным полем `ndpi_plugin`.
-
-### 4.2 Пути
-
-| что | путь |
+| Path | Purpose |
 | --- | --- |
-| конфиг установки | `/etc/dpistack/dpistack.conf` (0644 root) |
-| черновик меню | `/etc/dpistack/dpistack.conf.draft` (0600 root) |
-| секреты | `/etc/dpistack/secrets.conf` (0600 root) |
-| хэш пароля панели | `/etc/dpistack/panel.auth` (0640 root:dpistack) |
-| состояние | `/var/lib/dpistack/` (`state`, `health.json`, `events.jsonl`, `tests-last.json`, `metrics.json`, `backups/`, `staging/`, `scrape.yaml`) |
-| блокировка | `/var/lock/dpistack.lock` |
-| журнал установки | `/var/log/dpistack/install.log` |
-| помощники | `/usr/local/sbin/dpistack` (персистентная команда, раздел 5.2), `/usr/local/sbin/dpistack-ctl`, `/usr/local/sbin/dpistack-watch`, библиотеки и шаблоны в `/usr/local/lib/dpistack/` (в т.ч. копия установщика в `/usr/local/lib/dpistack/installer/`) |
-| панель | `/usr/local/bin/dpistack-panel` |
-| Suricata | `/etc/suricata/suricata.yaml`, `/etc/suricata/{enable,disable,modify,drop}.conf`, `/etc/suricata/rules/local.rules`, `/var/lib/suricata/rules/suricata.rules`, `/var/log/suricata/eve.json` |
-| сокет Suricata | native: `/run/suricata-command.socket` (его же создаёт стоковый `suricata.yaml`, и к нему по умолчанию ходит `suricatasc`); docker: `/var/run/suricata/suricata-command.socket` внутри контейнера, на хосте `run/suricata/` |
-| EveBox | `/etc/evebox/evebox.yaml`, порт 5636 |
-| ntopng | `/etc/ntopng/ntopng.conf`, порт 3000 |
+| `install.sh` | entry point: arguments, the root check, the command dispatcher |
+| `lib/*.sh` | `schema.sh` (the key schema), `config.sh`, `os.sh`, `step_*.sh` (install steps), `ctl.sh` (control verbs), `menu.sh`, `render.sh`, `runtime_docker.sh`, `ips.sh` |
+| `bin/dpistack-watch` | the watchdog |
+| `templates/` | config and unit templates (`@@KEY@@` and blocks, filled by `lib/render.sh`) |
+| `panel/` | the panel: Go (`cmd/panel`, `internal/{api,auth,ctl,eve,export,health,metrics}`) and `web/` |
+| `tests/` | bats tests, stubs in `tests/mocks/`, data in `tests/data/` |
+| `scripts/` | `gate.sh`, `bundle.sh`, `security.sh`, `check-conf-example.sh`, `gen-config-doc.sh`, `panel-budget.sh`, `suricata-*.sh` |
+| `dpistack-install.sh` | the single-file installer, **generated** by `scripts/bundle.sh` |
+| `docs/` | guides; `configuration*.md` is **generated** from the schema |
+| `.github/` | CI, security and release workflows, Dependabot |
+
+## 4. Contracts
+
+### 4.1 Components
+
+| id | what | runtime | unit / container |
+| --- | --- | --- | --- |
+| `suricata` | IDS/IPS engine | native, docker | `suricata.service` |
+| `evebox` | alert viewer | native, docker | `evebox.service` |
+| `ntopng` | traffic monitor | native, docker | `ntopng.service` |
+| `redis` | the storage of ntopng, always where `ntopng` is | as `ntopng` | `redis.service` (rpm) or `redis-server.service` (deb) |
+| `victoriametrics` | metrics backend, only with `METRICS_BACKEND=victoriametrics` | native, docker | `dpistack-vm.service` |
+| `prometheus` | metrics backend, only with `METRICS_BACKEND=prometheus` | native, docker | `prometheus.service` |
+| `panel` | the control panel | native, docker | `dpistack-panel.service` |
+| `watch` | the watchdog | native only | `dpistack-watch.timer` |
+| `rules` | rules update | native only | `dpistack-rules.timer` |
+
+`ndpi` is not a component: it is a library and the `ndpi.so` plugin is a part of `suricata`; `status` shows it as the field `ndpi_plugin`.
+
+### 4.2 Paths
+
+| what | path |
+| --- | --- |
+| install config | `/etc/dpistack/dpistack.conf` (0644 root); draft of the menu `dpistack.conf.draft` (0600) |
+| secrets | `/etc/dpistack/secrets.conf` (0600 root) |
+| panel password hash | `/etc/dpistack/panel.auth` (0640 root:dpistack) |
+| state | `/var/lib/dpistack/` (`state`, `health.json`, `events.jsonl`, `tests-last.json`, `metrics.json`, `backups/`, `staging/`, `scrape.yaml`) |
+| lock, install log | `/var/lock/dpistack.lock`, `/var/log/dpistack/install.log` |
+| helpers | `/usr/local/sbin/dpistack` (the persistent command), `/usr/local/sbin/dpistack-ctl` (a link to it), `/usr/local/sbin/dpistack-watch`, libraries and templates in `/usr/local/lib/dpistack/` (the installer copy in `installer/`) |
+| panel | `/usr/local/bin/dpistack-panel` |
+| Suricata | `/etc/suricata/suricata.yaml`, `/etc/suricata/{enable,disable,modify,drop}.conf`, `/etc/suricata/rules/local.rules`, `/var/lib/suricata/rules/suricata.rules`, `/var/log/suricata/eve.json`; socket native `/run/suricata-command.socket`, docker `/var/run/suricata/suricata-command.socket` |
+| EveBox, ntopng | `/etc/evebox/evebox.yaml` (port 5636), `/etc/ntopng/ntopng.conf` (port 3000) |
 | compose | `/opt/dpistack/compose/compose.yaml` |
 
-Файл `state` кроме отметок шагов хранит снимок применённого конфига (`applied.<KEY>=<значение>`, пишется установщиком после каждого успешного применения) и счётчики watchdog (`watch.miss.<id>`, `watch.restarts.<id>`).
+The `state` file keeps step marks, a snapshot of the applied config (`applied.<KEY>=<value>`) and watchdog counters (`watch.miss.<id>`, `watch.restarts.<id>`). The system user `dpistack` (no login) runs the panel and can read `eve.json`.
 
-Системный пользователь `dpistack` (без входа) запускает панель и состоит в группе, которой доступен `eve.json` на чтение.
+### 4.3 Keys of `dpistack.conf`
 
-### 4.3 Ключи `dpistack.conf`
+Format `KEY=value`, one per line, no quotes or substitutions. The check is strict: an unknown key or a value outside the options stops the installer. A retired key (`PANEL_MODE`) is dropped when the file is loaded. A value whose implementation is not done is refused with `not supported yet`. Secrets live only in `secrets.conf`. The table mirrors `lib/schema.sh`.
 
-Формат `KEY=value`, по одному в строке, без кавычек и подстановок. Проверка строгая: неизвестный ключ или значение вне вариантов останавливает установщик. Значение, чья реализация ещё не сделана (`ips`, `dnf`-дистрибутив, `METRICS_BACKEND` кроме `none`), отклоняется сообщением `пока не поддерживается`. Секреты живут только в `secrets.conf`. Таблица зеркалит `lib/schema.sh`.
-
-| ключ | по умолчанию | варианты / формат |
+| key | default | options / format |
 | --- | --- | --- |
 | `SURICATA_RUNTIME` | `native` | `native` `docker` |
 | `EVEBOX_RUNTIME` | `native` | `native` `docker` |
 | `NTOPNG_RUNTIME` | `native` | `native` `docker` |
-| `SURICATA_SOURCE` | `source` | `distro` `oisf` `source`; `oisf` это PPA OISF на Ubuntu и COPR `@oisf/suricata-8.0` на RHEL-семействе; на Debian его нет |
-| `SURICATA_VERSION` | пусто | для `source`: пусто = последний проверенный релиз стабильной серии 8.0 (сейчас `suricata-8.0.7`), не `master`; значение это тег или ветка |
-| `NDPI_ENABLE` | `yes` | `yes` `no`; `yes` требует плагин `ndpi.so` |
+| `SURICATA_SOURCE` | `source` | `distro` `oisf` `source`; `oisf` is the OISF PPA on Ubuntu and the COPR `@oisf/suricata-8.0` on the RHEL family; none on Debian |
+| `SURICATA_VERSION` | empty | for `source`: empty = the last tested release of the 8.0 series, never `master`; a value is a tag or a branch |
+| `NDPI_ENABLE` | `yes` | `yes` `no`; `yes` needs the `ndpi.so` plugin |
 | `NDPI_SOURCE` | `source` | `pkg` `source` |
-| `NDPI_VERSION` | пусто | пусто = релиз nDPI, с которым собирается плагин Suricata (сейчас `4.14`, проверено сборкой; master и 5.0 плагин не собирает) |
-| `NTOPNG_VERSION` | пусто | пусто = последняя |
-| `EVEBOX_VERSION` | пусто | пусто = последняя |
+| `NDPI_VERSION` | empty | empty = the nDPI release the Suricata plugin builds with (now `4.14`) |
+| `NTOPNG_VERSION` | empty | empty = the latest |
+| `EVEBOX_VERSION` | empty | empty = the latest |
 | `PIN_VERSIONS` | `no` | `yes` `no`; `yes` = `apt-mark hold` / `dnf versionlock` |
 | `SURICATA_MODE` | `ids` | `ids` `ips` |
-| `IFACES` | `enp2s0` | имена через запятую; если значение осталось умолчанием и такого интерфейса нет, `install` берёт интерфейс маршрута по умолчанию (иначе первый не-`lo`) и пишет об этом; введённое значение не заменяется |
-| `BPF_FILTER` | пусто | выражение BPF |
-| `HOME_NET` | авто | список CIDR; авто = частные диапазоны RFC 1918 |
+| `IFACES` | `enp2s0` | interface names, comma separated; if the value is still the default and no such interface exists, `install` takes the default-route interface and says so |
+| `BPF_FILTER` | empty | a BPF expression |
+| `HOME_NET` | auto | a list of CIDRs; auto = the RFC 1918 ranges |
 | `IPS_METHOD` | `nfq` | `nfq` `afpacket` |
-| `IPS_NFQ_CHAINS` | `INPUT,OUTPUT,FORWARD` | подмножество этих цепочек |
-| `EVE_FILE` | `yes` | `yes` `no`; `no` отключает EVE-просмотр, проверку свежести и eve-метрики |
-| `EVE_TYPES` | `alert,flow,dns,tls,http,stats` | из `alert,anomaly,dns,http,tls,files,flow,netflow,ssh,smb,stats,drop` |
+| `IPS_NFQ_CHAINS` | `INPUT,OUTPUT,FORWARD` | a subset of these chains |
+| `EVE_FILE` | `yes` | `yes` `no`; `no` turns off the event view, the freshness check and the eve metrics |
+| `EVE_TYPES` | `alert,flow,dns,tls,http,stats` | from `alert,anomaly,dns,http,tls,files,flow,netflow,ssh,smb,stats,drop` |
 | `EVE_SYSLOG` | `no` | `yes` `no` |
-| `EVE_REDIS` | пусто | `host:port` или пусто |
+| `EVE_REDIS` | empty | `host:port` or empty |
 | `EVE_ROTATE` | `daily` | `daily` `weekly` `size` |
-| `EVE_KEEP` | `14` | число ротаций |
-| `EVE_MAX_SIZE_MB` | пусто | число, нужен при `EVE_ROTATE=size` |
+| `EVE_KEEP` | `14` | number of rotations |
+| `EVE_MAX_SIZE_MB` | empty | a number, needed with `EVE_ROTATE=size` |
 | `STATS_INTERVAL_SEC` | `30` | 5..300 |
-| `RULES_SOURCES` | `et/open` | имена источников `suricata-update` через запятую |
-| `RULES_URLS` | пусто | свои URL через запятую |
-| `RULES_GROUPS` | `emerging-p2p,emerging-policy` | группы правил, включаемые в `enable.conf` |
+| `RULES_SOURCES` | `et/open` | `suricata-update` source names, space separated |
+| `RULES_URLS` | empty | your own URLs, space separated |
+| `RULES_GROUPS` | `emerging-p2p,emerging-policy` | rule groups turned on in `enable.conf` |
 | `RULES_UPDATE` | `on` | `on` `off` |
-| `RULES_UPDATE_CALENDAR` | `weekly` | синтаксис `OnCalendar` systemd |
-| `NTOPNG_IFACES` | как `IFACES` | имена через запятую |
+| `RULES_UPDATE_CALENDAR` | `weekly` | systemd `OnCalendar` syntax |
+| `NTOPNG_IFACES` | as `IFACES` | interface names, comma separated |
 | `NTOPNG_PORT` | `3000` | 1..65535 |
 | `EVEBOX_DB` | `sqlite` | `sqlite` `elasticsearch` |
-| `EVEBOX_ES_URL` | пусто | URL, нужен при `elasticsearch` |
+| `EVEBOX_ES_URL` | empty | a URL, needed with `elasticsearch` |
 | `EVEBOX_PORT` | `5636` | 1..65535 |
-| `EVEBOX_RETENTION_DAYS` | `30` | число дней, `0` = без ограничения; механизм по допущению A9 |
+| `EVEBOX_RETENTION_DAYS` | `30` | days, `0` = no limit (SQLite only) |
 | `ACCESS_MODE` | `localhost` | `localhost` `lan` `nginx` |
-| `LAN_CIDR` | авто | CIDR сети интерфейса по умолчанию |
+| `LAN_CIDR` | auto | CIDR of the default-route interface network |
 | `PANEL_PORT` | `9800` | 1..65535 |
-| `PANEL_RUNTIME` | `native` | `native` (юнит `dpistack-panel.service`) или `docker` (сервис `panel` в том же compose-проекте: образ `dpistack-panel:<хэш бинарника>`, собираемый на хосте из `alpine`, `network_mode: host`, `pid: host`, `privileged`; команды на хост идут через `nsenter -t 1 -m -u -i -n -p -- env DPISTACK_CALLER=panel dpistack ...`); тяжёлое, затрагивает шаг `panel` |
-| `PANEL_MODE` | `limited` | `limited` (юнит панели с `MemoryMax=64M` и `CPUQuota=20%`, 4 потока логов) или `unlimited` (юнит без бюджета, до 32 потоков логов); лёгкое, затрагивает шаг `panel` |
-| `PANEL_SOURCE` | `auto` | `auto` (готовый бинарник рядом с установщиком, иначе сборка), `build` (нужен Go) или `prebuilt` (только готовый бинарник) |
-| `NGINX_MANAGE` | `snippet` | `yes` (правит и перезагружает системный nginx) или `snippet` (только пишет файл и печатает команду) |
+| `PANEL_RUNTIME` | `native` | `native` (unit `dpistack-panel.service`) or `docker` (service `panel` of the same compose project: image `dpistack-panel:<hash of the binary>` built on the host from `alpine`, `network_mode: host`, `pid: host`, `privileged`; host commands go through `nsenter -t 1 -m -u -i -n -p -- env DPISTACK_CALLER=panel dpistack ...`); heavy, affects the `panel` step |
+| `PANEL_EDITION` | `full` | `full` (rich dark console with a particle background) or `lite` (the same features on a plain, light page); light, affects the `panel` step; asked in the quick install |
+| `PANEL_SOURCE` | `auto` | `auto` (a ready binary next to the installer, else a build), `build` (needs Go) or `prebuilt` (a ready binary only) |
+| `NGINX_MANAGE` | `snippet` | `yes` (edits and reloads the system nginx) or `snippet` (writes a file and prints the command) |
 | `NGINX_TLS` | `none` | `none` `selfsigned` `existing` |
-| `NGINX_CERT` `NGINX_KEY` | пусто | пути, нужны при `existing` |
-| `FIREWALL_MANAGE` | `no` | `no` `auto` (ufw или firewalld, только разрешить `LAN_CIDR`) |
-| `METRICS_EXPORT` | `yes` | `yes` `no`; включает `GET /metrics` панели |
-| `METRICS_BACKEND` | `none` | `none` `victoriametrics` `prometheus`; `none` = только эндпоинт, сбор настраивает пользователь |
+| `NGINX_CERT` `NGINX_KEY` | empty | paths, needed with `existing` |
+| `FIREWALL_MANAGE` | `no` | `no` `auto` (ufw or firewalld, only allow `LAN_CIDR`) |
+| `METRICS_EXPORT` | `yes` | `yes` `no`; turns on `GET /metrics` |
+| `METRICS_BACKEND` | `none` | `none` `victoriametrics` `prometheus`; `none` = the endpoint only |
 | `METRICS_BACKEND_RUNTIME` | `native` | `native` `docker` |
-| `METRICS_BACKEND_PORT` | пусто | пусто = 8428 (VictoriaMetrics) или 9090 (Prometheus) |
-| `METRICS_RETENTION` | `30d` | число и суффикс `h`, `d`, `w` или `y`; с бэкендом метрик другие значения отклоняются (бэкенды читают голое число и `m` по-разному: VictoriaMetrics как месяцы, Prometheus `m` как минуты) |
+| `METRICS_BACKEND_PORT` | empty | empty = 8428 (VictoriaMetrics) or 9090 (Prometheus) |
+| `METRICS_RETENTION` | `30d` | a number with the suffix `h`, `d`, `w` or `y`; other values are refused with a backend |
 | `WATCH_ENABLE` | `yes` | `yes` `no` |
 | `WATCH_INTERVAL_SEC` | `60` | 10..3600 |
-| `WATCH_EVE_STALE_SEC` | `300` | секунды без новых событий до `crit` |
-| `WATCH_DROP_WARN_PCT` `WATCH_DROP_CRIT_PCT` | `1` `5` | проценты |
-| `WATCH_DISK_WARN_PCT` `WATCH_DISK_CRIT_PCT` | `15` `5` | свободного места, проценты |
-| `WATCH_RULES_WARN_DAYS` `WATCH_RULES_CRIT_DAYS` | `10` `30` | возраст правил |
-| `WATCH_REPEAT_MIN` | `60` | повтор оповещения, пока статус не `ok` |
-| `WATCH_AUTORESTART` | `no` | `yes` `no`; `yes` = не более 3 рестартов в час на компонент |
-| `ALERT_CHANNELS` | `panel,log` | подмножество `panel,log,tg,mail` |
-| `ALERT_TG_CHAT_ID` | пусто | нужен при `tg` |
-| `ALERT_MAIL_TO` `ALERT_MAIL_FROM` | пусто | адреса, нужны при `mail` |
-| `TEST_HTTPS_URL` | `https://example.com` | URL для живого HTTPS-теста |
-| `TEST_BT_LIVE` | `no` | `yes` подаёт pcap в живой интерфейс через `tcpreplay` |
+| `WATCH_EVE_STALE_SEC` | `300` | seconds without new events before `crit` |
+| `WATCH_DROP_WARN_PCT` `WATCH_DROP_CRIT_PCT` | `1` `5` | percent |
+| `WATCH_DISK_WARN_PCT` `WATCH_DISK_CRIT_PCT` | `15` `5` | free space, percent |
+| `WATCH_RULES_WARN_DAYS` `WATCH_RULES_CRIT_DAYS` | `10` `30` | age of the rules |
+| `WATCH_REPEAT_MIN` | `60` | repeat an alert until the status is `ok` |
+| `WATCH_AUTORESTART` | `no` | `yes` `no`; `yes` = at most 3 restarts an hour per component |
+| `ALERT_CHANNELS` | `panel,log` | a subset of `panel,log,tg,mail` |
+| `ALERT_TG_CHAT_ID` | empty | needed with `tg` |
+| `ALERT_MAIL_TO` `ALERT_MAIL_FROM` | empty | addresses, needed with `mail` |
+| `TEST_HTTPS_URL` | `https://example.com` | the URL of the live HTTPS test |
+| `TEST_BT_LIVE` | `no` | `yes` sends the pcap to a live interface with `tcpreplay` |
 | `TEST_ON_INSTALL` | `yes` | `yes` `no` |
-| секрет `ALERT_TG_TOKEN` | пусто | токен бота |
-| секрет `ALERT_SMTP_URL` | пусто | `smtp://user:pass@host:587` |
-| секрет `METRICS_TOKEN` | генерируется | 32 случайных байта в hex, создаётся при `METRICS_EXPORT=yes` |
+| secret `ALERT_TG_TOKEN` | empty | the bot token |
+| secret `ALERT_SMTP_URL` | empty | `smtp://user:pass@host:587` |
+| secret `METRICS_TOKEN` | generated | 32 random bytes in hex, created with `METRICS_EXPORT=yes` |
 
-Проверки при загрузке (перекрёстные):
+Load-time checks (cross checks):
 
-- `NDPI_ENABLE=yes` при `SURICATA_SOURCE` из `distro`/`oisf` допустим, только если после установки найден файл `ndpi.so`; иначе установщик предлагает `SURICATA_SOURCE=source` (интерактивно) или останавливается с кодом 2 (неинтерактивно).
-- `EVE_TYPES` без `stats` при `WATCH_ENABLE=yes` даёт предупреждение: проверки `eve_fresh` и `drop_rate` получат статус `na`.
-- `METRICS_BACKEND` не `none` при `METRICS_EXPORT=no` отклоняется: бэкенду нечего собирать.
-- `EVEBOX_DB=elasticsearch` без `EVEBOX_ES_URL` отклоняется.
-- `ACCESS_MODE` не `localhost` требует подтверждения предупреждения из раздела 1 (в неинтерактивном режиме подтверждением служит `--set ACCESS_CONFIRM=yes`, ключ не сохраняется).
+- `NDPI_ENABLE=yes` with `SURICATA_SOURCE` `distro`/`oisf` is allowed only if `ndpi.so` is found after the install; otherwise the installer offers `SURICATA_SOURCE=source` (interactive) or stops with code 2.
+- `EVE_TYPES` without `stats` with `WATCH_ENABLE=yes` warns: `eve_fresh` and `drop_rate` get `na`.
+- `METRICS_BACKEND` other than `none` with `METRICS_EXPORT=no` is refused; `EVEBOX_DB=elasticsearch` without `EVEBOX_ES_URL` is refused; `EVE_FILE=no` with `EVEBOX_DB=sqlite` is refused.
+- `ACCESS_MODE` other than `localhost` needs the confirmation of the warning in section 1 (non-interactive: `--set ACCESS_CONFIRM=yes`, the key is not saved).
+- `SURICATA_MODE=ips` works only with `SURICATA_RUNTIME=native`; `IPS_METHOD=afpacket` needs an even number of interfaces (at least two).
 
-Свободные ключи (тип `free`) проверяются шаблонами из `SCHEMA_PATTERN` в `lib/schema.sh`. Их значения попадают в YAML, nginx и systemd, в аргументы `curl` и `suricata-update`, и всё это выполняет или читает root, а `dpistack-ctl config-write` позволяет менять их из панели. Значение вне формата отвергается до записи куда-либо: без кавычек, обратной косой, `$`, обратных кавычек, `;`, фигурных скобок и без ведущего `-`, который команда прочла бы как опцию. Формат ключей: `IFACES` и `NTOPNG_IFACES` имена интерфейсов через запятую; `LAN_CIDR` `auto` или `адрес/длина`; `HOME_NET` `auto` или список CIDR; `TEST_HTTPS_URL` и `EVEBOX_ES_URL` URL `http://` или `https://`; `ALERT_SMTP_URL` URL `smtp://` или `smtps://`; `NGINX_CERT` и `NGINX_KEY` абсолютный путь; `*_VERSION` буквы, цифры и `. ~ + : _ -`; остальные описаны в коде рядом с шаблоном. Отвергнутое значение секретного ключа в сообщении об ошибке не печатается.
+Free keys (type `free`) are checked against the patterns of `SCHEMA_PATTERN` in `lib/schema.sh`: no quotes, backslash, `$`, backticks, `;`, braces, and no leading `-`. A rejected secret value is never printed in the error.
 
-`NTOPNG_VERSION` и `EVEBOX_VERSION` фиксируют версию пакета при установке (`пакет=версия` для apt, `пакет-версия` для dnf). Смена версии у уже установленного пакета его не переустанавливает.
-
-### 4.4 CLI установщика и персистентной команды `dpistack`
-
-`install.sh` (запуск из клона или архива, до установки) и `dpistack` (персистентная команда, доступна после установки — раздел 5.2) принимают один и тот же синтаксис:
+### 4.4 Installer CLI and the persistent `dpistack` command
 
 ```
-install.sh <команда> [опции]
-dpistack [команда] [опции]
+install.sh <command> [options]
+dpistack [command] [options]
 
-команды:  install | reconfigure | upgrade | uninstall | status | diag | test | logs
-опции:    --config FILE          путь к dpistack.conf (по умолчанию /etc/dpistack/dpistack.conf)
-          --set KEY=VALUE        переопределить ключ, можно повторять
-          --non-interactive, -y  без вопросов; недостающее берётся из умолчаний
-          --advanced             спрашивать все ключи, а не только уровень basic
-          --dry-run              показать план, ничего не менять
-          --only STEP[,STEP]     выполнить только указанные шаги
-          --skip STEP[,STEP]     пропустить шаги
-          --force                перезаписать вручную изменённые файлы (с бэкапом)
-          --purge                для uninstall: удалить также данные и конфиги
-          --no-color             без ANSI-цветов в меню и выводе
+commands: install | reconfigure | upgrade | uninstall | status | diag | test | logs | health | version | ...
+options:  --config FILE   --set KEY=VALUE   --non-interactive, -y   --advanced   --dry-run
+          --only STEP[,STEP]   --skip STEP[,STEP]   --force   --purge   --no-color
 ```
 
-Без `--non-interactive` и на терминале (или с переменной `DPISTACK_INPUT`) команда `install`, `reconfigure` или сам `dpistack` без аргументов открывают текстовое меню вместо вопросов подряд — раздел 5.0. `--set` и `--config` при этом действуют как предзаполненные значения, которые меню показывает и позволяет поменять. Разница между `install.sh` и `dpistack` только в состоянии по умолчанию: `install.sh` без аргументов и без установленного конфига всегда предлагает установку; `dpistack` без аргументов при уже установленном конфиге открывает меню управления, а не меню установки (раздел 5.2).
+With a terminal (or `DPISTACK_INPUT`) and without `-y`, `install`, `reconfigure` and `dpistack` with no arguments open a text menu. `install.sh` with no arguments and no config offers the install; `dpistack` with no arguments and an installed config opens the control menu. **Root only:** every command refuses to run without root (code 1); the panel arrives through `sudo -n` and may run only the control verbs (section 4.5). Exit codes: `0` success, `1` a step failed, `2` bad arguments or config, `3` preflight failed or the change is not supported in this mode. `diag` writes a read-only report (platform, versions, packages, repositories, config without secrets, services, `suricata -T`, log tails) to stdout and to `DIAG_OUT`; tokens and URL passwords become `<hidden>`.
 
-`test`, `logs <id>` и остальные глаголы раздела 4.5 (`start`, `stop`, `restart`, `reload`, `config-*`, `rules-*`, `iface`, `mode*`, `fw`, `panel-passwd`, `health`, `version`) — глаголы той же команды: отдельной программы `dpistack-ctl` больше нет (v0.21.0, 18.23). `reconfigure --light` — их неинтерактивная форма (только лёгкие изменения, иначе код `3`).
+### 4.5 Control verbs of `dpistack`
 
-**Только root.** Любая команда `dpistack` и `install.sh` без root завершается кодом `1` с сообщением; панель приходит через `sudo -n`, что даёт root. Если `SUDO_USER` совпадает с пользователем панели, принимаются только глаголы раздела 4.5, команды установщика (`install`, `upgrade`, `uninstall`, интерактивный `reconfigure`) получают код `2`.
+The only place of privileged actions of the panel and the watchdog: `sudo -n dpistack <verb>`; the sudoers rule names `/usr/local/sbin/dpistack`. All arguments are checked against lists before any action; the allowed characters are letters, digits, `. _ : = / @ + , -` and space, anything else gives code `5`.
 
-`status` печатает сначала компоненты (как `status --json` в 4.5, но текстом), затем по каждому шагу результат `check`: `в порядке` или `расхождение` с причиной. Ничего не меняет. `status --json` отдаёт только компоненты.
-
-Код возврата: `0` успех, `1` ошибка шага, `2` неверные аргументы или конфиг, `3` preflight не пройден или изменение не поддерживается в этом режиме.
-
-`diag` (v11, только чтение): один текстовый отчёт для разбора проблем на стенде: платформа и уровень поддержки, версии компонентов, `suricata --build-info`, пакеты, репозитории, `dpistack.conf`, состояние, службы и `systemctl --failed`, сеть, SELinux и фаервол, `suricata -T`, хвост журнала установщика и `journalctl`. Идёт в stdout и в файл `DIAG_OUT` (по умолчанию новый файл `mktemp`, путь печатается; фиксированных путей в `/tmp` проект не использует); токены, пароли и логин с паролем в URL заменяются на `<скрыто>`. Именно этот файл владелец присылает после проверки платформы.
-
-### 4.5 Глаголы `dpistack` (бывший `dpistack-ctl`)
-
-Единственная точка привилегированных действий панели и watchdog. Работает от root через `sudo -n dpistack <глагол>`; правило в `/etc/sudoers.d/dpistack` называет `/usr/local/sbin/dpistack`, а сам `dpistack` пускает пользователя панели только к глаголам этой таблицы (раздел 4.4). Имя `dpistack-ctl` остаётся символической ссылкой на `dpistack` для юнитов, написанных старой версией; там `reconfigure` по-прежнему означает лёгкую форму. Все аргументы сверяются со списками ниже до любого действия. Метасимволы shell в аргументах отклоняются.
-
-| команда | что делает |
+| verb | what it does |
 | --- | --- |
-| `status [--json]` | по каждому компоненту: `id`, `runtime`, `state` (`active` `inactive` `failed` `absent`), `enabled`, `version`; плюс `ndpi_plugin` (`loaded` `absent`) |
-| `start\|stop\|restart <id>` | управляет компонентом через его runtime; `<id>` только из 4.1 |
-| `reload suricata` | перечитывает правила без остановки (`ruleset-reload-nonblocking`) |
-| `logs <id> [-n N] [--follow]` | журнал компонента, `N` до 1000 |
-| `config-read <name>` | печатает текущий файл |
-| `config-write <name> [--apply\|--check]` | читает stdin, кладёт в `staging/`, проверяет, делает бэкап, атомарно заменяет; `--apply` затем перезагружает компонент, а для `dpistack.conf` выполняет `reconfigure` |
-| `config-revert <name>` | возвращает последний бэкап |
-| `reconfigure [--dry-run]` | применяет текущий `dpistack.conf` без вопросов: определяет затронутые шаги (раздел 5.3), перерисовывает конфиги и перезапускает компоненты. Не ставит пакеты и не собирает: при изменении «тяжёлых» ключей отказывает с кодом 3 и просит `install.sh reconfigure` |
-| `rules-update` | `suricata-update`, проверка `suricata -T`, перезагрузка; при ошибке откат набора. Что сказали инструменты (последние 40 строк) идёт в stdout и при успехе, и при сбое: причина нужна панели |
-| `rules-sources list [--enabled]\|enable\|disable\|add-url\|remove <arg>` | источники правил; `list --enabled` показывает включённые |
-| `rules-group enable\|disable <group>` | правит `enable.conf` |
-| `rules-sid enable\|disable <sid>` | правит `disable.conf`, `sid` только число |
-| `rules-search <q>` | до 50 правил по `sid` или тексту `msg` |
-| `iface list\|add\|remove <name>` | правит `IFACES`, вызывает `reconfigure` |
-| `mode ids\|ips [--confirm-timeout SEC]` | переключает режим; для `ips` откатывается сам, если за `SEC` (10–3600, по умолчанию 120) не пришёл `mode-confirm`; `mode status [--json]` показывает режим, метод и остаток секунд |
-| `mode-confirm` | подтверждает переключение в IPS; без ожидающего переключения или после срока код 3 |
-| `mode-rollback`, `fw apply\|remove\|restore` | внутренние: откат по таймеру и цепочка `DPISTACK` (`restore` вызывает `dpistack-fw.service` при загрузке) |
-| `test bittorrent\|https\|all [--json]` | раздел 10 |
-| `health [--json]` | один прогон watchdog |
-| `panel-passwd` | читает пароль со stdin, пишет argon2id-хэш в `panel.auth` |
-| `version` | версия набора |
+| `status [--json]` | per component: `id`, `runtime`, `state` (`active` `inactive` `failed` `absent`), `enabled`, `version`; plus `ndpi_plugin` |
+| `start\|stop\|restart <id>` | control a component through its runtime; `<id>` only from 4.1 |
+| `reload suricata` | reload the rules without stopping |
+| `logs <id> [-n N] [--follow\|--until-stdin-closed]` | the component log, `N` up to 1000; the last form ends when stdin closes (for the panel) |
+| `config-read <name>`, `config-write <name> [--apply\|--check]`, `config-revert <name>` | config files: stdin, `staging/`, check, backup, atomic replace; `--apply` also reloads the component (or runs `reconfigure` for `dpistack.conf`) |
+| `reconfigure [--light] [--dry-run]` | apply the current `dpistack.conf` without questions; heavy changes give code 3 |
+| `settings list\|check\|set\|secret\|job` | every setting with checks, weight and busy ports; see the reference in `docs/operations.md` |
+| `rules-update`, `rules-sources`, `rules-group`, `rules-sid`, `rules-search` | rules: a rollback if `suricata -T` rejects a set; search returns up to 50 rules |
+| `iface list\|add\|remove <name>` | edit `IFACES`, then `reconfigure`; the last interface cannot be removed (3), an unknown one gives 5 |
+| `mode ids\|ips [--confirm-timeout SEC]`, `mode status [--json]`, `mode-confirm` | IDS/IPS; `ips` rolls back by itself if `mode-confirm` does not come within `SEC` (10..3600, default 120) |
+| `mode-rollback`, `fw apply\|remove\|restore` | internal: the timer rollback and the `DPISTACK` chain (`restore` runs at boot) |
+| `test bittorrent\|https\|all [--json]` | section 10 |
+| `health [--json]` | one watchdog run |
+| `panel-passwd` | the password from stdin, an argon2id hash into `panel.auth` (`-id -t 3 -m 14 -p 4 -l 32`, 16 MiB) |
+| `version` | the bundle version |
 
-Аргументы: допустимы буквы, цифры и `. _ : = / @ + , -` и пробел (`rules-search` принимает фразу); всё остальное, включая `; | & $ ( ) < > \` кавычки и перевод строки, даёт код `5` до любого действия. URL с `?`, `&`, `%` поэтому в `rules-sources add-url` не проходит.
+Config names: `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `dpistack.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`. `suricata.yaml` and the rule files pass `suricata -T` on a temporary copy; `dpistack.conf` passes the schema; `evebox.yaml` and `ntopng.conf` are only checked for being non-empty. A failed check changes nothing (code 3, the checker's output goes to stdout). `config-write dpistack.conf` refuses secret keys. Writes take the installer lock (up to 30 s). A file written through `config-write` counts as hand-edited for the installer. Exit codes of the verbs: `0` success, `1` error, `2` misuse, `3` check failed or unavailable in this mode, `4` component missing, `5` name outside the list.
 
-`logs <id> -n N --until-stdin-closed` (v16): то же, что `--follow`, но поток заканчивается, когда у `ctl` закрывается stdin. Нужен панели: она работает не от root и не может послать сигнал процессу `sudo`, так что убить `ctl` при разрыве соединения она не вправе. Панель держит stdin открытым, пока слушает клиент, и закрывает его, когда клиент ушёл; `ctl` тогда останавливает `journalctl`, даже если новых строк нет. Остальные способы вызова `--follow` не меняются.
+### 4.6 `health.json` and events
 
-`logs -n N`: `N` от 1 до 1000, ведущие нули это десятичная запись (`08` равно 8, `01750` отвергается как 1750). `config-write dpistack.conf` отвергает секретные ключи (`ALERT_TG_TOKEN`, `ALERT_SMTP_URL`, `METRICS_TOKEN`): секреты живут только в `secrets.conf`. Запись и откат конфигов берут блокировку установщика (ждут до 30 секунд), чтобы файл не менялся, пока `install.sh` рендерит по нему.
+`/var/lib/dpistack/health.json` is rewritten atomically by every watchdog run: `{"ts", "overall", "checks":[{"id","status","value","detail","since"}]}`. `status` is `ok`, `warn`, `crit` or `na`; `overall` is the worst one (`na` does not count); `since` changes only when the status changes. Check ids: `<id>.process` and `<id>.port` for `evebox`, `ntopng`, `redis`, `panel` and the metrics backend (`suricata` has only `.process`), then `suricata.eve_fresh`, `suricata.drop_rate`, `disk.free`, `rules.age`. A value exactly at a threshold gives the worse status; the comparison is exact arithmetic.
 
-`config-write --apply`: `dpistack.conf` выполняет `reconfigure`; `suricata.yaml` перезапускает `suricata`; `evebox.yaml` и `ntopng.conf` перезапускают свой компонент; `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf` выполняют `rules-update`. Файл, записанный через `ctl`, установщик считает изменённым вручную (5.4): `config-write` не обновляет хэш последнего рендера.
+`events.jsonl` has one line per status change (`ts`, `check`, `from`, `to`, `detail`); the first appearance of a check with `ok` or `na` is not an event. `tests-last.json` holds the last result of each test (`{"results":[{"name","status","detail","duration_ms","timestamp"}]}`), one object per line, mode `0644`; running one test does not erase another's result.
 
-`reconfigure` сравнивает `dpistack.conf` со снимком `applied.<KEY>` в `state`, а не с самим файлом, потому что `config-write` уже заменил файл. `ACCESS_CONFIRM=yes` подставляется только пока `ACCESS_MODE` равен применённому; смена режима доступа идёт через `install.sh reconfigure`. Тяжёлое изменение даёт код `3` и сообщение со словами `install.sh reconfigure`.
+### 4.7 EVE fields the panel and the tests rely on
 
-`iface add|remove` пишет `IFACES` в `dpistack.conf` (с бэкапом) и вызывает `reconfigure`; при неудаче файл возвращается из бэкапа. Имя для `add` должно существовать в системе, иначе `5`; последний интерфейс удалить нельзя (`3`).
+`timestamp`, `event_type`, `in_iface`, `src_ip`, `dest_ip`, `proto` (all events); `alert.signature`, `alert.signature_id`, `alert.severity`, `alert.category`, `alert.metadata` (`alert`); `tls.sni` (`tls`); `stats.capture.kernel_packets`, `stats.capture.kernel_drops`, `stats.uptime` (`stats`). The nDPI plugin adds the rule keywords `ndpi-protocol` and `ndpi-risk` only; there are no `ndpi.*` fields in EVE. Drop rate of an interval is `delta(kernel_drops) / delta(kernel_packets) * 100`; a counter that went down skips the interval.
 
-`rules-sources list` печатает `suricata-update list-sources` (со всеми источниками индекса, но без отметки «включён»), `list --enabled` печатает `suricata-update list-enabled-sources`; `add-url` называет источник `dpistack-custom-<8 символов sha256 от URL>`. `rules-group enable|disable` добавляет и убирает строку `group:<имя>.rules` в `enable.conf`, `rules-sid` строку `<sid>` в `disable.conf`; `RULES_GROUPS` в `dpistack.conf` они не меняют.
+### 4.8 HTTP API of the panel
 
-`panel-passwd` вызывает CLI `argon2` (пакет `argon2`, ставит установщик): `-id -t 3 -m 14 -p 4 -l 32 -e` (16 МиБ: проверка идёт внутри панели с `MemoryMax=64M`, 64 МиБ туда не помещаются; панель отвергает хэш тяжелее 32 МиБ и просит задать пароль заново), соль 16 случайных байт. Пароль идёт на stdin, не в аргументы. В `panel.auth` пишется строка `$argon2id$...`, права `0640`, группа `dpistack`; пока пользователя нет (первая установка), группа выставляется шагом `panel`. Тот же код пишет пароль при установке из меню.
+Answers are JSON; an error is `{"error":"text"}` with 4xx/5xx. Every method except `POST /api/login` and `GET /metrics` needs a session; methods that change something need the `X-CSRF-Token` header. **Both editions serve exactly the same API.**
 
-Допустимые `<name>` для конфигов: `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `dpistack.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`.
-
-Проверки при `config-write`: `suricata.yaml`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf` проходят `suricata -T` на временной копии набора; `dpistack.conf` проходит проверку схемы из 4.3; `evebox.yaml` и `ntopng.conf` проверяются только на непустоту: режима проверки конфига у EveBox и ntopng нет (допущение A8 закрыто). Для `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf` `suricata -T` проверяет, что набор остаётся рабочим, но сами эти файлы читает только `suricata-update`. Провал проверки: ничего не меняется, код `3`, вывод проверки идёт в stdout.
-
-Коды возврата: `0` успех, `1` ошибка, `2` неверное использование, `3` проверка не пройдена или действие недоступно в этом режиме, `4` компонент отсутствует, `5` имя вне списка.
-
-### 4.6 `health.json` и события
-
-`/var/lib/dpistack/health.json`, перезаписывается атомарно каждый прогон watchdog:
-
-```json
-{
-  "ts": "2026-09-24T12:00:00Z",
-  "overall": "ok",
-  "checks": [
-    { "id": "suricata.process", "status": "ok", "value": "active", "detail": "", "since": "2026-09-24T09:00:00Z" }
-  ]
-}
-```
-
-`status` только `ok`, `warn`, `crit`, `na`. `overall` берёт худший статус, `na` не считается. `since` меняется только при смене статуса.
-
-Идентификаторы проверок: `<id>.process` и `<id>.port` для `suricata` (порта нет, только процесс), `evebox`, `ntopng`, `redis`, `panel`, а при установленном бэкенде метрик ещё `victoriametrics` или `prometheus`; `suricata.eve_fresh`, `suricata.drop_rate`, `disk.free`, `rules.age`.
-
-`/var/lib/dpistack/events.jsonl`: по строке на смену статуса проверки, канал `panel`:
-
-```json
-{"ts":"...","check":"suricata.drop_rate","from":"ok","to":"warn","detail":"drops 2.4%"}
-```
-
-`/var/lib/dpistack/tests-last.json`, последний результат каждого теста раздела 10. Прогон одного теста не стирает результат другого:
-
-```json
-{"results":[
-{"name":"bittorrent","status":"pass","detail":"сигнатура: ET P2P BitTorrent DHT ping request","duration_ms":812,"timestamp":"2026-10-08T12:00:00Z"}
-]}
-```
-
-Один объект на строку, чтобы файл можно было объединять без `jq`. `status` из `pass`, `fail`, `skip`. Права `0644`.
-
-Правило порогов для `health.json` и `ctl health`: значение ровно на пороге даёт худший из двух статусов (`drop_rate` 1 % при `WARN=1` это `warn`, свободного места ровно `WARN` это `warn`, возраст `WATCH_EVE_STALE_SEC` это `crit`). Сравнение идёт точной арифметикой без округления. Событие в `events.jsonl` пишется при смене статуса; первое появление проверки со статусом `ok` или `na` событием не считается.
-
-### 4.7 EVE: поля, на которые опираются панель и тесты
-
-| поле | где | зачем |
-| --- | --- | --- |
-| `timestamp`, `event_type`, `in_iface`, `src_ip`, `dest_ip`, `proto` | все события | лента событий, фильтры |
-| `alert.signature`, `alert.signature_id`, `alert.severity`, `alert.category` | `alert` | лента, тест BitTorrent |
-| `tls.sni` | `tls` | тест HTTPS |
-| `alert.metadata` | `alert` | nDPI-детект, если правило `ndpi-protocol` или `ndpi-risk` задаёт `metadata` |
-| `stats.capture.kernel_packets`, `stats.capture.kernel_drops` | `stats` | drop rate, график пакетов, метрики |
-| `stats.uptime` | `stats` | метрики |
-
-Отдельных полей `ndpi.*` в EVE нет: смерженный плагин nDPI даёт только ключевые слова правил `ndpi-protocol` и `ndpi-risk`, результат виден через `alert.signature` и `alert.metadata` (допущение A2 закрыто).
-
-Drop rate за интервал: `Δkernel_drops / Δkernel_packets × 100`. Счётчики накопительные, сброс (значение меньше прежнего) пропускает интервал.
-
-### 4.8 HTTP API панели
-
-Все ответы JSON, ошибка: `{"error":"текст"}` с кодом 4xx/5xx. Все методы кроме `POST /api/login` и `GET /metrics` требуют сессию. Изменяющие методы требуют заголовок `X-CSRF-Token`.
-
-| метод и путь | что делает |
+| method and path | what it does |
 | --- | --- |
-| `POST /api/login`, `POST /api/logout` | сессия в cookie `HttpOnly; SameSite=Strict` |
-| `GET /api/status` | компоненты (`ctl status`) + `health.json` |
-| `POST /api/components/{id}/{start\|stop\|restart}` | через `ctl` |
-| `POST /api/suricata/reload` | `ctl reload suricata` |
-| `GET /api/config` | список имён файлов, которые можно править |
-| `GET /api/config/{name}` | `{name, content}` |
-| `PUT /api/config/{name}?apply=0\|1` | `ctl config-write`; ответ `{ok, output}` |
-| `POST /api/config/{name}/check` | та же проверка, что при сохранении, но без записи: `ctl config-write --check` |
-| `POST /api/config/{name}/revert` | `ctl config-revert` |
-| `GET /api/rules/sources` | `{sources:[{name,vendor,summary,license,enabled,custom}], last_update, updating}`: `ctl rules-sources list` и `list --enabled` вместе |
-| `POST /api/rules/sources` | тело `{action:"enable\|disable\|remove", name}` или `{action:"add-url", url}`; ответ `{ok, output}` |
-| `POST /api/rules/update` | `ctl rules-update`; ответ `{ok, output, last_update}`, при сбое 500 с `{error, output}` |
-| `GET /api/rules/search?q=` | `{results:[{sid,msg}], truncated}`, до 50 правил: `ctl rules-search` |
-| `POST /api/rules/groups/{group}/{enable\|disable}` | `ctl rules-group` |
-| `POST /api/rules/sid/{sid}/{enable\|disable}` | `ctl rules-sid` |
-| `GET /api/rules/search?q=` | поиск |
-| `POST /api/rules/groups/{group}/{enable\|disable}` | группы |
-| `POST /api/rules/sid/{sid}/{enable\|disable}` | отдельное правило |
-| `GET /api/logs/{id}?lines=N` | последние строки |
-| `GET /api/logs/{id}/stream` | SSE, живой хвост |
-| `GET /api/eve?type=&q=&since=&limit=` | `{available, reason?, file_present, types, events:[{id,type,time,event}]}`, новые сверху; `limit` 1–500 (по умолчанию 50), `since` в RFC 3339; при `EVE_FILE=no` `available` ложь и причина |
-| `GET /api/eve/stream?type=` | SSE: только события, пришедшие после подключения, и только выбранного типа; `data` это один объект как в `events` выше |
-| `GET /api/metrics?range=1h\|6h\|24h` | `{range, start, step, series:{pps,drops,cpu,rss,eve_size,disk:{unit, available, reason?, values:[число\|null]}}}`; все ряды на одной сетке, `values[k]` покрывает `[start+k*step, start+(k+1)*step)`; период по умолчанию `1h`, другой это 400 |
-| `POST /api/tests/{bittorrent\|https\|all}` | запуск, ответ массив `[{name,status,detail,duration_ms}]` как у `ctl test --json`; упавший тест это результат (200), не ошибка; второй запуск пока идёт первый 409 |
-| `GET /api/tests/last` | `{results:[{name,status,detail,duration_ms,timestamp}], running}`: последний результат каждого теста из `tests-last.json`; нет файла или он повреждён это пустой список |
-| `GET /api/alerts?limit=&check=` | `{alerts:[{ts,check,from,to,detail}], checks, file_present}`: строки `events.jsonl`, новые сверху; `limit` 1–500 (по умолчанию 100), `check` фильтр по проверке, `checks` список проверок для меню |
-| `GET /api/iface` | `{ifaces:[имя]}`: `ctl iface list` |
-| `POST /api/iface/{add\|remove}` | тело `{name}`, `ctl iface`; ответ `{ok, output, ifaces}` |
-| `POST /api/mode/{ids\|ips}`, `POST /api/mode/confirm` | режим |
-| `GET /metrics` | экспорт Prometheus (раздел 4.9) |
+| `POST /api/login`, `POST /api/logout` | session in a `HttpOnly; SameSite=Strict` cookie |
+| `GET /api/status` | components (`ctl status`) plus `health.json` |
+| `POST /api/components/{id}/{start\|stop\|restart}`, `POST /api/suricata/reload` | through `ctl`; stopping or restarting `panel` needs `?confirm=yes` |
+| `GET /api/config`, `GET /api/config/{name}`, `PUT /api/config/{name}?apply=0\|1`, `POST /api/config/{name}/check`, `POST /api/config/{name}/revert` | the config editor |
+| `GET /api/rules/sources`, `POST /api/rules/sources`, `POST /api/rules/update`, `GET /api/rules/search?q=`, `POST /api/rules/groups/{group}/{enable\|disable}`, `POST /api/rules/sid/{sid}/{enable\|disable}` | rules |
+| `GET /api/logs/{id}?lines=N`, `GET /api/logs/{id}/stream` | the last lines; an SSE live tail (at most 4 streams at once) |
+| `GET /api/eve?type=&q=&since=&limit=`, `GET /api/eve/stream?type=` | events, newest first (`limit` 1..500); an SSE stream of new events |
+| `GET /api/metrics?range=1h\|6h\|24h` | chart series `pps`, `drops`, `cpu`, `rss`, `eve_size`, `disk` on one grid |
+| `POST /api/tests/{bittorrent\|https\|all}`, `GET /api/tests/last` | run a test (a failed test is a result, 200; a second run while one runs is 409); the last results |
+| `GET /api/alerts?limit=&check=` | the lines of `events.jsonl`, newest first |
+| `GET /api/iface`, `POST /api/iface/{add\|remove}` | capture interfaces |
+| `GET /api/mode`, `POST /api/mode` (body `{mode, acknowledged, confirm_timeout}`), `POST /api/mode/confirm` | the IDS/IPS mode |
+| `GET /api/settings`, `POST /api/settings/check`, `POST /api/settings/apply`, `GET /api/settings/job`, `PUT /api/settings/secret/{key}` | every setting and the secrets (the schema comes from `dpistack settings list --json`) |
+| `GET /metrics` | the Prometheus export (4.9) |
 
-Панель отвечает 403, если IP клиента вне `LAN_CIDR` (при `ACCESS_MODE=lan`) или вне `127.0.0.1` (при `localhost`). При `nginx` доверяет `X-Forwarded-For` только от `127.0.0.1`.
+The panel answers 403 if the client IP is outside `LAN_CIDR` (`ACCESS_MODE=lan`) or outside loopback (`localhost`); with `nginx` it trusts `X-Forwarded-For` only from loopback.
 
-### 4.9 Экспорт метрик `GET /metrics`
+### 4.9 Metrics export `GET /metrics`
 
-Формат Prometheus text exposition 0.0.4, `Content-Type: text/plain; version=0.0.4`. Доступ: заголовок `Authorization: Bearer <METRICS_TOKEN>` (слово `Bearer` без учёта регистра; токен без него не принимается), сессия не нужна. `Content-Type: text/plain; version=0.0.4; charset=utf-8`. Ограничение по IP из 4.8 действует. При `METRICS_EXPORT=no` ответ 404, без токена или с неверным токеном 401.
+Prometheus text format 0.0.4. Access: the header `Authorization: Bearer <METRICS_TOKEN>`, no session. With `METRICS_EXPORT=no` the answer is 404, without or with a wrong token 401. Metrics without data are not printed at all.
 
-| метрика | тип | метки | источник |
-| --- | --- | --- | --- |
-| `dpistack_component_up` | gauge | `component` | `health.json`, `<id>.process`: 1 при `active`, иначе 0 |
-| `dpistack_check_status` | gauge | `check` | `health.json`: `ok`=0, `warn`=1, `crit`=2; `na` не выдаётся |
-| `dpistack_suricata_kernel_packets_total` | counter |  | `stats.capture.kernel_packets` |
-| `dpistack_suricata_kernel_drops_total` | counter |  | `stats.capture.kernel_drops` |
-| `dpistack_suricata_drop_ratio` | gauge |  | доля 0..1 за последний интервал `stats`, см. 4.7 |
-| `dpistack_suricata_uptime_seconds` | gauge |  | `stats.uptime` |
-| `dpistack_eve_events_total` | counter | `event_type` | события, прочитанные панелью с её старта |
-| `dpistack_eve_size_bytes` | gauge |  | размер `eve.json` |
-| `dpistack_eve_last_event_age_seconds` | gauge |  | возраст последнего события |
-| `dpistack_disk_free_ratio` | gauge | `path` | `statfs` на каталогах данных (лог Suricata, данные EveBox, данные бэкенда метрик) |
-| `dpistack_rules_age_seconds` | gauge |  | возраст `suricata.rules` |
-| `dpistack_test_status` | gauge | `test` | последний результат: 1 `pass`, 0 `fail`; `skip` не выдаётся |
-| `dpistack_test_timestamp_seconds` | gauge | `test` | время последнего прогона |
-| `dpistack_panel_rss_bytes` | gauge |  | RSS панели |
+`dpistack_component_up{component}`, `dpistack_check_status{check}` (`ok`=0, `warn`=1, `crit`=2), `dpistack_suricata_kernel_packets_total`, `dpistack_suricata_kernel_drops_total`, `dpistack_suricata_drop_ratio`, `dpistack_suricata_uptime_seconds`, `dpistack_eve_events_total{event_type}`, `dpistack_eve_size_bytes`, `dpistack_eve_last_event_age_seconds`, `dpistack_disk_free_ratio{path}`, `dpistack_rules_age_seconds`, `dpistack_test_status{test}`, `dpistack_test_timestamp_seconds{test}`, `dpistack_panel_rss_bytes`. The `eve` and `suricata_*` metrics are not printed with `EVE_FILE=no` or without `stats` in `EVE_TYPES`.
 
-Метрики `eve` и `suricata_*` не выдаются при `EVE_FILE=no` или без `stats` в `EVE_TYPES`.
+## 5. The installer
 
----
+A **step** is a pair `step_<name>_check` (0 if the state already matches the config) and `step_<name>_apply`, plus `step_<name>_plan` (one line for dry-run). Order: `preflight`, `selfinstall`, `ndpi`, `suricata`, `rules`, `redis`, `ntopng`, `evebox`, `metrics`, `access`, `panel`, `watch`, `verify`. `selfinstall` copies the installer into `/usr/local/lib/dpistack/installer/` and puts it at `/usr/local/sbin/dpistack`.
 
-## 5. Установщик: правила и сценарии
+- **Menu** (`lib/menu.sh`, pure Bash, no dialog or ncurses): input from stdin or `/dev/tty`, `DPISTACK_INPUT=<file>` replaces it (tests). Navigation by number or letter, `0` or empty goes up, `?` helps, `q` quits. The quick install asks the interfaces, the Suricata source, the access mode, **which panel (`full` or `lite`)** and the panel password. Sections: capture, components, EVE, rules, access, metrics, watch, tests, panel password. Basic keys are shown at once, the others behind `a` (or `--advanced`). Edits go to a draft file after every change; `dpistack.conf` changes only when applied. Secrets are entered without echo and shown as "set"/"not set".
+- **Install flow:** layers of values (defaults, `dpistack.conf`, secrets and environment, `--config`, `--set`, menu edits), a config check, a summary and a confirmation, `preflight` (all problems are listed, code 3), package preparation, a plan (`--dry-run` stops here, nothing is written, no password is generated), the steps in order (`apply`, then `check` as the post-condition), the `verify` step (`dpistack test all` with `TEST_ON_INSTALL=yes`; a failed test does not cancel the install) and a final report (addresses, test results, the `/metrics` token with a ready `scrape_config`, a generated panel password shown once, warnings). A failed step stops the install and prints how to continue: `install.sh install --only <step>`.
+- **Panel password:** typed in the menu; with `-y` it comes from `DPISTACK_PANEL_PASSWORD` or a random 24-character one is generated and printed once. Only an argon2id hash is stored.
+- **Reconfigure:** a diff of the applied and the new config, the affected steps, a split into light changes (render and restart) and heavy ones (packages, builds, runtime, version, pinning; they need `--force` or `settings set --apply-heavy`), a render with backups, a `suricata -T` check, then a restart; a failed check keeps the old files.
 
-**Шаг** это пара функций `step_<имя>_check` (код 0, если состояние уже соответствует конфигу) и `step_<имя>_apply`, плюс `step_<имя>_plan` (одна строка для dry-run). Порядок шагов: `preflight`, `selfinstall`, `ndpi`, `suricata`, `rules`, `redis`, `ntopng`, `evebox`, `metrics`, `access`, `panel`, `watch`, `verify`.
-
-Шаг `selfinstall` копирует `install.sh`, `lib/*.sh` и `templates/*` в `/usr/local/lib/dpistack/installer/` и кладёт исполняемый `install.sh` из этой копии в `/usr/local/sbin/dpistack`. После этого шага команда `dpistack` работает без исходного клона или архива репозитория — раздел 5.2. Идемпотентен по хэшу скопированных файлов, как остальные шаги (5.4).
-
-### 5.0 Меню установщика: общие правила
-
-- Меню открывают команды `install` и `reconfigure`, а также бинарник `dpistack` без аргументов, когда есть терминал и не указан `-y`. Реализация на чистом Bash в `lib/menu.sh`: без `dialog`, `whiptail`, ncurses и курсорных последовательностей. Экран печатается заново после каждого действия, поэтому меню работает через SSH и `tmux` и остаётся в истории терминала.
-- Ввод читается из stdin, при запуске через `curl | bash` из `/dev/tty`. Переменная `DPISTACK_INPUT=<файл>` подменяет источник (так работают тесты). Нет терминала, `DPISTACK_INPUT` и `-y`: код 2 и подсказка про `-y`.
-- Цвета включаются только на терминале и без `NO_COLOR` и `--no-color`.
-- Навигация: пункт выбирается номером или буквой; `0` или пустой ввод возвращает на уровень выше; `?` показывает справку экрана; `q` выходит.
-- Экран раздела конфига: ключи списком `N) KEY = значение`. Маркеры: `*` значение отличается от умолчания, `~` (только в «Настроить» существующей установки) отличается от применённого, `!` ключ с ошибкой. Пункт `a` включает и выключает показ ключей уровня advanced (с `--advanced` они видны сразу).
-- Правка ключа: номер ключа, затем вопрос с подсказкой, вариантами и умолчанием. Ключ с фиксированными вариантами выбирается номером из списка, остальные вводятся текстом. Enter оставляет значение, `-` сбрасывает к умолчанию, `?` показывает подсказку. Значение проверяется по схеме сразу: неверное отклоняется с перечнем допустимых, прежнее остаётся.
-- Экран разделов конфига всегда показывает сводку проблем (схема и перекрёстные проверки из 4.3) и не даёт выбрать «Установить» или «Применить», пока они есть.
-- Секреты вводятся без эха. В экранах, сводке и diff показывается `задан` или `не задан`.
-- Правки сохраняются в `/etc/dpistack/dpistack.conf.draft` (0600 root) после каждого изменения. Секреты в черновик не пишутся. Обрыв сессии не теряет ввод: при следующем запуске меню предлагает продолжить черновик. `dpistack.conf` меняется только при применении.
-- `q` при неприменённых правках просит подтверждение. `Ctrl+C` завершает работу, ничего не меняя в системе и не оставляя частично записанных файлов (`trap`, временные файлы удаляются).
-- Ключи уровня basic: `SURICATA_RUNTIME`, `EVEBOX_RUNTIME`, `NTOPNG_RUNTIME`, `SURICATA_SOURCE`, `NDPI_ENABLE`, `IFACES`, `EVE_TYPES`, `ACCESS_MODE`, `ALERT_CHANNELS`, `METRICS_BACKEND`, `PIN_VERSIONS`. Остальные ключи уровня advanced.
-
-Разделы экрана конфига (колонка «группа» это колонка `lib/schema.sh`; каждый ключ входит ровно в одну группу):
-
-| группа | пункт меню | ключи |
+| key group | steps | weight |
 | --- | --- | --- |
-| `capture` | Захват и режим | `IFACES`, `BPF_FILTER`, `HOME_NET`, `SURICATA_MODE`, `IPS_METHOD`, `IPS_NFQ_CHAINS`, `NTOPNG_IFACES` |
-| `components` | Компоненты и источники | `SURICATA_RUNTIME`, `EVEBOX_RUNTIME`, `NTOPNG_RUNTIME`, `SURICATA_SOURCE`, `SURICATA_VERSION`, `NDPI_ENABLE`, `NDPI_SOURCE`, `NDPI_VERSION`, `NTOPNG_VERSION`, `EVEBOX_VERSION`, `PIN_VERSIONS`, `PANEL_SOURCE` |
-| `eve` | EVE и хранение | `EVE_FILE`, `EVE_TYPES`, `EVE_SYSLOG`, `EVE_REDIS`, `EVE_ROTATE`, `EVE_KEEP`, `EVE_MAX_SIZE_MB`, `STATS_INTERVAL_SEC`, `EVEBOX_DB`, `EVEBOX_ES_URL`, `EVEBOX_RETENTION_DAYS` |
-| `rules` | Правила | `RULES_SOURCES`, `RULES_URLS`, `RULES_GROUPS`, `RULES_UPDATE`, `RULES_UPDATE_CALENDAR` |
-| `access` | Доступ | `ACCESS_MODE`, `LAN_CIDR`, `PANEL_PORT`, `NTOPNG_PORT`, `EVEBOX_PORT`, `NGINX_MANAGE`, `NGINX_TLS`, `NGINX_CERT`, `NGINX_KEY`, `FIREWALL_MANAGE` |
-| `metrics` | Метрики | `METRICS_EXPORT`, `METRICS_BACKEND`, `METRICS_BACKEND_RUNTIME`, `METRICS_BACKEND_PORT`, `METRICS_RETENTION` |
-| `watch` | Наблюдение и оповещения | `WATCH_ENABLE`, все `WATCH_*`, `ALERT_CHANNELS`, `ALERT_TG_CHAT_ID`, `ALERT_TG_TOKEN`, `ALERT_MAIL_TO`, `ALERT_MAIL_FROM`, `ALERT_SMTP_URL` |
-| `tests` | Тесты | `TEST_HTTPS_URL`, `TEST_BT_LIVE`, `TEST_ON_INSTALL` |
-| действие | Пароль панели | не ключ конфига, хранится только как хэш |
+| `IFACES`, `BPF_FILTER`, `HOME_NET`, `SURICATA_MODE`, `IPS_*`, `EVE_*`, `STATS_INTERVAL_SEC` | `suricata`; `ntopng` for `IFACES`; `watch` for `EVE_*` | light |
+| `RULES_*` | `rules` | light |
+| `NTOPNG_*`, `EVEBOX_PORT`, `EVEBOX_RETENTION_DAYS`, `EVEBOX_ES_URL` | `ntopng` or `evebox`, `access` | light |
+| `ACCESS_MODE`, `LAN_CIDR`, `PANEL_PORT`, `PANEL_EDITION`, `NGINX_*`, `FIREWALL_MANAGE` | `access`, `panel` | light |
+| `WATCH_*`, `ALERT_*`, `TEST_*` | `watch`, `verify` | light |
+| `METRICS_EXPORT`, `METRICS_RETENTION`, `METRICS_BACKEND_PORT` | `metrics`, `panel` | light |
+| `METRICS_BACKEND`, `METRICS_BACKEND_RUNTIME`, `*_RUNTIME`, `*_SOURCE`, `*_VERSION`, `NDPI_*`, `PIN_VERSIONS`, `EVEBOX_DB`, `PANEL_SOURCE` | the component step | heavy |
 
-`METRICS_TOKEN` генерируется установщиком и в меню не редактируется.
+- **Idempotence:** a second run with the same config changes nothing (every step says `no changes`). A rendered file keeps the hash of its last render in `state`; a hand-edited file stays and the installer says so; `--force` backs it up and overwrites. Packages are installed only if missing or different from the pinned version. The installer never flushes or recreates other people's iptables/nft chains: its own rules live in the `DPISTACK` chain (or the `inet dpistack` nft table), restored at boot by `dpistack-fw.service`.
+- **Preflight:** root, Bash 4.4+, a supported distribution and architecture, systemd (native), Docker with `compose` (if a component uses it), the interfaces of `IFACES` exist, free space (4 GB for a source build, else 1 GB), the needed hosts reachable, the ports free (with nginx also the port behind it), the SELinux mode. A busy port in the menu is a warning with the process name and a free port to take; without a terminal the install stops with code 3. All problems are printed, not just the first.
+- **dnf family:** `dnf makecache`, base packages only for missing commands, `epel-release` and `crb` (`powertools` on 8) for Rocky, AlmaLinux and CentOS, `dnf versionlock`, the OISF COPR when Rust is too old. The SELinux contexts and ports of the components are set with `semanage` and `restorecon`.
+- **Source builds:** build dependencies are installed first; Suricata from git needs Rust 1.85 (a `rustc-1.N` package is used when the system one is older); with Rust 1.75 only, a distribution or OISF package is taken and nDPI is turned off with a message.
+- **Modes and secrets:** non-interactive values come from `--config`, `--set`, then defaults; a prompt there is an error. `--dry-run` prints `+ command` and writes nothing. Secrets never get into `dpistack.conf`, the install log or the dry-run output; `set -x` is forbidden.
+- **Upgrade and uninstall:** `upgrade` respects `PIN_VERSIONS`. `uninstall` stops and removes units, binaries and the installer copy, the `DPISTACK` chain and the ufw/firewalld rules dpistack added, and restarts Suricata that was running in NFQ; it keeps data and configs. `--purge` removes those too (the flag is the confirmation; in the menu you type `remove`).
 
-### 5.1 `install.sh install` / `dpistack install`, что происходит
+## 6. Suricata and nDPI
 
-Явная команда `install` (в отличие от бинарника `dpistack`, вызванного без аргументов, — раздел 5.2) всегда ведёт по описанному здесь пути установки, даже если `dpistack.conf` уже есть.
+- **Capture:** `af-packet`, a block per interface of `IFACES`, `cluster-type: cluster_flow`, `defrag: yes`, `threads: auto`, a unique `cluster-id`; `BPF_FILTER` is added if set.
+- **nDPI:** with `NDPI_ENABLE=yes` the `ndpi.so` of the installed Suricata is added to `plugins:`. Rules with `ndpi-protocol` or `ndpi-risk` must start with `requires: keyword ...` so a Suricata without the plugin skips them. A source build uses `./configure --enable-ndpi --with-ndpi=<prefix>`; an incompatibility is shown as is.
+- **Config:** `suricata.yaml` is rendered fully from the template, matches the built Suricata series (`suricata-version`) and is checked with `suricata -T` before it is written; one template serves IDS and IPS.
+- **IDS to IPS:** `mode` turns on `afpacket` copy-mode or NFQUEUE rules in the `DPISTACK` chain (with `--queue-bypass`, so a stopped Suricata does not cut the network), restarts Suricata and starts a rollback timer; without `mode-confirm` in time the mode returns to `ids`. `drop` rules come from `drop.conf`; none are created.
+- **EVE:** the types of `EVE_TYPES`, `stats` every `STATS_INTERVAL_SEC`, mode `0640`, `logrotate` without `copytruncate` and `suricatasc -c reopen-log-files` afterwards.
 
-**Запуск.** Берётся блокировка `flock` на `/var/lock/dpistack.lock` (второй экземпляр выходит с кодом 1), открывается `install.log`. Установщик определяет систему: дистрибутив, архитектуру, наличие `systemd` и Docker. Затем:
+## 7. Rules
 
-- если `dpistack.conf` уже есть, открывается экран «Найдена установка»: `1) настроить (перейти в «Настроить», раздел 5.3)`, `2) применить текущий конфиг заново` (идемпотентно, без вопросов), `3) открыть меню управления (раздел 5.2)`, `4) выйти`. Молча перезаписывать существующую установку нельзя;
-- если есть черновик, предлагается `Продолжить черновик? [Y/n]`;
-- иначе (свежая установка) открывается главное меню установки.
-
-**Главное меню установки** (пример, справа краткая сводка значений):
-
-```
-dpistack 2.0  |  Ubuntu 24.04, amd64  |  systemd: да  |  docker: нет
-Установка. Конфиг: /etc/dpistack/dpistack.conf (не создан)
-
-  1) Быстрая установка
-  2) Захват и режим                IDS, enp2s0
-  3) Компоненты и источники        Suricata: source, nDPI: да
-  4) EVE и хранение                6 типов, ротация daily
-  5) Правила                       ET Open, раз в неделю
-  6) Доступ                        localhost
-  7) Метрики                       экспорт: да, бэкенд: нет
-  8) Наблюдение и оповещения       panel, log
-  9) Тесты                         после установки: да
- 10) Пароль панели                 не задан
-
-  c) Проверить систему    p) План    s) Сохранить конфиг в файл    l) Загрузить из файла
-  i) Установить           q) Выйти
-
-Проблемы (1): не задан пароль панели
->
-```
-
-Пункты:
-
-- **1, Быстрая установка.** Короткий опрос: интерфейсы (список найденных `ip -o link` без `lo`, интерфейс с маршрутом по умолчанию помечен, выбор номерами через запятую), способ Suricata (`source` даёт nDPI, `oisf` и `distro` ставятся быстрее, но без плагина nDPI), режим доступа, пароль панели. Остальное по умолчанию. Установка сама не стартует: меню возвращается в главное, чтобы можно было проверить сводку.
-- **2–9, разделы.** Экран раздела по правилам 5.0.
-- **10, Пароль панели.** Ввод дважды без эха, пустой пароль отклоняется. Хэш пишется на этапе применения.
-- **c, Проверить систему.** Preflight (5.5) без изменений системы, результат списком.
-- **p, План.** `check` каждого шага и таблица `нужно применить / без изменений`. Ничего не меняет.
-- **s, l.** Сохранить текущие значения в файл и загрузить из файла. Загрузка проверяется схемой, ошибки показываются списком, загруженные значения становятся правками.
-- **i, Установить.** Запускает последовательность ниже.
-
-**Что происходит после `i`** (и сразу при `-y`, без меню):
-
-1. **Слои значений.** Поздний перекрывает ранний: умолчания из `schema.sh` → существующий `dpistack.conf` → `secrets.conf` и переменные окружения для секретов → `--config` → `--set` → правки из меню.
-2. **Проверка конфига.** Схема (тип, варианты) и перекрёстные правила из 4.3. Все ошибки печатаются списком, код 2 (в меню возврат в главное меню). Для `ACCESS_MODE` не `localhost` показывается предупреждение из раздела 1 и требуется подтверждение.
-3. **Сводка и подтверждение.** Печатается итоговый конфиг (секреты скрыты) и `Установить? [y/N]` (при `-y` вопроса нет). Затем записываются `dpistack.conf` (0644) и `secrets.conf` (0600), черновик удаляется.
-4. **Preflight.** Все проверки из 5.5 выполняются целиком, ошибки печатаются списком, код 3. До этого момента система не менялась.
-4а0. **Инструменты preflight.** Сам preflight вызывает `ss` и `curl`; на минимальном образе их нет, поэтому до него (не в `--dry-run`, только от root) ставятся `iproute2 curl ca-certificates`. Существование интерфейса проверяется через `ip`, а без него через `/sys/class/net`; интерфейс маршрута по умолчанию читается из `/proc/net/route`, так что определение работает до установки `iproute2`.
-4а. **Подготовка пакетов** (решение «выбирай сам», v9; `prepare_packages`, не меняет конфиг, пока всё есть). Один `apt-get update` на запуск до первой установки (шаги, добавляющие репозиторий, обновляют индекс ещё раз сами). Затем базовые пакеты: `ca-certificates curl wget gnupg jq git openssl logrotate iproute2 sudo` (`sudo` нужен `visudo` для правила панели), на Ubuntu ещё `software-properties-common` (для `add-apt-repository`); минимальный образ не содержит ни одного из них. Затем проверка, что выбранный источник вообще может дать компонент: `SURICATA_SOURCE=distro` без пакета `suricata` в репозиториях, `SURICATA_SOURCE=oisf` не на Ubuntu (PPA только для Ubuntu), `NDPI_SOURCE=pkg` без `libndpi-dev` заменяются на `source` с сообщением; новое значение записывается в `dpistack.conf` и снимок `applied`, preflight выполняется заново (сборке нужно 4 ГБ). Если компонент уже установлен любым способом, значение не трогается. `reconfigure` и `upgrade` тоже обновляют индекс перед установкой пакетов (раньше `upgrade` его не обновлял и не замечал ошибку `apt-get`).
-5. **План.** Для каждого шага вызывается `check`, печатается таблица и строки `plan`. При `--dry-run` работа заканчивается здесь, код 0, `dpistack.conf` не пишется.
-6. **Применение** по порядку шагов (включая `selfinstall`, см. врезку в начале раздела 5). На экране одна строка на шаг: `[3/13] suricata ... готово`, `без изменений` или `ошибка`; подробности в `install.log`. На каждом шаге: `apply`, затем повторный `check` (постусловие) и запись результата в `state`. Отрендеренные файлы хранят хэш; изменённые руками не перезаписываются без `--force`. Ошибка шага останавливает установку: печатается имя шага, причина и команда продолжения `install.sh install --only <шаг>`. Уже применённые шаги остаются, установленные пакеты не удаляются, файлы, изменённые упавшим шагом в этом запуске, восстанавливаются из `backups/`.
-7. **Проверка.** Шаг `verify` запускает `ctl test all` при `TEST_ON_INSTALL=yes`. Провал теста не отменяет установку и попадает в отчёт.
-8. **Итоговый отчёт.** Адреса интерфейсов по `ACCESS_MODE` (панель, EveBox, ntopng, бэкенд метрик), результат тестов, где лежат конфиги и логи, команда `dpistack` для дальнейшего управления (раздел 5.2), токен `/metrics` и готовая строка `scrape_config`, сгенерированный пароль панели (только если он создавался, показывается один раз), предупреждения (топология, SELinux, пароль по HTTP в `lan`).
-
-Пароль панели: в меню вводится вручную и без него «Установить» недоступно. При `-y` берётся из `DPISTACK_PANEL_PASSWORD`, а если переменной нет, генерируется случайный (24 символа) и печатается один раз в отчёте настоящей установки (при `--dry-run` не генерируется и не печатается). В открытом виде нигде не хранится. Меняется пунктом меню управления «Пароль панели» (5.2) или командой `ctl panel-passwd`.
-
-### 5.2 Персистентная команда `dpistack` и меню управления
-
-После установки на системе есть исполняемый `/usr/local/sbin/dpistack` (шаг `selfinstall`) — тот же код, что и `install.sh`, скопированный вместе с `lib/` и `templates/` в `/usr/local/lib/dpistack/installer/`, поэтому команда работает без исходного клона или архива. `dpistack` рассчитан на прямой запуск администратором от root, в отличие от `dpistack-ctl` (4.5), который вызывается только через `sudo -n` из панели и watchdog по узкому списку команд.
-
-**Что показывает `dpistack` без аргументов** зависит от состояния:
-
-- `dpistack.conf` нет → главное меню установки, раздел 5.1 (тот же путь, что у `install.sh install` на свежей системе).
-- `dpistack.conf` есть → **меню управления**:
-
-```
-dpistack 2.0  |  Управление установленным стендом
-Конфиг: /etc/dpistack/dpistack.conf  |  компоненты: 6 из 6 активны  |  health: ok
-
-  1) Настроить                     разделы конфига, diff, применение
-  2) Статус компонентов
-  3) Логи
-  4) Запустить тесты
-  5) Обновить пакеты (upgrade)
-  6) Удалить (uninstall)
-  7) Пароль панели
-
-  q) Выйти
->
-```
-
-Пункты:
-
-- **1, Настроить.** Открывает экран разделов конфига с diff и применением — раздел 5.3. Тот же экран открывает команда `dpistack reconfigure`, минуя меню управления.
-- **2, Статус компонентов.** Вывод `dpistack-ctl status` построчно: компонент, состояние, включён ли в автозапуск.
-- **3, Логи.** Список компонентов из 4.1, выбор номером, затем `dpistack-ctl logs <id> -n 200`; `f` внутри просмотра переключает на `--follow` до `Ctrl+C`.
-- **4, Запустить тесты.** `dpistack-ctl test all --json`, результат построчно как в 10.
-- **5, Обновить пакеты.** Запускает `upgrade` (5.7) с подтверждением, если есть незакреплённые пакеты для обновления.
-- **6, Удалить.** Требует ввести слово `удалить` для подтверждения, затем `1) обычное удаление` или `2) удаление с данными (--purge)`; отменяется пустым вводом.
-- **7, Пароль панели.** Ввод дважды без эха, затем `ctl panel-passwd`.
-
-Пункты 2–4 только читают систему и не требуют подтверждения. `dpistack-ctl` недоступен или вернул ошибку — пункт показывает причину и возвращает в меню управления, не завершая `dpistack` целиком.
-
-**Неинтерактивно** те же действия доступны как подкоманды: `dpistack status`, `dpistack test [bittorrent|https|all]`, `dpistack logs <id> [-n N] [--follow]` — тонкие обёртки, отдают код возврата `dpistack-ctl`. `dpistack upgrade` и `dpistack uninstall [--purge]` — как в 5.7. `dpistack reconfigure` — как в 5.3.
-
-### 5.3 «Настроить» (`dpistack reconfigure`), что происходит
-
-**Запуск** как в 5.1 (блокировка, лог, черновик). Если `dpistack.conf` нет, ошибка с подсказкой про `install`, код 2. Иначе открывается экран разделов конфига существующей установки. Его пункты те же, что при установке, но значения текущие, а не умолчания:
-
-```
-dpistack 2.0  |  Настройка существующей установки
-Конфиг: /etc/dpistack/dpistack.conf  |  компоненты: 6 из 6 активны  |  health: ok
-
-  1) Захват и режим                IDS, enp2s0, enp3s0       ~
-  2) Компоненты и источники        Suricata: source, nDPI: да
-  3) EVE и хранение                6 типов, ротация daily
-  4) Правила                       ET Open, раз в неделю
-  5) Доступ                        localhost
-  6) Метрики                       экспорт: да, бэкенд: нет
-  7) Наблюдение и оповещения       panel, log
-  8) Тесты                         после установки: да
-  9) Пароль панели                 сменить
-
-  d) Изменения (diff)     a) Применить            r) Отменить правки
-  0) Назад в меню управления       q) Выйти
-
-Правки: 1 ключ (IFACES). Проблемы: нет
->
-```
-
-Отличия от установки:
-
-- Маркер `~` у раздела и ключа означает «отличается от применённого».
-- **d, Изменения.** Построчно `KEY: старое → новое` (секреты: `изменён`), список затронутых шагов по таблице ниже и пометка «лёгкое» или «тяжёлое» у каждого изменения.
-- **r, Отменить правки.** С подтверждением сбрасывает все неприменённые правки и удаляет черновик.
-- **0, Назад.** Доступно, только когда экран открыт из меню управления (не при прямом `dpistack reconfigure`); без правок выходит сразу, с правками — как `q`.
-- **Быстрой установки нет.** Пароль панели меняется отдельным пунктом (без эха, дважды); на этапе применения вызывается `ctl panel-passwd`.
-
-Статус компонентов и запуск тестов на этом экране не дублируются — они в меню управления (5.2).
-
-**Что происходит после `a`** (и сразу при `-y --set ...` через `dpistack reconfigure`, без меню):
-
-1. **Diff.** `config.sh` сравнивает применённый конфиг (`old`) и новый набор и выдаёт список изменённых ключей. Изменений нет: `изменений нет`, код 0.
-2. **Определение шагов.** Каждый ключ схемы знает свои шаги (таблица ниже). Изменённые ключи дают набор шагов к применению, остальные пропускаются по `check`.
-3. **Классификация.** Изменения делятся на лёгкие (перерисовка файлов и перезапуск) и тяжёлые (пакеты, сборка, смена runtime, версия, пиннинг). Для тяжёлых показывается, что будет переустановлено или пересобрано, и запрашивается `Продолжить? [y/N]` (в `-y` нужен `--force`).
-4. **Сводка и подтверждение** с diff ключей и списком шагов. `--dry-run` печатает план и выходит.
-5. **Применение.** Новый конфиг пишется в `dpistack.conf.new`, шаги работают с ним. Каждый затронутый файл рендерится с бэкапом, затем проверяется (`suricata -T` для Suricata и правил), затем компонент перезапускается или перечитывает конфиг. Провал проверки оставляет прежний файл и прежний `dpistack.conf`, печатает вывод проверки, код 1; экран остаётся открытым с правками, чтобы их можно было исправить. Успех атомарно переименовывает `dpistack.conf.new` в `dpistack.conf`, обновляет `state`, удаляет черновик.
-6. **Отчёт** с тем, что изменилось, и предупреждениями. Тесты автоматически не запускаются (пункт «Запустить тесты» в меню управления или `--only verify`).
-
-Из панели и `ctl` изменение конфига идёт по тому же пути, но без меню, без вопросов и без тяжёлых изменений (`ctl reconfigure`, раздел 4.5).
-
-Ключи и затрагиваемые шаги:
-
-| группа ключей | шаги | тип |
-| --- | --- | --- |
-| `IFACES`, `BPF_FILTER`, `HOME_NET`, `SURICATA_MODE`, `IPS_*`, `EVE_*`, `STATS_INTERVAL_SEC` | `suricata` (перерисовка, перезапуск), `ntopng` при `IFACES`, `watch` при `EVE_*` и `STATS_*` | лёгкий |
-| `RULES_*` | `rules` | лёгкий |
-| `NTOPNG_IFACES`, `NTOPNG_PORT`, `EVEBOX_PORT`, `EVEBOX_RETENTION_DAYS`, `EVEBOX_ES_URL` | `ntopng` или `evebox`, `access` | лёгкий |
-| `ACCESS_MODE`, `LAN_CIDR`, `PANEL_PORT`, `NGINX_*`, `FIREWALL_MANAGE` | `access`, `panel` | лёгкий |
-| `WATCH_*`, `ALERT_*` | `watch` | лёгкий |
-| `METRICS_EXPORT`, `METRICS_RETENTION`, `METRICS_BACKEND_PORT` | `metrics`, `panel` | лёгкий |
-| `METRICS_BACKEND`, `METRICS_BACKEND_RUNTIME` | `metrics` | тяжёлый |
-| `TEST_*` | `verify` | лёгкий |
-| `*_RUNTIME`, `*_SOURCE`, `*_VERSION`, `NDPI_*`, `PIN_VERSIONS`, `EVEBOX_DB`, `PANEL_SOURCE` | шаг компонента | тяжёлый |
-
-### 5.4 Идемпотентность
-
-- Повторный запуск с тем же конфигом ничего не меняет: каждый шаг печатает `без изменений`, код 0. Проверяется bats-тестом на заглушках.
-- Отрендеренный файл хранит хэш последнего рендера в `state`. Файла нет → рендер. Хэш совпадает, вход изменился → рендер. Файл изменён руками (в том числе через панель) → остаётся, установщик печатает уведомление. `--force` делает бэкап в `backups/` и перезаписывает. Это правило действует и для перерисовки при `iface add|remove` и `reconfigure`.
-- Пакеты ставятся только если их нет или версия расходится с закреплённой.
-- Шаг `selfinstall` копирует файлы, только если их хэш в `/usr/local/lib/dpistack/installer/` отличается от хэша в источнике (обновление версии набора).
-- Установщик никогда не сбрасывает и не пересоздаёт чужие цепочки iptables/nft. Свои правила живут в отдельной цепочке `DPISTACK` (или, без `iptables`, в таблице `nft` `inet dpistack`), которую восстанавливает юнит `dpistack-fw.service` при каждой загрузке.
-
-### 5.5 Preflight
-
-Root, Bash 4.4+, дистрибутив и архитектура из поддерживаемых, `systemd` (для native), Docker с `compose` (если есть компонент с `docker`), интерфейсы из `IFACES` существуют (`ip link`), свободное место (не меньше 4 ГБ при `SURICATA_SOURCE=source`, иначе 1 ГБ), доступность нужных хостов через `curl`, порты из 4.3 свободны (`ss -ltn`), режим SELinux (только сообщить). Провал даёт код 3 и перечень причин целиком, а не первую.
-
-**dnf-семейство (v10).** `pkg_update_once` делает `dnf makecache`; базовые пакеты ставятся только для недостающих команд (на RHEL 9 `curl` конфликтует с `curl-minimal`): `curl wget gnupg2 jq git openssl logrotate iproute sudo ca-certificates`. Rocky, AlmaLinux и CentOS получают `epel-release` и репозиторий `crb` (версия 8: `powertools`); Fedora и Amazon Linux ничего не получают; RHEL просит включить EPEL и CodeReady Builder вручную. Имена: `ndpi-devel`, `redis` и `redis.service`; версии пакетов через `rpm -q`, закрепление через `dnf versionlock`, обновление `dnf upgrade`. ntopng: репозиторий `packages.ntop.org/centos-stable/ntop.repo` для RHEL-клонов (по документации ntop.org), для Fedora и Amazon Linux его нет, там пакет берётся из дистрибутива или шаг пропускается. EveBox: URL rpm-репозитория не подтверждён, поэтому не угадывается: шаг останавливается с подсказкой `--skip evebox` или установкой пакета вручную. Фаервол: `ufw` где он есть, иначе `firewalld` (rich-правила и `--reload`); при SELinux Enforcing и `ACCESS_MODE=nginx` включается `httpd_can_network_connect`. Preflight на dnf пишет предупреждение, а не отказывает.
-
-**Платформы и стабильные версии (v11).** `os_support_level` разбирает `/etc/os-release`: `supported`, `unverified` (предупреждение в журнале) или `unsupported` (причина в `preflight`, код 3). Источники берутся стабильные, сборки разработки не используются нигде по умолчанию: Suricata из последнего проверенного релиза серии 8.0 (`SURICATA_STABLE_REF`, сейчас `suricata-8.0.7`; MSRV Rust 1.75, поэтому штатного `rustc` Ubuntu 24.04 достаточно), nDPI 4.14, ntop.org из `apt-stable` для Debian-семейства (для Ubuntu `apt-stable/<версия>`, для Debian `apt-stable/<имя релиза>`, файл `apt-ntop-stable.deb`) и `centos-stable` для RHEL-семейства, EveBox из канала `stable`. Канал `apt` ntop.org (ночные сборки `master`) не используется, и тихого отката на него нет: нет стабильного пакета, шаг останавливается с ошибкой. На Debian ntop.org требует компонент `contrib`: `apt_enable_component` добавляет его в строки и блоки `deb`, `deb-src` и `*.sources` (deb822) только для хостов `debian.org`, один раз, с копией в каталог бэкапов. Номер релиза Suricata при смене тега в уже собранном дереве приводит к `git clean -fdx` и пересборке. RHEL-семейство: `SURICATA_SOURCE=oisf` включает COPR `@oisf/suricata-8.0`, пакет запускается юнитом с опциями из `/etc/sysconfig/suricata` (`--af-packet --user suricata`, интерфейсы берутся из `suricata.yaml`), RHEL получает EPEL из проекта Fedora и CodeReady Builder через `subscription-manager` (без подписки сообщение, установка пакетов идёт дальше). Там, где собрать Suricata нельзя (нет Rust 1.75), `install` берёт пакет: из дистрибутива на Debian-семействе, из COPR на RHEL-семействе, nDPI при этом выключается. `preflight` проверяет доступность репозиториев, которые понадобятся выбранным шагам (OISF PPA или COPR, ntop.org, EveBox), и учитывает `--skip` и `--only`. `uninstall --purge` удаляет системного пользователя панели.
-
-**RHEL-клоны от 8 (v12).** Rocky Linux и AlmaLinux 8, 9 и 10 поддерживаются одним кодом: на 8 вместо `crb` включается `powertools`. Rust для сборки на EL8 приходит из модульных пакетов, которые `dnf repoquery` может не показать; тогда `install` берёт пакет COPR OISF (серия 8.0 собрана и для EPEL 8), nDPI при этом выключается. 
-
-**Сборка из исходников (v9).** Перед сборкой Suricata и nDPI ставятся зависимости: `build-essential git autoconf automake libtool pkg-config make libpcap-dev`, для Suricata ещё `libpcre2-dev libyaml-dev libjansson-dev libmagic-dev zlib1g-dev libcap-ng-dev libnet1-dev liblz4-dev python3-yaml cargo rustc` и `cbindgen`, если он есть в репозитории (имена проверены на Ubuntu 24.04). Сборке Suricata из git нужен Rust 1.85. Если `rustc` старше, ставятся `rustc-1.N` и `cargo-1.N` с наименьшим `N` не ниже 85 (на Ubuntu 22.04 и 24.04 они лежат рядом с `rustc` 1.75) и передаются в `configure` через `RUSTC` и `CARGO`, как описано в OISF. Если таких пакетов нет (Debian 12: `rustc` 1.63) и `SURICATA_VERSION` не задан, `install` ещё до сборки переключается на пакет Suricata из дистрибутива и выключает nDPI: плагин есть только в сборке из исходников. Закреплённый `SURICATA_VERSION` не трогается, и `configure` остановится на проверке Rust. Новых ключей `dpistack.conf` это не добавляет. `configure` получает `--libdir=/usr/lib`, иначе плагин nDPI ложится в `/usr/local/lib/suricata`, а `suricata.yaml` и весь код ищут его в `/usr/lib/suricata`; после `make install` выполняется `make install-conf`, который ставит `classification.config`, `reference.config` и `threshold.config` и не перезаписывает существующий `suricata.yaml`. Сборка Suricata из исходников использует стабильный тег по умолчанию, `master` только по явному `SURICATA_VERSION=master`. Закреплённые `NDPI_VERSION` и `SURICATA_VERSION` сравниваются с состоянием как коммиты (`git rev-parse <ref>^{commit}`), а не как текст. Сборка для dnf-семейства ждёт слайса 26.
-
-### 5.6 Режимы и секреты
-
-- Неинтерактивный режим: значения из `--config`, затем `--set`, затем умолчания. Секреты только из `secrets.conf` или переменных окружения. Запрос ввода в этом режиме ошибка.
-- `--dry-run`: `run` печатает `+ команда` и не выполняет. Запись в `state`, `dpistack.conf`, `panel.auth` и лог установки не делается, пароль панели не генерируется и не печатается, `argon2` не ставится (R81: сгенерированный при пробном запуске пароль был бы показан, но не сохранён, и настоящий запуск создал бы другой). Чтение системы разрешено.
-- Секреты не попадают в `dpistack.conf`, лог установки и вывод `--dry-run`. `set -x` в скриптах запрещён.
-
-### 5.7 Обновление и удаление
-
-`upgrade` учитывает `PIN_VERSIONS` и не трогает закреплённое без `--set`. `uninstall` останавливает и отключает юниты, удаляет юниты и бинарники набора (включая `/usr/local/sbin/dpistack` и `/usr/local/lib/dpistack/installer/`), оставляет данные и конфиги Suricata, EveBox, ntopng и бэкенда метрик. `uninstall --purge` удаляет и их, после подтверждения (в неинтерактивном режиме подтверждением служит сам флаг; в меню управления — слово `удалить`, раздел 5.2).
-
----
-
----
-
-## 6. Suricata и nDPI: правила интеграции
-
-- **Захват:** `af-packet`, по блоку на интерфейс из `IFACES`, `cluster-type: cluster_flow`, `defrag: yes`, `threads: auto`, `cluster-id` уникален для интерфейса. `BPF_FILTER` подставляется, если задан.
-- **nDPI:** при `NDPI_ENABLE=yes` в `plugins:` добавляется `ndpi.so` из каталога плагинов установленной Suricata. Правила, использующие `ndpi-protocol` и `ndpi-risk`, обязаны начинаться с `requires: keyword ndpi-protocol` (и/или `ndpi-risk`), чтобы Suricata без плагина пропускала их, а не падала.
-- **Сборка из исходников:** `./configure --enable-ndpi --with-ndpi=<префикс>`. Версия nDPI определяется требованием выбранной версии Suricata. Несовместимость ловится на `configure` и выводится как есть, обходов нет. Установщик после сборки проверяет наличие `ndpi.so` и `suricata --build-info`.
-- **Юнит** при `source` рендерится из `templates/`, при пакетах используется дистрибутивный, дополняется drop-in файлом.
-- **Конфиг:** `suricata.yaml` рендерится полностью из шаблона и проверяется `suricata -T`. Один и тот же шаблон обслуживает IDS и IPS (допущение A5).
-- **IDS → IPS:** переключение командой `mode` включает `afpacket` copy-mode или NFQUEUE-правила в цепочке `DPISTACK`, перезапускает Suricata и запускает таймер отката. Без `mode-confirm` за отведённое время режим возвращается в `ids`. Правила с действием `drop` берутся из `drop.conf`. NFQUEUE-правила ставятся с флагом `--queue-bypass`, чтобы падение Suricata не отрезало сеть. Хост вне разрыва сети защищает только себя (раздел «Предметная область»).
-- **EVE:** типы из `EVE_TYPES`. `stats` включается с интервалом `STATS_INTERVAL_SEC`. Права файла `0640`. Ротация через `logrotate` без `copytruncate`: после ротации выполняется `suricatasc -c reopen-log-files`, чтобы Suricata открыла новый файл.
-
----
-
-## 7. Правила Suricata
-
-- Источники: `RULES_SOURCES` (имена из `suricata-update list-sources`), `RULES_URLS` (свои). Свои локальные правила лежат в `local.rules` и подключаются всегда.
-- Группы из `RULES_GROUPS` включаются строками `group:<имя>.rules` в `enable.conf`. Отдельные правила отключаются в `disable.conf`.
-- Обновление: `dpistack-rules.timer` с `OnCalendar=$RULES_UPDATE_CALENDAR` и `Persistent=true`. Порядок: снимок текущего набора → `suricata-update` → `suricata -T` → `reload suricata`. Ошибка на любом шаге возвращает снимок и оставляет `rules.age` растущим (это увидит watchdog).
-- `RULES_UPDATE=off` не создаёт таймер, обновление только вручную.
-
----
+Sources `RULES_SOURCES` and `RULES_URLS`; local rules in `local.rules` are always loaded; `RULES_GROUPS` become `group:<name>.rules` lines in `enable.conf`; single rules are turned off in `disable.conf`. `dpistack-rules.timer` (`OnCalendar=$RULES_UPDATE_CALENDAR`, `Persistent=true`): snapshot, `suricata-update`, `suricata -T`, reload; any failure restores the snapshot and leaves `rules.age` growing (the watchdog sees it). `RULES_UPDATE=off` creates no timer.
 
 ## 8. Watchdog
 
-`dpistack-watch` запускается `dpistack-watch.timer` каждые `WATCH_INTERVAL_SEC` как oneshot от root. Он ничего не чинит, пока `WATCH_AUTORESTART=no`.
+`dpistack-watch` runs from a timer every `WATCH_INTERVAL_SEC` as a oneshot root job and fixes nothing unless `WATCH_AUTORESTART=yes`.
 
-| проверка | как | `ok` / `warn` / `crit` |
+| check | how | ok / warn / crit |
 | --- | --- | --- |
-| `<id>.process` | состояние через runtime | `active` / нет / `failed` или `inactive` |
-| `<id>.port` | `ss -ltn` на порту из конфига | слушает / нет / нет дольше двух прогонов подряд |
-| `suricata.eve_fresh` | возраст последнего события в `eve.json` | моложе `WATCH_EVE_STALE_SEC` / нет / старше |
-| `suricata.drop_rate` | по двум последним `stats` | ниже `WARN` / от `WARN` / от `CRIT` |
-| `disk.free` | минимум свободного места по разделам логов Suricata, данных EveBox (при `sqlite`) и бэкенда метрик; `detail` называет худший путь | выше `WARN` / ниже `WARN` / ниже `CRIT` |
-| `rules.age` | возраст `suricata.rules` | младше `WARN_DAYS` / от `WARN_DAYS` / от `CRIT_DAYS` |
+| `<id>.process` | state through the runtime | active / absent from the check list (`na`) / failed or inactive |
+| `<id>.port` | `ss -ltn` on the configured port (with nginx the service port, plus 10000; redis 6379) | listening / missing 1-2 runs / missing 3 or more runs |
+| `suricata.eve_fresh` | age of `eve.json` by mtime | younger than `WATCH_EVE_STALE_SEC` / file missing / older |
+| `suricata.drop_rate` | the last two `stats` events (the last 4 MB of the file) | below `WARN` / from `WARN` / from `CRIT` |
+| `disk.free` | the smallest free share of the Suricata log, EveBox data (sqlite) and metrics backend partitions | above `WARN` / below `WARN` / below `CRIT` |
+| `rules.age` | age of `suricata.rules` | younger than `WARN_DAYS` / from `WARN_DAYS` or file missing / from `CRIT_DAYS` |
 
-Детали проверок:
+`na` means the check does not apply (`EVE_FILE=no`, no `stats`, `RULES_UPDATE=off`, component absent). With `WATCH_AUTORESTART=yes` a failed component is restarted through `restart <id>` at most 3 times in a sliding hour. **Alerts** go out on a status change and repeat every `WATCH_REPEAT_MIN` until `ok`; a recovery message is sent on return to `ok`. Channels of `ALERT_CHANNELS` work independently: `panel` (a line in `events.jsonl`), `log` (`logger`), `tg` (the Bot API through `curl`) and `mail` (`curl --url "$ALERT_SMTP_URL"`, no local MTA). A failing channel is logged and does not stop the others. Messages are English, one line per check.
 
-- `<id>.process` берёт состояние из `dpistack-ctl status --json` (то есть через runtime): `active` даёт `ok`, `failed` и `inactive` дают `crit`, `absent` даёт `na`.
-- `<id>.port`: порты `EVEBOX_PORT`, `NTOPNG_PORT`, `PANEL_PORT` (при `ACCESS_MODE=nginx` порт самого сервиса, плюс 10000, а не порт nginx перед ним), `METRICS_BACKEND_PORT`, у `redis` 6379. Нет порта один или два прогона подряд даёт `warn`, три и больше подряд дают `crit`; счётчик лежит в `state` (`watch.miss.<id>`).
-- `suricata.eve_fresh`: возраст `eve.json` по mtime. Файла нет даёт `warn`.
-- `suricata.drop_rate`: по двум последним `stats` из хвоста файла (последние 4 МБ, файл целиком не читается). Меньше двух событий даёт `na`. Сброс счётчика (значение меньше прежнего) даёт `ok` с пометкой, интервал пропускается.
-- `disk.free`: разделы каталога `eve.json` и `/var/lib/evebox` (при `sqlite`); каталог бэкенда метрик добавляет слайс 28. Побеждает наименьшая доля свободного места.
-- `rules.age`: файла `suricata.rules` нет даёт `warn`.
-- При `WATCH_AUTORESTART=yes` упавший (`crit`) компонент перезапускается через `dpistack-ctl restart <id>`, не больше 3 раз за скользящий час, метки времени лежат в `state` (`watch.restarts.<id>`). Перезапуск пишется в журнал юнита.
-- Зависимости: `jq` (шаг `watch` ставит), `flock` (util-linux): второй одновременный прогон выходит молча. Юнит пропускает запуск, пока нет копии установщика и `dpistack-ctl` (`ConditionPathExists`).
-- `dpistack-watch` не требует аргументов; `dpistack-ctl health` запускает его один раз и печатает `health.json`.
+## 9. The panel
 
-`na` ставится, если проверка неприменима: `EVE_FILE=no`, нет `stats` в `EVE_TYPES`, `RULES_UPDATE=off` для `rules.age`, компонент не установлен.
+**Budget:** idle RSS at most 25 MB, the binary at most 15 MB, the static files at most 150 KB, zero CPU with no open tab and no `/metrics` request. The unit has `ProtectHome=yes`, `PrivateTmp=yes`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`; it has **no `MemoryMax` and no `CPUQuota`** (decision of 2026-10-24: the lite edition is the way to a lighter panel). `NoNewPrivileges` and `ProtectSystem` are left out: `sudo` inherits the unit's restrictions and `dpistack` could not write to `/etc`.
 
-**Оповещения:** отправляются при смене статуса и повторяются каждые `WATCH_REPEAT_MIN`, пока статус не `ok`. При возврате в `ok` уходит сообщение о восстановлении. Каналы из `ALERT_CHANNELS` работают независимо и в любых сочетаниях:
+**Editions (v0.23.0).** `PANEL_EDITION=full|lite` replaced `PANEL_MODE=limited|unlimited`. Both editions have the same screens, the same API and the same features. The server picks the files: the page always asks for `app.css` and `fx.js`; the `full` edition answers with `full.css` and `fx.js`, `lite` with `lite.css` and an empty `nofx.js`, so a lite page never downloads the full design.
+- **full:** a dark console in the style of premium developer tools: near-black background, matte cards with hairline translucent borders and soft inner highlights, one cool-blue accent used sparingly, a left sidebar with a brand mark and thin line icons (an active pill with a faint glow), capsule controls, staggered entrance animations of 150-550 ms with a gentle easing curve, hover lifts, and a quiet background of drifting points joined by faint lines drawn on a canvas (`fx.js`: dim, capped at 70 points and 2x pixel ratio, paused while the tab is hidden, one still frame under `prefers-reduced-motion`). System fonts only (`Inter`, `Geist`, `Manrope` when installed), because the policy forbids external fonts. Narrow screens turn the sidebar into a top strip.
+- **lite:** the plain, light page with system fonts, a small stylesheet, no canvas, no animations; it follows `prefers-color-scheme`.
+- The installer asks for the edition in the quick install, the Settings screen and `dpistack settings set --apply PANEL_EDITION=...` switch it (light weight: the unit is rendered again and restarted). An old `dpistack.conf` with `PANEL_MODE` still loads: the key is dropped.
+- Screens in both editions: Overview, Components, Settings, Configs, Rules, Logs, Events, Metrics, Tests, Alerts. Interface rules: no external fonts, scripts or images, no inline scripts or styles (CSP), `textContent` instead of `innerHTML`, charts as inline SVG, a hash router, a plain `<textarea>` editor, dangerous actions behind a confirmation.
 
-- `panel`: строка в `events.jsonl`;
-- `log`: `logger -t dpistack-watch -p daemon.warning` (уровень `err` для `crit`);
-- `tg`: `curl` к Bot API, токен и `ALERT_TG_CHAT_ID`;
-- `mail`: `curl --url "$ALERT_SMTP_URL"` с `ALERT_MAIL_FROM` и `ALERT_MAIL_TO`, без локального MTA.
+**Behavior:** `eve.json` is read incrementally from a saved offset (never parsed whole; a first read takes at most 4 MiB from the end); a ring of at most 5000 events in memory. The graph ring is 24 hours at 30-second steps with a snapshot into `metrics.json` once an hour and on stop; `/metrics` is built from the same data and reads the disk at most once a second. `status` polling every 10 s only while the tab is visible; SSE opens only on the logs and events screens. One administrator, argon2id, 5 sign-in attempts per 5 minutes per IP, a 12-hour session. Every changing request needs the CSRF token. Client address: the connection address, `X-Forwarded-For` only from loopback (the last entry). Flags are passed by the unit (the panel does not read `dpistack.conf`): `-addr`, `-access`, `-lan-cidr`, `-auth-file`, `-health-file`, `-ctl`, `-tests-file`, `-events-file`, `-eve-file`, `-metrics-file`, `-metrics-token-file`, and `-lite` for the lite edition. In a container the panel calls `dpistack` through `nsenter` with `DPISTACK_CALLER=panel`.
 
-Сбой одного канала пишется в журнал и не мешает остальным. Тексты сообщений на русском, одна строка на проверку.
+## 10. Check tests (`dpistack test`)
 
----
+Result: `{"name","status","detail","duration_ms"}`, `status` is `pass`, `fail` or `skip`; the outcome goes to `tests-last.json`. Exit code `0` for all `pass` or `skip`, `1` if any `fail`.
 
-## 9. Панель
+- **`bittorrent`** (offline): `suricata -r tests/data/bittorrent.pcap` with the config of `suricata-test.yaml.tpl` into a temporary directory; `pass` if an `alert` whose signature contains `BitTorrent` appears. With the nDPI plugin loaded the test adds its own `ndpi-protocol:BitTorrent` rule (sid 9000001). `skip` with the reason if there are neither `emerging-p2p` rules nor the plugin. `TEST_BT_LIVE=yes` also replays the pcap into the first interface with `tcpreplay`.
+- **`https`** (live): `curl --max-time 15 "$TEST_HTTPS_URL"`, then waits up to 20 s for a `tls` event with `tls.sni` equal to the host; `fail` at once if `eve.json` is missing, and the detail names the cause (curl failed, no event, the capture interface differs from the one curl uses).
+- **`all`** runs both; `verify` runs it with `TEST_ON_INSTALL=yes`.
 
-**Ресурсы (бюджет):** RSS в простое не больше 25 МБ, бинарник не больше 15 МБ, ноль CPU без открытых вкладок и без запросов `/metrics`. Юнит: `MemoryMax=64M`, `CPUQuota=20%`, `ProtectHome=yes`, `PrivateTmp=yes`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. `NoNewPrivileges` и `ProtectSystem` не ставятся: `sudo` наследует ограничения юнита и `dpistack-ctl` не смог бы писать в `/etc`. Защита строится на списках в `dpistack-ctl`.
+## 11. Project tests
 
-**Установка панели (слайс 17, решения «выбирай сам»):** шаг `panel` ставит бинарник `/usr/local/bin/dpistack-panel` и юнит `dpistack-panel.service`, затем `enable --now`; при изменении бинарника или юнита после этого `restart`. `PANEL_SOURCE=auto` (по умолчанию) берёт готовый бинарник, если он лежит рядом с `install.sh`: `dpistack-panel-linux-amd64` или `dpistack-panel-linux-arm64` по `uname -m` (так его кладёт архив релиза), иначе простой `dpistack-panel`; если готового нет, собирает из `panel/`, как в клоне репозитория. `build` собирает всегда, `prebuilt` берёт только готовый. Сборка: `go build` (`CGO_ENABLED=0`, `-trimpath -ldflags "-s -w"`) из `panel/`, хэш исходников запоминается в `state` (`panel.src_hash`), пока исходники не менялись, пересборки нет. `preflight` останавливает установку с кодом 3, если бинарник нельзя получить: нет готового файла при `prebuilt`, а при `auto` и `build` нет ни готового файла, ни Go нужной версии (минимум в `panel/go.mod`), ни каталога `panel/`. Уже установленный и актуальный бинарник этих проверок не требует, поэтому повторный запуск на хосте без Go проходит. Флаги юнита строит установщик: при `lan` адрес `0.0.0.0:PANEL_PORT` и `-lan-cidr` с уже разрешённым `LAN_CIDR` (если его не определить, то `127.0.0.1/32` с предупреждением, как в шаге `access`: панель закрыта для всех, кроме самого хоста, пока `LAN_CIDR` не задан вручную), при `localhost` адрес `127.0.0.1:PANEL_PORT`, при `nginx` адрес `127.0.0.1:PANEL_PORT+10000` (внешний `PANEL_PORT` держит nginx) и `-lan-cidr`. `uninstall` останавливает юнит и удаляет его вместе с бинарником. Сгенерированный пароль печатается в итоговом конфиге один раз рядом с `METRICS_TOKEN`; в `install.log`, `dpistack.conf`, `secrets.conf` и `state` его нет, на диске только хэш.
+Tests come from acceptance criteria, not from finished code. Bash: `bats` with stubs of external commands in `tests/mocks/` through `PATH`, paths redirected with `DPISTACK_ROOT`, and the test-only variables `DPISTACK_INPUT`, `DPISTACK_TEST_WAIT`, `DPISTACK_NOW`. Go: `go test` with `httptest` and the `ctl.Runner` interface. Interface: `node --test` for the pure logic. A forbidden kind of test: "ran the step, checked for 0"; a test checks a result (file content, the commands called, a refusal). Every change brings a test for each criterion, one for the error path and, for installer steps, one for idempotence. Platform matrix before a release: Ubuntu 22.04 and 24.04, Debian 12 and 13, Rocky Linux or AlmaLinux 8, 9 and 10, each with `install -y`, `distro` and `oisf` sources where they exist, a repeat install, `reconfigure`, `upgrade`, `uninstall --purge` and `dpistack test all`.
 
-**Обзор (слайс 17):** общий `overall` из `health.json` с цветным значком (`ok`, `warn`, `crit`, а пока сторож не писал отчёт «Нет данных»), таблица компонентов из `ctl status` и список проверок сторожа. Опрос `/api/status` раз в 10 секунд, только пока вкладка видима и экран открыт; на скрытой вкладке и после выхода таймер остановлен. Страница строится через `textContent`, без `innerHTML`.
+## 12. Checks and the gate
 
-**Компоненты и логи (слайс 18, решения «выбирай сам»):** `POST /api/components/{id}/{start|stop|restart}` и `POST /api/suricata/reload` вызывают `ctl` и отвечают `{ok, output}`; формат `id` проверяется шаблоном `^[a-z][a-z0-9-]{0,31}$`, а какие компоненты существуют, решает `ctl` (4.1). Код выхода `ctl` переводится в HTTP: 4 и 5 (нет такого компонента или он не установлен) это 404 с текстом `ctl`, 2 это 400, 3 это 409, остальное 500, `ctl` не запустился это 502. Остановка и перезапуск `panel` без `?confirm=yes` дают 409 с `confirm_required`: экран спрашивает второй раз и повторяет запрос с `confirm=yes`; команда выполняется после ответа (202, `detached`), потому что убивает сам процесс панели, и ответ после неё никогда бы не дошёл. `GET /api/logs/{id}?lines=N`: `N` от 1 до 1000, по умолчанию 200, иначе 400 без вызова `ctl`. `GET /api/logs/{id}/stream?lines=N` (по умолчанию 50) это SSE: последние строки и новые. Заголовки уходят после первой строки или через 300 мс, поэтому ошибка вроде «нет такого компонента» остаётся обычным 404, а не событием. Раз в 15 секунд идёт комментарий-пинг, у каждой записи своё окно в 10 секунд вместо общего `WriteTimeout`. Открытых потоков не больше четырёх (429 сверх этого): у каждого свои `sudo` и `journalctl`, а панели отведено 64 МБ. Когда клиент уходит, панель закрывает stdin `ctl` (`--until-stdin-closed`, 4.5), после 5 секунд без выхода убивает процесс. Экраны строятся из `/api/status`, опрос раз в 10 секунд только у видимой вкладки, при смене раздела прежний экран останавливается и закрывает свой поток.
+`scripts/gate.sh` runs `shfmt -d`, `shellcheck -x -S style`, `scripts/security.sh`, `scripts/bundle.sh --check`, `scripts/check-conf-example.sh` (the keys and defaults of the example against 4.3 and the schema), `scripts/gen-config-doc.sh --check` (both reference files), `bats tests` and, if `panel/` is there, `gofmt -l`, `go vet`, `go test`, `node --test` and `scripts/panel-budget.sh`. A red gate means the work is not done.
 
-**Редактор конфигов (слайс 19, решения «выбирай сам»):** имена файлов панель берёт из своего списка из девяти (`dpistack.conf`, `suricata.yaml`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`, `ntopng.conf`, `evebox.yaml`, он повторяет список `ctl`), поэтому имя вне списка, в том числе закодированный обход каталога, даёт 404 без вызова `ctl`; последнее слово по имени остаётся за `ctl`. `GET /api/config` отдаёт этот список экрану. «Проверить» это `POST /api/config/{name}/check` (`ctl config-write --check`: вердикт и слова проверяющего, ничего не пишется). «Сохранить» это `PUT /api/config/{name}?apply=0`, «Сохранить и применить» это `?apply=1` (другое значение это 400). Тело больше 1 МиБ даёт 413, не доходя до `ctl`. Код выхода `ctl` 3 в редакторе это 422 с текстом `ctl` и выводом проверяющего в поле `output`: так выглядит и непройденная проверка (файл не меняется, это гарантирует `ctl`), и отказ `reconfigure` на тяжёлом изменении. Код 4 (компонента нет) это 409, остальное как в `ctlError`. Вызов записи ждёт до трёх минут (`suricata -T` загружает весь набор правил), срок записи ответа продлевается на время вызова. Файл, сохранённый так, установщик считает изменённым вручную (правило 5.4): панель пишет только через `ctl config-write`. Экран спрашивает подтверждение перед «Сохранить и применить» и «Откатить», не даёт перейти к другому файлу при несохранённых правках без подтверждения.
+- **CI/CD (`.github/`):** the `ci` workflow runs the gate on Ubuntu 22.04 and 24.04 (with a timeout), plus `actionlint`, `gitleaks` and `trivy`; the `security` workflow runs `scripts/security.sh`; a release is the tag `vX.Y.Z` on `main` (a tag off `main` is not published): binaries of the panel, the single-file installer and build provenance. GitHub actions are pinned by SHA, updates come from Dependabot.
+- **Suricata release watch:** `suricata-watch.yml` runs weekly: it builds the pinned release with the installer, compares the pinned tag with the final `OISF/suricata` tags, builds a newer release of the same series and opens an issue ("verified: raise SURICATA_STABLE_REF" or "failed the build check"), and announces a newer series once. It changes nothing in the repository.
+- **Branches and merging:** `main` is protected (checks `gate (ubuntu-22.04)`, `gate (ubuntu-24.04)`, `lint workflows`, `gitleaks`, `shell security checks`, `trivy (config and secrets)`; pull requests only; no force-push). Work goes to `dev`; a commit must pass the local gate and the GitHub checks; only when everything is green is a PR `dev` to `main` opened and merged with a merge commit (not squash, not rebase), message `merge dev into main: <what went in>`. A release is a tag on `main`.
+- **Security checks (`scripts/security.sh`):** secrets in tracked files, `eval` and `bash -c` over a built string, `curl | sh`, group/other-writable `chmod`, fixed `/tmp` paths and `mktemp -u`, `set -u` in every entry point, CRLF, secrets in `curl` arguments (they go through `-K -` on stdin).
 
-**Правила в панели (слайс 20, решения «выбирай сам»):** все правки идут через `ctl` (4.5), панель сама файлов правил не трогает. Значения проверяются шаблонами, повторяющими `ctl`, до вызова с понятной фразой (400): имя источника `^[A-Za-z0-9._/-]{1,100}$`, адрес `http(s)://` из допустимых `ctl` знаков (`?`, `&`, `%` и кавычки в адресе не поддерживаются: так решает общий список знаков аргументов), группа `^[A-Za-z0-9._-]{1,100}$`, `sid` до 10 цифр, запрос поиска до 100 знаков латиницей, цифрами и `. _ : = / @ + , -` и пробелом; `sid` и группа вне шаблона это 404. Код выхода `ctl`: 5 это 400, 4 это 409 (нет `suricata-update` или набора правил), 1 это 500 (у обновления с полем `output`), остальное как в `ctlError`. Список источников собирают из двух вызовов: `list-sources` печатает цветовые коды даже в канал, панель их срезает, и не показывает, какие источники включены, это даёт `list-enabled-sources`; включённый источник, которого нет в индексе (добавленный по адресу), помечается `custom` и только его можно удалить. Группы и отключённые `sid` экран читает из `enable.conf` и `disable.conf` через `GET /api/config/{name}`, а не отдельной конечной точкой; видны группы и `sid`, записанные командами `rules-group` и `rules-sid` (строки `group:<имя>` и число), остальное в файлах оставлено как есть. Каждая правка вступает в силу при следующем обновлении, экран напоминает об этом. «Обновить сейчас» идёт по одному: второе нажатие, пока идёт первое, это 409 и второго `ctl` нет. `ctl` запускается отдельно от запроса (`context.WithoutCancel`): если браузер ушёл на середине, убитый `ctl` не выполнил бы откат набора. Срок записи ответа продлён до шести минут (сам `ctl` ограничен пятью), а экран переживает обрыв ответа (`nginx` по умолчанию режет прокси-запрос на 60 секундах): после 502, 504 или сетевой ошибки он опрашивает `GET /api/rules/sources`, пока `updating` не станет ложью, и показывает итог. Время последнего обновления панель хранит в памяти (`last_update`: время, успех, причина, вывод): файл набора для этого не годится, потому что `suricata-update` не переписывает его, когда изменений нет, а таймер обновляет мимо `ctl`. После перезапуска панели запись теряется, экран пишет об этом словами.
+## 13. Conventions
 
-**События EVE (слайс 21, решения «выбирай сам»):** пакет `panel/internal/eve` держит `Reader`, который при каждом `Poll` читает только дописанное с сохранённого смещения; файл целиком не разбирается никогда. Первое открытие большого файла и догон после долгого простоя читают не больше 4 МиБ с конца, оборванная такой границей строка отбрасывается (читателя не нужно держать в фоне: никто не смотрит, ничего не читается, а за пропущенное отвечает EveBox как архив). Ротация: пока `Poll` не убедился, что путь указывает на другой файл (`os.SameFile`), он дочитывает старый файл через ещё открытый дескриптор, потому переименованный `logrotate` файл не теряет хвост; новый файл читается с начала. Усечение на месте (`copytruncate`, размер меньше смещения) читает файл заново с начала. Неполная последняя строка ждёт своего конца в буфере, полная, но битая строка (не JSON, нет `event_type`, длиннее 64 КиБ) пропускается молча. Память: кольцо на тип событий по 500 штук и не больше десяти типов (в порядке появления), итого не больше 5000 событий (раздел 9, «Чтение»); события одиннадцатого и далее типа не хранятся. Кольцо на тип, а не одно общее, чтобы поток `flow` не вытеснял редкие `alert`. `GET /api/eve`: `type` `^[a-z0-9_]{1,32}$`, `q` до 100 знаков (подстрока без учёта регистра в строке события, только по тому, что в памяти), `since` в RFC 3339, `limit` от 1 до 500 (по умолчанию 50), иначе 400 до чтения файла. Без `-eve-file` ответ 200 с `available: false` и причиной: пустой список прочли бы как «событий нет»; файла ещё нет это `available: true, file_present: false`. Нет прав на чтение это 500 с текстом ошибки. Поток `GET /api/eve/stream` считает и свой курсор по всем типам, и сам Poll раз в секунду, пока клиент подключён; он входит в общий предел открытых потоков (четыре, как у логов); без `-eve-file` отвечает 409. Экран при слежении сначала загружает список, потом подписывается, фильтр по тексту применяет у себя (поток фильтрует только по типу), держит не больше 500 строк и закрывает поток при смене раздела.
+- **Language.** The program is English only: messages, menus, errors, the panel text, comments. Documents are written in English first and kept in Russian next to them (`X.md` and `X.ru.md`, each linking to its twin); both are changed together, and `tests/docs.bats` checks that every document has its twin. Generated references (`docs/configuration.md`, `docs/configuration.ru.md`) come from `scripts/gen-config-doc.sh` (English hints live in `settings-model.js`, Russian ones in `scripts/config-hints.ru`).
+- **Decisions marked "choose yourself"** are taken by the developer and recorded in this file. When a contract is missing, stop and ask the owner instead of inventing a key or a field.
+- **Prefer ready-made solutions** (packages, images, tools) to writing code from scratch.
+- **Tests, CI/CD and security checks** are part of the project and are documented here (sections 11 and 12).
+- **Git workflow for this repository:** commit to `dev`, wait for the tests, and only if everything is green merge `dev` into `main` (12, Branches and merging). The version of the program in `lib/common.sh` and in this file change together.
+- **Tokens** given for GitHub access are used for the session only and are never written into the repository, the remote URL or any memory file.
 
-**Метрики для графиков (слайс 22, решения «выбирай сам»):** `panel/internal/metrics` держит кольцо из 2880 точек (24 часа по 30 секунд, больше не бывает: и в памяти, и при загрузке файла), в точке шесть значений. `pps` и `drops`: пакеты и потери в секунду по последнему событию `stats` (`kernel_packets`, `kernel_drops`), скорость между двумя событиями берётся по `stats.uptime`, а без него по `timestamp`; `drops` это число потерь в секунду, доля потерь из 4.7 нужна проверкам слайса 24. `cpu` и `rss` это самой панели (процент одного ядра по `getrusage`, резидентная память по `/proc/self/statm`): раздел 3 разрешает панели читать только перечисленные файлы, процесс Suricata в список не входит. `eve_size` это `stat` на `eve.json`, `disk` это доля свободного места раздела с `eve.json` (`statfs`). Сброс счётчиков (значение стало меньше прежнего, в том числе только потерь, или `uptime` пошёл назад) пропускает интервал и берёт новое событие за базу; так же пропускается тик без нового события `stats`. Значение, которого нет, это `null` и в памяти, и в ответе, не ноль: ряды `pps` и `drops` недоступны при `EVE_FILE=no` или пока в `eve.json` ни разу не было `stats`, ряды `eve_size` и `disk` при `EVE_FILE=no`; такой ряд приходит с `available: false` и причиной, экран пишет её словами вместо графика. Пока файла `eve.json` нет, `eve_size` это ряд с пропусками. Сетки ответа: `1h` по 30 секунд (120 точек), `6h` по 2 минуты (180), `24h` по 8 минут (180), ведро это среднее по точкам, у которых есть значение, пустое ведро это `null`; сетка покрывает `(сейчас-период, сейчас]`. Сборщик снимает точку сразу при запуске и потом каждые 30 секунд независимо от открытых вкладок (иначе за сутки нечего рисовать); это единственная работа по таймеру, и слова «ноль CPU в простое» из бюджета раздела 9 означают отсутствие опросов и циклов, а не отсутствие этого тика. Опрос `eve.json` из сборщика читает только дописанное. `metrics.json`: `{version:1, step_seconds, saved, samples:[[время, v0..v5]]}` с `null` на месте неизвестного; при загрузке остаются точки не старше 24 часов, не из будущего и по возрастанию времени, файл другой версии, пустой или повреждённый даёт пустое кольцо. Снимок раз в час и при остановке (сигнал `SIGTERM` дожидается записи). Права: каталог `/var/lib/dpistack` принадлежит root, и панели нельзя дать запись в него (там `state`, `health.json`, копии конфигов), поэтому установщик создаёт пустой `metrics.json` (`0640`, владелец `dpistack`) и не трогает уже существующий; панель переписывает файл на месте (новое содержимое, потом обрезка длины), а не через временный файл и переименование, так что обрыв посреди записи может стоить истории, но не правильности. Экран опрашивает раз в 30 секунд и только пока вкладка видима и экран открыт.
+## 14. Decisions
 
-**Экспорт метрик (слайс 23, решения «выбирай сам»):** `panel/internal/export` собирает все метрики 4.9 в один текст. Метрика без данных не выдаётся вовсе (нет ни `# TYPE`, ни строки): проверки `na` и тесты `skip` (у `skip` нет `dpistack_test_status`, а `dpistack_test_timestamp_seconds` есть, потому что прогон был), всё `eve` и `suricata_*` при `EVE_FILE=no` (панель получает пустой флаг `-eve-file`), счётчики Suricata и `drop_ratio` пока в `eve.json` не было `stats`, `rules_age` без файла правил, всё про тесты без `tests-last.json`, повреждённый `health.json` или `tests-last.json` просто пропускается; всё это даёт пустой ответ 200, а не ошибку. `dpistack_component_up` берётся из проверок `<id>.process`: `ok` это 1, `crit` это 0, `na` (компонент не установлен) не выдаётся. `dpistack_suricata_drop_ratio` это доля потерь между двумя последними событиями `stats` (`Δdrops / Δpackets`): когда любой счётчик стал меньше прежнего (Suricata перезапущена), когда пакетов не прибавилось, а потери есть, и когда событий меньше двух, метрики нет, а не отрицательное или выдуманное значение; значение не больше 1. `dpistack_eve_events_total` это события, прочитанные панелью с её старта, по типам, не больше 50 типов (`eve.MaxCountTypes`); панель читает `eve.json` при каждом снятии метрик, при каждом такте сборщика графиков (раздел «Метрики для графиков») и при открытых экранах, пропущенное сверх 4 МиБ не считается, а при перезапуске панели счётчик начинается с нуля (для Prometheus это обычный сброс счётчика). `dpistack_disk_free_ratio{path}` берётся по каталогам из флага `-disk-paths`: каталог лога Suricata и, при `EVEBOX_DB=sqlite`, данные EveBox (тот же список, что у проверки `disk.free`); данные бэкенда метрик из 4.9 добавит слайс 26, когда у бэкенда появится каталог. `dpistack_rules_age_seconds` это возраст файла `suricata.rules` (как у проверки `rules.age`). Диск читается не чаще раза в секунду (`export.MinInterval`): сколько бы запросов ни пришло, текст прошлого чтения отдаётся до истечения секунды, часы, ушедшие назад, кэш не замораживают. Токен сравнивается через `SHA-256` и `subtle.ConstantTimeCompare` (время не зависит от длины), без токена или с неверным ответ 401 с `WWW-Authenticate: Bearer`, адресная политика 4.8 действует и здесь (чужой адрес это 403), при `METRICS_EXPORT=no` (флага токена нет) и при пустом токене страницы нет (404). Токен попадает в панель через файл `-metrics-token-file` (`/etc/dpistack/metrics.token`, `0640 root:dpistack`, записывается атомарно с нужными правами, содержимое никогда не передаётся аргументом команды, поэтому его нет ни в `ps`, ни в юните, ни в журнале, ни в `dpistack.conf`); панель с указанным, но нечитаемым или пустым файлом не запускается (иначе `/metrics` мог бы тихо пускать всех). Файл создаётся и удаляется вместе с `METRICS_EXPORT`, а при смене `METRICS_TOKEN` перезаписывается: оба ключа затрагивают шаг `panel`. Итоговый отчёт (раздел 5, пункт 8) печатает токен и готовую запись `scrape_configs` (`job_name`, `metrics_path`, `scheme`, `authorization` типа `Bearer`, `targets`) один раз, когда токен только что создан, в том числе после `reconfigure`, включившего экспорт; при `--dry-run` не печатается ничего (токена ещё нет). Адрес в записи: `127.0.0.1:<PANEL_PORT>` при `ACCESS_MODE=localhost`, иначе `<адрес-сервера>:<PANEL_PORT>` (публичный порт панели это `PANEL_PORT` во всех режимах), `scheme: https` при `ACCESS_MODE=nginx` с `NGINX_TLS`. Тексты `# HELP` на английском.
-
-**Тесты, оповещения и интерфейсы (слайс 24, решения «выбирай сам»):** `POST /api/tests/{which}` запускает `ctl test <which> --json`; код выхода `1` (какой-то тест упал) это не ошибка, а результат: ответ 200 с массивом, где у упавшего `status` равен `fail` и в `detail` причина; код `1` без разбираемого массива, а также `2`, `4`, `5` идут через общий разбор ошибок `ctl` (`opError`). Разбор берёт последнюю строку вывода, начинающуюся с `[`, чтобы лишние строки перед массивом не ломали ответ. `ctl` запускается без привязки к запросу (`context.WithoutCancel`), как обновление правил: тест, убитый на середине, мог бы оставить своё правило или трафик; запуск один за раз (второй 409), срок записи ответа три с половиной минуты. `GET /api/tests/last` читает `tests-last.json` сама панель (раздел 3), поэтому результат переживает перезапуск панели; поле `running` показывает идущий запуск. `nginx` по умолчанию режет прокси-запрос на 60 секундах, а `test all` может идти дольше: экран, получив 502, 504 или сетевую ошибку, опрашивает `GET /api/tests/last` до `running` ложь и показывает итог (так же, как экран Правил). Перед запуском экран просит подтверждение, потому что HTTPS-тест ходит в сеть. `GET /api/alerts` читает не весь `events.jsonl`, а последний мегабайт (файл только растёт, а нужны свежие); оборванная срезом первая строка и строки, не являющиеся событием, пропускаются, порядок файла переворачивается (новые сверху), `check` это идентификатор проверки `^[a-z0-9_.-]{1,64}$`, `limit` от 1 до 500, иначе 400; список `checks` для меню строится по прочитанному и не сужается фильтром; нет файла это `file_present: false` и пустой список. Интерфейсы: отдельного экрана в списке раздела 9 нет, поэтому блок «Интерфейсы захвата» стоит на экране Компоненты (это то, что слушает Suricata). `GET /api/iface` берёт список у `ctl iface list`, а ответ на добавление и удаление уже несёт новый список; имя проверяется шаблоном `^[A-Za-z0-9._-]{1,15}$` (как в `ctl`) до вызова, коды `ctl`: `5` (нет такого интерфейса в системе или в `IFACES`) это 400, `3` (последний интерфейс) это 409, `1` (`reconfigure` не удался, `dpistack.conf` возвращён) это 500 с текстом; изменение идёт отдельно от запроса, по одному за раз (второе 409: `reconfigure` перезапускает Suricata и два изменения подряд гонялись бы за `dpistack.conf`). Экран просит подтверждение (Suricata перезапустится), кнопка «Удалить» у единственного интерфейса заблокирована и остаётся заблокированной после запроса (сервер отказал бы и так), после изменения список перерисовывается ответом сервера, а статус компонентов обновляется обычным опросом экрана (раз в 10 секунд).
-
-**Запуск (решение слайса 16, «выбирай сам»):** панель читает настройки из флагов, которые передаёт юнит из слайса 17 (в `dpistack.conf` панель сама не заглядывает, `LAN_CIDR=auto` к тому времени разрешён установщиком): `-addr` (по умолчанию `127.0.0.1:9800`), `-access` (`localhost`, `lan`, `nginx`), `-lan-cidr` (адрес/длина, обязателен для `lan`), `-auth-file`, `-health-file`, `-ctl`, `-tests-file` и `-events-file` (пути к `tests-last.json` и `events.jsonl`, юнит передаёт всегда), `-metrics-token-file` (файл с токеном `/metrics`; пусто значит `/metrics` нет, юнит передаёт флаг только при `METRICS_EXPORT=yes`), `-rules-file`, `-disk-paths` (список каталогов через запятую; два последних юнит передаёт вместе с токеном), `-metrics-file` (путь к `metrics.json`; пусто значит история только в памяти, юнит передаёт всегда), `-eve-file` (путь к `eve.json`; пусто значит просмотр событий выключен, юнит передаёт флаг только при `EVE_FILE=yes`), `-sudo` (по умолчанию включён). При `localhost` и `nginx` адрес привязки обязан быть loopback, иначе панель не запускается. Флага, отключающего вход, нет.
-
-**Адреса и вход (слайс 16):** IP клиента это адрес соединения; `X-Forwarded-For` читается только если соединение пришло с loopback, и берётся последняя запись (её дописал `nginx`). Битый заголовок от доверенного прокси даёт 403. Допуск: `localhost` только loopback; `lan` только адреса из `-lan-cidr` (loopback не входит); `nginx` соединение с loopback и, если `-lan-cidr` задан, клиент из него. Попытка входа считается до проверки пароля, поэтому пачка параллельных догадок лимит не обходит; успешный вход сбрасывает счётчик. Сессия хранится в памяти (перезапуск панели разлогинивает). CSRF: при входе ставятся cookie `dpistack_session` (`HttpOnly`) и `dpistack_csrf` (читается скриптом), оба `SameSite=Strict`, `Secure` при HTTPS; скрипт повторяет значение в `X-CSRF-Token`, сервер сверяет его с токеном сессии, а не с cookie. Вход принимает только `application/json`. Проверка хэша идёт по одной за раз, хэш с памятью больше 32 МиБ отвергается.
-
-**Поведение:**
-
-- Чтение `eve.json` инкрементальное с сохранённого смещения. Кольцо не больше 5000 событий в памяти. Файл целиком никогда не разбирается.
-- Метрики для графиков: кольцо 24 часа с шагом 30 секунд, снимок в `metrics.json` раз в час и при остановке. `GET /metrics` строится из тех же данных и не читает диск чаще, чем раз в секунду.
-- Опрос `status` не чаще раза в 10 секунд и только пока вкладка видима. SSE открывается только на экранах логов и событий и закрывается при уходе с экрана.
-- Аутентификация: один администратор, argon2id, ограничение попыток входа (5 за 5 минут на IP), сессия 12 часов. Отключить вход нельзя.
-
-**Интерфейс:** одностраничный, хэш-роутер. Экраны: Обзор, Компоненты, Конфиги, Правила, Логи, События, Метрики, Тесты, Оповещения. Светлая и тёмная темы по `prefers-color-scheme`, системный шрифт, адаптивная вёрстка. Графики рисуются собственной функцией на inline SVG. Суммарный вес статики не больше 150 КБ до сжатия, отдаётся с gzip. Редактор конфига обычный `<textarea>` с моноширинным шрифтом, кнопки «Проверить», «Сохранить», «Сохранить и применить», «Откатить». Опасные действия (остановка компонента, переключение в IPS) просят подтверждение.
-
----
-
-## 10. Проверочные тесты (`dpistack-ctl test`)
-
-Результат: `{"name","status","detail","duration_ms"}`, `status` из `pass`, `fail`, `skip`. Итог пишется в `tests-last.json`. Код возврата: `0` все `pass` или `skip`, `1` есть `fail`.
-
-**`bittorrent`** (офлайн, по умолчанию не касается живого трафика):
-
-1. Запускает `suricata -r tests/data/bittorrent.pcap -l <tmp>` с конфигом из `suricata-test.yaml.tpl`. Конфиг подключает те же правила и плагины, пишет `alert` и `netflow` во временный каталог, главный `eve.json` не трогает.
-2. `pass`, если во временном `eve.json` есть `alert` с сигнатурой, содержащей `BitTorrent`. При загруженном плагине nDPI тест добавляет в набор своё правило `alert tcp any any -> any any (msg:"dpistack test nDPI BitTorrent"; requires: keyword ndpi-protocol; ndpi-protocol:BitTorrent; sid:9000001;)`, поэтому плагин проверяется и без группы `emerging-p2p` (A2: отдельных полей nDPI в EVE нет).
-3. `skip` с причиной, если нет ни правил группы `emerging-p2p`, ни плагина nDPI. Сообщение говорит, что именно включить.
-4. `TEST_BT_LIVE=yes` дополнительно подаёт тот же pcap через `tcpreplay` в первый интерфейс из `IFACES` и ищет событие в главном `eve.json`. По умолчанию выключено: подмена трафика на боевом интерфейсе шумит.
-
-Происхождение pcap: записывается один раз в слайсе 0. Клиент BitTorrent с легальным торрентом в изолированной сети, `tcpdump` первых пакетов handshake, адреса заменяются на документационные (`192.0.2.0/24`) через `tcprewrite`. Способ записи и проверка срабатывания на реальной сигнатуре ET описываются в `tests/data/README.md`.
-
-**`https`** (живой):
-
-1. Выполняет `curl -sS -o /dev/null "$TEST_HTTPS_URL"`. Метка события: SNI, то есть хост из URL.
-2. Ждёт до 20 секунд события `tls` в главном `eve.json` с `tls.sni` равным хосту из URL.
-3. Строки про nDPI `TLS` в `detail` нет: полей nDPI в EVE нет (A2).
-4. Нет `eve.json`: `fail` сразу, без ожидания. `curl` запускается с `--max-time 15`, чтобы сеть без ответа не зависила запрос панели. `fail`, если событие не появилось: `detail` называет причину (`curl` не прошёл, событий нет, интерфейс тот же, что у `curl`, иначе пакеты не видны).
-
-Результат каждого теста пишется в `tests-last.json` (4.6). `--json` печатает массив объектов `{"name","status","detail","duration_ms"}`.
-
-**`all`** запускает оба по очереди. `verify` в установщике запускает `all` при `TEST_ON_INSTALL=yes`, провал теста не отменяет установку, а попадает в итоговый отчёт.
-
----
-
-## 11. Тесты проекта
-
-Тесты выводятся из критериев приёмки слайса, а не из готового кода. Критерии пишутся в разделе 17 до кода.
-
-- Bash: `bats`. Внешние команды (`apt-get`, `dnf`, `systemctl`, `suricata`, `curl`, `ss`, `docker`) подменяются заглушками из `tests/mocks/` через `PATH`. Пути перенаправляются в `mktemp -d` через `DPISTACK_ROOT`. Остальные переменные окружения, нужные только тестам: `DPISTACK_INPUT` (ввод меню из файла), `DPISTACK_TEST_WAIT` (секунды ожидания события вместо 20), `DPISTACK_NOW` (время watchdog в секундах эпохи).
-- Go: `go test`, HTTP-обработчики через `httptest`, вызов `dpistack-ctl` подменяется интерфейсом `ctl.Runner`.
-- Запрещённый вид теста: «выполнили шаг, проверили, что вернулся 0». Тест проверяет результат: содержимое файла, вызванные команды, отказ.
-- На каждый слайс минимум: тест на каждый критерий с проверяемым условием, тест пути ошибки (неверный ключ, отсутствующий компонент, провал валидации), тест идемпотентности для слайсов установщика.
-- Интеграция на реальной ОС проверяется руками по критериям слайса и в bats не автоматизируется.
-- **Матрица платформ (обязательная приёмка, v11, обновлена в v12).** Выпуск и каждое исправление платформы подтверждаются прогоном на стенде: Ubuntu 22.04 и 24.04, Debian 12 и 13, Rocky Linux или AlmaLinux 8, 9 и 10. На каждой платформе проходят: `install -y` с умолчаниями (сборка из исходников или пакет, если Rust 1.75 недоступен), `install -y --set SURICATA_SOURCE=distro`, на Ubuntu и RHEL-клонах ещё `oisf`, повторный `install` без изменений, `reconfigure`, `upgrade`, `uninstall --purge`, затем `dpistack test all`. Среда разработки проверяет только Ubuntu 24.04 (без systemd, с подменой `systemctl`); остальное подтверждает владелец, и результат приходит как вывод `install.sh diag` (4.4), по которому вносятся исправления. Результаты фиксируются в разделе 18.
-- `tests/bundle.bats` (v28, слайс 30): `bash -n` и `shellcheck` собранного файла, `--check` (свежий, устаревший, нет файла), повторяемость сборки, отказ при терминаторе heredoc и при файле без перевода строки в конце, тот же вывод `--help` и `install --dry-run -y`, тот же код возврата, та же копия установщика после настоящей установки (`diff -r`, pcap целиком), удаление временного каталога, поиск панели рядом с файлом, запуск из канала.
-- `tests/ips.bats` (v27, слайс 29): `mode ips`, NFQUEUE с `--queue-bypass`, откат по таймеру, `mode-confirm`, чужие цепочки (сравнение `iptables-save`), `dpistack-fw.service`, `fw restore`, af-packet в парах, `uninstall`. Заглушки с состоянием `iptables`, `ip6tables`, `iptables-save`, `ip6tables-save` (файл правил из `MOCK_IPT_STATE`), заглушка `systemd-run`, часы тестов через `DPISTACK_NOW_CMD`.
-- `tests/suricata_logs.bats` (v30, R144–R146): logrotate без `create 0640 root root`, переоткрытие логов через сокет, который создаёт Suricata, путь сокета в docker, группа `suricata` и каталог логов. Заглушки `groupadd`, `chgrp`, `getent` с `MOCK_GETENT_MISSING`.
-- `tests/firewall_rules.bats` (v30, R150–R151): правила `ufw` и `firewalld` убираются при смене режима, `LAN_CIDR`, `FIREWALL_MANAGE` и `uninstall`, чужое правило остаётся, повтор ничего не дублирует, `uninstall` перезапускает Suricata из NFQ. Заглушки `ufw` и `firewall-cmd` хранят правила в `$MOCK_CALLS_LOG.ufw` и `.fwd`; заглушка `nft` хранит таблицу `inet dpistack`.
-- `tests/metrics_step.bats` (v26, слайс 28): срок хранения и адрес привязки в юните и в параметрах docker, токен только в файле, проверка sha256 на поддельном архиве, повтор без изменений, смена бэкенда, `none`, `uninstall` и `--purge`, docker-вариант. Заглушка `curl` отдаёт файл (`MOCK_CURL_BODY_FILE`); для подмены сумм и архитектуры есть `DPISTACK_METRICS_SHA256_<VM|PROM>_<AMD64|ARM64>` и `DPISTACK_METRICS_ARCH`.
-- `tests/runtime_docker.bats` (v25, слайс 27): смешанная схема, повтор без изменений, путь `eve.json`, Suricata в docker, `preflight` (код 3), `DOCKER-USER` и `iptables` не затронуты, `status`, `start|stop|restart`, `logs`, `reload`, проверка конфига в контейнере. Заглушка `docker` (`MOCK_DOCKER_PS`, `MOCK_DOCKER_RUNNING`, `MOCK_DOCKER_IMAGE`, `MOCK_DOCKER_COMPOSE_EXIT`), заглушки `iptables`, `ip6tables`, `nft`.
-- `tests/selinux.bats` (v24, слайс 26): метки и порты SELinux, `firewalld` только для `LAN_CIDR`, остановленный `firewalld`; `tests/pkg_dnf.bats` (v24): `versionlock`, версия пакета в виде `пакет-версия`, COPR-chroot по ОС и код 3 в `preflight`. Всё на заглушках (`getenforce`, `semanage`, `restorecon`, `firewall-cmd`, `curl`).
-- `tests/families.bats` (v10): семейства пакетных менеджеров (apt, dnf), откаты между пакетом и сборкой, определение интерфейса, закреплённые ссылки. Пути dnf идут через заглушки `dnf`, `rpm`, `firewall-cmd`, `setsebool`; на реальном Fedora или RHEL они не проверены.
-
----
-
-## 12. Проверки и гейт
-
-`scripts/gate.sh`:
-
-```
-shfmt -d install.sh lib bin scripts tests
-shellcheck -x install.sh lib/*.sh bin/dpistack-ctl bin/dpistack-watch scripts/*.sh
-scripts/check-conf-example.sh  (ключи и умолчания dpistack.conf.example против 4.3 и lib/schema.sh)
-bats tests
-# при наличии panel/:
-gofmt -l panel        (пустой вывод)
-go vet ./...          (в panel/)
-go test ./...         (в panel/)
-scripts/panel-budget.sh  (статика, бинарник и RSS панели в простое: не больше 150 КБ, 15 МБ, 25 МБ)
-```
-
-`gate.sh` красный → слайс не закрыт. Правки по гейту делаются в том же заходе.
-
-Между `shellcheck` и `bats` гейт запускает `scripts/security.sh` (12.2) и `scripts/check-conf-example.sh` (слайс 25: каждый ключ примера есть в 4.3 и в схеме, и наоборот, секреты в пример не входят, умолчания совпадают со схемой).
-
-### 12.1 CI/CD (`.github/`)
-
-- `ci.yml` на каждый push в `main` и `dev` и на каждый pull request: `scripts/gate.sh` на `ubuntu-22.04` и `ubuntu-24.04`, плюс `actionlint` для самих workflow. Права `contents: read`, отмена устаревших прогонов той же ветки.
-- `security.yml` на push, pull request и раз в неделю: `gitleaks` по всей истории (токен, попавший в старый коммит, остаётся в нём); запускается готовым бинарником версии 8.30.1 из релиза с проверкой SHA-256 (`gitleaks/gitleaks-action` падал на каждом pull request от Dependabot без находок и требует лицензию для организаций); версию и сумму `dependabot` не обновляет, меняются вместе вручную; `scripts/security.sh`, `shellcheck -S style`, `trivy fs` (секреты и ошибки конфигурации, HIGH и CRITICAL) с отправкой SARIF в code scanning. Находка, которая не секрет (выдуманный токен в тесте), не отключает правило: в `.gitleaksignore` вносится отпечаток этой одной находки с причиной над строкой, а сам файл в дереве больше литерала не содержит; первый такой случай это тестовый токен `/metrics` слайса 23 (коммит `76a0b94` остался в истории, переписывать историю не стали).
-- `release.yml` по тегу `vX.Y.Z`: тот же `gate.sh`, затем проверка, что тег равен `DPISTACK_VERSION` в `lib/common.sh`, сборка `dpistack-X.Y.Z.tar.gz` (`install.sh`, `lib`, `templates`, `bin`, `panel`, `tests/data` и готовые бинарники панели `dpistack-panel-linux-amd64` и `dpistack-panel-linux-arm64`, собранные `CGO_ENABLED=0` в job `publish` через закреплённый `actions/setup-go`), файл `.sha256`, аттестация происхождения (`actions/attest-build-provenance`) и публикация релиза. Права на запись есть только у job `publish`.
-- `dependabot.yml` обновляет версии GitHub Actions раз в неделю.
-- Правила для workflow, проверяемые `tests/ci_config.bats`: у каждого явный блок `permissions`, нет `pull_request_target`, нет текста события (`head_ref`, заголовки issue и комментарии) в `run:`, каждая сторонняя action закреплена версией, версия программы в `tech.md` равна версии в коде.
-- Закрепление action по SHA коммита не сделано: версии берутся из `dependabot`, SHA нужно подставить при первом запуске с доступом к GitHub.
-- Сборка Go-панели и бинарных артефактов добавится в `release.yml` вместе с панель-слайсами.
-
-Дополнено ревью (v7): все действия закреплены по полному SHA коммита с комментарием версии (`dependabot` обновляет их), `actionlint` запускается готовым образом, а не скриптом, пущенным в `bash`; `trivy-action` v0.36.0 (v0.28.0 тянул удалённый `setup-trivy@v0.2.1`, и job падал на подготовке); релиз публикуется, только если тег стоит на `main`; загрузка SARIF пропускается для pull request из форка (у него токен только на чтение). `tests/ci_config.bats` проверяет закрепление по SHA, отсутствие `curl | sh`, проверку тега и наличие файлов, которые копирует `release.yml`. Первые запуски на GitHub были красными с первого коммита по двум причинам, обе найдены только там: (1) `preflight` установщика требует root, а шаги раннера идут от обычного пользователя, поэтому каждый тест с установкой падал; гейт на раннере теперь запускается как `sudo -E env "PATH=$PATH" bash scripts/gate.sh`; (2) `trivy-action` v0.28.0 подтягивал вложенное действие `setup-trivy@v0.2.1`, которого больше нет, и job падал на подготовке; теперь v0.36.0, у которого вложенные действия закреплены по SHA. Проверено локально на версиях инструментов Ubuntu 22.04 (`shfmt` 3.4.3, `shellcheck` 0.8.0, `bats` 1.2.1). Журналы запусков из среды разработки недоступны, поэтому причины подтверждены воспроизведением, а не чтением журнала. Чтобы красный гейт не приходилось разбирать вслепую, шаг `Report failing checks` в `ci.yml` публикует имена первых шести упавших проверок как commit status с контекстом `gate <ОС> #N` (права `statuses: write` только у этого job). Ещё два дефекта, найденные там: тест искал `uses: ` подстрокой и принял `statuses: write` за действие (теперь разбор привязан к началу строки), а подмена `journalctl` в тесте не останавливалась при игнорируемом `SIGPIPE`, как на раннерах GitHub.
-
-### 12.4 Автоматическая проверка релизов Suricata (v12)
-
-`SURICATA_STABLE_REF` (5.1) не поднимается вслепую и не забывается. Workflow `.github/workflows/suricata-watch.yml` раз в неделю (понедельник, 05:17 UTC) и по кнопке запускает `scripts/suricata-watch.sh`:
-
-1. закреплённый релиз собирается тем же установщиком (`scripts/suricata-build-check.sh`: шаги `ndpi` и `suricata`, затем версия, поддержка nDPI, плагин в `/usr/lib/suricata` и `suricata -T` на отрисованной конфигурации); если он перестал собираться (новый образ раннера, Rust, nDPI), открывается issue и прогон красный;
-2. `scripts/check-suricata-release.sh` сравнивает закреплённый тег с тегами `OISF/suricata`: учитываются только финальные релизы `suricata-X.Y.Z` (кандидаты, беты и dev-теги не считаются), сравнение числовое; более новый релиз той же серии тоже собирается, и результат уходит в issue: «проверен: поднять SURICATA_STABLE_REF» или «не прошёл проверку сборки»;
-3. стабильная серия новее закреплённой (например 9.0) объявляется отдельным issue один раз: переход на серию требует решения, потому что `SURICATA_COPR` и PPA привязаны к серии.
-
-Скрипты ничего не меняют в репозитории: права workflow `contents: read` и `issues: write`, повторных issue нет (один открытый на заголовок). Поднять тег значит обычное изменение через `dev`, гейт и PR в `main`. Тесты: `tests/release_watch.bats` (теги, rc и беты, числовой порядок, все сценарии issue на заглушках `gh` и сборки). nDPI закреплён релизом (`NDPI_COMPAT_REF`, 4.14, плагин собирается только с 4.12 и 4.14) и проверяется той же сборкой.
-
-Образы Docker (слайсы runtime `docker`): только закреплённые стабильные теги версий, не `latest`, `master`, `nightly` и `dev`.
-
-### 12.3 Ветки и слияние
-
-Ветка `main` защищена на GitHub (решение «выбирай сам», v8): обязательны проверки `gate (ubuntu-22.04)`, `gate (ubuntu-24.04)`, `lint workflows`, `gitleaks`, `shell security checks`, `trivy (config and secrets)`; изменения идут только через pull request (одобрений 0, у проекта один владелец); защита действует и для администратора; force-push и удаление `main` запрещены; обсуждения в PR должны быть закрыты. Актуальность ветки относительно `main` не требуется (`strict` выключен), иначе после каждого слияния `dev` пришлось бы подтягивать `main`. Прямой push в `main` невозможен, поэтому слияние идёт кнопкой «Create a merge commit» в PR `dev` → `main`. Ветку `dev` не удалять: «Automatically delete head branches» в настройках репозитория выключено.
-
-Работа идёт в ветке `dev`, ветка `main` содержит только проверенное состояние:
-
-1. Каждый слайс или исправление коммитится в `dev` и пушится.
-2. Коммит должен пройти проверки: локально `scripts/gate.sh` (`shfmt`, `shellcheck`, `scripts/security.sh`, `scripts/check-conf-example.sh`, `bats`), на GitHub workflow `ci` и `security` для этого коммита.
-3. Пока хотя бы одна проверка красная или не закончилась, в `main` не сливают.
-4. Когда всё зелёное, открывается PR `dev` → `main` и сливается коммитом слияния (не squash, не rebase) с сообщением вида `merge dev into main: <что вошло>`; прямых коммитов в `main` нет.
-5. Релиз выпускается тегом `vX.Y.Z` на `main` (12.1: тег не на `main` не публикуется).
-
-Если слияние даёт конфликт, он решается в `dev`, после чего проверки проходят заново.
-
-### 12.2 Проверки безопасности (`scripts/security.sh`)
-
-Дешёвая локальная проверка без сети, одна и та же в гейте и в CI. Красный результат закрывает слайс так же, как красный `shellcheck`. Проверяет:
-
-1. секреты в отслеживаемых файлах (токены GitHub, ключи AWS, приватные ключи, токены Slack и Telegram); при наличии `gitleaks` запускает и его;
-2. `eval` и `bash -c` / `sh -c` над собранной строкой в коде (строки, которые только печатают `ExecStart=` юнита, исключены);
-3. `curl | sh` и `wget | sh`;
-4. `chmod` с правом записи для группы и остальных;
-5. фиксированные пути в `/tmp`, `mktemp -u` и временные имена через `$$`: временное создаётся только через `mktemp` в приватном каталоге;
-6. `set -u` в каждой точке входа;
-7. окончания строк CRLF;
-8. секреты в аргументах `curl`: токены и пароли передаются через `-K -` на stdin, чтобы их не было в `ps`.
-
-Что уже учтено в коде и проверяется тестами: токен Telegram и пароль SMTP не попадают ни в журнал, ни в `events.jsonl`, ни в `--dry-run` (`tests/alerts.bats`); `sudo` разрешает пользователю `dpistack` только `dpistack-ctl`, а его аргументы сверяются со списками (`tests/ctl_basic.bats`, `tests/ctl_config.bats`); `sudoers` проверяется `visudo` до записи; `panel.auth` хранит argon2id с правами 0640; `config-write` не обновляет хэш рендера, поэтому правка из панели не затирается установщиком. Проверки `suricata -T` идут в приватном временном каталоге, а не в `/tmp`. Блокировка установщика берёт свободный дескриптор через `exec {fd}>`, без `eval`.
-
-Тесты самих проверок: `tests/security.bats` подсовывает каждое нарушение во временный репозиторий и требует красный результат, а чистое дерево и репозиторий проходят.
-
-
-
-- `shfmt` ловит форматирование;
-- `shellcheck` ловит ошибки кавычек, неиспользуемые переменные, небезопасные конструкции;
-- `bats` и `go test` ловят критерии приёмки.
-
-Слайс 0 (прототип) и слайс 25 (README) гейт не затрагивают, кроме проверки ссылок в 25.
-
----
-
-## 13. Конвенция текста
-
-Код, комментарии, коммиты, записи в лог-файлы и журнал, имена в API и метриках: по-английски. Всё, что видит человек (вопросы установщика, вывод `--help`, сообщения об ошибках установщика, интерфейс панели, тексты оповещений): по-русски. Слоя i18n нет.
-
-Коммиты, Conventional Commits, фиксированный формат:
-
-```
-type(scope): summary
-```
-
-- `type` из набора `feat|fix|test|refactor|chore|docs`;
-- `scope` из набора `installer|ctl|watch|panel|rules|suricata|ndpi|ntopng|evebox|metrics|access|tests|docs`;
-- `summary` в императиве, со строчной буквы, без точки, до 50 символов;
-- тело только чтобы объяснить *почему*, не *что*;
-- коммитить по ходу работы маленькими шагами. Каждый коммит по возможности проходит `gate.sh`.
-
-Примеры: `feat(installer): add idempotent suricata step`, `test(watch): cover drop rate counter reset`.
-
-Правила письма для всей прозы проекта (коммиты, комментарии, README): активный залог, конкретика вместо общих фраз, без вводных оборотов, без длинного тире, без наречий-усилителей. Комментарий объясняет причину решения, а не пересказывает соседнюю строку. Закомментированный код не оставлять.
-Перед написанием README посмотри [https://docs.github.com/en](https://docs.github.com/en), [https://github.com/matiassingers/awesome-readme](https://github.com/matiassingers/awesome-readme), [https://www.makeareadme.com/](https://www.makeareadme.com/)
-
----
-
-## 14. Definition of Done одного слайса
-
-1. Критерии приёмки слайса из раздела 17 выполнены и проверены руками на чистой ОС (стадии 1–4: Ubuntu LTS; слайсы 26–28: указанная там среда).
-2. Тесты написаны из критериев, `scripts/gate.sh` зелёный.
-3. Для слайсов установщика: второй запуск даёт `без изменений`, `--dry-run` ничего не меняет (проверено сравнением состояния системы до и после).
-4. Новых файлов и абстракций сверх раздела 3 нет.
-5. Мёртвого кода нет: неиспользуемых функций, шаблонов, ключей схемы, JS-модулей.
-6. Коммиты по конвенции раздела 13.
-7. `tech.md` не изменён (изменение контракта идёт отдельно, через раздел 15).
-
----
-
-## 15. CONTRACT GAP
-
-Не хватает ключа конфига, команды `ctl`, метрики, поля EVE или эндпоинта: работа останавливается. Выдай блок и жди ответа:
-
-```
-CONTRACT GAP
-Что нужно: <ключ/команда/метрика/поле/эндпоинт>
-Зачем: <какой критерий приёмки без него не выполняется>
-Предлагаемая форма: <точное имя, тип, значения по умолчанию>
-Что делаю пока: <заглушка локально в своём слайсе / жду>
-```
-
-Код с выдуманным контрактом не пиши. Схему ключей, список команд `dpistack-ctl`, формат `health.json`, список метрик, HTTP API сам не расширяй.
-
----
-
-## 16. Правила поведения в сессии
-
-- Думай до кода: назови допущения, спроси при неоднозначности, покажи варианты вместо молчаливого выбора.
-- Простота: никаких фич сверх запрошенного, никаких абстракций под одноразовый код, никакой обработки ошибок, которых не бывает.
-- Хирургические правки: соседний рабочий код не улучшать и не рефакторить. Каждая изменённая строка следует из текущей задачи.
-- Один слайс за заход. Не выкатывай всё сразу.
-- Команды, меняющие систему (`apt`, `dnf`, `iptables`, `systemctl`), запускай только на тестовой машине или в `--dry-run`. Никогда не меняй правила сети и не переключай IPS на хосте, где идёт работа по SSH, без таймера отката.
-- Ревью идёт вторым заходом, после того как слайс готов, а не в том же сообщении, где написан код.
-
----
-
-## 17. Стадии и слайсы, допущения
-
-Порядок жёсткий, сверху вниз. Один слайс за один заход. Слайс закрыт, когда выполнен Definition of Done из раздела 14 (для слайсов 0 и 25 критерии приёмки, без гейта). Слайс вертикальный: от ключа конфига до видимого результата.
-
-- **Стадия 0, прототип.** Слайс 0.
-- **Стадия 1, каркас.** Слайс 1.
-- **Стадия 2, ядро на хосте (native).** Слайсы 2–9.
-- **Стадия 3, проверки и наблюдение.** Слайсы 10–14.
-- **Стадия 4, управление и панель.** Слайсы 15–25. **Конец стадии 4 = рабочая панель.**
-- **Стадия 5, платформы и расширения.** Слайсы 26–30; слайс 26 (RHEL-семейство) идёт первым.
-
-### Допущения, требующие проверки (не заморожены)
-
-| # | допущение | подтверждается в слайсе |
-| --- | --- | --- |
-| A1 | Имя набора `dpistack` и все производные пути из 4.2 | согласуется владельцем до слайса 1 |
-| A2 | Закрыто (v5): отдельных полей `ndpi.*` в EVE нет, nDPI виден через `alert.signature` и `alert.metadata` (4.7) | закрыто |
-| A3 | Пакеты `distro` и `oisf` могут не содержать `ndpi.so` | 0, 4 |
-| A4 | Способ задать пароль администратора ntopng при установке; пока он не найден, ntopng слушает только `127.0.0.1`, а установщик печатает предупреждение | 0, 5 |
-| A5 | Полный рендер `suricata.yaml` вместо `include`-дополнений (списки в `include` могут заменяться, а не сливаться) | 0, 2 |
-| A6 | Docker-образы `jasonish/suricata`, `jasonish/evebox`, `ntop/ntopng`, `victoriametrics/victoria-metrics`, `prom/prometheus` и их пути и тома. Для слайса 27 приняты `jasonish/suricata` (команда `--af-packet`, конфиг, правила и логи по тем же путям, что у хоста), `jasonish/evebox` (команда `server -c /etc/evebox/evebox.yaml`), `ntop/ntopng:stable` (конфиг `/etc/ntopng/ntopng.conf`), `redis:7-alpine`; ни образ, ни точка входа, ни путь тома не сверены с самим образом | 27 (допущено, не подтверждено), 28 |
-| A7 | Наличие репозиториев ntop и EveBox для каждой поддерживаемой ОС | 5, 6, 26 |
-| A8 | Закрыто (v5): режима проверки у EveBox и ntopng нет, проверяется непустота (4.5) | закрыто |
-| A9 | Механизм retention EveBox (`EVEBOX_RETENTION_DAYS`): встроенная настройка или периодическая очистка | 0, 6 |
-| A10 | Источник бинарника VictoriaMetrics и Prometheus для `native` и проверка контрольной суммы. **Закрыто в v26:** релизы на GitHub проектов (`VictoriaMetrics/VictoriaMetrics`: `victoria-metrics-linux-<arch>-<версия>.tar.gz` и `_checksums.txt`; `prometheus/prometheus`: `prometheus-<версия>.linux-<arch>.tar.gz` и `sha256sums.txt`); имена файлов и суммы сняты с реальных релизов, закреплены v1.153.0 и v3.15.0 (старше двух недель на 2026-10-18, свежее не берётся) | 28 |
-| A11 | Тип лицензии выбирает владелец. Ответа нет: в репозитории лежит MIT (Copyright 2026 FlexEbat), он остаётся, пока владелец не скажет иначе | 25 |
-
----
-
-### Слайс 0: ручной прототип
-
-Кода нет. На чистой тестовой машине (Ubuntu LTS) вручную поднимается вся связка по документации компонентов. Результат: `docs/prototype.md` и `tests/data/bittorrent.pcap` с `tests/data/README.md`.
-
-**Критерии приёмки:**
-
-1. Для допущений A2, A3, A4, A5, A9 записан ответ с командами и выводом. Владелец обновляет `tech.md` до v3 и убирает их из таблицы.
-2. Записаны реальные имена полей nDPI в EVE для `alert` и `netflow` на примере BitTorrent и TLS.
-3. `bittorrent.pcap` при реплее (`suricata -r`) даёт сигнатуру ET P2P и/или nDPI-протокол `BitTorrent`. Способ записи описан.
-4. Записан список пакетов, репозиториев и версий, которые понадобились, и время сборки Suricata из исходников на тестовой машине.
-
-**Не делать:** скрипты, шаблоны, автоматизацию.
-
----
-
-### Слайс 1: каркас
-
-**Что собрать:**
-
-- Дерево из раздела 3 с пустыми шагами (каждый печатает `план` и `без изменений`).
-- `lib/paths.sh`, `lib/common.sh` (`run`, `log`, `die`, `lock`, `atomic_write`, `backup`), `lib/os.sh` (определение ОС, `pkg_*` для apt и dnf), `lib/state.sh`.
-- `lib/schema.sh` с полной таблицей 4.3 (включая колонку затрагиваемых шагов из 5.3) и `lib/config.sh`: слои, проверка, вопросы basic и advanced, сохранение, diff.
-- `install.sh` со всеми командами и опциями из 4.4.
-- `dpistack.conf.example`, `scripts/gate.sh`, `tests/mocks/`.
-
-**Критерии приёмки:**
-
-1. `scripts/gate.sh` зелёный на каркасе.
-2. `install.sh install --dry-run -y` проходит все шаги, ничего не меняет, код 0.
-3. Неизвестный ключ, значение вне вариантов, `EVEBOX_DB=elasticsearch` без `EVEBOX_ES_URL`, `METRICS_BACKEND=victoriametrics` при `METRICS_EXPORT=no` дают код 2 и понятное сообщение.
-4. Значения, которые реализует только следующий слайс, отклоняются сообщением `пока не поддерживается` (сейчас таких нет).
-5. Интерактивный режим сохраняет ответы в `dpistack.conf`, повторный `-y` даёт тот же конфиг.
-6. `os.sh` правильно определяет `apt` для Ubuntu/Debian и `dnf` для Fedora/RHEL/Rocky/Alma по заглушкам `os-release`, включая `ID_LIKE`.
-7. Секреты из `--set ALERT_TG_TOKEN=...` попадают в `secrets.conf` (0600), а не в `dpistack.conf` и не в вывод.
-8. Два одновременных запуска: второй выходит с кодом 1 из-за блокировки.
-9. `reconfigure --dry-run` на заглушках выводит diff ключей и список затронутых шагов по таблице 5.3.
-
-**Тесты:** `tests/config.bats`, `tests/os.bats`, `tests/dryrun.bats`, `tests/lock.bats` по критериям 2–9.
-
-**Не делать:** реальную установку чего-либо, шаблоны, панель.
-
----
-
-### Слайс 2: Suricata (IDS) из пакетов, EVE, systemd, logrotate
-
-**Файлы:** `lib/step_suricata.sh`, `lib/step_preflight.sh`, `lib/runtime_native.sh`, `templates/suricata.yaml.tpl`, `templates/logrotate.tpl`.
-
-**Что делает:** реальный `preflight`; установка Suricata при `SURICATA_SOURCE` из `distro`/`oisf` (подключение репозитория через `pkg_repo_add`); рендер `suricata.yaml` (af-packet по `IFACES`, EVE по `EVE_TYPES`, `stats`, `HOME_NET`); logrotate; `systemctl enable --now`. До слайса 4 значения `SURICATA_SOURCE=source` и `NDPI_ENABLE=yes` отклоняются как `пока не поддерживается`, тесты идут с `--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no`.
-
-**Критерии приёмки:**
-
-1. `suricata -T` на отрендеренном конфиге проходит.
-2. Два интерфейса в `IFACES` дают два блока `af-packet` с разными `cluster-id`.
-3. `EVE_TYPES=alert,dns` даёт в конфиге только эти типы; `stats` есть, если он в списке.
-4. `eve.json` растёт при трафике на интерфейсе, `stats` приходит каждые `STATS_INTERVAL_SEC`, права файла `0640`.
-5. Несуществующий интерфейс останавливает `preflight` до установки пакетов, код 3.
-6. Повторный запуск: без изменений. Файл, изменённый руками, не перезаписывается без `--force`; с `--force` есть бэкап.
-7. `PIN_VERSIONS=yes` закрепляет пакет (`apt-mark hold` или `versionlock`).
-
-**Тесты:** `tests/suricata_step.bats` по критериям 2, 3, 5, 6, 7 (на заглушках).
-
-**Не делать:** правила, nDPI, IPS, доступ по сети.
-
----
-
-### Слайс 3: правила
-
-**Файлы:** `lib/step_rules.sh`, юниты `dpistack-rules.{service,timer}`.
-
-**Что делает:** установка `suricata-update`, источники из `RULES_SOURCES` и `RULES_URLS`, `enable.conf` из `RULES_GROUPS`, таймер, безопасное обновление с откатом.
-
-**Критерии приёмки:**
-
-1. После установки `suricata.rules` существует, `suricata -T` проходит, группы p2p и policy включены.
-2. `RULES_UPDATE_CALENDAR=daily` меняет `OnCalendar` в юните.
-3. Провал `suricata -T` после обновления возвращает прежний набор, код возврата не 0.
-4. `RULES_UPDATE=off` не создаёт таймер.
-5. Свой URL в `RULES_URLS` регистрируется как источник и попадает в набор.
-
-**Тесты:** `tests/rules_step.bats` по критериям 2–5.
-
-**Не делать:** интерфейс управления правилами (слайс 20).
-
----
-
-### Слайс 4: nDPI и Suricata из исходников
-
-**Файлы:** `lib/step_ndpi.sh`, дополнение `step_suricata.sh`, `templates/suricata.service.tpl`.
-
-**Что делает:** при `NDPI_ENABLE=yes` собирает или ставит nDPI, при `SURICATA_SOURCE=source` собирает Suricata с `--enable-ndpi`, подключает `ndpi.so`. Значения по умолчанию становятся рабочими.
-
-**Критерии приёмки:**
-
-1. `suricata --build-info` показывает поддержку nDPI, `ndpi.so` найден, Suricata стартует с плагином.
-2. Правило с `requires: keyword ndpi-protocol; ndpi-protocol:TLS;` загружается и срабатывает на тестовом TLS-трафике.
-3. `NDPI_ENABLE=yes` при `SURICATA_SOURCE=oisf` и отсутствии `ndpi.so` в неинтерактивном режиме останавливается с кодом 2 и текстом про `SURICATA_SOURCE=source`.
-4. Несовместимая версия nDPI видна как ошибка `configure` в выводе, установка не продолжается.
-5. Реальные имена полей nDPI в EVE из отчёта слайса 0 внесены в 4.7 через `CONTRACT GAP` (допущение A2).
-6. Повторный запуск не пересобирает то, что уже собрано той же версии.
-
-**Тесты:** `tests/ndpi_step.bats` по критериям 3, 6.
-
-**Не делать:** ntopng, собственные сборки других компонентов.
-
----
-
-### Слайс 5: Redis и ntopng
-
-**Файлы:** `lib/step_redis.sh`, `lib/step_ntopng.sh`, `templates/ntopng.conf.tpl`.
-
-**Что делает:** репозиторий ntop, пакет `ntopng`, Redis, конфиг с `NTOPNG_IFACES` и `NTOPNG_PORT`, привязка к `127.0.0.1` до слайса 7.
-
-**Критерии приёмки:**
-
-1. `ntopng` и `redis` активны, порт `NTOPNG_PORT` слушает на `127.0.0.1`.
-2. `NTOPNG_IFACES` по умолчанию равен `IFACES`, явное значение перекрывает.
-3. Пароль администратора по умолчанию не остаётся в рабочем состоянии (допущение A4): либо задан установщиком, либо ntopng ограничен `127.0.0.1` с предупреждением.
-4. Повторный запуск: без изменений.
-
-**Тесты:** `tests/ntopng_step.bats` по критериям 2, 4.
-
-**Не делать:** ntopng Enterprise, лицензии.
-
----
-
-### Слайс 6: EveBox
-
-**Файлы:** `lib/step_evebox.sh`, `templates/evebox.yaml.tpl`.
-
-**Что делает:** пакет из репозитория EveBox, `evebox.yaml`, читает `eve.json` (SQLite) или пишет в Elasticsearch, юнит, retention по `EVEBOX_RETENTION_DAYS`.
-
-**Критерии приёмки:**
-
-1. `evebox` активен, порт `EVEBOX_PORT` слушает на `127.0.0.1`, алерт из `eve.json` виден в интерфейсе.
-2. `EVEBOX_DB=elasticsearch` без доступного `EVEBOX_ES_URL` останавливает установку до старта юнита.
-3. При `EVE_FILE=no` и `EVEBOX_DB=sqlite` шаг сообщает, что EveBox не сможет читать события, и требует подтверждения.
-4. События старше `EVEBOX_RETENTION_DAYS` удаляются выбранным по допущению A9 механизмом; `0` отключает удаление. Способ проверен на тестовых данных со старыми метками времени.
-5. Повторный запуск: без изменений.
-
-**Тесты:** `tests/evebox_step.bats` по критериям 2, 3, 5.
-
-**Не делать:** агент EveBox, аутентификация EveBox.
-
----
-
-### Слайс 7: доступ (localhost, lan, nginx), firewall
-
-**Файлы:** `lib/step_access.sh`, `templates/nginx.conf.tpl`.
-
-**Что делает:** привязка всех веб-интерфейсов по `ACCESS_MODE`. `lan`: bind на `0.0.0.0`, при `FIREWALL_MANAGE=auto` разрешение только `LAN_CIDR`. `nginx`: nginx слушает публичный порт интерфейса (`NTOPNG_PORT`, `EVEBOX_PORT`, `PANEL_PORT`) на всех адресах, а сам сервис слушает на `127.0.0.1:<порт>+10000` (два сокета на одном порту дали бы `EADDRINUSE`; конфиг в этом режиме требует порты не больше 55535, правило в `access_backend_port`, ту же формулу повторяет сторож и `preflight`, который проверяет оба порта), по одному `server` на интерфейс со своим портом (подпути не используются), `allow LAN_CIDR; deny all`, TLS по `NGINX_TLS`. `NGINX_MANAGE=snippet` пишет файл в `/var/lib/dpistack/nginx/` и печатает команду подключения.
-
-**Критерии приёмки:**
-
-1. `localhost`: ни один интерфейс не слушает не на `127.0.0.1` (`ss -ltn`).
-2. `lan`: интерфейсы слушают на `0.0.0.0`, установщик печатает предупреждение о видимости и о пароле по HTTP.
-3. `nginx` при `snippet` не трогает системный `nginx.conf` и не перезагружает nginx.
-4. `nginx -t` на отрендеренном конфиге проходит (проверка в изолированном каталоге).
-5. `NGINX_TLS=existing` без `NGINX_CERT` и `NGINX_KEY` даёт код 2.
-6. Режим не `localhost` без подтверждения предупреждения не применяется (код 2).
-7. На SELinux-системах шаг сообщает о нужных `setsebool` и применяет их, а `semanage port` для портов nginx делает слайс 26.
-
-**Тесты:** `tests/access_step.bats` по критериям 1, 3, 5, 6.
-
-**Не делать:** SSO, basic auth, автоматическое получение сертификатов.
-
----
-
-### Слайс 8: reconfigure, upgrade, uninstall
-
-**Что делает:** реальные команды `reconfigure`, `upgrade`, `uninstall`, `uninstall --purge` по разделам 5.3 и 5.7.
-
-**Критерии приёмки:**
-
-1. `reconfigure` без `dpistack.conf` выходит с кодом 2; без изменений в ключах печатает `изменений нет`, код 0.
-2. Смена `IFACES` перерисовывает `suricata.yaml` и `ntopng.conf`, перезапускает оба компонента и не трогает остальные шаги.
-3. Смена «тяжёлого» ключа (`SURICATA_SOURCE`, `*_VERSION`) без подтверждения не применяется; с `-y` без `--force` тоже.
-4. Провал `suricata -T` при `reconfigure` оставляет прежние `suricata.yaml` и `dpistack.conf`, код 1, вывод проверки показан.
-5. Файл, изменённый руками, при `reconfigure` не перезаписывается без `--force`.
-6. `uninstall` останавливает и отключает юниты набора, удаляет юниты и бинарники набора, оставляет конфиги и данные компонентов; `--purge` удаляет и их, но не пакеты, поставленные не установщиком.
-7. `upgrade` с `PIN_VERSIONS=yes` не меняет закреплённые пакеты; без пиннинга обновляет.
-8. `uninstall` на чистой системе завершается с кодом 0 и сообщением `нечего удалять`.
-9. `install`, `uninstall --purge`, `install` даёт тот же результат, что первая установка.
-
-**Тесты:** `tests/reconfigure.bats`, `tests/uninstall.bats` по критериям 1–8.
-
-**Не делать:** откат `upgrade`.
-
----
-
-### Слайс 9: меню install и reconfigure
-
-**Файлы:** `lib/menu.sh`, доработка `install.sh`.
-
-**Что делает:** меню из разделов 5.0–5.1 и 5.3 поверх схемы, конфига, шагов и `reconfigure` из слайсов 1 и 8. Применение идёт теми же функциями, что и при `-y`. Меню управления (5.2) и персистентная команда `dpistack` — отдельный слайс 15.
-
-**Критерии приёмки:**
-
-1. `install.sh install` на терминале (или с `DPISTACK_INPUT`) показывает главное меню с разделами из 5.0; `-y` меню не показывает.
-2. Без терминала, без `DPISTACK_INPUT` и без `-y` установщик выходит с кодом 2 и подсказкой про `-y`.
-3. Правка ключа проверяется по схеме сразу: неверное значение отклоняется с перечнем допустимых, прежнее значение остаётся; Enter оставляет значение, `-` сбрасывает к умолчанию, `?` показывает подсказку.
-4. Маркеры: `*` у ключей, отличающихся от умолчаний; в `reconfigure` `~` у отличающихся от применённого; `!` у ключей с ошибкой.
-5. Пункт «Установить» (`i`) и «Применить» (`a`) недоступны, пока в главном меню есть проблемы; сводка проблем показывает перекрёстные ошибки (например, `METRICS_BACKEND` при `METRICS_EXPORT=no`).
-6. «Быстрая установка» показывает найденные интерфейсы без `lo`, помечает интерфейс с маршрутом по умолчанию, принимает номера через запятую и записывает имена в `IFACES`.
-7. При существующем `dpistack.conf` `install` показывает экран «Найдена установка» и не перезаписывает конфиг молча.
-8. Черновик `dpistack.conf.draft` создаётся после каждого изменения, не содержит секретов, при следующем запуске предлагается продолжить; `dpistack.conf` до применения не меняется.
-9. `q` с неприменёнными правками просит подтверждение; `Ctrl+C` завершает работу без изменений системы и без временных файлов.
-10. Секреты вводятся без эха и в экранах, сводке и diff показываются как `задан` или `не задан`.
-11. `reconfigure`: пункты `d` (diff с пометкой лёгкое или тяжёлое), `a`, `r`, `s`, `t` работают; провал проверки при `a` оставляет меню открытым с правками.
-12. `NO_COLOR` и `--no-color` убирают ANSI-последовательности из вывода.
-
-**Тесты:** `tests/menu.bats` по критериям 1–5, 7–12 (ввод из файла `DPISTACK_INPUT`, результат проверяется по сохранённым файлам и выводу, а не по количеству вызовов).
-
-**Не делать:** `dialog`, `whiptail`, ncurses, курсорные последовательности, мышь, темы оформления.
-
----
-
-### Слайс 10: `dpistack-ctl`, статус, управление, логи
-
-**Файлы:** `bin/dpistack-ctl` (команды `status`, `start|stop|restart`, `reload`, `logs`, `version`), `templates/sudoers.tpl`, часть шага `panel` (пользователь `dpistack`, sudoers).
-
-**Критерии приёмки:**
-
-1. `status --json` отдаёт валидный JSON со всеми установленными компонентами из 4.1 и полем `ndpi_plugin`.
-2. `start|stop|restart` работает через runtime компонента; `<id>` вне списка даёт код 5, отсутствующий компонент код 4.
-3. `logs <id> -n 5000` даёт код 2 (предел 1000); `logs --follow` завершается при закрытии потока вывода.
-4. Аргументы с метасимволами shell дают код 5 без выполнения.
-5. Пользователь `dpistack` вызывает `sudo -n dpistack-ctl status` без пароля и не может вызвать другие команды через `sudo`.
-
-**Тесты:** `tests/ctl_basic.bats` по критериям 1–4.
-
-**Не делать:** конфиги, правила, `iface`, `test`, `health`, `mode`, `reconfigure`.
-
----
-
-### Слайс 11: `dpistack-ctl`, конфиги, правила, iface, reconfigure
-
-**Что делает:** `config-read`, `config-write`, `config-revert`, `reconfigure`, `rules-*`, `iface`, `panel-passwd`.
-
-**Критерии приёмки:**
-
-1. `config-write` при провале проверки не меняет файл, отдаёт код 3 и вывод проверки; при успехе делает бэкап и атомарную замену.
-2. `config-revert` возвращает последний бэкап.
-3. `config-write dpistack.conf --apply` вызывает `reconfigure`; `reconfigure` при тяжёлом изменении отказывает с кодом 3 и текстом про `install.sh reconfigure`.
-4. `rules-sid` с нечисловым аргументом, `config-read` с именем вне списка дают код 5 без выполнения.
-5. `iface add` и `iface remove` меняют `IFACES` и вызывают `reconfigure`; удаление последнего интерфейса отклоняется; изменённый вручную `suricata.yaml` не затирается (правило 5.4).
-6. `rules-group`, `rules-sources`, `rules-search` правят и читают те же файлы, что шаг `rules`.
-7. `panel-passwd` пишет argon2id-хэш, права `panel.auth` `0640 root:dpistack`, пароль не попадает в вывод и лог.
-8. Проверка синтаксиса `evebox.yaml` и `ntopng.conf` реализована по допущению A8 и записана в отчёт.
-
-**Тесты:** `tests/ctl_config.bats` по критериям 1–7.
-
-**Не делать:** `test`, `health`, `mode`.
-
----
-
-### Слайс 12: тесты BitTorrent и HTTPS
-
-**Файлы:** `dpistack-ctl test`, `templates/suricata-test.yaml.tpl`, `lib/step_verify.sh`.
-
-**Критерии приёмки:**
-
-1. `test bittorrent` даёт `pass` на включённой группе `emerging-p2p` и на загруженном плагине nDPI по отдельности.
-2. Без правил p2p и без плагина: `skip` с причиной, код 0.
-3. Главный `eve.json` не изменился после `test bittorrent` (сравнение размера).
-4. `test https` даёт `pass`, когда `curl` вызывает событие `tls` с нужным `tls.sni`, и `fail` с понятной причиной, когда события нет (интерфейс не тот, curl не прошёл).
-5. `tests-last.json` содержит результат последнего прогона.
-6. `verify` запускает `all` при `TEST_ON_INSTALL=yes`; `fail` не отменяет установку, а попадает в итоговый отчёт.
-
-**Тесты:** `tests/test_cmd.bats` по критериям 2, 3, 4, 5 (на заглушках `suricata` и `curl`, готовых `eve.json`).
-
-**Не делать:** реальные торренты, скачивание файлов.
-
----
-
-### Слайс 13: watchdog
-
-**Файлы:** `bin/dpistack-watch`, шаг `watch`, юниты `dpistack-watch.{service,timer}`, `ctl health`.
-
-**Критерии приёмки:**
-
-1. Каждая проверка из раздела 8 пишет `status` по порогам из конфига (тесты на границах: значение ровно на пороге).
-2. Остановка `suricata` даёт `suricata.process=crit` за один прогон.
-3. `eve.json` старше `WATCH_EVE_STALE_SEC` даёт `crit`; при `EVE_FILE=no` или без `stats` в `EVE_TYPES` проверки получают `na`, `overall` их игнорирует.
-4. Сброс накопительных счётчиков `stats` (новое значение меньше прежнего) не даёт ложный drop rate.
-5. `disk.free` берёт минимум по нескольким разделам и называет худший путь в `detail`.
-6. `health.json` валиден, пишется атомарно, `since` меняется только при смене статуса.
-7. `WATCH_AUTORESTART=yes` перезапускает упавший компонент не чаще 3 раз в час.
-8. `dpistack-ctl health` выполняет один прогон и печатает тот же JSON.
-
-**Тесты:** `tests/watch.bats` по критериям 1, 3, 4, 5, 6, 7.
-
-**Не делать:** оповещения (слайс 14), сбор рядов для графиков.
-
----
-
-### Слайс 14: каналы оповещений
-
-**Что делает:** каналы `panel`, `log`, `tg`, `mail` в `dpistack-watch`.
-
-**Критерии приёмки:**
-
-1. Смена `ok → warn` отправляет по одному сообщению в каждый канал из `ALERT_CHANNELS`, смена обратно отправляет сообщение о восстановлении.
-2. Пока статус не `ok`, повтор идёт не чаще `WATCH_REPEAT_MIN`.
-3. `ALERT_CHANNELS=panel,tg` не пишет в журнал и не шлёт почту; сбой `tg` не мешает записи в `events.jsonl`.
-4. Пустой `ALERT_TG_TOKEN` при `tg` в списке: установщик останавливает конфигурацию с кодом 2, watchdog на лету пишет ошибку канала в журнал и продолжает.
-5. Токен и SMTP-пароль не появляются в журнале, `--dry-run` и `events.jsonl`.
-
-**Тесты:** `tests/alerts.bats` по критериям 1–5 (заглушки `curl` и `logger`).
-
-**Не делать:** маршрутизацию по severity, тихие часы, эскалацию.
-
----
-
-### Слайс 15: персистентная команда `dpistack` и меню управления
-
-**Файлы:** `lib/step_selfinstall.sh`, доработка `install.sh` и `lib/menu.sh` (главное меню установки уже есть из слайса 9, меню управления и экран «Настроить» без быстрой установки — новые).
-
-**Что делает:** шаг `selfinstall` (раздел 5, врезка перед 5.0) копирует `install.sh`, `lib/*.sh`, `templates/*` в `/usr/local/lib/dpistack/installer/` и кладёт исполняемый файл в `/usr/local/sbin/dpistack`. Бинарник `dpistack` без аргументов показывает меню установки (если конфига нет) или меню управления (5.2), опираясь на `dpistack-ctl` (слайсы 10–11) для статуса, логов и тестов. Подкоманды `dpistack status|test|logs|upgrade|uninstall|reconfigure`.
-
-**Критерии приёмки:**
-
-1. После `install.sh install` на чистой системе `/usr/local/sbin/dpistack` существует, исполняем, и `dpistack --dry-run status` (или эквивалент) даёт тот же результат, что и исходный `install.sh` из того же коммита.
-2. Второй запуск `install.sh install` (или `dpistack install`): шаг `selfinstall` не копирует файлы заново, если их хэш не изменился («без изменений»); изменившийся `install.sh` в источнике (новая версия набора) копируется поверх.
-3. Бинарник `dpistack` без аргументов при существующем `dpistack.conf` показывает меню управления (пункты «Настроить», «Статус компонентов», «Логи», «Запустить тесты», «Обновить пакеты», «Удалить», «Пароль панели»), а не меню установки.
-4. Бинарник `dpistack` без аргументов при отсутствующем `dpistack.conf` показывает меню установки, как `install.sh install` на свежей системе.
-5. В меню управления: «Статус компонентов» вызывает `dpistack-ctl status` и построчно показывает результат; «Логи» даёт выбрать компонент номером и вызывает `dpistack-ctl logs <id> -n 200`; «Запустить тесты» вызывает `dpistack-ctl test all`. Недоступный или упавший `dpistack-ctl` показывает причину и возвращает в меню управления, не завершая `dpistack`.
-6. «Настроить» из меню управления и команда `dpistack reconfigure` открывают один и тот же экран разделов конфига (5.3); из меню управления на этом экране есть пункт «Назад», при прямом вызове его нет.
-7. «Удалить» в меню управления требует ввод слова `удалить`; неверный ввод или пустая строка возвращают в меню без изменений; подтверждённый ввод предлагает выбор обычного удаления или `--purge` и вызывает соответствующий поток из 5.7.
-8. Явная команда `dpistack install` (или `install.sh install`) при существующем `dpistack.conf` показывает экран «Найдена установка» с пунктами «настроить», «применить текущий конфиг заново», «открыть меню управления», «выйти» — а не сразу меню управления.
-9. Неинтерактивные подкоманды `dpistack status`, `dpistack test bittorrent`, `dpistack logs suricata -n 50` возвращают тот же код завершения и вывод, что прямой вызов `dpistack-ctl` с теми же аргументами.
-10. `uninstall` удаляет `/usr/local/sbin/dpistack` и `/usr/local/lib/dpistack/installer/`; после этого `dpistack` в `PATH` не находится.
-
-**Тесты:** `tests/dpistack_cmd.bats` по критериям 2, 3, 4, 6, 7, 9, 10 (заглушки `dpistack-ctl`, ввод из `DPISTACK_INPUT`).
-
-**Не делать:** автодополнение в shell, man-страницу, изменение `PATH` пользователя, что-либо специфичное для оболочки (`zsh`, `fish`).
-
----
-
-### Слайс 16: панель, сервер, вход, безопасность
-
-**Файлы:** `panel/cmd/panel/main.go`, `panel/internal/{api,auth,ctl,health}/`, минимальная оболочка `panel/web/` (страница входа и пустой Обзор).
-
-**Что делает:** сервер, вход, сессии, CSRF, ограничение по IP, `GET /api/status`. Запускается вручную, установка в слайсе 17.
-
-**Критерии приёмки:**
-
-1. Без сессии любой `/api/*` кроме `POST /api/login` даёт 401.
-2. Неверный пароль даёт 401; шестая попытка за 5 минут с одного IP даёт 429.
-3. Изменяющий запрос без верного `X-CSRF-Token` даёт 403.
-4. Клиент вне `LAN_CIDR` при `lan` и вне `127.0.0.1` при `localhost` получает 403; `X-Forwarded-For` учитывается только от `127.0.0.1`.
-5. `GET /api/status` возвращает компоненты из `ctl status` и `health.json`; недоступный `ctl` даёт 502 с понятным текстом.
-6. Отключить вход конфигом нельзя (ключа нет).
-
-**Тесты:** `panel/internal/api/*_test.go`, `auth/*_test.go` по критериям 1–5.
-
-**Не делать:** установку, остальные экраны, WebSocket, внешние JS-библиотеки.
-
----
-
-### Слайс 17: панель, установка и Обзор
-
-**Файлы:** `lib/step_panel.sh`, `templates/dpistack-panel.service.tpl`, `panel/web/` (экран Обзор).
-
-**Что делает:** сборка или установка бинарника по `PANEL_SOURCE`, юнит, установка пароля (5.1), экран Обзор, привязка по `ACCESS_MODE`, проверка бюджета ресурсов.
-
-**Критерии приёмки:**
-
-1. `install.sh` ставит и запускает панель, вход по заданному или сгенерированному паролю работает, сгенерированный пароль показан в отчёте один раз и нигде не хранится в открытом виде.
-2. Обзор показывает состояние компонентов и общий `overall` из `health.json`.
-3. RSS панели в простое не больше 25 МБ, статика не больше 150 КБ (проверка скриптом в гейте).
-4. Юнит содержит `MemoryMax`, `CPUQuota`, не содержит `NoNewPrivileges` и `ProtectSystem`.
-5. `PANEL_SOURCE=prebuilt` без готового бинарника даёт код 3 на `preflight`.
-6. Повторный запуск: без изменений.
-
-**Тесты:** `tests/panel_step.bats` по критериям 4, 5, 6.
-
-**Не делать:** остальные экраны.
-
----
-
-### Слайс 18: компоненты и логи
-
-**Что делает:** экран Компоненты (кнопки start/stop/restart/reload с подтверждением), экран Логи (последние N строк и SSE).
-
-**Критерии приёмки:**
-
-1. Кнопка выполняет `ctl` и обновляет статус без перезагрузки страницы.
-2. Остановка `panel` из самой панели требует отдельного подтверждения.
-3. `GET /api/logs/{id}?lines=5000` даёт 400 (предел 1000).
-4. SSE закрывает процесс `ctl logs --follow` при разрыве соединения клиентом (нет висящих процессов).
-5. Действие над компонентом, которого нет, даёт 404 и понятное сообщение.
-
-**Тесты:** `panel/internal/api/components_test.go` по критериям 3–5.
-
-**Не делать:** графики, фильтры по уровню логов.
-
----
-
-### Слайс 19: редактор конфигов
-
-**Что делает:** экран Конфиги: выбор файла из списка, редактор, «Проверить», «Сохранить», «Сохранить и применить», «Откатить».
-
-**Критерии приёмки:**
-
-1. Изменение `suricata.yaml`: «Проверить» возвращает вывод `suricata -T`, «Сохранить» при ошибке проверки не меняет файл.
-2. «Сохранить и применить» перезагружает компонент; для `dpistack.conf` запускает `reconfigure`, а тяжёлое изменение показывает как отказ с текстом.
-3. «Откатить» возвращает предыдущий бэкап.
-4. `GET /api/config/etc-passwd` даёт 404 (имя вне списка), тело `PUT` больше 1 МБ даёт 413.
-5. Файл, отредактированный через панель, установщик считает изменённым вручную (правило 5.4).
-
-**Тесты:** `panel/internal/api/config_test.go` по критериям 1–4.
-
-**Не делать:** подсветку синтаксиса, diff между версиями, редактор на Monaco или CodeMirror.
-
----
-
-### Слайс 20: правила в панели
-
-**Что делает:** экран Правила.
-
-**Критерии приёмки:**
-
-1. Список источников с включением, выключением и добавлением URL.
-2. Включение и выключение групп.
-3. Отключение правила по `sid` пишет его в `disable.conf`, после обновления правило не загружается.
-4. Поиск по `sid` и тексту, до 50 результатов.
-5. Кнопка «Обновить сейчас» показывает результат и время последнего обновления; провал обновления показывает причину и оставляет прежний набор.
-
-**Тесты:** `panel/internal/api/rules_test.go` по критериям 3–5.
-
-**Не делать:** редактор отдельных правил вне `local.rules`, импорт наборов из файла.
-
----
-
-### Слайс 21: события EVE
-
-**Файлы:** `panel/internal/eve/`, экран События.
-
-**Критерии приёмки:**
-
-1. `GET /api/eve?type=alert&limit=50` возвращает не больше 50 последних алертов; `limit=1000` даёт 400.
-2. Чтение `eve.json` инкрементальное: после дозаписи одной строки читается только она (тест по смещению).
-3. Ротация файла (новый inode или размер меньше смещения) не теряет события и не ломает чтение.
-4. Битая или неполная последняя строка пропускается без ошибки.
-5. При `EVE_FILE=no` экран показывает, что просмотр недоступен, а не пустой список.
-6. SSE `eve/stream` отдаёт только новые события выбранного типа.
-
-**Тесты:** `panel/internal/eve/*_test.go` по критериям 1–4.
-
-**Не делать:** полнотекстовый поиск по всему файлу, экспорт, агрегации.
-
----
-
-### Слайс 22: метрики, графики
-
-**Файлы:** `panel/internal/metrics/`, экран Метрики.
-
-**Критерии приёмки:**
-
-1. Ряды pps, drops, cpu, rss, размер `eve.json`, диск за 1, 6, 24 часа.
-2. После перезапуска панели ряды восстанавливаются из `metrics.json`.
-3. Сброс накопительных счётчиков Suricata не даёт отрицательных значений на графике.
-4. Кольцо не превышает 24 часа по 30 секунд.
-5. Экран показывает недоступные ряды (`EVE_FILE=no`, нет `stats`) пометкой, а не нулём.
-
-**Тесты:** `panel/internal/metrics/*_test.go` по критериям 2–4.
-
-**Не делать:** запросы за произвольный период, сохранение на диск сверх `metrics.json`.
-
----
-
-### Слайс 23: экспорт `/metrics`
-
-**Что делает:** `GET /metrics` по разделу 4.9, генерация `METRICS_TOKEN` при установке.
-
-**Критерии приёмки:**
-
-1. Без токена и с неверным токеном 401, с верным 200 и `Content-Type: text/plain; version=0.0.4`.
-2. Все метрики из 4.9 присутствуют, когда есть данные; `na`-проверки и метрики, зависящие от `EVE_FILE=no` или отсутствия `stats`, не выдаются.
-3. Вывод проходит `promtool check metrics`, если он есть, иначе разбор тестовым парсером формата.
-4. `METRICS_EXPORT=no` даёт 404.
-5. Сброс счётчиков Suricata не даёт отрицательного `dpistack_suricata_drop_ratio`.
-6. Токен не попадает в журнал, `dpistack.conf` и вывод `--dry-run`; в отчёте установщика показан вместе со строкой `scrape_config`.
-7. Запросы `/metrics` не читают диск чаще раза в секунду.
-
-**Тесты:** `panel/internal/api/metrics_export_test.go` по критериям 1–5, 7.
-
-**Не делать:** `client_golang`, push-режим, дашборды Grafana.
-
----
-
-### Слайс 24: тесты, оповещения, интерфейсы в панели
-
-**Что делает:** экраны Тесты и Оповещения, добавление и удаление интерфейсов.
-
-**Критерии приёмки:**
-
-1. Кнопки запуска тестов вызывают `POST /api/tests/...`, результат показывается построчно со статусом `pass`, `fail`, `skip` и причиной.
-2. «Последний результат» переживает перезапуск панели.
-3. Экран Оповещений показывает `events.jsonl`, новые сверху, с фильтром по проверке.
-4. Добавление и удаление интерфейса через панель вызывает `ctl iface` и обновляет статус.
-
-**Тесты:** `panel/internal/api/tests_test.go`, `alerts_test.go` по критериям 1–3.
-
-**Не делать:** настройку каналов оповещений из панели (правится через `dpistack.conf` в редакторе), кнопку IPS (слайс 29).
-
----
-
-### Слайс 25: README и LICENSE
-
-**Что делает:** `README.md`, `LICENSE`, `dpistack.conf.example` сверяется с 4.3.
-
-**Критерии приёмки:**
-
-1. README содержит: что это, топологическое ограничение, модель угроз, быструю установку, пример конфига, описание `install`/`reconfigure`, работу с `ctl`, пример `scrape_config` для Prometheus, VictoriaMetrics и `vmagent`.
-2. Все команды из README выполнены руками на чистой Ubuntu LTS, результат совпал.
-3. Все ссылки в README открываются.
-4. `LICENSE` соответствует выбору владельца (A11).
-5. Каждый ключ из `dpistack.conf.example` есть в 4.3, и наоборот.
-
-**Тесты:** проверка критерия 5 скриптом в гейте.
-
-**Не делать:** сайт документации, переводы.
-
-**Результат (v23, решения «выбирай сам»):** README на русском (язык владельца и сообщений установщика; `SECURITY.md` остаётся английским, переводов нет), внешних ссылок в нём нет, только локальные (`tests/ci_config.bats` проверяет, что каждая указывает на существующий файл, и что в README есть все разделы критерия 1). В примере `scrape_configs` токен берётся из `credentials_file`, а не из `credentials`: так токен не попадает в конфиг, который кладут в репозиторий; итоговый отчёт установщика печатает `credentials` с токеном, потому что показывает его один раз. Критерий 5 проверяет `scripts/check-conf-example.sh` (в гейте и в `tests/ci_config.bats`, с двумя мутациями: пропавший ключ и расхождение умолчания). Критерий 4: лицензия MIT, A11 без ответа владельца. 
-
----
-
-### Слайс 26: RHEL-семейство и SELinux (обязательная платформа)
-
-**Среда проверки:** Fedora, Rocky или Alma.
-
-**Что делает:** `pkg_*` для dnf, репозитории (COPR/OISF, ntop, EveBox), имена пакетов и юнитов, SELinux-контексты, `firewalld`.
-
-**Критерии приёмки:**
-
-1. Слайсы 2–7 проходят на Fedora и на одном RHEL-совместимом дистрибутиве.
-2. При `enforcing` панель, ntopng, EveBox и Suricata стартуют без AVC-отказов для нужных им путей (`restorecon`, `setsebool`, `semanage port`).
-3. `FIREWALL_MANAGE=auto` открывает порты только для `LAN_CIDR` через `firewalld`.
-4. `PIN_VERSIONS=yes` использует `versionlock`.
-5. Отсутствующий источник для выбранной версии ОС даёт код 3 на `preflight`, а не ошибку посреди установки.
-
-**Тесты:** `tests/os.bats` (расширение), `tests/pkg_dnf.bats` по критериям 4, 5.
-
-**Не делать:** CentOS 7 и другие EOL-версии.
-
-**Результат (v24, решения «выбирай сам»):** режим `Permissive` считается включённым SELinux наравне с `Enforcing`: метки и порты ставятся и в нём, иначе переход на `Enforcing` позже начал бы отказывать в том, что работало. Тип порта: `http_port_t` только для портов, на которых слушает nginx (`ACCESS_MODE=nginx`), `ntop_port_t` только для порта ntopng; у панели и EveBox своих типов нет (юнит из `/usr/local/bin` и из пакета EveBox идёт без политики компонента), для них порты не размечаются. `semanage` ставится как `policycoreutils-python-utils` при необходимости. Метка файла ставится при каждой записи (`atomic_write`), потому что `mv` из другого каталога переносит метку источника, а Suricata под `suricata_t` не прочтёт файл с чужой меткой; общий проход в конце `install` и `reconfigure` ловит то, что пишется не через `atomic_write` (бинарники, юниты). Проход идёт после применения шагов: службы, стартовавшие в ходе установки, могли начать до него, поэтому первая проверка на стенде это `ausearch -m avc -ts recent` и при отказах `systemctl restart`. Критерии 3 и 4 покрыты заглушками. Критерий 5: адрес `…/coprs/g/oisf/suricata-8.0/repo/<chroot>/group_oisf-suricata-8.0-<chroot>.repo` (переопределяется `OISF_COPR_REPO_URL`) нужно сверить на реальном COPR. Критерий 1 и критерий 2 в части «без AVC-отказов» требуют настоящих Fedora, Rocky и Alma и не выполнены.
-
----
-
-### Слайс 27: Docker runtime
-
-**Файлы:** `lib/runtime_docker.sh`, `templates/compose.yaml.tpl`.
-
-**Что делает:** любой из `suricata`, `evebox`, `ntopng` (и `redis` за `ntopng`) в контейнере. Suricata с `network_mode: host` и `NET_ADMIN`, `NET_RAW`; общий том с `eve.json`.
-
-**Критерии приёмки:**
-
-1. Смешанная схема (Suricata native, EveBox и ntopng docker) поднимается и видит те же события.
-2. `dpistack-ctl status`, `start|stop|restart`, `logs` работают через `docker compose`.
-3. `eve.json` из контейнерной Suricata доступен панели и watchdog по тому же пути `/var/log/suricata/eve.json`.
-4. Образы и пути томов подтверждены (допущение A6).
-5. Правила `DOCKER-USER` и другие чужие правила не затронуты.
-6. Значения `*_RUNTIME=docker` перестают отклоняться как `пока не поддерживается`.
-
-**Тесты:** `tests/runtime_docker.bats` по критериям 2, 5, 6 (заглушка `docker`).
-
-**Не делать:** podman, swarm, kubernetes, LXD.
-
-**Результат (v25, решения «выбирай сам»):** все сервисы идут с `network_mode: host`, а не в сети compose: так `*_BIND`, порты и правила `access` значат то же, что у native, а `iptables` и цепочку `DOCKER-USER` dpistack не трогает вообще (опубликованных портов и своих сетей нет, тест это проверяет). Теги образов: `latest` у Suricata и EveBox, `stable` у ntopng, `7-alpine` у redis; закреплённая `*_VERSION` становится тегом. `PIN_VERSIONS` для образов ничего не добавляет: тег и есть закрепление. nDPI в образ не ставится: `SURICATA_RUNTIME=docker` с `NDPI_ENABLE=yes` останавливается в `preflight` с понятной причиной, молча выключать плагин нельзя. Правила обновляет `suricata-update` на хосте (каталог правил смонтирован в контейнер), перезагрузка и проверка идут в контейнере. Реплей BitTorrent (на хосте) при docker-Suricata пропускается с причиной: события по живому трафику проверяет `TEST_BT_LIVE`. Переход компонента с docker на native оставляет контейнер: его останавливают вручную (`docker compose -p dpistack down`), автоматического переноса нет. Критерии 1, 2, 3, 5, 6 покрыты тестами на заглушках.
-
----
-
-### Слайс 28: бэкенд метрик, VictoriaMetrics и Prometheus
-
-**Файлы:** `lib/step_metrics.sh`, `templates/scrape.yaml.tpl`, юниты бэкенда.
-
-**Что делает:** при `METRICS_BACKEND` не `none` ставит VictoriaMetrics (single-node) или Prometheus в `native` или `docker`, кладёт `scrape.yaml` с целью `GET /metrics` панели и токеном из файла, задаёт `METRICS_RETENTION`, привязывает по `ACCESS_MODE`.
-
-**Критерии приёмки:**
-
-1. Бэкенд активен, цель сбора имеет состояние `up`, ряды `dpistack_*` доступны запросом.
-2. `METRICS_RETENTION=30d` попадает в параметры запуска бэкенда (`-retentionPeriod` или `--storage.tsdb.retention.time`).
-3. Токен читается бэкендом из файла (`bearer_token_file` или `authorization`), в `dpistack.conf` и в командной строке процесса его нет.
-4. Бэкенд слушает по правилам `ACCESS_MODE`, при `localhost` только на `127.0.0.1`.
-5. Источник бинарника и проверка контрольной суммы для `native` подтверждены (допущение A10).
-6. `disk.free` и проверки `<id>.process`/`<id>.port` учитывают бэкенд.
-7. Смена `METRICS_BACKEND` через `reconfigure` считается тяжёлым изменением; `none` останавливает бэкенд, но не удаляет данные без `--purge`.
-8. Повторный запуск: без изменений.
-
-**Тесты:** `tests/metrics_step.bats` по критериям 2, 3, 4, 7, 8.
-
-**Не делать:** Alertmanager, Grafana, remote write, `vmagent` как отдельный компонент.
-
-**Результат (v26, решения «выбирай сам»):** бинарник берётся с релиза проекта, а не из пакета дистрибутива: у VictoriaMetrics пакета нет, а один способ для обоих бэкендов проще проверить. Версия и sha256 архива закреплены в коде, а не читаются из файла рядом с архивом: файл с той же страницы не защитил бы от подмены релиза. Для перехода на новый релиз правятся версия и суммы вместе (или `DPISTACK_METRICS_*` на время). Один `scrape.yaml` на оба бэкенда (формат `scrape_configs` общий); цель это собственный порт панели по HTTP (за nginx это порт плюс 10000), чтобы сборщику не нужен был TLS. Бэкенд nginx не проксирует, поэтому в `nginx` и `localhost` он слушает 127.0.0.1, в `lan` 0.0.0.0 и его порт открывается для `LAN_CIDR`. Данные лежат вне `/var/lib/dpistack` (в `/var/lib/dpistack-metrics`), иначе `uninstall` без `--purge` удалял бы ряды вместе с каталогом состояния. Токен-файл и пользователь `dpistack` создаются шагом `metrics` до старта бэкенда (Prometheus не запускается с отсутствующим `credentials_file`); шаг `panel` потом пишет тот же файл с тем же владельцем. Срок хранения проверяется строже (4.3). Контейнер бэкенда запускается от `dpistack-metrics` и группы `dpistack` с монтированием файлов по тем же абсолютным путям, чтобы `scrape.yaml` работал без изменений. Docker-контейнеры остальных компонентов при `uninstall` остаются, как и пакеты native-стека; контейнер бэкенда удаляется. Критерии 2, 3, 4, 7, 8 и 5 (проверка суммы) покрыты тестами; критерий 1 требует настоящего стенда.
-
----
-
-### Слайс 29: режим IPS
-
-**Что делает:** `dpistack-ctl mode`, шаблон IPS, цепочка `DPISTACK`, `dpistack-fw.service`, таймер отката, кнопка в панели.
-
-**Критерии приёмки:**
-
-1. `mode ips` включает выбранный `IPS_METHOD`, перезапускает Suricata, запускает таймер отката.
-2. Без `mode-confirm` за `--confirm-timeout` режим возвращается в `ids`, правила `DPISTACK` убираются.
-3. Правила NFQUEUE идут с `--queue-bypass`; остановка Suricata не отрезает сеть.
-4. После перезагрузки хоста `dpistack-fw.service` восстанавливает правила `DPISTACK` в текущем режиме.
-5. Чужие цепочки и правила не изменены (сравнение `iptables-save` до и после, без `DPISTACK`).
-6. В панели переключение в IPS просит подтверждение и показывает обратный отсчёт до отката.
-7. Значение `SURICATA_MODE=ips` перестаёт отклоняться как `пока не поддерживается`.
-
-**Тесты:** `tests/ips.bats` по критериям 2, 3, 5, 7 (заглушки `iptables`, `nft`).
-
-**Не делать:** автоматическую генерацию `drop`-правил, перевод `alert` в `drop` за пользователя.
-
-**Результат (v27, решения «выбирай сам»):** NFQUEUE через `iptables` и `ip6tables` (на системах с `iptables-nft` это тоже работает); если `iptables` нет, а есть `nft`, правила идут в отдельную таблицу `inet dpistack` (с v0.20.3, раздел 18.22); если нет ни того, ни другого, `preflight` и `mode ips` останавливаются с причиной. Одна очередь `0`. В `DPISTACK` одно правило `NFQUEUE --queue-bypass`, а в выбранные цепочки вставляется по одному переходу в позицию 1: это единственное, что dpistack добавляет в чужие цепочки, и убирает целиком (`-D` только своего перехода, потом `-F` и `-X` своей цепочки). Режим хранится в `SURICATA_MODE` в `dpistack.conf`: `mode` меняет его, проверяет файл целиком, применяет `reconfigure` и при неудаче возвращает файл. Ожидающее подтверждения переключение записывается в `mode.pending` (метка конца срока) и ждёт `mode-confirm`; откат запускает таймер `systemd-run --on-active`, а не собственный демон. Порядок: сначала Suricata перезапускается в `ips`, и только потом правила начинают слать ей трафик; в обратную сторону сначала уходят правила. `ips` для `SURICATA_RUNTIME=docker` не поддерживается (проверка конфига). Suricata в режиме NFQ запускается drop-in `suricata.service.d/dpistack-mode.conf` с пустым `ExecStart=`, `Type=simple` и `-q 0`: так одинаково работают пакетный (с `-D` и `--af-packet`), RPM и собственный юнит. При афпакете интерфейсы идут парами (`IFACES` чётное число, пара 0↔1, 2↔3). Панель требует `acknowledged: true` для `ips` на уровне API, а не только диалога в браузере. Перезагрузка до подтверждения считается откатом (транзиентный таймер до неё не доживает). Критерии 1–5 и 7 покрыты тестами на заглушках, критерий 6 (API и разметка экрана) проверен Go-тестами; обратный отсчёт в браузере руками не смотрелся.
-
----
-
-### Слайс 30: единый файл
-
-**Что делает:** `scripts/bundle.sh` собирает `dpistack-install.sh` из `install.sh`, `lib/`, `templates/`, `bin/` (встраивание в heredoc), без изменения логики.
-
-**Критерии приёмки:**
-
-1. `dpistack-install.sh --help` и `--dry-run -y` дают тот же вывод, что модульная версия.
-2. Собранный файл проходит `bash -n` и `shellcheck`.
-3. `bundle.sh --check` в гейте сравнивает собранный файл с тем, что сгенерирует скрипт из текущих исходников.
-
-**Тесты:** `tests/bundle.bats` по критериям 1, 3.
-
-**Не делать:** самообновление, упаковку в deb/rpm.
-
-**Результат (v28, решения «выбирай сам»):** собранный файл лежит в репозитории (корень), а не только в релизе: так `bundle.sh --check` в гейте ловит устаревший файл, а пользователь может взять его прямо из репозитория. Файл распаковывает полезную нагрузку и запускает настоящий `install.sh`, а не склеивает код в одну программу: логика не пересказывается, а совпадение с модульной версией следует из того, что код один и тот же (тест сравнивает вывод `--help` и `install --dry-run -y` и дерево `/usr/local/lib/dpistack/installer` после установки). Состав это полезная нагрузка `selfinstall` (`install.sh lib templates bin tests/data`), потому что копию установщика в систему кладёт именно она. Панель (бинарник или исходники) в файл не входит и ищется рядом с ним, как рядом с `install.sh`: без неё `preflight` останавливает установку, как и в модульной версии. Терминатор heredoc, файл без перевода строки в конце и NUL-байты в тексте останавливают сборку: heredoc молча изменил бы файл. Двоичные файлы идут через base64 (сейчас один, `tests/data/bittorrent.pcap`). Запуск из канала (`curl ... | bash`) работает, но меню не получит ввода с терминала: файл лучше скачать и запустить. Критерии 1, 2 и 3 покрыты тестами.
-
----
-
-## 18. Ревью после каждого слайса
-
-Отдельным заходом, после того как слайс готов и гейт зелёный. Задача захода: искать проблемы, а не хвалить написанное.
-
-Чек-лист:
-
-1. Ключи конфига, команды `ctl`, поля `health.json`, метрики, эндпоинты совпадают с разделом 4 дословно. Лишних нет.
-2. Шаги не вызывают системные команды мимо `run`, пакетные и сервисные операции идут через `os.sh` и `runtime_*.sh`.
-3. Все пути строятся через `lib/paths.sh`.
-4. Каждый шаг установщика идемпотентен, `--dry-run` не меняет систему, `reconfigure` затрагивает только шаги из таблицы 5.3.
-5. `dpistack-ctl` проверяет каждый аргумент по списку до действия. Нет `eval`, нет подстановки пользовательского ввода в строку команды.
-6. Секреты (пароль панели, `METRICS_TOKEN`, токен Telegram, SMTP) нигде не печатаются и не пишутся в лог, кроме единственного показа в итоговом отчёте.
-7. Панель не запускает ничего кроме `sudo -n dpistack-ctl`, не читает файлы вне списка из раздела 3.
-8. Нет ложных ошибок при штатных ситуациях: ротация `eve.json`, сброс счётчиков `stats`, тихий интерфейс без событий.
-9. Тесты проверяют критерии приёмки, а не повторяют реализацию. На каждый критерий с отказом есть тест на отказ.
-10. Мёртвого кода нет: неиспользуемые функции, шаблоны, ключи схемы, JS-модули, CSS-селекторы без разметки.
-11. Файлов и абстракций сверх раздела 3 не появилось.
-
-Находки правятся в том же заходе, потом гейт прогоняется заново.
-
-### 18.1 Результат полного ревью (v7)
-
-Ревью шло по чек-листу выше: автоматические проходы (мёртвый код, пути мимо `paths.sh`, системные команды мимо `run`, неиспользуемые ключи и шаблоны), фаззинг аргументов `dpistack-ctl` (метасимволы, пустые значения, юникод, числа на границах), чтение кода оповещений, `common.sh`, `state.sh`, `schema.sh` и workflow. Каждая находка закрыта тестом из `tests/hardening.bats` или `tests/ci_config.bats`; новые тесты проверены на коде до исправления, там они падают.
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R1 | критическая | `run` всегда возвращал 0: внутри `if ! cmd` `$?` равен результату отрицания, поэтому любой `run ... \|\| return 1` в шагах не срабатывал и сбой установки пакета или сервиса проходил молча | код возврата читается сразу после команды |
-| R2 | высокая | `atomic_write` при ошибке записи (диск заполнен) всё равно подменял целевой файл обрезанным | при ошибке временный файл удаляется, цель не меняется |
-| R3 | высокая | `state` переписывали без блокировки установщик и watchdog (потеря обновлений: отметки шагов, хэши рендера), ключи сравнивались как регулярные выражения | запись под `flock`, ключи сравниваются как текст |
-| R4 | высокая | свободные ключи не проверялись: `LAN_CIDR`, `NGINX_CERT`, `BPF_FILTER`, `HOME_NET`, `IFACES` могли внести директивы в конфиг nginx или YAML, а `TEST_HTTPS_URL` с `-o...` стал бы опцией `curl` (запись файла от root) | шаблоны `SCHEMA_PATTERN` (4.3), `curl` вызывается с `--` |
-| R5 | средняя | `config-write dpistack.conf` принимал секретные ключи и оставлял их в файле с правами 0644 | отказ с кодом 3 |
-| R6 | средняя | `apt-get install -y` без `DEBIAN_FRONTEND=noninteractive` мог встать на вопросе debconf | `os_detect` выставляет `DEBIAN_FRONTEND` и `NEEDRESTART_MODE` |
-| R7 | средняя | `ctl` менял конфиги, не дожидаясь блокировки установщика | `ctl_lock` (ждёт до 30 с) |
-| R8 | средняя | `NTOPNG_VERSION` и `EVEBOX_VERSION` описаны в 4.3, но игнорировались | `pkg_spec` фиксирует версию пакета |
-| R9 | низкая | `logs -n 08` отвергался (восьмеричная запись), `-n 01750` проходил лимит 1000 | десятичный разбор, не больше шести цифр |
-| R10 | низкая | оповещения: токен Telegram не экранировался в конфиге `curl`, список получателей раскрывался глобом, `\r` не вычищался; десятичные значения watchdog зависели от локали | экранирование, `read -a`, `LC_NUMERIC=C` |
-| R11 | высокая для CI | `trivy-action@0.28.0` не существует (тег `v0.28.0`): job падал бы; действия не закреплены по SHA; `actionlint` скачивался и пускался в `bash`; тег релиза не проверялся на `main`; SARIF из форка не загрузился бы | см. 12.1 |
-| R12 | низкая | три пути определены мимо `lib/paths.sh` (`os-release`, каталог данных `suricata-update`, `libndpi`) | перенесены в `paths.sh` |
-
-Осталось открытым:
-
-- (закрыто в 18.3, R18) общий `apt-get update` один раз за запуск.
-- Смена `*_VERSION` у установленного пакета его не переустанавливает (4.3).
-- Ключ `EVE_SYSLOG` описан в схеме, но код его пока не читает.
-- `suricata.eve_fresh` опирается на время изменения `eve.json`, а не на метку последнего события: тихий интерфейс с включёнными `stats` не даёт ложной тревоги, при выключенных `stats` проверка получает `na`.
-- Образ `actionlint` указан тегом, не digest.
-- 
-
-### 18.2 Результат повторного ревью (v8)
-
-Гейт до правок зелёный (223 bats). Каждая находка закрыта тестом в `tests/hardening.bats`; новые тесты падают на прежнем коде.
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R13 | высокая | `atomic_write` отдавал цели права временного файла (0600): `evebox.yaml`, `ntopng.conf`, юниты, `logrotate`, конфиги nginx и Suricata, перерисованные установщиком, теряли права; пакетный EveBox работает от пользователя `evebox` и не читал свой конфиг | существующий файл сохраняет режим и владельца, новый получает 0644, секреты и `state` передают режим явно (`atomic_write <path> [mode]`, так же `dry_run_write` и `write_rendered_file`); `sudoers` пишется сразу с 0440 |
-| R14 | высокая | шаги не передавали ошибку `run`: сбой `pkg_install`, добавления репозитория, `systemctl enable --now`, `git`, `openssl`, `ufw` проходил, шаг печатал «готово» или «применено частично», установка заканчивалась кодом 0; `redis` записывал `done` после сбоя | `|| return 1` в шагах `access`, `evebox`, `ntopng`, `redis`, `ndpi`, `suricata`, `rules`, `watch`; `run_apply` останавливается на упавшем шаге |
-| R15 | средняя | `ntopng_repo_add` вызывал `add-apt-repository -y universe` на Debian, где такого компонента нет | вызов только при `ID=ubuntu`; сбой загрузки `apt-ntop.deb` останавливает шаг и удаляет временный файл |
-| R16 | средняя | `config_snapshot_applied` переписывал `state` без блокировки, которую берут `state_write_value` и watchdog (потеря обновления, R3 закрыт не полностью) | тот же `flock` на `state.lock` |
-
-Не менялось, остаётся открытым:
-
-- `rules_register_sources`: `suricata-update add-source` для уже добавленного источника при повторном `reconfigure` может вернуть ошибку; поэтому сбой не делается фатальным.
-- `suricatasc -c ruleset-reload-nonblocking` после обновления правил: при остановленной Suricata ошибка не фатальна, оставлено как есть.
-- (закрыто в 18.3) URL репозитория ntop.org для Debian.
-- Окно после R14: `check` после `apply` по-прежнему допускает «применено частично» для файла, изменённого вручную (5.4).
-
-### 18.3 Пакеты, сборка и CI (v9)
-
-Закрыт открытый пункт 18.1 про `apt-get update`. Каждая находка закрыта тестом в `tests/hardening.bats` (или `tests/ci_config.bats`); новые тесты падают на прежнем коде.
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R17 | высокая | умолчания `SURICATA_SOURCE=source`, `NDPI_ENABLE=yes`, `NDPI_SOURCE=source` требуют сборки, но ни один шаг не ставил компиляторы и библиотеки: на чистом образе `autogen.sh` падал | `pkg_build_deps` перед сборкой (5.5) |
-| R18 | высокая | `apt-get update` был только в шагах `oisf`, `evebox`, `ntopng`: на свежем образе пакет `suricata` из дистрибутива не находился; `upgrade` индекс не обновлял, а ошибку `apt-get` глотал; на минимальном образе нет `curl`, `wget`, `gnupg`, `git` | `pkg_update_once` и `pkg_install_base` (5.1 шаг 4а) |
-| R19 | средняя | репозиторий ntop.org для Debian строился по номеру (`apt/12/...`), у ntop.org путь по имени релиза (`apt/bookworm/...`; Ubuntu по номеру, `apt/24.04/...`) | `VERSION_CODENAME` на Debian, ошибка при пустом значении |
-| R20 | средняя | нет пакета (`suricata`, `libndpi-dev`) или PPA OISF не на Ubuntu: сбой посреди установки | откат на `source` с сообщением и записью в `dpistack.conf` (5.1 шаг 4а) |
-| R21 | средняя | Suricata из git нужен Rust 1.85, на Ubuntu 22.04 и 24.04 по умолчанию 1.75 | `rustc-1.N` через `RUSTC` и `CARGO` (5.5) |
-| R22 | средняя для CI | четыре PR от Dependabot (#4–#7) падали в `security` на `gitleaks-action` без находок (полная история `main` и каждая ветка чистые, проверено локально gitleaks 8.30.1) | бинарник с SHA-256 вместо action (12.1) |
-
-Не менялось, остаётся открытым:
-
-- репозиторий ntop.org берётся из `apt` (сборки разработки), а не из `apt-stable`; для Debian 13 и Ubuntu 26.04 стабильного канала нет. Решение владельца.
-- ntop.org требует для Debian компонент `contrib` в `sources.list`; установщик его не добавляет (правка системного файла), при его отсутствии `apt` не найдёт `ntopng`.
-- ntopng и EveBox из своих репозиториев не имеют отката на сборку: нужен Rust, Node и разные зависимости, сборка из исходников не реализована; при отсутствии пакета шаг останавливается с ошибкой.
-- dnf-семейство: `pkg_available` есть, установка и сборка ждут слайса 26.
-
-### 18.4 Реальные установки и dnf-семейство (v10)
-
-Установщик запущен от root на Ubuntu 24.04 с настоящим `apt`, сборкой из исходников и поддельным `systemctl` (в среде нет systemd). Недоступны зеркала Debian и Fedora, `packages.ntop.org` и `evebox.org`: их пути проверены только моками.
-
-Проверено на реальной системе: путь `SURICATA_SOURCE=distro` (Suricata 7.0.3, отрисованный `suricata.yaml` проходит `suricata -T`, `eve.json` пишется); путь по умолчанию (nDPI 4.14 и Suricata 9.0.0-dev из исходников с плагином nDPI, события `dns`, `tls`, `http`); повторный `install` не меняет ничего; `status`, один проход `dpistack-watch`, `uninstall --purge`.
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R23 | высокая | на минимальном образе нет `ip`, а preflight вызывал его раньше установки пакетов | 5.1 шаг 4а0 |
-| R24 | высокая | `IFACES=enp2s0` по умолчанию, на другом имени интерфейса `install -y` падал | автоопределение, раздел 3 |
-| R25 | высокая | сборка по умолчанию не собиралась: плагин nDPI в Suricata master компилируется только с nDPI 4.12 и 4.14, а по умолчанию брался master nDPI (документ обещал «совместимую версию») | `NDPI_COMPAT_REF=4.14` |
-| R26 | высокая | плагин nDPI ставился в `/usr/local/lib/suricata`, а `suricata.yaml` ссылается на `/usr/lib/suricata/ndpi.so`: «Bad plugin path» | `--libdir`, 5.5 |
-| R27 | высокая | после `make install` нет `classification.config`, `reference.config`, `threshold.config`: `suricata-update` и запуск падали | `make install-conf`, 5.5 |
-| R28 | средняя | закреплённые `NDPI_VERSION` и `SURICATA_VERSION` сравнивались с SHA в состоянии как текст и пересобирались на каждом запуске | сравнение коммитов |
-| R29 | средняя | нет `sudo`, `visudo` не найден, шаг `panel` падал | `sudo` в базовых пакетах |
-| R30 | низкая | `suricatasc` при ещё не запущенной Suricata давал ложный `ERROR` | перезагрузка только при живом сокете |
-| R31 | средняя | на Debian 12 (Rust 1.63) умолчание не собиралось | откат на пакет без nDPI, 5.5 |
-
-Известные ограничения:
-
-- весь слой dnf (раздел 5.1) проверен только моками в `tests/families.bats`: пути пакетов, EPEL и CRB, `firewalld`, SELinux, репозиторий ntop.org. Для `SURICATA_SOURCE=distro` на dnf неизвестно, как юнит пакета выбирает интерфейс (в Fedora и EPEL это `OPTIONS` в `/etc/sysconfig/suricata`), поэтому на dnf надёжен путь `source` со своим юнитом;
-- Debian 12 и 13, ntopng и EveBox на Debian: недоступны из среды;
-- `SURICATA_VERSION` пусто означает master (сейчас `9.0.0-dev`, нерелизный код); решение о последнем релизном теге за владельцем;
-- семейства `zypper`, `pacman` и `generic` (v0.22.0, раздел 18.23) работают только с компонентами в Docker; система без systemd отклоняется кодом 3;
-- после `uninstall --purge` остаётся системный пользователь `dpistack`.
-
-### 18.5 Платформы Ubuntu, Debian, RHEL и стабильные версии (v11)
-
-Подход изменён: проект полноценный, а не MVP (раздел 1, пункт 11). Обязательные платформы и порядок приёмки: раздел 2 и раздел 11 (в v12 по ответам владельца: Ubuntu LTS от 22.04, Debian от 12, Rocky и AlmaLinux от 8). Исследование (документация OISF, ntop.org, EveBox, упаковка Debian и Fedora) и сборки на Ubuntu 24.04:
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R32 | высокая | по умолчанию собирался `master` Suricata (9.0.0-dev), нерелизный код в системе безопасности | `SURICATA_STABLE_REF=suricata-8.0.7`, проверено сборкой с nDPI 4.14 и плагином на штатном Rust 1.75 |
-| R33 | высокая | ntop.org брался из канала `apt` (ночные сборки `master`) | `apt-stable`, без отката на `apt` |
-| R34 | высокая | на Debian пакеты ntop.org не находились без компонента `contrib` | `apt_enable_component` |
-| R35 | высокая | RHEL-семейство: путь `oisf` вёл на Ubuntu PPA, юнит RPM брал интерфейс из `-i eth0` | COPR `@oisf/suricata-8.0` и `/etc/sysconfig/suricata` |
-| R36 | средняя | EveBox на RHEL-семействе: репозиторий не подключался | `evebox-release.noarch.rpm` (источник: трекер OISF) |
-| R37 | средняя | `preflight` проверял Ubuntu PPA на любой системе и не проверял ntop.org и EveBox | пробы репозиториев по семейству и выбранным шагам |
-| R38 | средняя | EOL-релизы и незнакомые системы запускались молча | `os_support_level`, `DPISTACK_ALLOW_UNSUPPORTED=1` |
-| R39 | низкая | `uninstall --purge` оставлял пользователя панели | `userdel` |
-| R40 | высокая | набор правил, собранный для другой версии Suricata (после смены master на 8.0.7), не проходил `suricata -T` ("Loading signatures failed"), а шаг `rules` этого не замечал | версия Suricata в состоянии (`rules.suricata_version`), при смене шаг применяется заново с `suricata-update --force` |
-| R41 | средняя | не было способа быстро собрать вывод стенда для разбора | команда `diag` (4.4) |
-
-Фактическое поведение упаковки, на которое опирается код (проверено по пакетам и документации): юнит Debian-семейства запускает `suricata -D --af-packet -c /etc/suricata/suricata.yaml`, интерфейсы из `suricata.yaml` (версии 6.0.4, 7.0.3 и 7.0.10); юнит RPM берёт `$OPTIONS` из `/etc/sysconfig/suricata` и работает от пользователя `suricata`.
-
-Известные ограничения:
-
-- Debian 12 и 13, Rocky и AlmaLinux 8, 9, 10: все пути, включая `contrib`, ntop.org `apt-stable/trixie` (каталог существует, файл `apt-ntop-stable.deb` не подтверждён), COPR OISF, EveBox rpm, `firewalld`, SELinux;
-- Debian 12: Rust 1.63, поэтому выбирается пакет Suricata 6.0 из дистрибутива без nDPI; новее его можно получить только пакетом backports, установщик backports не подключает;
-- ntopng и EveBox из своих репозиториев не имеют отката на сборку из исходников: при недоступном репозитории шаг останавливается, пропустить его можно `--skip`;
-- `SURICATA_STABLE_REF` поднимается вручную, но новые релизы находит и проверяет сборкой автоматика (12.4).
-
-### 18.6 Слайс 16: сервер панели (v13)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R42 | высокая | хэш пароля с `-m 16` это 64 МиБ, а у панели `MemoryMax=64M`: вход убил бы процесс по лимиту cgroup | `-m 14` в установщике и `ctl panel-passwd`, потолок 32 МиБ в панели с понятной ошибкой, проверки по одной за раз |
-| R43 | средняя | шаблон `GET /` конфликтует с `/api/` в мультиплексоре Go 1.22 | статика регистрируется как `/` с проверкой метода внутри |
-| R44 | средняя | `x/crypto` v0.33.0 была закреплена из-за минимума Go 1.22, но это не последняя версия | минимум поднят до Go 1.26, `x/crypto` v0.58.0, `x/sys` v0.49.0; в `gate` добавлен `actions/setup-go` (закреплён по SHA), потому что на раннерах Go может быть старее |
-| R45 | низкая | ревью всех 27 файлов тестов (300 тестов bats и Go-тесты панели): три теста ничего не проверяли (`security.sh` на самом репозитории, первая строка usage, формат версии `ctl version`), один искал URL `ntop.org` в тексте исходников при том, что те же адреса уже проверяются через поведение, один тест панели не мог упасть, а тест выбора Suricata ломался бы при каждом сдвиге пина (сверял литерал `suricata-8.0.7`) | удалены четыре теста, `ctl version` сверяется с `lib/common.sh`, тест выбора Suricata проверяет формат ссылки и пару «пин и серия COPR» без литерала. Тестов без проверок и с `\|\| true` вместо проверки нет |
-
-Слайс 17 закрыл бюджет RSS и размера статики (скрипт в гейте) и юнит; сжатие статики gzip остаётся на момент, когда она станет заметной по размеру (сейчас 9 КБ). `govulncheck` (12.2) добавляется отдельным шагом в `security.yml`, потому что ему нужен доступ к `vuln.go.dev`.
-
-### 18.7 Слайс 17: установка панели (v14)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R46 | высокая | сгенерированный пароль панели нигде не печатался (критерий 1 слайса 17): флаг `PANEL_PASSWORD_JUST_GENERATED` выставлялся и не читался, человек не узнал бы пароль | печать рядом с `METRICS_TOKEN`, тест: показан один раз, нигде не лежит открытым текстом, свой пароль не печатается |
-| R47 | средняя | архив релиза не содержал `panel/`, поэтому `PANEL_SOURCE=build` из архива не мог собрать панель | `panel/` добавлен в архив в `release.yml` |
-| R48 | высокая | в режиме `nginx` nginx слушал публичный порт на всех адресах, а ntopng, EveBox и панель хотели тот же порт на `127.0.0.1`: второй `bind` падает с `EADDRINUSE`, режим `nginx` не мог заработать | вариант «сервис на `PORT+10000` на loopback, nginx на `PORT`»: не нужен новый ключ и не зависит от IP хоста; правило `access_backend_port`, проверка конфига (порт не больше 55535), `preflight` проверяет оба порта, сторож смотрит на порт сервиса, тесты. Отвергнуты: `listen` на конкретный адрес (IP хоста меняется, несколько интерфейсов) и новые ключи портов бэкендов (раздувают схему) |
-| R49 | средняя | `PANEL_SOURCE=prebuilt` из архива было нечем обеспечить: архив не содержал готового бинарника, а `build` требует Go 1.26, которого нет в пакетах LTS-дистрибутивов | архив релиза несёт бинарники для amd64 и arm64; `PANEL_SOURCE=auto` (по умолчанию) берёт готовый, иначе собирает: из архива работает без Go, из клона с Go собирается |
-
-**Открытые вопросы:**
-
-1. Режим `nginx` с новыми портами проверен только тестами на моках и `nginx -t`; живой запуск nginx с реальными сервисами на стенде впереди.
-2. Сборка релиза с бинарниками проверяется только на настоящем теге `vX.Y.Z`; до тега шаг не выполняется.
-
-### 18.8 Слайс 18: компоненты и логи (v16)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R50 | высокая | нельзя закрыть `ctl logs --follow` сигналом: панель не root, а `sudo` держит процесс от root, `kill` даёт `EPERM`, `journalctl` остался бы работать после ухода браузера (критерий 4) | закрытие stdin: ключ `--until-stdin-closed`, тест подтверждён мутацией (без закрытия stdin он падает) |
-| R51 | средняя | фоновая команда в неинтерактивном bash получает stdin из `/dev/null`: `cat` видел конец ввода сразу и обрывал поток | явное `<&0`, тест на `ctl` |
-| R52 | средняя | остановка панели из панели убивала бы процесс до отправки ответа | команда после ответа (202), второе подтверждение обязательно и для `restart` |
-
-Открытое: SSE за `nginx` проверен только заголовком `X-Accel-Buffering: no` и тестами, живого прогона нет.
-
-### 18.9 Слайс 19: редактор конфигов (v17)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R53 | средняя | у `ctl` не было режима «только проверить», а кнопке «Проверить» нужна проверка без записи | `config-write --check`, тест на `ctl` |
-| R54 | средняя | отказ `ctl` терял слова проверяющего: они идут в stdout, а `ExitError` хранил только stderr | `ExitError.Output`, в ответе `output` |
-| R55 | низкая | сохранение с `suricata -T` длится дольше 15 секунд общего таймаута и дольше `WriteTimeout` сервера | отдельный таймаут записи 3 минуты и продление срока записи ответа |
-| R56 | низкая | часть моих первых Go-тестов проверяла поведение фейкового `ctl`, а не код панели | убраны: гарантии «файл не изменён» и «откат возвращает бэкап» проверяют bats-тесты `ctl` |
-
-Открытое: «Откатить» без бэкапа даёт ошибку `ctl` с кодом 1, и панель показывает её как 500 с понятным текстом; отдельного кода для «нет бэкапа» в контракте `ctl` нет.
-
-### 18.10 Слайс 20: правила в панели (v18)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R57 | средняя | `rules-sources list` не показывает, какой источник включён, а экрану нужны кнопки «Включить» и «Выключить» по состоянию | `rules-sources list --enabled` (`list-enabled-sources`), тест на `ctl` |
-| R58 | средняя | `suricata-update list-sources` печатает цветовые коды и в канал: имя источника с ними нельзя ни показать, ни отправить обратно | коды срезаются при разборе, тест с настоящими кодами |
-| R59 | средняя | причина сбоя `rules-update` терялась: `suricata-update` пишет в stderr, а `ExitError.Message` хранит только строку, которую напечатал сам `ctl` | вывод инструментов собирается во временный файл и идёт в stdout (последние 40 строк), тесты на оба сбоя (`suricata-update` и `suricata -T`) |
-| R60 | средняя | убить `ctl` при уходе браузера значило бы пропустить откат набора правил | обновление запускается без привязки к запросу, результат остаётся в памяти панели |
-| R61 | низкая | `nginx` режет ответ дольше 60 секунд, обновление может идти дольше | экран опрашивает состояние после обрыва и показывает итог |
-| R62 | низкая | время файла набора не равно времени обновления: без изменений `suricata-update` файл не трогает | время и итог хранятся в панели |
-| R63 | низкая | ошибка в экране, найденная в jsdom: после неудачного поиска запрос запоминался и после каждой правки повторялся, затирая сообщение | запоминается только удавшийся поиск, поля очищаются по результату правки, а не по тексту ошибки |
-
-Открытое: после перезапуска панели «последнее обновление» пустое, пока не нажата кнопка (обновления таймера панель не видит; чтобы видеть их, нужна команда `ctl` или запись времени в `state`, это решение следующего слайса или вопрос владельцу). Список групп показывает только записанные в `enable.conf`: перечня всех групп набора у `ctl` нет, новую группу вводят именем. Разбор `list-sources` сверен с исходниками `suricata-update` 1.3.3, на настоящем стенде не запускался.
-
-### 18.11 Слайс 21: события EVE (v19)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R64 | средняя | одно общее кольцо вытеснило бы редкие `alert` потоком `flow`, и «последние 50 алертов» были бы пустыми | кольцо на тип (500), не больше десяти типов, вместе 5000 |
-| R65 | средняя | переименованный при ротации файл теряет хвост, если сразу перейти к новому | дочитывание старого файла через открытый дескриптор, потом переход (тест с файлом нового размера больше старого смещения) |
-| R66 | средняя | долго простоявший читатель прочёл бы гигабайты, нарушив «файл целиком не разбирается» | догон не больше 4 МиБ с конца, тест на 8 МиБ дописанного |
-| R67 | средняя | `EVE_FILE` в схеме не затрагивал шаг `panel`: `reconfigure` не перерисовал бы юнит, и панель продолжила бы читать файл (или не читать) по старому | шаг `panel` добавлен к ключу, bats-тест на `reconfigure` |
-| R68 | низкая | при `EVE_FILE=no` пустой список выглядел бы как «событий нет» | ответ `available: false` с причиной, экран пишет её и отключает кнопки |
-| R69 | низкая | ошибка в экране, найденная в jsdom: событие потока вставлялось в таблицу дважды | одна вставка |
-
-Открытое: типы событий сверх десяти не хранятся (панель не показывает их; полный разбор остаётся у EveBox); формат `timestamp` `+0000` Suricata сверен с известным видом `eve.json`, на настоящем стенде не проверен; `eve.json` под нагрузкой (десятки тысяч событий в секунду) и после настоящего `logrotate`, SSE за `nginx` и права пользователя `dpistack` на файл не проверялись.
-
-### 18.12 Слайс 22: метрики и графики (v20)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R70 | средняя | точка, снятая в ту же секунду, что и запрос, влипала в последнее ведро сетки вместе с предыдущей и получала двойной вес (нашёл тест восстановления: сетка после перезапуска не совпадала со старой) | сетка покрывает `(сейчас-период, сейчас]`, точка в конце попадает в своё ведро, лишних не склеивается |
-| R71 | средняя | накопительные счётчики Suricata после перезапуска дали бы отрицательную скорость | сброс пропускает интервал и переопределяет базу, тест на пять случаев (в том числе только потери) |
-| R72 | высокая | панель не может писать `metrics.json`: каталог состояния принадлежит root, а дать ей запись в него значит дать подменять `health.json` и `state` | установщик создаёт один файл для пользователя панели, остальное не передаётся (bats-тест проверяет, что другим файлам владелец не меняется); запись на месте |
-| R73 | низкая | бюджет «ноль CPU без вкладок» и кольцо за сутки несовместимы буквально | решение зафиксировано выше: один тик в 30 секунд, никаких опросов |
-| R74 | низкая | нечитаемый RSS рисовался бы нулём | неизвестное значение это `null`, тест |
-| R75 | низкая | недоступный ряд выглядел бы как плоская линия у нуля | `available: false` с причиной в ответе, слова вместо графика на экране (jsdom) |
-
-Открытое: `cpu` и `rss` относятся к панели, а не к Suricata (процесс Suricata панель читать не вправе, раздел 3); графики потерь и скорости по настоящему `stats` не видел ни один тест на стенде; обрыв питания посреди записи `metrics.json` стоит часа истории; на сетке 24 часа ведро 8 минут сглаживает короткие пики. Метрики Prometheus (слайс 23) строятся из тех же данных.
-
-### 18.13 Слайс 23: экспорт `/metrics` (v21)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R76 | высокая | `install.sh install --dry-run` печатал `METRICS_TOKEN` открытым текстом: строка шла до проверки `DRY_RUN`, а токена при этом на диске не существовало | печать убрана из сводки, отчёт показывает токен только после настоящей установки, bats-тест на dry-run (нет ни значения, ни `credentials:`, ни файла токена) |
-| R77 | высокая | голый токен без слова `Bearer` принимался: `CutPrefix` без префикса возвращает строку целиком (нашёл тест) | схема обязательна, сравнение без учёта регистра слова `Bearer`, тест на семь неверных заголовков |
-| R78 | средняя | `reconfigure`, включивший `METRICS_EXPORT`, создавал токен и нигде его не показывал | отчёт вызывается и после `reconfigure`, bats-тест |
-| R79 | средняя | токен нельзя дать панели флагом (виден в `ps` и в юните) и нельзя читать из `secrets.conf` (там чужие секреты, он `0600 root`) | отдельный файл токена `0640 root:dpistack`; `METRICS_TOKEN` теперь затрагивает шаг `panel`, чтобы файл и юнит обновлялись при смене |
-| R80 | низкая | панель с нечитаемым файлом токена молча отдавала бы `/metrics` без защиты или не отдавала бы его | панель не запускается, пока запрошенный файл токена не читается и не пуст |
-| R81 | низкая | `install --dry-run` записывал `/etc/dpistack/panel.auth` и печатал сгенерированный пароль панели (так было и до слайса 23; `panel_password_apply` вызывался до проверки `DRY_RUN`) | **исправлено в v23**: при `--dry-run` `panel_password_apply` выходит сразу, пароль не генерируется, файл не пишется, `argon2` не ставится; bats-тест (нет ни `panel.auth`, ни строки «Создан пароль панели», ни заданного `DPISTACK_PANEL_PASSWORD` в выводе) падает без правки |
-
-Открытое: данные бэкенда метрик в `dpistack_disk_free_ratio` (слайс 26); `promtool check metrics` в CI не запускается (проверка собственным строгим разбором формата в `metrics_export_test.go`; если `promtool` есть в `PATH`, тест запускает и его); настоящий сбор Prometheus или VictoriaMetrics на стенде не проверялся; `dpistack_eve_events_total` недосчитывает события за периоды, когда панель не читала файл (больше 4 МиБ за раз).
-
-### 18.14 Слайс 24: тесты, оповещения, интерфейсы (v22)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R82 | высокая | `-tests-file` передавался юнитом только вместе с токеном `/metrics` (слайс 23): при `METRICS_EXPORT=no` экран Тесты не нашёл бы файл и «последний результат» всегда был бы пуст | `-tests-file` и новый `-events-file` теперь всегда, bats-тест проверяет их при `METRICS_EXPORT=no` |
-| R83 | средняя | `ctl test` возвращает код `1`, когда тест упал: обычный разбор ошибок отдал бы 500 вместо строки с `fail` и причиной | код `1` с массивом в выводе это ответ 200, тест с упавшим тестом (мутация «считать `1` ошибкой» его роняет) |
-| R84 | средняя | тест или `reconfigure`, убитые на середине закрытием браузера, могли оставить тестовое правило или наполовину применённый конфиг | запуск без привязки к запросу, по одному за раз (409) |
-| R85 | низкая | нашёл jsdom: после запроса кнопка «Удалить» у единственного интерфейса снова включалась (`setBusy(false)` включал все кнопки) | признак «последний» хранится в кнопке и переживает блокировку |
-| R86 | низкая | нашёл jsdom: после неудачного изменения интерфейса перечитывание списка сразу стирало сообщение об ошибке | после сбоя список перечитывается с сохранением ошибки |
-| R87 | низкая | экран Тесты дописывал кнопки в контейнер при каждом открытии, они удваивались | контейнер заполняется заново |
-
-Открытое: настоящий `ctl test all` и настоящий `iface add` с `reconfigure` из панели на стенде не запускались (тесты идут против поддельного `ctl`); блок интерфейсов на экране Компоненты, а не отдельный экран; `events.jsonl` растёт без ограничения (его ротация в раздел не входит, читается только хвост).
-
-### 18.15 Слайс 25: README, LICENSE, пример конфига и R81 (v23)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R88 | средняя | в `dpistack.conf.example` не было `SURICATA_VERSION`, `NDPI_VERSION`, `NTOPNG_VERSION`, `EVEBOX_VERSION`, а у `NTOPNG_IFACES` стояло `enp2s0` вместо «как `IFACES`» (пусто): пример расходился с таблицей 4.3 и схемой (нашёл новый скрипт сверки) | ключи добавлены, умолчание исправлено, `scripts/check-conf-example.sh` в гейте и в `tests/ci_config.bats` (мутации: пропавший ключ, чужое умолчание) |
-| R89 | низкая | описание «быстрой установки» в черновике README не совпадало с меню (нет способа Suricata и пароля, установка стартует отдельным пунктом) | исправлено по разделу 5.0; README не обещает того, чего меню не делает |
-| R90 | низкая | пример `scrape_config` с `credentials` толкает к токену в файле конфига | в README `credentials_file`, в отчёте установщика прежний вид (токен там показывается один раз) |
-
-Открытое: критерий 2 (команды README руками на чистой Ubuntu LTS) и критерий 3 для внешних ссылок на стенде не выполнялись; `vmagent` и одиночная VictoriaMetrics с этим блоком `scrape_configs` не запускались; A11 (лицензия) без ответа владельца, остаётся MIT.
-
-### 18.16 Слайс 26: SELinux, firewalld, COPR по версии ОС (v24)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R91 | высокая | при `Enforcing` nginx не мог бы слушать на `NTOPNG_PORT` (3000 это `ntop_port_t`), `EVEBOX_PORT` и `PANEL_PORT`: `httpd_t` вправе только `http_port_t`; `setsebool httpd_can_network_connect` этого не решает | `semanage port` для трёх портов в режиме `nginx`, тест на вызовы и на повтор без лишних `-a` |
-| R92 | высокая | в режиме `nginx` ntopng слушает на `PORT+10000`, а политика пускает `ntop_t` только на 3000 и 3001 | `ntop_port_t` для порта сервиса, если он не 3000 и не 3001 |
-| R93 | средняя | `FIREWALL_MANAGE=auto` при остановленном `firewalld` пытался `--permanent` и `--reload`, и шаг `access` падал посреди установки | проверка `firewall-cmd --state`, сообщение и пропуск, тест (мутация проверки его роняет) |
-| R94 | средняя | файл, перенесённый `mv` из другого каталога, сохраняет чужую метку (так пишет `ctl config-write` из каталога `staging`), и Suricata не прочтёт его | `restorecon -F` после замены в `atomic_write`, проход `restorecon -RF` в конце `install` и `reconfigure`, тесты (мутация `atomic_write` роняет тест) |
-| R95 | средняя | `preflight` проверял страницу проекта COPR, а не сборку под версию ОС: новый релиз Rocky без chroot падал уже на `dnf copr enable` посреди установки | проба repo-файла своего chroot, код 3 и причина с именем chroot до первого шага, три теста |
-| R96 | низкая | заглушка `curl` не умела падать выборочно, поэтому ни один тест не проверял отказ одного репозитория | `MOCK_CURL_FAIL_MATCH`; заглушка `firewall-cmd --state` управляется `MOCK_FIREWALLD_STATE_EXIT` |
-
-Открытое: критерий 1 (слайсы 2–7 на Fedora и RHEL-совместимом хосте) не выполнен; AVC-отказы на настоящем `Enforcing` не наблюдались ни разу, имена типов `http_port_t` и `ntop_port_t` и пакет `policycoreutils-python-utils` взяты из знания политики, не из вывода `seinfo` на стенде; адрес repo-файла COPR не открывался; службы, запущенные до итогового прохода `restorecon`, могли стартовать с неверной меткой; пробы `ntop.org` и EveBox по версии ОС не проверяют (их repo-файлы не зависят от chroot).
-
-### 18.17 Слайс 27: Docker runtime (v25)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R97 | высокая | `suricata_check_set` в `dpistack-ctl` проверял `suricata.yaml` и правила бинарником хоста: при Suricata в контейнере его нет, и каждая правка из панели отвечала «suricata не установлен» (код 4) | проверка в контейнере с каталогом проверки на `/dpistack-check`, тест на вызов |
-| R98 | высокая | `rules-update` и шаг `rules` перезагружали правила `suricatasc` с хоста: при docker-Suricata его нет, а сокет в контейнере | `suricata_reload_now` и `docker_suricata_reload` (`exec -T`), тест |
-| R99 | средняя | реплей BitTorrent запускал `suricata` хоста и при docker-Suricata сообщал «не установлен» вместо причины | пропуск с причиной и тест |
-| R100 | средняя | по умолчанию `NDPI_ENABLE=yes`, а плагин nDPI в контейнер не попадает: Suricata в docker молча работала бы без него | `preflight` с кодом 3 и текстом `задайте NDPI_ENABLE=no` |
-| R101 | средняя | docker без плагина `compose` нашёл бы ошибку только на `up -d` посреди установки | `docker compose version` в `preflight`, код 3 |
-| R102 | низкая | `docker` создаёт отсутствующие каталоги томов от root, и служба хоста не смогла бы туда писать | каталоги создаются до `up -d` |
-
-Открытое: ни один контейнер не запускался; образы, теги, точки входа (`--af-packet` у `jasonish/suricata`, `server -c` у `jasonish/evebox`) и тома не сверены (A6, критерий 4); права на `eve.json` для процесса в контейнере EveBox не проверены (на хосте он `0640` с группой `suricata`); переход docker на native и обратно закрыт в v0.20.2 (R139); бэкенд метрик в docker ждёт слайса 28.
-
-### 18.18 Слайс 28: бэкенд метрик (v26)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R103 | высокая | `METRICS_RETENTION=6m` и голое число значат разное: VictoriaMetrics читает их как месяцы, Prometheus `m` как минуты; «6m» дало бы хранение в шесть минут | с бэкендом принимаются только `h`, `d`, `w`, `y`, тест |
-| R104 | высокая | данные бэкенда в `/var/lib/dpistack` пропали бы при `uninstall` без `--purge`: он удаляет каталог состояния целиком, вопреки требованию «`none` не удаляет данные без `--purge`» | данные в `/var/lib/dpistack-metrics`, `--purge` удаляет их отдельно, тест |
-| R105 | высокая | токен-файл появляется на шаге `panel`, а шаг `metrics` идёт раньше: Prometheus не стартует с отсутствующим `credentials_file` | пользователь `dpistack` и токен-файл готовятся шагом `metrics`, тест на содержимое и владельца вызовов |
-| R106 | средняя | `install -d -o dpistack-metrics` падает, пока пользователя нет (в тестах `useradd` заглушка); общий приём шага `panel` | `install -d` и отдельный `chown` |
-| R107 | средняя | `scrape.yaml` лежит в каталоге состояния: без права обхода пользователь бэкенда не прочёл бы его | `chmod o+x` на каталог (листинг остаётся закрытым), файл `0644` без секретов |
-| R108 | средняя | в `lan` порт бэкенда слушал бы на 0.0.0.0, но не был бы открыт в firewall | порт добавлен в правила `LAN_CIDR`, тест |
-| R109 | низкая | `shfmt` переписывает ключ `[vm-amd64]` массива как арифметику, ключ в справочнике контрольных сумм ломался | ключи `vm_amd64` и подобные |
-
-Открытое: настоящий бэкенд не запускался; цель сбора в состоянии `up` и ряды `dpistack_*` (критерий 1) не наблюдались; `NoNewPrivileges` и `ProtectSystem=full` в юнитах бэкенда не проверены под реальным systemd; права каталога состояния (`o+x`) нужно сверить на стенде; у VictoriaMetrics и Prometheus нет обновления через `upgrade` (версия закреплена в коде); при `ACCESS_MODE=nginx` бэкенд доступен только локально, TLS и доступ к нему снаружи через nginx не настраиваются.
-
-### 18.19 Слайс 29: режим IPS (v27)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R110 | высокая | шаг `suricata` делал `enable --now`, и повторный запуск при изменившемся конфиге или юните не перезапускал Suricata: смена `IDS` на `IPS` не вступила бы в силу | перезапуск, когда конфиг уже был (`was_configured`); первая установка остаётся с одним `enable --now` |
-| R111 | высокая | правила NFQUEUE без `--queue-bypass` отрезали бы сеть при остановке Suricata (критерий 3) | единственное правило цепочки `DPISTACK` идёт с флагом, тест проверяет каждое NFQUEUE-правило в v4 и v6 |
-| R112 | высокая | юнит пакета запускает Suricata с `-D` и `--af-packet` в `ExecStart`, для `-q` его нельзя просто дополнить | drop-in с пустым `ExecStart=`, `Type=simple`, `PIDFile=` и `-q 0`; у `ids` и `afpacket` drop-in удаляется |
-| R113 | высокая | неподтверждённое переключение переживало перезагрузку: транзиентный таймер пропадает, а режим остаётся `ips` | `fw restore` при загрузке видит `mode.pending` и откатывает |
-| R114 | высокая | если таймер не удалось запустить, хост остался бы в `ips` без отката | немедленный возврат в `ids` и код 1, тест |
-| R115 | средняя | подтверждение после срока гонялось бы с откатом | `mode-confirm` после срока отказывает кодом 3 |
-| R116 | средняя | `IPS_NFQ_CHAINS` проверялся только шаблоном: `FOO` дошёл бы до `iptables` | проверка членства `INPUT`, `OUTPUT`, `FORWARD` в `config.sh`, тест |
-| R117 | средняя | API панели переключал в IPS без подтверждения, обойти диалог браузера можно было прямым запросом | `acknowledged: true` обязателен, тест |
-| R118 | низкая | `ips` с Suricata в docker ничего не настраивал бы (NFQUEUE и `copy-mode` в контейнере не заданы) | отказ при проверке конфига |
-
-Открытое: настоящий NFQUEUE, перезагрузка, таймер `systemd-run` и правила `iptables` не проверялись (только заглушки с состоянием); Suricata под NFQ запускается без `--user`, то есть от root; порядок `dpistack-fw.service` и `reconfigure` при откате на загрузке (сеть и Suricata могут быть ещё не подняты) не проверен; на системах без `iptables` (только `nft`) режим недоступен; правила `drop` пользователь пишет сам (`drop.conf`), IPS без них ведёт себя как IDS; обратный отсчёт в панели и `confirm()` в браузере руками не смотрелись, JS без своих тестов.
-
-### 18.20 Слайс 30: единый файл (v28)
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R119 | высокая | после распаковки `SCRIPT_DIR` указывает на временный каталог, и поиск панели (`dpistack-panel-linux-<arch>`, `panel/`) в `step_panel.sh` и `preflight` перестал бы видеть файлы рядом со скачанным `dpistack-install.sh` | `ORIGIN_DIR` (по умолчанию `SCRIPT_DIR`, у собранного файла каталог самого файла), тест на поиск панели рядом |
-| R120 | высокая | heredoc с терминатором внутри исходника или без перевода строки в конце молча менял бы встроенный файл | сборка отказывает, оба случая в тесте |
-| R121 | средняя | `tests/data/bittorrent.pcap` двоичный: в heredoc он испортился бы | base64, тест сравнивает файл после установки с исходным |
-| R122 | средняя | `selfinstall` берёт копию из `SCRIPT_DIR`: без `tests/data` в сборке шаг `verify` не нашёл бы pcap | `tests/data` входит в состав (как и в полезную нагрузку `selfinstall`) |
-| R123 | низкая | временный каталог остался бы после выхода или ошибки | `trap ... EXIT`, тест |
-| R124 | низкая | вывод файла мог зависеть от времени сборки и пути | порядок `LC_ALL=C sort`, ни времени, ни путей: две сборки совпадают побайтно |
-
-Открытое: на настоящей системе собранный файл не запускался; `release.yml` не выкладывает `dpistack-install.sh` как ресурс релиза; запуск из канала не получает ввода меню; размер файла около 400 КБ и растёт с каждым слайсом, обновлять его нужно после любого изменения `install.sh`, `lib/`, `templates/`, `bin/` и `tests/data/` (гейт напомнит).
-
-### 18.21 Полное ревью после слайса 30 (v29)
-
-Проверялось в песочнице: реальная Ubuntu 24.04, ядро с NFQUEUE, Suricata 7.0.3 из пакета, два сетевых пространства имён, настоящие `ips_fw_apply` и `ips_fw_remove` из `lib/ips.sh`. Systemd в песочнице нет, поэтому таймер `systemd-run` и перезагрузка не проверялись. Go 1.26 из `go.mod` в песочнице не скачать: `go vet` и `go test ./...` прошли во временной копии с Go 1.22 и `golang.org/x/crypto` из пакетов Ubuntu.
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R125 | высокая | `install.sh install --set` (и `--config`, `--only`, `--skip`) без значения зависал навсегда: `shift 2` при одном оставшемся аргументе ничего не сдвигает | `require_value`: код 2 и справка; тест с `timeout` (на старом коде падает) |
-| R126 | высокая | `uninstall --dry-run` по-настоящему удалял `dpistack.conf`, секреты, состояние и копии программы (`rm` без `run`) и печатал «готово» | в dry-run только перечень действий, ничего не меняется; тест |
-| R127 | средняя | `--dry-run` записывал хэш файла, которого не писал: следующий реальный запуск считал существующий файл правленным вручную и не обновлял его | хэш не записывается при `DRY_RUN=1`; тест |
-| R128 | средняя | шаги `reconfigure` шли в порядке ассоциативного массива, а не конвейера (`access` мог выполниться раньше `suricata`) | `CONFIG_AFFECTED_STEPS` в порядке `STEPS_ORDER`; тест |
-| R129 | высокая | `curl \| bash install` на живом терминале отвечал «нет терминала для меню»: `have_input_source` смотрела только на `-t 0`, хотя меню читает `/dev/tty` | проверка открываемого `/dev/tty` (`DPISTACK_TTY_DEV` для тестов); три теста, проверено на псевдотерминале |
-| R130 | средняя | после неудачного переключения режима экран сразу перечитывал режим и стирал сообщение об ошибке (тот же класс, что R86) | `load(keepError)`; 12 тестов экрана на `node --test`, на старом коде тест падает |
-| R131 | средняя | упавшая служба отката оставалась загруженной под тем же именем, и следующий `systemd-run --unit=…` отказывал | `systemctl reset-failed` в `mode_cancel_timer`; тест на порядок вызовов |
-| R132 | низкая | `tests/ctl_basic.bats` зависел от пакетов хоста: настоящий пакет `suricata` перебивал поддельный бинарник | заглушка `dpkg-query` в тесте |
-| R133 | высокая | юнит периодического обновления правил запускал только `suricata-update`: файл обновлялся, а работающая Suricata держала старые правила до перезапуска | `ExecStartPost=-…/dpistack-ctl reload suricata` (одинаково для native и docker), `step_rules_check` видит старый юнит без этой строки; тест |
-| R134 | высокая | пересборка Suricata из исходников (новый релиз) запускала `make install-conf`, и стоковый `suricata.yaml` затирал отрендеренный; защита от правки вручную принимала стоковый файл за ручную правку и оставляла его | `install-conf` только при первой сборке, когда `suricata.yaml` ещё нет; тест |
-| R135 | средняя | `PANEL_SOURCE=prebuilt`: `dpistack reconfigure` из установленной копии не находил готовый бинарник рядом со скриптом, `panel_bin_current` говорил «устарел», установка падала | без готового файла рядом установленная панель считается актуальной; тест |
-| R136 | средняя | нечисловой выбор в меню (`zz`, `1 2`) попадал в арифметику `$((10#...))` до проверки и обрывал всё меню ошибкой bash | число проверяется регулярным выражением до арифметики; два теста (на старом коде падают) |
-| R137 | средняя | новая закреплённая версия бэкенда метрик записывалась в состояние, а бинарник не скачивался заново (проверялся только `-x`): работала старая версия под видом новой | при смене маркера (версия или runtime) бинарник скачивается заново; тест на старом коде падает |
-| R138 | высокая (для тестов) | 51 проверка вида `! команда` стояла не последней строкой теста, а bats такое отрицание молча игнорирует: не проверялись в том числе «токен и пароль нигде не светятся» (alerts, ctl_config, metrics, panel), «ничего не скачано», «чужие цепочки не тронуты» | все превращены в `if команда; then false; fi`; тест в `ci_config.bats` не даёт появиться новым; проверки `^curl ` в тестах метрик сужены до скачивания бэкенда (раньше их выручала сама неработающая проверка, настоящие `curl` проверок репозиториев попадали под шаблон) |
-| R139 | высокая | смена runtime (native ↔ docker) для suricata, evebox, ntopng, redis не останавливала прежний экземпляр: контейнер переживал переход на native (compose его больше не описывает, `restart: unless-stopped`), пакетный юнит переживал переход на docker, и новый экземпляр не мог занять порт | `runtime_release_docker` (`compose rm -fsv`, только если контейнер запущен) и `runtime_release_native` (`systemctl disable --now`, только если юнит активен) до запуска нового экземпляра; три теста, два падают на старом коде |
-| R140 | низкая | имя источника правил, группы или интерфейса, начинающееся с `-`, шло в `suricata-update` и `ip` как аргумент и читалось бы как опция (граница доверия: пользователь панели вызывает `dpistack-ctl` через sudo от root) | первый знак имени только буква или цифра; тест |
-| R141 | низкая | поток логов в панели заменял в строке лога только `\n`: одиночный `\r` тоже обрывает строку в потоке событий, и строка лога (в журнал попадает текст из сети) могла начать своё поле `event:` или `id:`; текст ошибки в событии `error` не чистился совсем; регулярные выражения имён в панели допускали ведущий `-`, а `dpistack-ctl` после R140 отказывает | `sseOneLine` для данных и для текста ошибки; имена в панели с тем же правилом первого знака; Go-тест на пять строк с `\r` и `\n` (на старом коде падает) |
-| R142 | средняя | числа с ведущим нулём в меню (`08`, `09`) давали ошибку арифметики bash «слишком большое для основания», а `010` выбирал пункт 8 (восьмеричное число): экран секции, быстрая установка (интерфейсы), экран компонентов | `10#` во всех местах разбора номера; тест на старом коде падает |
-| R143 | средняя | значение целого ключа с ведущим нулём (`WATCH_DISK_WARN_PCT=08`) проходило проверку (ошибка арифметики в `(( ))` давала «ложь», то есть «в диапазоне»), сохранялось как `08` и ломало последующие вычисления (`dpistack-watch`), а `010` проверялось как 8 | целое число без ведущих нулей, иначе отказ с понятной фразой; тест |
-
-**Решения «выбирай сам»:** Suricata в режиме NFQ получает `--user suricata --group suricata` только когда пользователь есть и владеет каталогом логов (раскладка RPM, где юнит и так стартует с `--user`); иначе остаётся root, как и в пакете Debian и Ubuntu, где этого пользователя нет. Очередь привязывается до понижения прав: проверено настоящим NFQUEUE (процесс работает от обычного пользователя, очередь жива). `mode ips` предупреждает, когда нет ни правила `drop` или `reject` в `local.rules`, ни строки в `drop.conf`: проверено, что правило `alert` трафик не блокирует. `dpistack-install.sh` и бинарники панели выкладываются в релиз с суммами SHA-256 и подтверждением происхождения. Тесты экранов панели идут через `node --test` без зависимостей (поддельные таймеры, простые объекты вместо элементов), в гейте при наличии `node`.
-
-**Проверено настоящим NFQUEUE:** правило `drop` блокирует, правило без `drop` пропускает, при остановленной Suricata `--queue-bypass` пропускает трафик, `ips_fw_remove` оставляет чистые цепочки.
-
-**Открытое:** таймер `systemd-run`, перезагрузка и порядок `dpistack-fw.service` с `reconfigure` при откате на загрузке (юнит стоит после `network-pre.target`, а не перед ним, так что правила встают после запуска сети) на настоящем systemd не проверены; на системах без `iptables` (только `nft`) режим по-прежнему недоступен; правила `ufw` и `firewalld`, добавленные `access`, не убираются при смене режима доступа и при `uninstall`; после `uninstall` запущенная Suricata остаётся в режиме NFQ до перезапуска; экраны панели проверены только без браузера; полная установка на настоящей системе с systemd не запускалась.
-
-### 18.22 Продолжение ревью и закрытие открытого (v30)
-
-Проверялось в песочнице: реальная Ubuntu 24.04, Suricata 7.0.3 из пакета (настоящий NFQUEUE и настоящий `suricatasc`), настоящие logrotate, `nft`, `systemd-analyze verify`, Go 1.27.3 (из conda-forge, подходит под `go 1.26.0` в `go.mod`, зависимости `x/crypto` v0.58.0 и `x/sys` v0.49.0 с GitHub). Systemd как PID 1 в песочнице нет.
-
-| № | Важность | Находка | Исправление |
-|---|---|---|---|
-| R144 | высокая | `logrotate.tpl`: `create 0640 root root` после первой ротации делал новый `eve.json` `root:root 0640`: панель и EveBox теряли чтение, а Suricata, работающая от `suricata` (RPM), не могла открыть файл заново. Воспроизведено настоящим logrotate | `create` без параметров: владелец и права прежнего файла; тест |
-| R145 | высокая | на Debian и Ubuntu группы `suricata` нет, а панель и EveBox читают `eve.json` через неё (разделы 4.2 и 9); установщик ставил `eve.json` `root:root 0640`, то есть читать его мог только root | `suricata_log_access`: группа создаётся (`groupadd --system`), каталог логов, если он у root, получает группу `suricata` и `2750` (setgid: файлы после ротации наследуют группу), `eve-log` пишет `filemode: 0640` (проверено настоящей Suricata); каталог пользователя (RPM) не трогается; два теста |
-| R146 | высокая | сокет команд: стоковый `suricata.yaml` создаёт `/var/run/suricata-command.socket`, а `dpistack-ctl reload` и шаг правил ждали `/run/suricata/suricata-command.socket`: перезагрузка правил на лету молча не работала (проверено: настоящая Suricata создала только первый сокет). `postrotate` звал зашитый `/usr/bin/suricatasc` и глотал ошибку (сборка из исходников ставит в `/usr/local`), в docker переоткрытия не было вовсе, и Suricata продолжала писать в переименованный файл | `unix-command.filename` берётся из `COMMAND_SOCKET` (native `/run/suricata-command.socket`, docker путь в контейнере); `postrotate`: `command -v suricatasc` с явным сокетом, в docker `compose exec -T suricata suricatasc`; три теста; проверено настоящими `suricatasc -c uptime` и `reopen-log-files` |
-| R147 | средняя | в режиме NFQ в событии `stats` нет блока `capture` (проверено настоящей очередью: растут `decoder.pkts` и `ips.accepted`): график пакетов в секунду и `/metrics` показывали нули | `DecodeStats` берёт пакеты из `decoder.pkts` и помечает `NoKernel`; потери неизвестны (не ноль), `/metrics` не отдаёт счётчики ядра и долю потерь в NFQ; Go-тесты на настоящем виде события |
-| R148 | низкая | `firstLine` и вывод проверок резали русский текст по байтам посреди буквы | `cutUTF8`; тест |
-| R149 | низкая | `Save` в `metrics.json` отказывал навсегда при `+Inf` в ряду (фильтровался только NaN) | `Inf` тоже пропускается; тест на старом коде падает |
-| R150 | средняя | правила `ufw` и `firewalld`, добавленные шагом `access`, не убирались при смене `ACCESS_MODE`, `LAN_CIDR`, `FIREWALL_MANAGE` и при `uninstall` | добавленные правила пишутся в состояние (`access.fw.rules`, пары `сеть,порт`); `access_firewall_sync` убирает только их, лишнее и устаревшее; правило, которое уже было у администратора (`ufw show added`, `--query-rich-rule`), не записывается и не удаляется; `uninstall` вызывает `access_firewall_forget`; 4 теста для ufw и 1 для firewalld на заглушках с состоянием |
-| R151 | средняя | после `uninstall` запущенная Suricata оставалась в режиме NFQ (`-q 0`) | если drop-in режима был, после его удаления и `daemon-reload` юнит перезапускается (кроме `SURICATA_SOURCE=source`, где юнит и так останавливается); тест на порядок вызовов |
-| R152 | средняя | `dpistack-fw.service` стоял после `network-pre.target`: правила появлялись после запуска сети | `DefaultDependencies=no`, `After=local-fs.target`, `Before=network-pre.target`, `Wants=network-pre.target`, `Conflicts` и `Before=shutdown.target` (как в `systemd.special(7)` для файрвола); `systemd-analyze verify` без замечаний (статическая проверка, настоящий порядок загрузки не смотрелся) |
-| R154 | низкая | экраны панели с опросом (Overview, Components, Metrics, Alerts): запрос, идущий в момент клика по диапазону, смены проверки или возвращения вкладки, не отменялся; ответ на старый запрос мог лечь поверх нового (в Metrics: выбрали 24 ч, затем пришёл ответ для 1 ч), а каждый такой запрос заводил свой цикл опроса, и экран спрашивал сервер вдвое чаще до закрытия | `tickets()` в `modules/poll.js`: показать ответ, ошибку и поставить следующий опрос может только последний запрос; два JS-теста падают на старом коде |
-| R153 | средняя | IPS был недоступен на системах без `iptables` | `ips_backend`: `iptables`, если есть, иначе `nft`. Таблица `inet dpistack` с базовой цепочкой на каждый хук из `IPS_NFQ_CHAINS` (`priority -10`, `queue num 0 bypass`), создаётся одной транзакцией (`add`/`delete`/таблица), `fw remove` и `uninstall` удаляют только её; при наличии `iptables` остаточная таблица `nft` убирается, чтобы пакет не ставился в очередь дважды; четыре теста |
-
-**Решения «выбирай сам»:** путь сокета native выбран совпадающим со стоковым конфигом и с умолчанием `suricatasc` (а не новый каталог с `tmpfiles.d`): меньше частей. Приоритет цепочки `nft` -10: после отслеживания соединений, перед правилами `filter` хоста, как переход в позиции 1 у `iptables`. Правила файрвола, которые уже есть у администратора, считаются его и не удаляются, даже если совпадают с нашими.
-
-**Проверено по-настоящему:** `filemode: 0640` и сокет `/run/suricata-command.socket` приняты Suricata 7.0.3 (`suricatasc` отвечает, `reopen-log-files` работает); logrotate с `create` сохраняет права, с `create 0640 root root` меняет; синтаксис таблицы `nft` разобран настоящим `nft` 1.0; `go vet` и `go test ./...` на Go 1.27.3; `shellcheck`, `shfmt`.
-
-**Открытое:** (1) ядро песочницы не имеет модуля `nft_queue`, поэтому правило `queue` в `nft` разобрано, но настоящую постановку пакетов в очередь через `nft` не видели (через `iptables` видели, раздел 18.21); (2) настоящий systemd (таймер отката, порядок `dpistack-fw.service` при загрузке, `reconfigure` при откате на загрузке): только статическая проверка юнита; (3) реальные контейнеры, браузер и полная установка на живой системе с systemd не запускались; (4) настоящие `ufw` и `firewalld` не запускались, только заглушки с состоянием; (5) ключи `evebox.yaml.tpl` сверены с официальным `examples/evebox.yaml` EveBox (все есть), порт Redis 6379 в `ntopng.conf.tpl` совпадает с юнитом Redis и с docker (`network_mode: host`), это не дефект; остаётся, что `suricata.yaml.tpl` взят из 7.0, а сборка из исходников берёт 8.0 (страхует `suricata -T`); (6) фронтенд: `app.js`, четыре экрана с опросом, `events.js` (начало) и `mode.js` прочитаны, по остальным модулям (`rules.js`, `configs.js`, `logs.js`, `tests.js`, `ifaces.js`, конец `events.js`) искались опасные приёмники XSS, утечки таймеров и слушателей, но построчно они не читались.
-
-### 18.23 Единая команда, root, порты, версия `suricata.yaml` (v0.21.0)
-
-| № | тяжесть | что было | что сделано |
-| --- | --- | --- | --- |
-| R155 | средняя | `suricata.yaml.tpl` объявлял `suricata-version: "7.0"`, а сборка из исходников даёт 8.0 | значение берётся при рендере (`suricata_conf_version`): серия установленного бинарника, иначе серия `SURICATA_VERSION`, иначе серия `SURICATA_STABLE_REF`. Шаг `suricata` проверяет отрисованный файл через `suricata -T` до записи; отказ останавливает шаг и оставляет прежний файл |
-| R156 | средняя | занятый порт был только причиной остановки preflight | preflight называет процесс-владельца и свободный порт для `--set`; меню install и reconfigure предупреждает и спрашивает другой порт (Enter берёт предложенный, `q` оставляет). Предложенный порт свободен и в конфигурации, и (с nginx) за nginx |
-| R157 | крупная | два файла: `dpistack` и `dpistack-ctl` | одна команда `dpistack`; код ctl в `lib/ctl.sh`; `dpistack-ctl` остаётся ссылкой; sudoers называет `dpistack`; пользователь панели через `SUDO_USER` не получает команд установщика |
-| R158 | средняя | команду можно было запустить без root | `require_root` в начале `main` |
-
-| R159 | крупная | панель редактировала `dpistack.conf` только текстом, схема ключей была недоступна | глаголы `settings list/check/set/secret/job`: схема и значения в JSON, проверка с весом изменения (`light` или `heavy`) и занятыми портами, применение лёгкого изменения через `reconfigure --light`, тяжёлого через transient unit `dpistack-apply` (`reconfigure -y --force`), секреты со stdin в `secrets.conf` (0600); пары `KEY=VALUE` идут на stdin (значения BPF и URL содержат символы, которые проверка аргументов отвергает) |
-| R160 | крупная | нет экрана настроек | экран «Настройки»: все ключи схемы по группам, подсказки на русском на каждый ключ (тест сверяет их со схемой), расширенные ключи по переключателю, проверка перед применением, занятый порт с кнопкой «Взять N», подтверждение расширения доступа и тяжёлого изменения, ход применения по `settings job`; новая таблица стилей (боковая навигация, карточки, светлая и тёмная тема) |
-| R161 | средняя | у панели только один режим | `PANEL_MODE=limited` (юнит с `MemoryMax=64M`, `CPUQuota=20%`, 4 потока логов) или `unlimited` (без бюджета юнита, 32 потока, флаг `-max-streams`) |
-| R162 | крупная | панель только юнитом systemd | `PANEL_RUNTIME=docker`: сервис `panel` в compose-проекте, образ собирается на хосте из бинарника (`dpistack-panel:<хэш>`), `network_mode: host`, `pid: host`, `privileged`, команды на хост через `nsenter` и `DPISTACK_CALLER=panel`; с остальными `*_RUNTIME` независимо, тест перебирает все 32 сочетания |
-
-| R163 | крупная | поддерживались только `apt` и `dnf`, остальные дистрибутивы отклонялись | семейства `zypper`, `pacman` (базовые утилиты ставятся, компоненты только в Docker) и `generic` (любой Linux с systemd: утилиты проверяются, не ставятся); система без systemd отклоняется кодом 3; preflight называет ключи `*_RUNTIME`, которые нужно задать |
-| R164 | средняя | документация: README и два отчёта слайса 0 с оговорками | `docs/`: установка, платформы, развёртывание, панель, эксплуатация, диагностика и справочник параметров, который `scripts/gen-config-doc.sh` строит из схемы (проверка в гейте и в `tests/docs.bats`); отчёты `prototype.md` и `real-test-guide.md` удалены, оговорки об отсутствии проверки убраны из README, `docs/` и этого файла |
-| R165 | малая | нет файлов для участников | `AGENTS.md` (карта репозитория, правила для агентов) и `CONTRIBUTING.md` (окружение, ветки, гейт, состав изменения) |
-
-**Проверка R155 настоящими бинарниками.** Шаблон, отрисованный `suricata_render_yaml`, прогнан через `suricata -T` на Suricata 7.0.3 (пакет Ubuntu 24.04, серия определилась как `7.0`) и на Suricata 8.0.7, собранной из тега `suricata-8.0.7` (серия `8.0`): обе принимают конфигурацию («Configuration provided was successfully loaded»), замечаний об устаревших ключах нет. Из сообщений остались только зависящие от окружения: нет плагина `ndpi.so` (в этой сборке nDPI нет), нет `threshold.config` и нет файла правил. Побочный вывод: Suricata не сверяет значение `suricata-version` с собственной версией (7.0.3 приняла и `8.0`, и `6.0`), поэтому `-T` ловит несовместимые ключи, а не метку; метка выставляется по установленной серии для читающего файл человека и инструментов.
-
-**Решения «выбирай сам»:** вместо двух бинарников с общим кодом выбрана одна команда с ограничением по `SUDO_USER` (модель угроз та же, что раньше: сессия панели не должна ставить и удалять, а полный root на хосте у неё и так был бы через `sudo`-правило на ctl). Панель в контейнере доходит до хоста через `nsenter` и называет себя в `DPISTACK_CALLER`: это ограничение для ошибок панели, а не граница доверия (у процесса с правом на `nsenter` в пространства имён хоста root и так есть). Образ панели строится локально из `alpine` (в нём есть `nsenter` из busybox), чтобы не зависеть от реестра с образом проекта. Тяжёлое изменение из панели запускается с `--force`: файлы, правленные вручную, перезаписываются с резервной копией. Семейства без пакетов проекта (`zypper`, `pacman`, `generic`) получают компоненты в Docker, а не гадательные имена пакетов: такой путь одинаков на любом дистрибутиве, а источник истины об образах один. Справочник параметров генерируется из схемы, чтобы не расходиться с программой. Старое имя оставлено ссылкой, чтобы не ломать установленные юниты `dpistack-fw.service` и `dpistack-watch` при `upgrade`. Свободный порт ищется вверх от занятого, а не случайный: предсказуемо и повторяемо.
+- **2026-10-24, v0.23.0.** `PANEL_MODE` (limited/unlimited) removed together with the unit limits `MemoryMax=64M` and `CPUQuota=20%` and the `-max-streams` flag (the cap is 4 streams); `PANEL_EDITION=full|lite` added and asked in the quick install. The `full` panel was redesigned (dark matte surfaces, one blue accent, sidebar, entrance animations, particle background); `lite` keeps every feature with a plain, light page. The program was translated to English; documents became English first with Russian twins. This file was cleaned: the changelog, the slice results and the review logs were removed (they stay in the git history).
+- **Earlier decisions that still hold:** `dpistack` and `dpistack-ctl` are one program; the dashboard holds every setting of the program; components can run on the host or in Docker in any combination; a busy port gives a warning and a choice; `suricata.yaml.tpl` matches the built Suricata series and is checked with `suricata -T`; the `dpistack` command must run as root and refuses otherwise; `main` is protected and receives only tested merges from `dev`.

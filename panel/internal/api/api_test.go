@@ -202,7 +202,7 @@ func TestLoginRequiresJSON(t *testing.T) {
 func TestLoginWithoutPasswordFile(t *testing.T) {
 	e := setup(t, func(c *Config, dir string) { c.AuthFile = filepath.Join(dir, "absent") })
 	w := e.do(req{method: "POST", path: "/api/login", body: `{"password":"x"}`})
-	if w.Code != 500 || !strings.Contains(errorText(t, w), "пароль панели не задан") {
+	if w.Code != 500 || !strings.Contains(errorText(t, w), "the panel password is not set") {
 		t.Errorf("%d %s", w.Code, w.Body)
 	}
 }
@@ -334,9 +334,9 @@ func TestUnavailableCtlGives502WithReadableText(t *testing.T) {
 		script string // empty: the helper does not exist
 		want   string
 	}{
-		"missing":   {"", "dpistack недоступен"},
+		"missing":   {"", "dpistack is unavailable"},
 		"exit code": {"#!/bin/sh\necho 'sudo: a password is required' >&2\nexit 1\n", "a password is required"},
-		"not json":  {"#!/bin/sh\necho oops\n", "dpistack недоступен"},
+		"not json":  {"#!/bin/sh\necho oops\n", "dpistack is unavailable"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := setup(t, func(c *Config, dir string) {

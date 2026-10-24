@@ -44,6 +44,9 @@ config_load_kv_file() {
 		[[ "$line" == *=* ]] || continue
 		key="${line%%=*}"
 		value="${line#*=}"
+		# PANEL_MODE (limited/unlimited) is gone since v0.23.0: an old file
+		# still loads, the key is dropped.
+		[[ "$key" == "PANEL_MODE" ]] && continue
 		config_set_kv "$key" "$value"
 	done <"$file"
 }
@@ -61,7 +64,7 @@ config_apply_env_secrets() {
 config_apply_set() {
 	local kv="$1"
 	if [[ "$kv" != *=* ]]; then
-		echo "неверный --set, ожидался KEY=VALUE: $kv"
+		echo "bad --set, KEY=VALUE expected: $kv"
 		return 1
 	fi
 	local key="${kv%%=*}" value="${kv#*=}"
@@ -94,32 +97,32 @@ config_validate() {
 		local port_key
 		for port_key in NTOPNG_PORT EVEBOX_PORT PANEL_PORT; do
 			if [[ "${CONF[$port_key]:-0}" =~ ^[0-9]+$ ]] && ((${CONF[$port_key]:-0} > 55535)); then
-				echo "ACCESS_MODE=nginx требует $port_key не больше 55535 (сервис слушает на порту плюс 10000)"
+				echo "ACCESS_MODE=nginx needs $port_key not above 55535 (the service listens on the port plus 10000)"
 				errors=$((errors + 1))
 			fi
 		done
 	fi
 
 	if [[ "${CONF[EVEBOX_DB]:-}" == "elasticsearch" && -z "${CONF[EVEBOX_ES_URL]:-}" ]]; then
-		echo "EVEBOX_DB=elasticsearch требует EVEBOX_ES_URL"
+		echo "EVEBOX_DB=elasticsearch needs EVEBOX_ES_URL"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[METRICS_BACKEND]:-}" != "none" && "${CONF[METRICS_EXPORT]:-}" == "no" ]]; then
-		echo "METRICS_BACKEND=${CONF[METRICS_BACKEND]} требует METRICS_EXPORT=yes (бэкенду нечего собирать)"
+		echo "METRICS_BACKEND=${CONF[METRICS_BACKEND]} needs METRICS_EXPORT=yes (the backend has nothing to scrape)"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" ]]; then
 		if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" ]]; then
-			echo "SURICATA_MODE=ips работает только с SURICATA_RUNTIME=native (NFQUEUE и copy-mode в контейнере не поддерживаются)"
+			echo "SURICATA_MODE=ips works only with SURICATA_RUNTIME=native (NFQUEUE and copy-mode are not supported in a container)"
 			errors=$((errors + 1))
 		fi
 		if [[ "${CONF[IPS_METHOD]:-nfq}" == "afpacket" ]]; then
 			local -a ips_ifaces=()
 			IFS=',' read -ra ips_ifaces <<<"${CONF[IFACES]:-}"
 			if ((${#ips_ifaces[@]} < 2 || ${#ips_ifaces[@]} % 2 != 0)); then
-				echo "IPS_METHOD=afpacket объединяет интерфейсы парами: в IFACES нужно чётное число интерфейсов (не меньше двух)"
+				echo "IPS_METHOD=afpacket pairs interfaces: IFACES needs an even number of interfaces (at least two)"
 				errors=$((errors + 1))
 			fi
 		fi
@@ -129,7 +132,7 @@ config_validate() {
 	IFS=',' read -ra ips_chains <<<"${CONF[IPS_NFQ_CHAINS]:-INPUT,OUTPUT,FORWARD}"
 	for ips_chain in "${ips_chains[@]}"; do
 		if [[ ! "$ips_chain" =~ ^(INPUT|OUTPUT|FORWARD)$ ]]; then
-			echo "IPS_NFQ_CHAINS: допустимы INPUT, OUTPUT, FORWARD, получено $ips_chain"
+			echo "IPS_NFQ_CHAINS: INPUT, OUTPUT, FORWARD are allowed, got $ips_chain"
 			errors=$((errors + 1))
 		fi
 	done
@@ -138,33 +141,33 @@ config_validate() {
 	# months, Prometheus reads m as minutes: only the suffixes both read the
 	# same way (h, d, w, y) are allowed once a backend is installed.
 	if [[ "${CONF[METRICS_BACKEND]:-none}" != "none" && ! "${CONF[METRICS_RETENTION]:-30d}" =~ ^[0-9]+[hdwy]$ ]]; then
-		echo "METRICS_RETENTION=${CONF[METRICS_RETENTION]:-} с бэкендом метрик: нужно число с суффиксом h, d, w или y (например 30d); без суффикса и с m бэкенды читают значение по-разному"
+		echo "METRICS_RETENTION=${CONF[METRICS_RETENTION]:-} with a metrics backend: a number with the suffix h, d, w or y is needed (for example 30d); backends read a bare number or m differently"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[EVE_ROTATE]:-}" == "size" && -z "${CONF[EVE_MAX_SIZE_MB]:-}" ]]; then
-		echo "EVE_ROTATE=size требует EVE_MAX_SIZE_MB"
+		echo "EVE_ROTATE=size needs EVE_MAX_SIZE_MB"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[ACCESS_MODE]:-}" != "localhost" && "${ACCESS_CONFIRM:-}" != "yes" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
-		echo "ACCESS_MODE=${CONF[ACCESS_MODE]} в неинтерактивном режиме требует --set ACCESS_CONFIRM=yes"
+		echo "ACCESS_MODE=${CONF[ACCESS_MODE]} in non-interactive mode needs --set ACCESS_CONFIRM=yes"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" && "${CONF[SURICATA_SOURCE]:-}" != "source" &&
 		! -f "$(path_suricata_ndpi_plugin)" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
-		echo "NDPI_ENABLE=yes с SURICATA_SOURCE=${CONF[SURICATA_SOURCE]:-} не даёт ndpi.so; используйте SURICATA_SOURCE=source или соберите плагин заранее"
+		echo "NDPI_ENABLE=yes with SURICATA_SOURCE=${CONF[SURICATA_SOURCE]:-} does not give ndpi.so; use SURICATA_SOURCE=source or build the plugin beforehand"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[NGINX_TLS]:-none}" == "existing" && (-z "${CONF[NGINX_CERT]:-}" || -z "${CONF[NGINX_KEY]:-}") ]]; then
-		echo "NGINX_TLS=existing требует NGINX_CERT и NGINX_KEY"
+		echo "NGINX_TLS=existing needs NGINX_CERT and NGINX_KEY"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[EVE_FILE]:-yes}" == "no" && "${CONF[EVEBOX_DB]:-sqlite}" == "sqlite" ]]; then
-		echo "EVE_FILE=no при EVEBOX_DB=sqlite: EveBox не сможет читать события (eve.json не пишется). Включите EVE_FILE=yes или выберите EVEBOX_DB=elasticsearch"
+		echo "EVE_FILE=no with EVEBOX_DB=sqlite: EveBox cannot read events (eve.json is not written). Enable EVE_FILE=yes or choose EVEBOX_DB=elasticsearch"
 		errors=$((errors + 1))
 	fi
 
@@ -175,20 +178,20 @@ config_validate() {
 		case "$channel" in
 		panel | log | tg | mail) ;;
 		*)
-			echo "ALERT_CHANNELS: неизвестный канал '$channel' (допустимы panel, log, tg, mail)"
+			echo "ALERT_CHANNELS: unknown channel '$channel' (panel, log, tg, mail are allowed)"
 			errors=$((errors + 1))
 			;;
 		esac
 	done
 	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",tg,"* ]]; then
 		if [[ -z "${SECRETS[ALERT_TG_TOKEN]:-}" || -z "${CONF[ALERT_TG_CHAT_ID]:-}" ]]; then
-			echo "ALERT_CHANNELS содержит tg: нужны ALERT_TG_TOKEN и ALERT_TG_CHAT_ID"
+			echo "ALERT_CHANNELS contains tg: needs ALERT_TG_TOKEN and ALERT_TG_CHAT_ID"
 			errors=$((errors + 1))
 		fi
 	fi
 	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",mail,"* ]]; then
 		if [[ -z "${SECRETS[ALERT_SMTP_URL]:-}" || -z "${CONF[ALERT_MAIL_TO]:-}" || -z "${CONF[ALERT_MAIL_FROM]:-}" ]]; then
-			echo "ALERT_CHANNELS содержит mail: нужны ALERT_SMTP_URL, ALERT_MAIL_TO и ALERT_MAIL_FROM"
+			echo "ALERT_CHANNELS contains mail: needs ALERT_SMTP_URL, ALERT_MAIL_TO and ALERT_MAIL_FROM"
 			errors=$((errors + 1))
 		fi
 	fi
@@ -264,9 +267,9 @@ config_print_summary() {
 	done
 	for key in $(printf '%s\n' "${!SECRETS[@]}" | sort); do
 		if [[ -n "${SECRETS[$key]}" ]]; then
-			printf '  %s=задан\n' "$key"
+			printf '  %s=set\n' "$key"
 		else
-			printf '  %s=не задан\n' "$key"
+			printf '  %s=not set\n' "$key"
 		fi
 	done
 }
@@ -314,16 +317,16 @@ config_diff_and_steps() {
 	done
 
 	if [[ "${#changed[@]}" -eq 0 ]]; then
-		echo "изменений нет"
+		echo "no changes"
 		return 0
 	fi
 	# shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure
 	CONFIG_CHANGED_KEYS=("${changed[@]}")
 
-	echo "Изменённые ключи:"
+	echo "Changed keys:"
 	local k
 	for k in "${changed[@]}"; do
-		printf '  %s: %s -> %s\n' "$k" "${OLD[$k]-(не задан)}" "${CONF[$k]}"
+		printf '  %s: %s -> %s\n' "$k" "${OLD[$k]-(not set)}" "${CONF[$k]}"
 	done
 
 	declare -A steps_seen
@@ -350,9 +353,9 @@ config_diff_and_steps() {
 		[[ " ${CONFIG_AFFECTED_STEPS[*]} " == *" $step "* ]] || CONFIG_AFFECTED_STEPS+=("$step")
 	done
 
-	echo "Затронутые шаги:"
+	echo "Affected steps:"
 	printf '  %s\n' "${CONFIG_AFFECTED_STEPS[@]}"
 
-	echo "Тип изменения: $overall_weight"
+	echo "Change type: $overall_weight"
 	return 0
 }
