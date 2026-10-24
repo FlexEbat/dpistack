@@ -46,7 +46,7 @@ list_actions() {
 
 @test "the program version in tech.md is the one in the code" {
 	code="$(sed -n 's/^DPISTACK_VERSION="\(.*\)"$/\1/p' "$REPO_DIR/lib/common.sh")"
-	doc="$(sed -n 's/.*Версия программы: v\([0-9.]*\)\*\*.*/\1/p' "$REPO_DIR/tech.md" | head -1)"
+	doc="$(sed -n 's/.*Program version: v\([0-9.]*\)\*\*.*/\1/p' "$REPO_DIR/tech.md" | head -1)"
 	[ -n "$code" ]
 	[ "$code" = "$doc" ]
 }
@@ -139,7 +139,7 @@ list_actions() {
 }
 
 @test "README covers what slice 25 requires" {
-	for needle in "Ограничение топологии" "Модель угроз" "Быстрая установка" "dpistack.conf" "reconfigure" "dpistack-ctl" "scrape_configs" "VictoriaMetrics" "vmagent" "Prometheus"; do
+	for needle in "Topology limit" "Threat model" "Quick install" "dpistack.conf" "reconfigure" "dpistack-ctl" "scrape_configs" "VictoriaMetrics" "vmagent" "Prometheus"; do
 		grep -q "$needle" "$REPO_DIR/README.md" || {
 			echo "README lacks: $needle"
 			return 1

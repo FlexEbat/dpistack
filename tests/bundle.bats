@@ -109,7 +109,7 @@ strip_times() { sed 's/^[0-9T:-]*Z //'; }
 	bash "$REPO_DIR/install.sh" install --dry-run -y 2>&1 | strip_times >"$WORK/d1"
 	bash "$BUNDLE" install --dry-run -y 2>&1 | strip_times >"$WORK/d2"
 	cmp "$WORK/d1" "$WORK/d2"
-	grep -q 'dry-run: план показан' "$WORK/d2"
+	grep -q 'dry-run: the plan is shown' "$WORK/d2"
 }
 
 @test "criterion 1: the exit code of the bundle is the one of install.sh" {
@@ -152,7 +152,7 @@ strip_times() { sed 's/^[0-9T:-]*Z //'; }
 	cp "$BUNDLE" "$WORK/rel/dpistack-install.sh"
 	run bash "$WORK/rel/dpistack-install.sh" install --dry-run -y --set PANEL_SOURCE=prebuilt
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"нет готового бинарника"* ]]
+	[[ "$output" == *"no ready dpistack-panel binary"* ]]
 	printf '#!/bin/sh\n' >"$WORK/rel/dpistack-panel-linux-amd64"
 	printf '#!/bin/sh\n' >"$WORK/rel/dpistack-panel-linux-arm64"
 	chmod +x "$WORK/rel"/dpistack-panel-linux-*
@@ -182,8 +182,8 @@ strip_times() { sed 's/^[0-9T:-]*Z //'; }
 	run bash -c "cat '$BUNDLE' | env DPISTACK_TTY_DEV='$tty_file' bash -s -- install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no"
 	rm -f "$tty_file"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Быстрая установка"* ]]
-	[[ "$output" != *"нет терминала"* ]]
+	[[ "$output" == *"Quick install"* ]]
+	[[ "$output" != *"no terminal"* ]]
 }
 
 @test "the gate rebuilds nothing: it checks the bundle" {

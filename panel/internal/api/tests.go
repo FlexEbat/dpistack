@@ -84,11 +84,11 @@ func parseTestResults(out []byte) ([]testResult, bool) {
 func (s *server) testsRun(w http.ResponseWriter, r *http.Request) {
 	which := r.PathValue("which")
 	if which != "bittorrent" && which != "https" && which != "all" {
-		writeError(w, http.StatusNotFound, "нет такого теста")
+		writeError(w, http.StatusNotFound, "no such test")
 		return
 	}
 	if !s.ops.begin(&s.ops.testsRunning) {
-		writeError(w, http.StatusConflict, "тесты уже идут")
+		writeError(w, http.StatusConflict, "tests are already running")
 		return
 	}
 	defer s.ops.end(&s.ops.testsRunning)
@@ -105,7 +105,7 @@ func (s *server) testsRun(w http.ResponseWriter, r *http.Request) {
 	}
 	results, ok := parseTestResults(out)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "dpistack test не вернул результатов")
+		writeError(w, http.StatusInternalServerError, "dpistack test returned no results")
 		return
 	}
 	writeJSON(w, http.StatusOK, results)

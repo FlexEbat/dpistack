@@ -37,12 +37,12 @@ func parseLines(r *http.Request, def int) (int, bool) {
 func (s *server) logs(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !componentID.MatchString(id) {
-		writeError(w, http.StatusNotFound, "нет такого компонента")
+		writeError(w, http.StatusNotFound, "no such component")
 		return
 	}
 	n, ok := parseLines(r, logsDefault)
 	if !ok {
-		writeError(w, http.StatusBadRequest, "lines: целое число от 1 до "+strconv.Itoa(logsMax))
+		writeError(w, http.StatusBadRequest, "lines: an integer from 1 to "+strconv.Itoa(logsMax))
 		return
 	}
 	lines, err := s.cfg.Ctl.Logs(r.Context(), id, n)
@@ -129,7 +129,7 @@ func (e *sse) finish() (began bool) {
 }
 
 func (s *server) takeStream() bool {
-	if s.streams.Add(1) > int32(s.maxStreams()) {
+	if s.streams.Add(1) > int32(maxStreams) {
 		s.streams.Add(-1)
 		return false
 	}
@@ -142,16 +142,16 @@ func (s *server) takeStream() bool {
 func (s *server) logStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if !componentID.MatchString(id) {
-		writeError(w, http.StatusNotFound, "нет такого компонента")
+		writeError(w, http.StatusNotFound, "no such component")
 		return
 	}
 	n, ok := parseLines(r, streamDefault)
 	if !ok {
-		writeError(w, http.StatusBadRequest, "lines: целое число от 1 до "+strconv.Itoa(logsMax))
+		writeError(w, http.StatusBadRequest, "lines: an integer from 1 to "+strconv.Itoa(logsMax))
 		return
 	}
 	if !s.takeStream() {
-		writeError(w, http.StatusTooManyRequests, "слишком много открытых потоков логов, закройте лишние вкладки")
+		writeError(w, http.StatusTooManyRequests, "too many open log streams, close the extra tabs")
 		return
 	}
 	defer s.streams.Add(-1)
@@ -195,7 +195,7 @@ func (s *server) logStream(w http.ResponseWriter, r *http.Request) {
 		if !began {
 			sseHeaders(w)
 		}
-		_, _ = w.Write([]byte("event: end\ndata: журнал закрыт\n\n"))
+		_, _ = w.Write([]byte("event: end\ndata: log closed\n\n"))
 		_ = st.rc.Flush()
 	}
 }

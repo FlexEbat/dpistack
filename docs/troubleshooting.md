@@ -1,19 +1,22 @@
-# Диагностика
+# Troubleshooting
 
-Начните с отчёта: `sudo dpistack diag`. Он собирает платформу, версии, репозитории, конфигурацию без секретов, состояние служб и журналы в stdout и в файл (путь печатается).
+English | [Русский](troubleshooting.ru.md)
 
-| Симптом | Причина и действие |
+Start with the report: `sudo dpistack diag`. It collects the platform, versions, repositories, the config without secrets, the state of the services and logs to stdout and to a file (the path is printed).
+
+| Symptom | Cause and action |
 | --- | --- |
-| `команда запускается только от root` | `dpistack` и `install.sh` запускаются только от root: `sudo dpistack ...` |
-| `порт N (KEY) уже занят (держит: ...)` | порт занят другим процессом: выберите свободный порт из подсказки (`--set KEY=порт`, меню или экран «Настройки») либо остановите процесс |
-| `KEY=native: ... задайте --set KEY=docker` | на этой системе нет пакетов компонента: запускайте его в Docker, см. [platforms.md](platforms.md) |
-| `нужен systemd` | система без systemd не поддерживается |
-| `suricata -T отклонил отрисованный suricata.yaml` | конфигурация не подошла установленной Suricata; файл на диске не изменён. Причину печатает сама Suricata выше в выводе. Проверьте `suricata -V` и ключи, влияющие на конфигурацию |
-| `тяжёлые изменения ... требуют --force` | изменение запускает установку или пересборку: примените с `--force` (или `settings set --apply-heavy`) |
-| `применение уже идёт` | идёт тяжёлая задача `dpistack-apply`: `dpistack settings job` показывает ход |
-| IPS вернулся в IDS | переключение не подтверждено за отведённое время: `dpistack mode ips`, затем `dpistack mode-confirm` |
-| панель не открывается | `dpistack status`, затем `dpistack logs panel`; проверьте `ACCESS_MODE` и порт панели |
-| нет событий | `dpistack status` (Suricata, `eve.json`), `dpistack logs suricata`, интерфейс в `IFACES` и фильтр `BPF_FILTER` |
-| правила не обновляются | `dpistack rules-update` печатает причину; прежний набор при ошибке возвращается |
+| `the command runs as root only` | `dpistack` and `install.sh` run as root only: `sudo dpistack ...` |
+| `port N (KEY) is already busy (held by: ...)` | another process holds the port: pick the free port from the hint (`--set KEY=port`, the menu or the Settings screen) or stop the process |
+| `KEY=native: ... set --set KEY=docker` | this system has no packages of the component: run it in Docker, see [platforms.md](platforms.md) |
+| `systemd is needed` | a system without systemd is not supported |
+| `suricata -T rejected the rendered suricata.yaml` | the config did not suit the installed Suricata; the file on disk is unchanged. Suricata itself prints the reason above in the output. Check `suricata -V` and the keys that affect the config |
+| `heavy changes ... need --force` | the change starts an install or a rebuild: apply it with `--force` (or `settings set --apply-heavy`) |
+| `applying is already running` | a heavy `dpistack-apply` job is running: `dpistack settings job` shows the progress |
+| IPS went back to IDS | the switch was not confirmed in time: `dpistack mode ips`, then `dpistack mode-confirm` |
+| the panel does not open | `dpistack status`, then `dpistack logs panel`; check `ACCESS_MODE` and the panel port |
+| the page looks plain | you are on the `lite` edition: it is meant to; set `PANEL_EDITION=full` for the rich console |
+| no events | `dpistack status` (Suricata, `eve.json`), `dpistack logs suricata`, the interface in `IFACES` and the `BPF_FILTER` filter |
+| rules do not update | `dpistack rules-update` prints the reason; the previous set is restored on an error |
 
-Журналы служб: `dpistack logs <компонент> -n 200`. Один прогон проверок watchdog: `dpistack health`. Проверка, что обнаружение работает: `dpistack test all`.
+Service logs: `dpistack logs <component> -n 200`. One run of the watchdog checks: `dpistack health`. To check that detection works: `dpistack test all`.

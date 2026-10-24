@@ -56,5 +56,5 @@ step_selfinstall_apply() {
 }
 
 step_selfinstall_plan() {
-	echo "selfinstall: копия установщика в $(path_installer_copy_dir), команды dpistack и dpistack-watch в $(path_sbin_dir)"
+	echo "selfinstall: installer copy in $(path_installer_copy_dir), commands dpistack and dpistack-watch in $(path_sbin_dir)"
 }

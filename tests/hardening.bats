@@ -268,7 +268,7 @@ EOF_FAKE
 		run bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no \
 		--set TEST_ON_INSTALL=no
 	[ "$status" -eq 1 ]
-	[[ "$output" == *"шаг evebox упал"* ]]
+	[[ "$output" == *"step evebox failed"* ]]
 }
 
 @test "the redis step does not record done when the service fails to start" {
@@ -367,8 +367,8 @@ inst() {
 	ubuntu_root
 	MOCK_DPKG_ABSENT="suricata" MOCK_APT_MISSING="suricata" run inst install -y --dry-run --set SURICATA_SOURCE=distro --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"пакета suricata нет в репозиториях"* ]]
-	[[ "$output" == *"suricata: сборка из исходников"* ]]
+	[[ "$output" == *"package suricata is not in the repositories"* ]]
+	[[ "$output" == *"suricata: build from source"* ]]
 }
 
 @test "the source switch is written to dpistack.conf outside dry-run" {
@@ -383,7 +383,7 @@ inst() {
 	printf 'ID=debian\nVERSION_ID="12"\nVERSION_CODENAME=bookworm\n' >"$DPISTACK_ROOT/etc/os-release"
 	CALLS="$(mktemp)"
 	MOCK_DPKG_ABSENT="suricata" run inst install -y --dry-run --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no
-	[[ "$output" == *"PPA OISF существует только для Ubuntu"* ]]
+	[[ "$output" == *"the OISF PPA exists for Ubuntu only"* ]]
 	[[ "$output" != *"add-apt-repository -y ppa:oisf"* ]]
 }
 
@@ -391,15 +391,15 @@ inst() {
 	ubuntu_root
 	MOCK_RUSTC_VERSION=1.75.0 MOCK_DPKG_ABSENT="libndpi-dev" MOCK_APT_MISSING="libndpi-dev" run inst install -y --dry-run --set SURICATA_SOURCE=source \
 		--set NDPI_ENABLE=yes --set NDPI_SOURCE=pkg --set TEST_ON_INSTALL=no
-	[[ "$output" == *"пакета libndpi-dev нет в репозиториях"* ]]
-	[[ "$output" == *"ndpi: сборка из исходников"* ]]
+	[[ "$output" == *"package libndpi-dev is not in the repositories"* ]]
+	[[ "$output" == *"ndpi: build from source"* ]]
 }
 
 @test "a present package keeps the chosen source" {
 	ubuntu_root
 	run inst install -y --dry-run --set SURICATA_SOURCE=distro --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no
-	[[ "$output" != *"заменён на source"* ]]
-	[[ "$output" == *"suricata: установка/обновление пакета"* ]]
+	[[ "$output" != *"is replaced by source"* ]]
+	[[ "$output" == *"suricata: installing/upgrading the package"* ]]
 }
 
 @test "the source build picks a versioned rustc when the default one is too old" {
@@ -420,7 +420,7 @@ inst() {
 		source '$REPO_DIR/lib/os.sh'; os_detect >/dev/null 2>&1
 		pkg_select_rust"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"старше 1.75"* ]]
+	[[ "$output" == *"older than 1.75"* ]]
 	run grep -c 'apt-get install' "$CALLS"
 	[ "$output" = "0" ]
 }

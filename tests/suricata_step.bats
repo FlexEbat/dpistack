@@ -84,7 +84,7 @@ load_step() {
 
 	run bash "$REPO_DIR/install.sh" status --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set IFACES=eth0
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"suricata: в порядке"* ]]
+	[[ "$output" == *"suricata: ok"* ]]
 
 	# Hand-edit the rendered file; a plain re-run must leave it alone.
 	yaml_path="$DPISTACK_ROOT/etc/suricata/suricata.yaml"
@@ -96,7 +96,7 @@ load_step() {
 	[ "$status" -eq 0 ]
 	after_sum=$(sha256sum "$yaml_path" | cut -d' ' -f1)
 	[ "$before_sum" = "$after_sum" ]
-	[[ "$output" == *"изменён вручную"* ]]
+	[[ "$output" == *"was changed by hand"* ]]
 
 	run bash "$REPO_DIR/install.sh" install -y --force \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set IFACES=eth0

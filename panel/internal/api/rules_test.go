@@ -48,9 +48,9 @@ rules-sources)
     echo "  Summary: Threat hunting rules: all of them"
     echo "  License: GPLv3"
     ;;
-  enable) grep -qx "$3" "$dir/enabled" || echo "$3" >> "$dir/enabled"; echo "источник $3 включён" ;;
-  disable|remove) grep -vx "$3" "$dir/enabled" > "$dir/e.tmp"; mv "$dir/e.tmp" "$dir/enabled"; echo "источник $3 убран" ;;
-  add-url) echo "dpistack-custom-1a2b3c4d" >> "$dir/enabled"; echo "добавлен dpistack-custom-1a2b3c4d" ;;
+  enable) grep -qx "$3" "$dir/enabled" || echo "$3" >> "$dir/enabled"; echo "source $3 enabled" ;;
+  disable|remove) grep -vx "$3" "$dir/enabled" > "$dir/e.tmp"; mv "$dir/e.tmp" "$dir/enabled"; echo "source $3 removed" ;;
+  add-url) echo "dpistack-custom-1a2b3c4d" >> "$dir/enabled"; echo "added dpistack-custom-1a2b3c4d" ;;
   esac ;;
 rules-sid)
   if [ "$2" = disable ]; then echo "$3" >> "$dir/disable.conf"
@@ -59,16 +59,16 @@ rules-sid)
 rules-group)
   if [ "$2" = enable ]; then echo "group:$3" >> "$dir/enable.conf"
   else grep -vx "group:$3" "$dir/enable.conf" > "$dir/g.tmp"; mv "$dir/g.tmp" "$dir/enable.conf"; fi
-  echo "группа $3: $2" ;;
+  echo "group $3: $2" ;;
 rules-search)
   if [ "$2" = probe ]; then i=1; while [ $i -le 60 ]; do printf '%s\tprobe rule\n' "$((9000+i))"; i=$((i+1)); done; exit 0; fi
-  if [ ! -f "$dir/suricata.rules" ]; then echo "dpistack: набора правил нет" >&2; exit 4; fi
+  if [ ! -f "$dir/suricata.rules" ]; then echo "dpistack: no rule set" >&2; exit 4; fi
   grep -i -- "$2" "$dir/suricata.rules" | awk -F'\t' '{print $1 "\t" $2}' ;;
 rules-update)
   if [ -f "$dir/HOLD" ]; then while [ -f "$dir/HOLD" ]; do sleep 0.05; done; fi
   if [ -f "$dir/FAIL" ]; then
-    echo "suricata-update: не удалось скачать et/open: connection timed out"
-    echo "dpistack: rules-update не удался, прежний набор правил возвращён" >&2
+    echo "suricata-update: could not download et/open: connection timed out"
+    echo "dpistack: rules-update failed, previous rule set restored" >&2
     exit 1
   fi
   : > "$dir/new.rules"
@@ -368,7 +368,7 @@ func TestSearch(t *testing.T) {
 	if err := os.Remove(filepath.Join(c.dir, "suricata.rules")); err != nil {
 		t.Fatal(err)
 	}
-	if code, a := get("SCAN"); code != http.StatusConflict || !strings.Contains(a.Error, "набора правил нет") {
+	if code, a := get("SCAN"); code != http.StatusConflict || !strings.Contains(a.Error, "no rule set") {
 		t.Errorf("no ruleset: %d %+v", code, a)
 	}
 }
@@ -412,7 +412,7 @@ func TestUpdateShowsResultTimeAndFailureReason(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &bad); err != nil || w.Code != http.StatusInternalServerError {
 		t.Fatalf("failed update: %d %s", w.Code, w.Body)
 	}
-	if !strings.Contains(bad.Output, "connection timed out") || !strings.Contains(bad.Error, "прежний набор правил возвращён") {
+	if !strings.Contains(bad.Output, "connection timed out") || !strings.Contains(bad.Error, "previous rule set restored") {
 		t.Errorf("the reason is lost: %s", w.Body)
 	}
 	if c.read(t, "suricata.rules") != before {

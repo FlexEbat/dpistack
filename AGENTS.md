@@ -1,50 +1,53 @@
 # AGENTS.md
 
-Инструкции для ИИ-агентов и автоматизации, которые вносят изменения в этот репозиторий. Людям: [CONTRIBUTING.md](CONTRIBUTING.md). Полная спецификация и журнал решений: [tech.md](tech.md); при расхождении побеждает tech.md.
+English | [Русский](AGENTS.ru.md)
 
-## Что это
+Instructions for AI agents and automation that make changes in this repository. For people: [CONTRIBUTING.md](CONTRIBUTING.md). The full specification and the decisions: [tech.md](tech.md); where they disagree, tech.md wins.
 
-dpistack: установщик и панель для стека nDPI, Suricata, EveBox и ntopng на одном хосте. Одна команда `dpistack` (корневой `install.sh`) ставит, настраивает и обслуживает стек; веб-панель на Go (`panel/`) вызывает её команды управления через `sudo -n dpistack <команда>` (или `nsenter` из контейнера).
+## What this is
 
-## Карта репозитория
+dpistack: an installer and a panel for the nDPI, Suricata, EveBox and ntopng stack on a single host. One command, `dpistack` (the root `install.sh`), installs, configures and looks after the stack; the web panel, written in Go (`panel/`), calls its control commands through `sudo -n dpistack <command>` (or `nsenter` from a container).
 
-| Путь | Назначение |
+## Repository map
+
+| Path | Purpose |
 | --- | --- |
-| `install.sh` | точка входа: разбор аргументов, проверка root, диспетчер команд |
-| `lib/*.sh` | библиотеки: `schema.sh` (схема ключей), `config.sh`, `os.sh` (семейства дистрибутивов), `step_*.sh` (шаги установки), `ctl.sh` (команды управления), `menu.sh`, `runtime_docker.sh`, `ips.sh` |
-| `bin/dpistack-watch` | watchdog (запускается таймером) |
-| `templates/` | шаблоны конфигураций и юнитов (`@@КЛЮЧ@@` подставляет `lib/render.sh`) |
-| `panel/` | панель: Go (`cmd/`, `internal/`) и статический интерфейс (`web/`, без внешних ресурсов) |
-| `tests/` | тесты bats, заглушки внешних команд в `tests/mocks/`, помощники в `tests/helpers/` |
-| `scripts/` | гейт, сборка единого файла, проверки безопасности, генератор справочника |
-| `dpistack-install.sh` | единый файл установщика; **генерируется** `scripts/bundle.sh`, руками не правится |
-| `docs/` | руководства; `docs/configuration.md` **генерируется** `scripts/gen-config-doc.sh` |
-| `tech.md` | спецификация, контракты, решения, журнал изменений |
+| `install.sh` | entry point: argument parsing, the root check, the command dispatcher |
+| `lib/*.sh` | libraries: `schema.sh` (the key schema), `config.sh`, `os.sh` (distribution families), `step_*.sh` (install steps), `ctl.sh` (control commands), `menu.sh`, `runtime_docker.sh`, `ips.sh` |
+| `bin/dpistack-watch` | the watchdog (started by a timer) |
+| `templates/` | config and unit templates (`@@KEY@@` is filled in by `lib/render.sh`) |
+| `panel/` | the panel: Go (`cmd/`, `internal/`) and the static interface (`web/`, no external resources; `full.css` and `fx.js` are the full edition, `lite.css` the lite one) |
+| `tests/` | bats tests, stubs of external commands in `tests/mocks/`, helpers in `tests/helpers/` |
+| `scripts/` | the gate, the single-file build, the security checks, the reference generator |
+| `dpistack-install.sh` | the single-file installer; **generated** by `scripts/bundle.sh`, never edited by hand |
+| `docs/` | guides; `docs/configuration.md` and `docs/configuration.ru.md` are **generated** by `scripts/gen-config-doc.sh` |
+| `tech.md` | the specification, contracts and decisions |
 
-## Правила работы
+## Rules of work
 
-1. Работайте в ветке `dev`. В `main` изменения попадают только pull request'ом после зелёного гейта; прямых коммитов в `main` нет.
-2. Перед коммитом: `bash scripts/gate.sh`. Он запускает `shfmt`, `shellcheck`, проверки безопасности, проверку единого файла, примера конфигурации и справочника, `bats`, а при наличии Go ещё `gofmt`, `go vet`, `go test`, тесты интерфейса на node и проверку бюджета панели. Зелёный гейт обязателен.
-3. Изменили любой файл из `install.sh`, `lib/`, `templates/`, `bin/`: выполните `bash scripts/bundle.sh`, иначе проверка единого файла упадёт.
-4. Изменили схему ключей: обновите `lib/schema.sh`, `dpistack.conf.example`, таблицу в tech.md (раздел 4.3), подсказку в `panel/web/modules/settings-model.js` (тест сверяет её со схемой) и выполните `bash scripts/gen-config-doc.sh`.
-5. Каждое решение, контракт и исправление записываются в tech.md (раздел «Changelog» и раздел 18). Версия программы в `lib/common.sh` и в tech.md меняется вместе.
-6. Новое поведение сопровождается тестом: bats для оболочки, `go test` для панели, `node --test` для чистой логики интерфейса.
-7. Предпочитайте готовые решения (пакеты, образы, утилиты) написанию своего кода, если они есть.
+1. Work on the `dev` branch. Changes reach `main` only as a pull request after a green gate; there are no direct commits to `main`.
+2. Before a commit run `bash scripts/gate.sh`. It runs `shfmt`, `shellcheck`, the security checks, the checks of the single file, the config example and the reference, `bats`, and, if Go is there, `gofmt`, `go vet`, `go test`, the interface tests on node and the check of the panel budget. A green gate is required.
+3. If you changed any file of `install.sh`, `lib/`, `templates/`, `bin/`, run `bash scripts/bundle.sh`, otherwise the single-file check fails.
+4. If you changed the key schema, update `lib/schema.sh`, `dpistack.conf.example`, the table in tech.md, the hint in `panel/web/modules/settings-model.js` (a test compares it with the schema) and run `bash scripts/gen-config-doc.sh`.
+5. Every decision and contract is recorded in tech.md. The program version in `lib/common.sh` and in tech.md changes together.
+6. New behavior comes with a test: bats for the shell, `go test` for the panel, `node --test` for the pure logic of the interface.
+7. Prefer ready-made solutions (packages, images, tools) to writing your own code when they exist.
+8. The program is English only: messages, the menu, errors and the panel text. Documents are written in English first and kept in Russian next to them (`*.ru.md`); change both.
 
-## Стиль и ловушки
+## Style and traps
 
-- Shell: табуляции, `shfmt`, `shellcheck -x -S style` без замечаний, `set -u`. Сообщения пользователю на русском.
-- Команды установщика и все глаголы работают только от root. Пользователь панели получает через `sudo` (или `DPISTACK_CALLER=panel`) только глаголы управления, без `install`, `upgrade`, `uninstall`.
-- Секреты только в `/etc/dpistack/secrets.conf`; в аргументах командной строки, журналах и ответах API их быть не должно. Значения секретов передаются через stdin.
-- Значения из конфигурации и запроса не подставляются в командную строку без проверки по схеме; пары `KEY=VALUE` панель отправляет на stdin.
-- В bats `! команда` не в последней строке теста игнорируется: пишите `run команда; [ "$status" -ne 0 ]` (проверка в `tests/ci_config.bats`).
-- Тесты не трогают систему: внешние команды подменяются заглушками из `tests/mocks/` через `PATH`, корень файловой системы задаёт `DPISTACK_ROOT`.
-- Интерфейс панели: без внешних шрифтов, скриптов и картинок, без инлайн-скриптов и стилей (политика CSP); бюджет статических файлов 150 КБ.
-- Go-модули могут быть недоступны без сети: тесты панели запускаются в CI.
+- Shell: tabs, `shfmt`, `shellcheck -x -S style` with no remarks, `set -u`. Messages to the user are in English.
+- The installer commands and all verbs work as root only. The panel user gets only the control verbs through `sudo` (or `DPISTACK_CALLER=panel`), without `install`, `upgrade`, `uninstall`.
+- Secrets live only in `/etc/dpistack/secrets.conf`; they must not appear in command-line arguments, logs or API answers. Secret values travel through stdin.
+- Values from the config and from a request are not put into a command line without a check against the schema; the panel sends `KEY=VALUE` pairs on stdin.
+- In bats a `! command` that is not the last line of a test is ignored: write `run command; [ "$status" -ne 0 ]` (checked in `tests/ci_config.bats`).
+- Tests do not touch the system: external commands are replaced by stubs from `tests/mocks/` through `PATH`, and `DPISTACK_ROOT` sets the root of the file system.
+- The panel interface: no external fonts, scripts or images, no inline scripts or styles (the CSP policy); the budget of the static files is 150 KB. The lite edition must keep every feature of the full one; only the look differs.
+- Go modules may be unavailable without a network: the panel tests run in CI.
 
-## Чего не делать
+## What not to do
 
-- Не редактировать `dpistack-install.sh` и `docs/configuration.md` вручную.
-- Не ослаблять проверки безопасности и не добавлять отключение входа в панель.
-- Не коммитить токены, пароли, ключи; не печатать их в отчётах.
-- Не добавлять в документацию и сообщения оговорки о том, что проект «не проверялся»: документируйте поведение, а то, что действительно не работает, оформляйте как задачу.
+- Do not edit `dpistack-install.sh` or `docs/configuration*.md` by hand.
+- Do not weaken the security checks and do not add a way to turn off the panel sign-in.
+- Do not commit tokens, passwords or keys; do not print them in reports.
+- Do not write into the documentation or the messages that the project was never run for real: document the behavior, and file what really does not work as an issue.

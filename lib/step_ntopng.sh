@@ -51,7 +51,7 @@ ntopng_repo_add_rpm() {
 		;;
 	*)
 		pkg_available "$NTOPNG_PACKAGE" || {
-			echo "ntopng: ntop.org не публикует репозиторий для $OS_ID и в репозиториях дистрибутива пакета нет; шаг можно пропустить: --skip ntopng" >&2
+			echo "ntopng: ntop.org does not publish a repository for $OS_ID and the distribution has no package; the step can be skipped: --skip ntopng" >&2
 			return 1
 		}
 		;;
@@ -83,7 +83,7 @@ ntopng_repo_add() {
 		version_id=$(. "$(path_os_release)" && echo "${VERSION_CODENAME:-}")
 	fi
 	if [[ -z "$version_id" ]]; then
-		log "ERROR" "ntopng: в os-release нет версии или имени релиза для репозитория ntop.org"
+		log "ERROR" "ntopng: os-release has no version or release name for the ntop.org repository"
 		return 1
 	fi
 	local deb_tmp
@@ -123,7 +123,7 @@ step_ntopng_apply() {
 		runtime_release_native "$NTOPNG_UNIT" || return 1
 		write_rendered_file "$(path_ntopng_conf)" "$(ntopng_render_conf)" || return 1
 		docker_service_apply ntopng || return 1
-		echo "ntopng: в контейнере, логин/пароль по умолчанию admin/admin, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - смените пароль в веб-интерфейсе." >&2
+		echo "ntopng: in a container, default login/password admin/admin, listens on $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - change the password in the web interface." >&2
 		return 0
 	fi
 	runtime_release_docker ntopng || return 1
@@ -147,7 +147,7 @@ step_ntopng_apply() {
 	# from here, so the default admin/admin credential is only ever
 	# safe when access_effective_bind_host keeps this on 127.0.0.1;
 	# step_access.sh prints its own louder warning for lan/nginx modes.
-	echo "ntopng: логин/пароль по умолчанию admin/admin, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - смените пароль в веб-интерфейсе." >&2
+	echo "ntopng: default login/password admin/admin, listens on $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - change the password in the web interface." >&2
 
 	return 0
 }
@@ -155,9 +155,9 @@ step_ntopng_apply() {
 step_ntopng_plan() {
 	if docker_wanted ntopng; then
 		docker_service_plan ntopng
-		echo "ntopng: рендер $(path_ntopng_conf), порт ${CONF[NTOPNG_PORT]:-3000} (сервис на $(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")), bind $(access_effective_bind_host)"
+		echo "ntopng: render $(path_ntopng_conf), port ${CONF[NTOPNG_PORT]:-3000} (service on $(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")), bind $(access_effective_bind_host)"
 		return 0
 	fi
-	echo "ntopng: интерфейсы $(ntopng_effective_ifaces), порт ${CONF[NTOPNG_PORT]:-3000} (сервис на $(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")), bind $(access_effective_bind_host)"
-	echo "ntopng: рендер $(path_ntopng_conf)"
+	echo "ntopng: interfaces $(ntopng_effective_ifaces), port ${CONF[NTOPNG_PORT]:-3000} (service on $(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")), bind $(access_effective_bind_host)"
+	echo "ntopng: render $(path_ntopng_conf)"
 }

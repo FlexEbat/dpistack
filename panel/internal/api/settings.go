@@ -35,21 +35,21 @@ type settingsBody struct {
 func readSettings(w http.ResponseWriter, r *http.Request) (settingsBody, []string, bool) {
 	var body settingsBody
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "неверный запрос")
+		writeError(w, http.StatusBadRequest, "bad request")
 		return body, nil, false
 	}
 	if len(body.Values) == 0 || len(body.Values) > maxSettingPairs {
-		writeError(w, http.StatusBadRequest, "нужно от 1 до 100 значений")
+		writeError(w, http.StatusBadRequest, "1 to 100 values are required")
 		return body, nil, false
 	}
 	keys := make([]string, 0, len(body.Values))
 	for k, v := range body.Values {
 		if !settingKey.MatchString(k) {
-			writeError(w, http.StatusBadRequest, "недопустимое имя ключа")
+			writeError(w, http.StatusBadRequest, "invalid key name")
 			return body, nil, false
 		}
 		if len(v) > maxSettingValue || strings.ContainsAny(v, "\n\r\x00") {
-			writeError(w, http.StatusBadRequest, k+": значение слишком длинное или с переводом строки")
+			writeError(w, http.StatusBadRequest, k+": the value is too long or has a line break")
 			return body, nil, false
 		}
 		keys = append(keys, k)
@@ -90,7 +90,7 @@ func (s *server) runCheck(ctx context.Context, keys []string, values map[string]
 	}
 	var a checkAnswer
 	if jerr := json.Unmarshal(out, &a); jerr != nil {
-		return nil, a, errors.New("ctl: настройки: непонятный ответ проверки")
+		return nil, a, errors.New("ctl: settings: unclear check answer")
 	}
 	return out, a, nil
 }
@@ -121,7 +121,7 @@ func (s *server) settingsApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.ops.begin(&s.ops.settingsBusy) {
-		writeError(w, http.StatusConflict, "настройки уже применяются")
+		writeError(w, http.StatusConflict, "settings are already being applied")
 		return
 	}
 	defer s.ops.end(&s.ops.settingsBusy)
@@ -134,11 +134,11 @@ func (s *server) settingsApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !a.Ok {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "проверка не пройдена", "errors": a.Errors})
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "check failed", "errors": a.Errors})
 		return
 	}
 	if len(a.Changed) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "weight": a.Weight, "output": "без изменений"})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "weight": a.Weight, "output": "no changes"})
 		return
 	}
 	mode := "--apply"
@@ -169,22 +169,22 @@ func (s *server) settingsApply(w http.ResponseWriter, r *http.Request) {
 func (s *server) settingsSecret(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
 	if !secretKey.MatchString(key) {
-		writeError(w, http.StatusBadRequest, "недопустимое имя ключа")
+		writeError(w, http.StatusBadRequest, "invalid key name")
 		return
 	}
 	var body struct {
 		Value string `json:"value"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "неверный запрос")
+		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	if len(body.Value) > maxSettingValue || strings.ContainsAny(body.Value, "\n\r\x00") {
-		writeError(w, http.StatusBadRequest, "значение слишком длинное или с переводом строки")
+		writeError(w, http.StatusBadRequest, "the value is too long or has a line break")
 		return
 	}
 	if !s.ops.begin(&s.ops.settingsBusy) {
-		writeError(w, http.StatusConflict, "настройки уже применяются")
+		writeError(w, http.StatusConflict, "settings are already being applied")
 		return
 	}
 	defer s.ops.end(&s.ops.settingsBusy)

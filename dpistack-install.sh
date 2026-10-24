@@ -97,28 +97,28 @@ COMMAND=""
 usage() {
 	echo "dpistack v${DPISTACK_VERSION}"
 	cat <<'EOF'
-Использование: install.sh <команда> [опции]
+Usage: install.sh <command> [options]
 
-установка:  install | reconfigure | upgrade | uninstall | diag
-управление: status [--json] | start|stop|restart <id> | reload suricata | logs <id> | test | health |
+setup:      install | reconfigure | upgrade | uninstall | diag
+control:    status [--json] | start|stop|restart <id> | reload suricata | logs <id> | test | health |
             settings | config-read|config-write|config-revert | rules-* | iface | mode | fw |
-            panel-passwd | version   (полный список: dpistack help)
-dpistack без команды открывает меню: установки, если конфига нет, иначе управления.
-Запускается только от root (sudo dpistack ...).
-опции:
-  --config FILE          путь к dpistack.conf (по умолчанию /etc/dpistack/dpistack.conf)
-  --set KEY=VALUE        переопределить ключ, можно повторять
-  --non-interactive, -y  без вопросов; недостающее берётся из умолчаний
-  --advanced             спрашивать все ключи, а не только уровень basic
-  --dry-run              показать план, ничего не менять
-  --only STEP[,STEP]     выполнить только указанные шаги
-  --skip STEP[,STEP]     пропустить шаги
-  --force                перезаписать вручную изменённые файлы (с бэкапом)
-  --purge                для uninstall: удалить также данные и конфиги
-  --no-color             без ANSI-цветов в меню и выводе
+            panel-passwd | version   (full list: dpistack help)
+dpistack without a command opens the menu: install if there is no config, control otherwise.
+Runs as root only (sudo dpistack ...).
+options:
+  --config FILE          path to dpistack.conf (default /etc/dpistack/dpistack.conf)
+  --set KEY=VALUE        override a key, may be repeated
+  --non-interactive, -y  no questions; missing values take their defaults
+  --advanced             ask every key, not only the basic level
+  --dry-run              show the plan, change nothing
+  --only STEP[,STEP]     run only the given steps
+  --skip STEP[,STEP]     skip steps
+  --force                overwrite hand-edited files (with a backup)
+  --purge                for uninstall: also remove data and configs
+  --no-color             no ANSI colors in the menu and output
 
-diag собирает отчёт для разбора проблем (платформа, версии, репозитории, конфиг без секретов,
-службы, журналы) в stdout и в файл DIAG_OUT (по умолчанию новый временный файл, путь печатается).
+diag collects a report for troubleshooting (platform, versions, repositories, config without secrets,
+services, logs) to stdout and to the DIAG_OUT file (by default a new temporary file, its path is printed).
 EOF
 }
 
@@ -126,7 +126,7 @@ EOF
 # and got none: `shift 2` would not move and the loop would spin forever.
 require_value() {
 	if (($2 < 2)); then
-		echo "у опции $1 нет значения" >&2
+		echo "option $1 needs a value" >&2
 		usage
 		exit 2
 	fi
@@ -191,7 +191,7 @@ parse_args() {
 			exit 0
 			;;
 		*)
-			echo "неизвестная опция: $1" >&2
+			echo "unknown option: $1" >&2
 			usage
 			exit 2
 			;;
@@ -224,7 +224,7 @@ validate_step_names() {
 			[[ "$s" == "$name" ]] && known=1
 		done
 		if [[ "$known" -ne 1 ]]; then
-			die 2 "$label: неизвестный шаг $name"
+			die 2 "$label: unknown step $name"
 		fi
 	done
 }
@@ -256,7 +256,7 @@ maybe_run_install_menu() {
 		return 0
 	fi
 	if ! have_input_source; then
-		die 2 "нет терминала для меню, используйте -y или DPISTACK_INPUT"
+		die 2 "no terminal for the menu, use -y or DPISTACK_INPUT"
 	fi
 	MENU_SHOW_ADVANCED=$([[ "$ADVANCED" == "1" ]] && echo 1 || echo 0)
 	menu_run_install
@@ -267,11 +267,11 @@ maybe_run_reconfigure_menu() {
 		return 0
 	fi
 	if ! have_input_source; then
-		die 2 "нет терминала для меню, используйте -y или DPISTACK_INPUT"
+		die 2 "no terminal for the menu, use -y or DPISTACK_INPUT"
 	fi
 	MENU_SHOW_ADVANCED=$([[ "$ADVANCED" == "1" ]] && echo 1 || echo 0)
 	menu_run_reconfigure
-	# "Назад" from the management menu: nothing to apply.
+	# "Back" from the management menu: nothing to apply.
 	[[ $? -eq 20 ]] && exit 0
 }
 
@@ -280,7 +280,7 @@ validate_or_die() {
 	out=$(config_validate)
 	rc=$?
 	if [[ "$rc" -ne 0 ]]; then
-		echo "Конфиг не прошёл проверку:" >&2
+		echo "The config failed validation:" >&2
 		echo "$out" >&2
 		exit 2
 	fi
@@ -294,10 +294,10 @@ run_plan() {
 		i=$((i + 1))
 		step_selected "$name" || continue
 		if "step_${name}_check"; then
-			echo "[$i/$total] $name ... без изменений"
+			echo "[$i/$total] $name ... no changes"
 		else
 			any_pending=1
-			echo "[$i/$total] $name ... нужно применить"
+			echo "[$i/$total] $name ... needs applying"
 			"step_${name}_plan" | sed 's/^/    /'
 		fi
 	done
@@ -313,7 +313,7 @@ autodetect_iface() {
 	local found
 	found=$(net_default_iface)
 	[[ -n "$found" ]] || return 0
-	echo "IFACES: интерфейса enp2s0 нет, взят $found (интерфейс маршрута по умолчанию)" >&2
+	echo "IFACES: interface enp2s0 does not exist, took $found (the default-route interface)" >&2
 	CONF[IFACES]="$found"
 }
 
@@ -323,9 +323,9 @@ autodetect_iface() {
 ensure_preflight_tools() {
 	[[ "$DRY_RUN" == "1" || "${EUID:-$(id -u)}" -ne 0 ]] && return 0
 	command -v ss >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && return 0
-	pkg_update_once || die 1 "обновление индекса пакетов не прошло"
+	pkg_update_once || die 1 "updating the package index failed"
 	case "$OS_FAMILY" in
-	apt) pkg_install iproute2 curl ca-certificates || die 1 "не удалось поставить iproute2 и curl" ;;
+	apt) pkg_install iproute2 curl ca-certificates || die 1 "could not install iproute2 and curl" ;;
 	esac
 }
 
@@ -335,9 +335,9 @@ ensure_preflight_tools() {
 # to dpistack.conf and checked against the preflight again (a build needs
 # more disk than a package).
 prepare_packages() {
-	pkg_update_once || die 1 "обновление индекса пакетов не прошло"
-	pkg_install_base || die 1 "не удалось поставить базовые пакеты"
-	pkg_enable_extra_repos || die 1 "не удалось подключить дополнительные репозитории (EPEL, CRB)"
+	pkg_update_once || die 1 "updating the package index failed"
+	pkg_install_base || die 1 "could not install the base packages"
+	pkg_enable_extra_repos || die 1 "could not enable the extra repositories (EPEL, CRB)"
 	local fallback=0
 	suricata_resolve_source && fallback=1
 	ndpi_resolve_source && fallback=1
@@ -360,16 +360,16 @@ run_apply() {
 			continue
 		fi
 		if ! "step_${name}_apply"; then
-			die 1 "шаг $name упал, продолжить: install.sh install --only $name"
+			die 1 "step $name failed, to continue: install.sh install --only $name"
 		fi
 		if "step_${name}_check"; then
 			state_set_step_done "$name"
-			echo "[$i/$total] $name ... готово"
+			echo "[$i/$total] $name ... done"
 		else
 			# A step can legitimately still report drift after a clean
 			# apply (5.4: a manually edited file is left alone with a
 			# notice, not overwritten) - that isn't a failed apply.
-			echo "[$i/$total] $name ... применено частично, см. заметки выше"
+			echo "[$i/$total] $name ... partly applied, see the notes above"
 		fi
 	done
 }
@@ -387,10 +387,10 @@ cmd_install() {
 	validate_or_die
 	autodetect_iface
 
-	echo "Итоговый конфиг:"
+	echo "Final config:"
 	config_print_summary
 	if [[ "$PANEL_PASSWORD_JUST_GENERATED" == "1" ]]; then
-		echo "Создан пароль панели (сохраните — больше нигде не показывается, на диске остаётся только хэш): $PANEL_PASSWORD_GENERATED_VALUE"
+		echo "Panel password created (save it: it is shown nowhere else, only a hash stays on disk): $PANEL_PASSWORD_GENERATED_VALUE"
 	fi
 
 	if [[ "$DRY_RUN" != "1" ]]; then
@@ -411,7 +411,7 @@ cmd_install() {
 	local pending=$?
 
 	if [[ "$DRY_RUN" == "1" ]]; then
-		echo "dry-run: план показан, конфиг не записан"
+		echo "dry-run: the plan is shown, the config is not written"
 		return 0
 	fi
 
@@ -421,7 +421,7 @@ cmd_install() {
 	fi
 	verify_final_report
 	panel_report_metrics
-	echo "установка завершена"
+	echo "installation finished"
 	return 0
 }
 
@@ -432,7 +432,7 @@ cmd_reconfigure() {
 	os_detect
 
 	if [[ ! -f "$(path_conf)" ]]; then
-		die 2 "конфиг не найден, сначала выполните: install.sh install"
+		die 2 "config not found, run first: install.sh install"
 	fi
 
 	layer_config_common
@@ -443,7 +443,7 @@ cmd_reconfigure() {
 	config_diff_and_steps "$(path_conf)"
 
 	if [[ "$CONFIG_CHANGE_WEIGHT" == "none" ]]; then
-		echo "изменений нет"
+		echo "no changes"
 		return 0
 	fi
 
@@ -460,10 +460,10 @@ cmd_reconfigure() {
 		if [[ "$CONFIG_CHANGE_WEIGHT" == "heavy" ]]; then
 			if [[ "$NON_INTERACTIVE" == "1" ]]; then
 				if [[ "$FORCE" != "1" ]]; then
-					die 3 "тяжёлые изменения в неинтерактивном режиме требуют --force"
+					die 3 "heavy changes in non-interactive mode need --force"
 				fi
 			else
-				die 3 "тяжёлые изменения требуют подтверждения, нет терминала для вопроса"
+				die 3 "heavy changes need confirmation, there is no terminal to ask"
 			fi
 		fi
 
@@ -475,7 +475,7 @@ cmd_reconfigure() {
 		for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
 			if [[ "$step" == "suricata" ]]; then
 				if ! suricata_validate_render "$(suricata_render_yaml)"; then
-					die 1 "suricata -T упал на новом suricata.yaml, изменения не применены (см. вывод выше)"
+					die 1 "suricata -T failed on the new suricata.yaml, changes not applied (see the output above)"
 				fi
 			fi
 		done
@@ -488,18 +488,18 @@ cmd_reconfigure() {
 
 	# A changed key can make a step install a package (nginx, a new version).
 	if [[ "${#CONFIG_AFFECTED_STEPS[@]}" -gt 0 ]]; then
-		pkg_update_once || die 1 "обновление индекса пакетов не прошло"
+		pkg_update_once || die 1 "updating the package index failed"
 	fi
 	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
 		step_selected "$step" || continue
 		if ! "step_${step}_apply"; then
-			die 1 "шаг $step упал при reconfigure"
+			die 1 "step $step failed during reconfigure"
 		fi
 	done
 	selinux_relabel_installed
 
 	panel_report_metrics
-	echo "конфиг применён"
+	echo "config applied"
 	return 0
 }
 
@@ -507,7 +507,7 @@ cmd_upgrade() {
 	lock_acquire
 	os_detect
 	if [[ ! -f "$(path_conf)" ]]; then
-		die 2 "конфиг не найден, сначала выполните: install.sh install"
+		die 2 "config not found, run first: install.sh install"
 	fi
 	layer_config_common
 
@@ -520,23 +520,23 @@ cmd_upgrade() {
 	command -v evebox >/dev/null 2>&1 && packages+=("$EVEBOX_PACKAGE")
 
 	if [[ "${#packages[@]}" -eq 0 ]]; then
-		echo "нечего обновлять"
+		echo "nothing to upgrade"
 		return 0
 	fi
 
 	if [[ "${CONF[PIN_VERSIONS]:-no}" == "yes" ]]; then
-		echo "upgrade: PIN_VERSIONS=yes - менеджер пакетов пропустит закреплённые пакеты (apt-mark hold, dnf versionlock): ${packages[*]}"
+		echo "upgrade: PIN_VERSIONS=yes - the package manager will skip pinned packages (apt-mark hold, dnf versionlock): ${packages[*]}"
 	fi
 	# Without a fresh index an upgrade never sees a newer version.
-	pkg_update_once || die 1 "обновление индекса пакетов не прошло"
-	pkg_upgrade "${packages[@]}" || die 1 "обновление пакетов не прошло"
+	pkg_update_once || die 1 "updating the package index failed"
+	pkg_upgrade "${packages[@]}" || die 1 "upgrading packages failed"
 	return 0
 }
 
 # uninstall removes only what dpistack itself created (its own units,
 # its own rendered nginx snippet, its own conf/state). It never stops,
 # disables, or removes the underlying Suricata/Redis/ntopng/EveBox
-# packages or services - "оставляет данные и конфиги" (5.7) reads most
+# packages or services - "keeps data and configs" (5.7) reads most
 # safely as "leave the working stack alone", not as "tear down a
 # production IDS because its manager was uninstalled". --purge extends
 # this to those components' own rendered configs/data, but still never
@@ -548,7 +548,7 @@ cmd_uninstall() {
 	os_detect
 
 	if [[ ! -f "$(path_conf)" ]]; then
-		echo "нечего удалять"
+		echo "nothing to remove"
 		return 0
 	fi
 
@@ -556,8 +556,8 @@ cmd_uninstall() {
 
 	if [[ "$DRY_RUN" == "1" ]]; then
 		# Everything below removes files with plain rm: a dry run only lists.
-		echo "dry-run: uninstall остановил бы и убрал таймеры и службы dpistack, цепочку DPISTACK, drop-in режима (Suricata, запущенная в NFQ, перезапускается), правила ufw/firewalld, добавленные dpistack, конфиги ($(path_conf), $(path_secrets)), состояние ($(path_state_dir)) и копии программы; ничего не изменено"
-		[[ "$PURGE" == "1" ]] && echo "dry-run: с --purge ещё конфиги и данные компонентов (suricata.yaml, правила, ntopng, EveBox, TLS, данные метрик, пользователи)"
+		echo "dry-run: uninstall would stop and remove the dpistack timers and services, the DPISTACK chain, the mode drop-in (Suricata running in NFQ is restarted), the ufw/firewalld rules dpistack added, the configs ($(path_conf), $(path_secrets)), the state ($(path_state_dir)) and the program copies; nothing changed"
+		[[ "$PURGE" == "1" ]] && echo "dry-run: with --purge also the configs and component data (suricata.yaml, rules, ntopng, EveBox, TLS, metrics data, users)"
 		return 0
 	fi
 
@@ -568,7 +568,7 @@ cmd_uninstall() {
 	# The DPISTACK chain and the boot unit that restores it are dpistack's
 	# own; foreign chains and rules are not touched (lib/ips.sh).
 	if [[ "$DRY_RUN" == "1" ]]; then
-		echo "dry-run: iptables: убрать переходы в DPISTACK и саму цепочку, удалить $(path_fw_unit)"
+		echo "dry-run: iptables: remove the jumps to DPISTACK and the chain itself, delete $(path_fw_unit)"
 	else
 		ips_fw_remove
 	fi
@@ -622,7 +622,7 @@ cmd_uninstall() {
 		if id "$PANEL_USER" >/dev/null 2>&1; then
 			run userdel "$PANEL_USER" || true
 		fi
-		echo "uninstall --purge: конфиги и данные компонентов удалены (пакеты не трогал)"
+		echo "uninstall --purge: configs and component data removed (packages untouched)"
 	fi
 
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
@@ -641,7 +641,7 @@ cmd_uninstall() {
 	rm -f "$(path_dpistack_bin)" "$(path_ctl_legacy_bin)" "$(path_watch_bin)"
 	rm -rf "$(path_installer_copy_dir)"
 
-	echo "готово"
+	echo "done"
 	return 0
 }
 
@@ -651,9 +651,9 @@ cmd_status() {
 	local name
 	for name in "${STEPS_ORDER[@]}"; do
 		if "step_${name}_check"; then
-			echo "$name: в порядке"
+			echo "$name: ok"
 		else
-			echo "$name: расхождение"
+			echo "$name: mismatch"
 		fi
 	done
 }
@@ -676,7 +676,7 @@ diag_tool_versions() {
 			printf '%s: ' "$tool"
 			"$tool" --version 2>&1 | head -n 1
 		else
-			echo "$tool: нет"
+			echo "$tool: missing"
 		fi
 	done
 }
@@ -710,22 +710,22 @@ diag_units() {
 
 diag_report() {
 	echo "dpistack v${DPISTACK_VERSION}, $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-	diag_section "платформа" bash -c "echo \"$OS_ID $OS_VERSION_ID family=$OS_FAMILY уровень=\$1\"; cat \"$(path_os_release)\"; uname -a; nproc; free -m | sed -n 1,2p; df -h / | tail -n 1" _ "$(os_support_level)"
-	diag_section "версии" diag_tool_versions
+	diag_section "platform" bash -c "echo \"$OS_ID $OS_VERSION_ID family=$OS_FAMILY level=\$1\"; cat \"$(path_os_release)\"; uname -a; nproc; free -m | sed -n 1,2p; df -h / | tail -n 1" _ "$(os_support_level)"
+	diag_section "versions" diag_tool_versions
 	if command -v suricata >/dev/null 2>&1; then
 		diag_section "suricata --build-info" bash -c 'suricata --build-info 2>&1 | grep -E "^This is|Rust|nDPI|AF_PACKET|Features"'
 	fi
-	diag_section "пакеты" diag_packages
-	diag_section "репозитории" diag_repos
+	diag_section "packages" diag_packages
+	diag_section "repositories" diag_repos
 	diag_section "dpistack.conf" cat "$(path_conf)"
-	diag_section "состояние" bash -c "grep -vE '^(file_hash|applied)\\.' \"$(path_state_file)\" 2>/dev/null"
-	diag_section "службы" diag_units
-	diag_section "сеть" bash -c "ip -br addr 2>/dev/null; ss -ltn 2>/dev/null | head -n 25"
-	diag_section "SELinux и фаервол" bash -c "getenforce 2>&1; (ufw status 2>/dev/null || firewall-cmd --state 2>&1) | head -n 8"
+	diag_section "state" bash -c "grep -vE '^(file_hash|applied)\\.' \"$(path_state_file)\" 2>/dev/null"
+	diag_section "services" diag_units
+	diag_section "network" bash -c "ip -br addr 2>/dev/null; ss -ltn 2>/dev/null | head -n 25"
+	diag_section "SELinux and firewall" bash -c "getenforce 2>&1; (ufw status 2>/dev/null || firewall-cmd --state 2>&1) | head -n 8"
 	if command -v suricata >/dev/null 2>&1 && [[ -f "$(path_suricata_yaml)" ]]; then
 		diag_section "suricata -T" bash -c "suricata -T -c \"$(path_suricata_yaml)\" 2>&1 | tail -n 12"
 	fi
-	diag_section "журнал dpistack (последние 80 строк)" bash -c "tail -n 80 \"$(path_install_log)\" 2>&1"
+	diag_section "dpistack log (last 80 lines)" bash -c "tail -n 80 \"$(path_install_log)\" 2>&1"
 	if command -v journalctl >/dev/null 2>&1; then
 		diag_section "journalctl (suricata, evebox, ntopng)" bash -c 'journalctl -u suricata -u evebox -u ntopng -n 40 --no-pager 2>&1'
 	fi
@@ -735,9 +735,9 @@ cmd_diag() {
 	os_detect >/dev/null 2>&1 || true
 	local out="${DIAG_OUT:-$(mktemp -t dpistack-diag.XXXXXX)}"
 	diag_report 2>&1 |
-		sed -E 's/((TOKEN|PASSWORD|PASS|SECRET)[A-Z_]*=).*/\1<скрыто>/; s#(://)[^/@[:space:]]+:[^/@[:space:]]+@#\1<скрыто>@#g' |
+		sed -E 's/((TOKEN|PASSWORD|PASS|SECRET)[A-Z_]*=).*/\1<hidden>/; s#(://)[^/@[:space:]]+:[^/@[:space:]]+@#\1<hidden>@#g' |
 		tee "$out"
-	echo "отчёт сохранён: $out" >&2
+	echo "report saved: $out" >&2
 }
 
 # require_root - dpistack changes the system and reads secrets: it runs as
@@ -745,7 +745,7 @@ cmd_diag() {
 # the process root as well.
 require_root() {
 	if [[ "$(id -u)" -ne 0 ]]; then
-		echo "dpistack: команда запускается только от root (sudo dpistack ...)" >&2
+		echo "dpistack: the command runs as root only (sudo dpistack ...)" >&2
 		exit 1
 	fi
 }
@@ -833,7 +833,7 @@ main() {
 		# every step (what differs from the configuration).
 		ctl_main status
 		echo
-		echo "Шаги установки:"
+		echo "Install steps:"
 		cmd_status
 		;;
 	diag)
@@ -845,7 +845,7 @@ main() {
 		ctl_usage
 		;;
 	*)
-		echo "неизвестная команда: $COMMAND" >&2
+		echo "unknown command: $COMMAND" >&2
 		usage
 		exit 2
 		;;
@@ -885,11 +885,11 @@ for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
 done
 unset _lib
 if ! declare -F path_conf >/dev/null; then
-	echo "dpistack-watch: не найден lib/paths.sh" >&2
+	echo "dpistack-watch: lib/paths.sh not found" >&2
 	exit 1
 fi
 command -v jq >/dev/null 2>&1 || {
-	echo "dpistack-watch: не установлен jq" >&2
+	echo "dpistack-watch: jq is not installed" >&2
 	exit 1
 }
 
@@ -939,7 +939,7 @@ check_process() {
 	local id="$1" state="${COMP_STATE[$1]:-absent}"
 	case "$state" in
 	active) record "$id.process" ok "$state" "" ;;
-	absent) record "$id.process" na "$state" "компонент не установлен" ;;
+	absent) record "$id.process" na "$state" "component not installed" ;;
 	*) record "$id.process" crit "$state" "$id: $state" ;;
 	esac
 }
@@ -970,7 +970,7 @@ check_port() {
 	local id="$1" port misses key
 	port=$(component_port "$id")
 	if [[ "${COMP_STATE[$id]:-absent}" == "absent" || -z "$port" ]]; then
-		record "$id.port" na "" "компонент не установлен"
+		record "$id.port" na "" "component not installed"
 		return
 	fi
 	key="watch.miss.$id"
@@ -983,27 +983,27 @@ check_port() {
 	misses=$((${misses:-0} + 1))
 	state_write_value "$key" "$misses"
 	if ((misses >= PORT_CRIT_AFTER_MISSES)); then
-		record "$id.port" crit "$port" "порт $port не слушается $misses прогонов подряд"
+		record "$id.port" crit "$port" "port $port is not listening for $misses runs in a row"
 	else
-		record "$id.port" warn "$port" "порт $port не слушается"
+		record "$id.port" warn "$port" "port $port is not listening"
 	fi
 }
 
 check_eve_fresh() {
 	if ! eve_checks_apply; then
-		record suricata.eve_fresh na "" "EVE_FILE=no или нет stats в EVE_TYPES"
+		record suricata.eve_fresh na "" "EVE_FILE=no or no stats in EVE_TYPES"
 		return
 	fi
 	local eve mtime age
 	eve=$(path_suricata_eve_json)
 	if [[ ! -f "$eve" ]]; then
-		record suricata.eve_fresh warn "" "eve.json не найден"
+		record suricata.eve_fresh warn "" "eve.json not found"
 		return
 	fi
 	mtime=$(stat -c %Y "$eve")
 	age=$(($(now) - mtime))
 	if ge "$age" "${CONF[WATCH_EVE_STALE_SEC]}"; then
-		record suricata.eve_fresh crit "$age" "новых событий нет $age с"
+		record suricata.eve_fresh crit "$age" "no new events for $age s"
 	else
 		record suricata.eve_fresh ok "$age" ""
 	fi
@@ -1011,13 +1011,13 @@ check_eve_fresh() {
 
 check_drop_rate() {
 	if ! eve_checks_apply; then
-		record suricata.drop_rate na "" "EVE_FILE=no или нет stats в EVE_TYPES"
+		record suricata.drop_rate na "" "EVE_FILE=no or no stats in EVE_TYPES"
 		return
 	fi
 	local eve
 	eve=$(path_suricata_eve_json)
 	if [[ ! -f "$eve" ]]; then
-		record suricata.drop_rate na "" "eve.json не найден"
+		record suricata.drop_rate na "" "eve.json not found"
 		return
 	fi
 	# Only the tail is read, never the whole file (9: eve.json is not parsed whole).
@@ -1025,13 +1025,13 @@ check_drop_rate() {
 	rows=$(tail -c 4194304 "$eve" | grep -F '"event_type":"stats"' | tail -n 2 |
 		jq -r '[.stats.capture.kernel_packets, .stats.capture.kernel_drops] | select(all(. != null)) | @tsv' 2>/dev/null)
 	if [[ $(wc -l <<<"$rows") -lt 2 ]]; then
-		record suricata.drop_rate na "" "нет двух событий stats"
+		record suricata.drop_rate na "" "fewer than two stats events"
 		return
 	fi
 	read -r p0 d0 < <(sed -n 1p <<<"$rows")
 	read -r p1 d1 < <(sed -n 2p <<<"$rows")
 	if ((p1 < p0 || d1 < d0)); then
-		record suricata.drop_rate ok "" "счётчики сброшены, интервал пропущен"
+		record suricata.drop_rate ok "" "counters were reset, the interval is skipped"
 		return
 	fi
 	# Thresholds are compared as integers (drops*100 against pct*packets),
@@ -1067,12 +1067,12 @@ check_disk_free() {
 		fi
 	done
 	if [[ -z "$worst_total" ]]; then
-		record disk.free na "" "нет каталогов для проверки"
+		record disk.free na "" "no directories to check"
 		return
 	fi
 	local pct detail
 	pct=$(awk -v a="$worst_avail" -v t="$worst_total" 'BEGIN{printf "%.2f", a * 100 / t}')
-	detail="$worst_path: свободно $pct%"
+	detail="$worst_path: $pct% free"
 	if awk -v a="$worst_avail" -v t="$worst_total" -v c="${CONF[WATCH_DISK_CRIT_PCT]}" 'BEGIN{exit !(a * 100 <= c * t)}'; then
 		record disk.free crit "$pct" "$detail"
 	elif awk -v a="$worst_avail" -v t="$worst_total" -v c="${CONF[WATCH_DISK_WARN_PCT]}" 'BEGIN{exit !(a * 100 <= c * t)}'; then
@@ -1084,22 +1084,22 @@ check_disk_free() {
 
 check_rules_age() {
 	if [[ "${CONF[RULES_UPDATE]}" == "off" || "${COMP_STATE[suricata]:-absent}" == "absent" ]]; then
-		record rules.age na "" "обновление правил выключено или Suricata не установлена"
+		record rules.age na "" "rule updates are off or Suricata is not installed"
 		return
 	fi
 	local rules mtime age_sec age_days crit_days="${CONF[WATCH_RULES_CRIT_DAYS]}" warn_days="${CONF[WATCH_RULES_WARN_DAYS]}"
 	rules=$(path_suricata_ruleset)
 	if [[ ! -f "$rules" ]]; then
-		record rules.age warn "" "suricata.rules не найден"
+		record rules.age warn "" "suricata.rules not found"
 		return
 	fi
 	mtime=$(stat -c %Y "$rules")
 	age_sec=$(($(now) - mtime))
 	age_days=$(awk -v s="$age_sec" 'BEGIN{printf "%.2f", s / 86400}')
 	if ge "$age_sec" "$((crit_days * 86400))"; then
-		record rules.age crit "$age_days" "правилам $age_days дн."
+		record rules.age crit "$age_days" "rules are $age_days days old"
 	elif ge "$age_sec" "$((warn_days * 86400))"; then
-		record rules.age warn "$age_days" "правилам $age_days дн."
+		record rules.age warn "$age_days" "rules are $age_days days old"
 	else
 		record rules.age ok "$age_days" ""
 	fi
@@ -1131,7 +1131,7 @@ channel_on() {
 }
 
 channel_error() {
-	echo "dpistack-watch: канал $1: $2" >&2
+	echo "dpistack-watch: channel $1: $2" >&2
 }
 
 # curl_cfg_escape <text> - a value inside quotes of a curl config line.
@@ -1146,19 +1146,19 @@ curl_cfg_escape() {
 
 alert_log() {
 	local sev="$1" msg="$2"
-	logger -t dpistack-watch -p "daemon.$sev" -- "$msg" || channel_error log "logger завершился с ошибкой"
+	logger -t dpistack-watch -p "daemon.$sev" -- "$msg" || channel_error log "logger failed"
 }
 
 alert_tg() {
 	local msg="$1" token="${SECRETS[ALERT_TG_TOKEN]:-}" chat="${CONF[ALERT_TG_CHAT_ID]:-}"
 	if [[ -z "$token" || -z "$chat" ]]; then
-		channel_error tg "не заданы ALERT_TG_TOKEN или ALERT_TG_CHAT_ID"
+		channel_error tg "ALERT_TG_TOKEN or ALERT_TG_CHAT_ID is not set"
 		return 1
 	fi
 	printf 'url = "https://api.telegram.org/bot%s/sendMessage"\ndata-urlencode = "chat_id=%s"\ndata-urlencode = "text=%s"\n' \
 		"$(curl_cfg_escape "$token")" "$(curl_cfg_escape "$chat")" "$(curl_cfg_escape "$msg")" |
 		curl -sS --fail --max-time 10 -o /dev/null -K - 2>/dev/null || {
-		channel_error tg "отправка не удалась"
+		channel_error tg "sending failed"
 		return 1
 	}
 }
@@ -1167,7 +1167,7 @@ alert_mail() {
 	local subject="$1" msg="$2" url="${SECRETS[ALERT_SMTP_URL]:-}"
 	local to="${CONF[ALERT_MAIL_TO]:-}" from="${CONF[ALERT_MAIL_FROM]:-}"
 	if [[ -z "$url" || -z "$to" || -z "$from" ]]; then
-		channel_error mail "не заданы ALERT_SMTP_URL, ALERT_MAIL_TO или ALERT_MAIL_FROM"
+		channel_error mail "ALERT_SMTP_URL, ALERT_MAIL_TO or ALERT_MAIL_FROM is not set"
 		return 1
 	fi
 	local body cfg rcpt rc
@@ -1187,7 +1187,7 @@ alert_mail() {
 	rc=$?
 	rm -f "$body"
 	((rc == 0)) || {
-		channel_error mail "отправка не удалась"
+		channel_error mail "sending failed"
 		return 1
 	}
 }
@@ -1199,11 +1199,11 @@ notify() {
 	host=$(hostname -s 2>/dev/null || echo host)
 	case "$kind" in
 	recovery)
-		msg="[dpistack] $host: $id восстановлено ($from -> $to)"
+		msg="[dpistack] $host: $id recovered ($from -> $to)"
 		sev=notice
 		;;
 	repeat)
-		msg="[dpistack] $host: $id всё ещё $to: $detail (с $since)"
+		msg="[dpistack] $host: $id is still $to: $detail (since $since)"
 		;;
 	*) msg="[dpistack] $host: $id $from -> $to: $detail" ;;
 	esac
@@ -1305,11 +1305,11 @@ autorestart() {
 			((now_s - t < 3600)) && kept+=("$t")
 		done
 		if ((${#kept[@]} >= RESTARTS_PER_HOUR)); then
-			echo "dpistack-watch: $id: лимит перезапусков ($RESTARTS_PER_HOUR в час) исчерпан" >&2
+			echo "dpistack-watch: $id: restart limit ($RESTARTS_PER_HOUR per hour) used up" >&2
 			stamps="${kept[*]}"
 		else
-			echo "dpistack-watch: перезапуск $id" >&2
-			"$CTL" restart "$id" >/dev/null 2>&1 || echo "dpistack-watch: перезапуск $id не удался" >&2
+			echo "dpistack-watch: restarting $id" >&2
+			"$CTL" restart "$id" >/dev/null 2>&1 || echo "dpistack-watch: restarting $id failed" >&2
 			kept+=("$now_s")
 			stamps="${kept[*]}"
 		fi
@@ -1355,7 +1355,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.22.0"
+DPISTACK_VERSION="0.23.0"
 
 : "${DRY_RUN:=0}"
 
@@ -1443,7 +1443,7 @@ selinux_restore() {
 	done
 	((${#existing[@]} > 0)) || return 0
 	run restorecon -RF "${existing[@]}" ||
-		echo "selinux: restorecon не прошёл для: ${existing[*]}" >&2
+		echo "selinux: restorecon failed for: ${existing[*]}" >&2
 	return 0
 }
 
@@ -1507,7 +1507,7 @@ write_rendered_file() {
 		on_disk_hash=$(state_hash_content <"$path")
 		last_hash=$(state_file_hash "$path")
 		if [[ -n "$last_hash" && "$on_disk_hash" != "$last_hash" && "${FORCE:-0}" != "1" ]]; then
-			echo "  $path изменён вручную, оставляю как есть (нужен --force)" >&2
+			echo "  $path was changed by hand, leaving it as it is (--force is needed)" >&2
 			return 0
 		fi
 		if [[ "$on_disk_hash" == "$new_hash" ]]; then
@@ -1629,6 +1629,9 @@ config_load_kv_file() {
 		[[ "$line" == *=* ]] || continue
 		key="${line%%=*}"
 		value="${line#*=}"
+		# PANEL_MODE (limited/unlimited) is gone since v0.23.0: an old file
+		# still loads, the key is dropped.
+		[[ "$key" == "PANEL_MODE" ]] && continue
 		config_set_kv "$key" "$value"
 	done <"$file"
 }
@@ -1646,7 +1649,7 @@ config_apply_env_secrets() {
 config_apply_set() {
 	local kv="$1"
 	if [[ "$kv" != *=* ]]; then
-		echo "неверный --set, ожидался KEY=VALUE: $kv"
+		echo "bad --set, KEY=VALUE expected: $kv"
 		return 1
 	fi
 	local key="${kv%%=*}" value="${kv#*=}"
@@ -1679,32 +1682,32 @@ config_validate() {
 		local port_key
 		for port_key in NTOPNG_PORT EVEBOX_PORT PANEL_PORT; do
 			if [[ "${CONF[$port_key]:-0}" =~ ^[0-9]+$ ]] && ((${CONF[$port_key]:-0} > 55535)); then
-				echo "ACCESS_MODE=nginx требует $port_key не больше 55535 (сервис слушает на порту плюс 10000)"
+				echo "ACCESS_MODE=nginx needs $port_key not above 55535 (the service listens on the port plus 10000)"
 				errors=$((errors + 1))
 			fi
 		done
 	fi
 
 	if [[ "${CONF[EVEBOX_DB]:-}" == "elasticsearch" && -z "${CONF[EVEBOX_ES_URL]:-}" ]]; then
-		echo "EVEBOX_DB=elasticsearch требует EVEBOX_ES_URL"
+		echo "EVEBOX_DB=elasticsearch needs EVEBOX_ES_URL"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[METRICS_BACKEND]:-}" != "none" && "${CONF[METRICS_EXPORT]:-}" == "no" ]]; then
-		echo "METRICS_BACKEND=${CONF[METRICS_BACKEND]} требует METRICS_EXPORT=yes (бэкенду нечего собирать)"
+		echo "METRICS_BACKEND=${CONF[METRICS_BACKEND]} needs METRICS_EXPORT=yes (the backend has nothing to scrape)"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" ]]; then
 		if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" ]]; then
-			echo "SURICATA_MODE=ips работает только с SURICATA_RUNTIME=native (NFQUEUE и copy-mode в контейнере не поддерживаются)"
+			echo "SURICATA_MODE=ips works only with SURICATA_RUNTIME=native (NFQUEUE and copy-mode are not supported in a container)"
 			errors=$((errors + 1))
 		fi
 		if [[ "${CONF[IPS_METHOD]:-nfq}" == "afpacket" ]]; then
 			local -a ips_ifaces=()
 			IFS=',' read -ra ips_ifaces <<<"${CONF[IFACES]:-}"
 			if ((${#ips_ifaces[@]} < 2 || ${#ips_ifaces[@]} % 2 != 0)); then
-				echo "IPS_METHOD=afpacket объединяет интерфейсы парами: в IFACES нужно чётное число интерфейсов (не меньше двух)"
+				echo "IPS_METHOD=afpacket pairs interfaces: IFACES needs an even number of interfaces (at least two)"
 				errors=$((errors + 1))
 			fi
 		fi
@@ -1714,7 +1717,7 @@ config_validate() {
 	IFS=',' read -ra ips_chains <<<"${CONF[IPS_NFQ_CHAINS]:-INPUT,OUTPUT,FORWARD}"
 	for ips_chain in "${ips_chains[@]}"; do
 		if [[ ! "$ips_chain" =~ ^(INPUT|OUTPUT|FORWARD)$ ]]; then
-			echo "IPS_NFQ_CHAINS: допустимы INPUT, OUTPUT, FORWARD, получено $ips_chain"
+			echo "IPS_NFQ_CHAINS: INPUT, OUTPUT, FORWARD are allowed, got $ips_chain"
 			errors=$((errors + 1))
 		fi
 	done
@@ -1723,33 +1726,33 @@ config_validate() {
 	# months, Prometheus reads m as minutes: only the suffixes both read the
 	# same way (h, d, w, y) are allowed once a backend is installed.
 	if [[ "${CONF[METRICS_BACKEND]:-none}" != "none" && ! "${CONF[METRICS_RETENTION]:-30d}" =~ ^[0-9]+[hdwy]$ ]]; then
-		echo "METRICS_RETENTION=${CONF[METRICS_RETENTION]:-} с бэкендом метрик: нужно число с суффиксом h, d, w или y (например 30d); без суффикса и с m бэкенды читают значение по-разному"
+		echo "METRICS_RETENTION=${CONF[METRICS_RETENTION]:-} with a metrics backend: a number with the suffix h, d, w or y is needed (for example 30d); backends read a bare number or m differently"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[EVE_ROTATE]:-}" == "size" && -z "${CONF[EVE_MAX_SIZE_MB]:-}" ]]; then
-		echo "EVE_ROTATE=size требует EVE_MAX_SIZE_MB"
+		echo "EVE_ROTATE=size needs EVE_MAX_SIZE_MB"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[ACCESS_MODE]:-}" != "localhost" && "${ACCESS_CONFIRM:-}" != "yes" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
-		echo "ACCESS_MODE=${CONF[ACCESS_MODE]} в неинтерактивном режиме требует --set ACCESS_CONFIRM=yes"
+		echo "ACCESS_MODE=${CONF[ACCESS_MODE]} in non-interactive mode needs --set ACCESS_CONFIRM=yes"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" && "${CONF[SURICATA_SOURCE]:-}" != "source" &&
 		! -f "$(path_suricata_ndpi_plugin)" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
-		echo "NDPI_ENABLE=yes с SURICATA_SOURCE=${CONF[SURICATA_SOURCE]:-} не даёт ndpi.so; используйте SURICATA_SOURCE=source или соберите плагин заранее"
+		echo "NDPI_ENABLE=yes with SURICATA_SOURCE=${CONF[SURICATA_SOURCE]:-} does not give ndpi.so; use SURICATA_SOURCE=source or build the plugin beforehand"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[NGINX_TLS]:-none}" == "existing" && (-z "${CONF[NGINX_CERT]:-}" || -z "${CONF[NGINX_KEY]:-}") ]]; then
-		echo "NGINX_TLS=existing требует NGINX_CERT и NGINX_KEY"
+		echo "NGINX_TLS=existing needs NGINX_CERT and NGINX_KEY"
 		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[EVE_FILE]:-yes}" == "no" && "${CONF[EVEBOX_DB]:-sqlite}" == "sqlite" ]]; then
-		echo "EVE_FILE=no при EVEBOX_DB=sqlite: EveBox не сможет читать события (eve.json не пишется). Включите EVE_FILE=yes или выберите EVEBOX_DB=elasticsearch"
+		echo "EVE_FILE=no with EVEBOX_DB=sqlite: EveBox cannot read events (eve.json is not written). Enable EVE_FILE=yes or choose EVEBOX_DB=elasticsearch"
 		errors=$((errors + 1))
 	fi
 
@@ -1760,20 +1763,20 @@ config_validate() {
 		case "$channel" in
 		panel | log | tg | mail) ;;
 		*)
-			echo "ALERT_CHANNELS: неизвестный канал '$channel' (допустимы panel, log, tg, mail)"
+			echo "ALERT_CHANNELS: unknown channel '$channel' (panel, log, tg, mail are allowed)"
 			errors=$((errors + 1))
 			;;
 		esac
 	done
 	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",tg,"* ]]; then
 		if [[ -z "${SECRETS[ALERT_TG_TOKEN]:-}" || -z "${CONF[ALERT_TG_CHAT_ID]:-}" ]]; then
-			echo "ALERT_CHANNELS содержит tg: нужны ALERT_TG_TOKEN и ALERT_TG_CHAT_ID"
+			echo "ALERT_CHANNELS contains tg: needs ALERT_TG_TOKEN and ALERT_TG_CHAT_ID"
 			errors=$((errors + 1))
 		fi
 	fi
 	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",mail,"* ]]; then
 		if [[ -z "${SECRETS[ALERT_SMTP_URL]:-}" || -z "${CONF[ALERT_MAIL_TO]:-}" || -z "${CONF[ALERT_MAIL_FROM]:-}" ]]; then
-			echo "ALERT_CHANNELS содержит mail: нужны ALERT_SMTP_URL, ALERT_MAIL_TO и ALERT_MAIL_FROM"
+			echo "ALERT_CHANNELS contains mail: needs ALERT_SMTP_URL, ALERT_MAIL_TO and ALERT_MAIL_FROM"
 			errors=$((errors + 1))
 		fi
 	fi
@@ -1849,9 +1852,9 @@ config_print_summary() {
 	done
 	for key in $(printf '%s\n' "${!SECRETS[@]}" | sort); do
 		if [[ -n "${SECRETS[$key]}" ]]; then
-			printf '  %s=задан\n' "$key"
+			printf '  %s=set\n' "$key"
 		else
-			printf '  %s=не задан\n' "$key"
+			printf '  %s=not set\n' "$key"
 		fi
 	done
 }
@@ -1899,16 +1902,16 @@ config_diff_and_steps() {
 	done
 
 	if [[ "${#changed[@]}" -eq 0 ]]; then
-		echo "изменений нет"
+		echo "no changes"
 		return 0
 	fi
 	# shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure
 	CONFIG_CHANGED_KEYS=("${changed[@]}")
 
-	echo "Изменённые ключи:"
+	echo "Changed keys:"
 	local k
 	for k in "${changed[@]}"; do
-		printf '  %s: %s -> %s\n' "$k" "${OLD[$k]-(не задан)}" "${CONF[$k]}"
+		printf '  %s: %s -> %s\n' "$k" "${OLD[$k]-(not set)}" "${CONF[$k]}"
 	done
 
 	declare -A steps_seen
@@ -1935,10 +1938,10 @@ config_diff_and_steps() {
 		[[ " ${CONFIG_AFFECTED_STEPS[*]} " == *" $step "* ]] || CONFIG_AFFECTED_STEPS+=("$step")
 	done
 
-	echo "Затронутые шаги:"
+	echo "Affected steps:"
 	printf '  %s\n' "${CONFIG_AFFECTED_STEPS[@]}"
 
-	echo "Тип изменения: $overall_weight"
+	echo "Change type: $overall_weight"
 	return 0
 }
 DPISTACK_BUNDLE_END
@@ -1966,36 +1969,36 @@ RULES_SEARCH_MAX=50
 
 ctl_usage() {
 	cat <<'USAGE'
-Использование: dpistack <команда> [аргументы]
+Usage: dpistack <command> [arguments]
 
-  status [--json]                    состояние компонентов
-  start|stop|restart <id>            управление компонентом
-  reload suricata                    перечитать правила без остановки
-  logs <id> [-n N] [--follow]        журнал компонента, N до 1000 (--until-stdin-closed: для панели)
-  config-read <имя>                  печатает текущий файл
-  config-write <имя> [--apply|--check] новое содержимое со stdin; --check только проверяет
+  status [--json]                    component state
+  start|stop|restart <id>            control a component
+  reload suricata                    reload the rules without stopping
+  logs <id> [-n N] [--follow]        component log, N up to 1000 (--until-stdin-closed: for the panel)
+  config-read <name>                 prints the current file
+  config-write <name> [--apply|--check] new content from stdin; --check only validates
   settings list [--json] | check K=V... | set [--apply|--apply-heavy] [--confirm-access] K=V... | secret KEY | job
-  config-revert <имя>                возвращает последний бэкап
-  reconfigure [--dry-run]            применяет текущий dpistack.conf
-  rules-update                       обновить правила с откатом при ошибке
-  rules-sources list [--enabled]|enable|disable|add-url|remove [арг]
-  rules-group enable|disable <группа>
+  config-revert <name>               restores the latest backup
+  reconfigure [--dry-run]            applies the current dpistack.conf
+  rules-update                       update the rules, roll back on error
+  rules-sources list [--enabled]|enable|disable|add-url|remove [arg]
+  rules-group enable|disable <group>
   rules-sid enable|disable <sid>
-  rules-search <запрос>              до 50 правил по sid или msg
-  iface list|add|remove [имя]        интерфейсы захвата
-  mode ids|ips [--confirm-timeout S] режим Suricata; ips откатывается сам без mode-confirm (по умолчанию 120 с)
-  mode status [--json]               режим, метод и обратный отсчёт
-  mode-confirm                       подтвердить переключение в ips
-  fw apply|remove|restore            цепочка DPISTACK (restore: при загрузке)
-  panel-passwd                       пароль панели со stdin
-  test bittorrent|https|all [--json] проверочные тесты (раздел 10)
-  health [--json]                    один прогон watchdog
-  version                            версия набора
+  rules-search <query>              up to 50 rules by sid or msg
+  iface list|add|remove [name]        capture interfaces
+  mode ids|ips [--confirm-timeout S] Suricata mode; ips rolls back by itself without mode-confirm (default 120 s)
+  mode status [--json]               mode, method and countdown
+  mode-confirm                       confirm the switch to ips
+  fw apply|remove|restore            DPISTACK chain (restore: at boot)
+  panel-passwd                       panel password from stdin
+  test bittorrent|https|all [--json] check tests (section 10)
+  health [--json]                    one watchdog run
+  version                            bundle version
 
-Имена конфигов: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
+Config names: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
                 enable.conf disable.conf modify.conf drop.conf
 
-Компоненты: suricata evebox ntopng redis victoriametrics prometheus panel watch rules
+Components: suricata evebox ntopng redis victoriametrics prometheus panel watch rules
 USAGE
 }
 
@@ -2138,9 +2141,9 @@ ctl_cmd_status() {
 	case "${1:-}" in
 	"") ;;
 	--json) json=1 ;;
-	*) fail 2 "status: неизвестный аргумент" ;;
+	*) fail 2 "status: unknown argument" ;;
 	esac
-	[[ $# -le 1 ]] || fail 2 "status: лишние аргументы"
+	[[ $# -le 1 ]] || fail 2 "status: extra arguments"
 
 	local plugin=absent
 	[[ -e "$(path_suricata_ndpi_plugin)" ]] && plugin=loaded
@@ -2184,26 +2187,26 @@ ctl_cmd_status() {
 # the schema rejects docker until slice 27.
 resolve_component() {
 	local id="$1"
-	in_list "$id" "${COMPONENTS[@]}" || fail 5 "неизвестный компонент: $id"
-	component_listed "$id" || fail 4 "компонент не установлен: $id"
+	in_list "$id" "${COMPONENTS[@]}" || fail 5 "unknown component: $id"
+	component_listed "$id" || fail 4 "component not installed: $id"
 	local unit
 	unit=$(component_unit "$id")
-	[[ "$(component_state "$unit")" != "absent" ]] || fail 4 "компонент не установлен: $id"
+	[[ "$(component_state "$unit")" != "absent" ]] || fail 4 "component not installed: $id"
 	echo "$unit"
 }
 
 cmd_control() {
 	local verb="$1"
 	shift
-	[[ $# -eq 1 ]] || fail 2 "$verb: нужен ровно один <id>"
+	[[ $# -eq 1 ]] || fail 2 "$verb: exactly one <id> is needed"
 	local unit
 	unit=$(resolve_component "$1") || exit $?
 	if [[ "$unit" == docker:* ]]; then
 		docker_compose_argv
-		"${DOCKER_COMPOSE_ARGV[@]}" "$verb" "${unit#docker:}" || fail 1 "$verb $1: docker compose завершился с ошибкой"
+		"${DOCKER_COMPOSE_ARGV[@]}" "$verb" "${unit#docker:}" || fail 1 "$verb $1: docker compose failed"
 		return 0
 	fi
-	systemctl "$verb" "$unit" || fail 1 "$verb $1: systemctl завершился с ошибкой"
+	systemctl "$verb" "$unit" || fail 1 "$verb $1: systemctl failed"
 }
 
 # suricata_reload_now - reload the rules of the running Suricata, native
@@ -2217,22 +2220,22 @@ suricata_reload_now() {
 }
 
 cmd_reload() {
-	[[ $# -eq 1 ]] || fail 2 "reload: нужен аргумент suricata"
-	[[ "$1" == "suricata" ]] || fail 5 "reload: поддерживается только suricata"
+	[[ $# -eq 1 ]] || fail 2 "reload: the argument suricata is needed"
+	[[ "$1" == "suricata" ]] || fail 5 "reload: only suricata is supported"
 	resolve_component suricata >/dev/null || exit $?
 	suricata_reload_now ||
-		fail 1 "reload suricata: suricatasc завершился с ошибкой"
+		fail 1 "reload suricata: suricatasc failed"
 }
 
 cmd_logs() {
-	[[ $# -ge 1 ]] || fail 2 "logs: нужен <id>"
+	[[ $# -ge 1 ]] || fail 2 "logs: <id> is needed"
 	local id="$1"
 	shift
 	local n="$LOGS_DEFAULT" follow=0 until_eof=0
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
 		-n)
-			[[ $# -ge 2 ]] || fail 2 "logs: после -n нужно число"
+			[[ $# -ge 2 ]] || fail 2 "logs: -n needs a number"
 			n="$2"
 			shift 2
 			;;
@@ -2248,13 +2251,13 @@ cmd_logs() {
 			until_eof=1
 			shift
 			;;
-		*) fail 2 "logs: неизвестный аргумент: $1" ;;
+		*) fail 2 "logs: unknown argument: $1" ;;
 		esac
 	done
-	[[ "$n" =~ ^[0-9]{1,6}$ ]] || fail 2 "logs: N должно быть числом"
+	[[ "$n" =~ ^[0-9]{1,6}$ ]] || fail 2 "logs: N must be a number"
 	# 10#: a leading zero is not octal ("08" is eight, "01750" is 1750).
 	n=$((10#$n))
-	((n >= 1 && n <= LOGS_MAX)) || fail 2 "logs: N от 1 до $LOGS_MAX"
+	((n >= 1 && n <= LOGS_MAX)) || fail 2 "logs: N from 1 to $LOGS_MAX"
 
 	local unit
 	unit=$(resolve_component "$id") || exit $?
@@ -2322,7 +2325,7 @@ ctl_lock() {
 	mkdir -p "$(dirname "$lock_file")"
 	exec {CTL_LOCK_FD}>"$lock_file"
 	if ! flock -w 30 "$CTL_LOCK_FD"; then
-		fail 1 "установщик занят (блокировка $lock_file), повторите позже"
+		fail 1 "the installer is busy (lock $lock_file), try again later"
 	fi
 }
 
@@ -2353,7 +2356,7 @@ suricata_check_set() {
 	local name="$1" staged="$2" tmp yaml rc docker=0 rulepath
 	[[ "$(component_unit suricata)" == docker:* ]] && docker=1
 	((docker)) || command -v suricata >/dev/null 2>&1 || {
-		echo "suricata не установлен" >&2
+		echo "suricata is not installed" >&2
 		return 4
 	}
 	tmp=$(mktemp -d)
@@ -2395,7 +2398,7 @@ config_validate_staged() {
 		while IFS= read -r line || [[ -n "$line" ]]; do
 			key="${line%%=*}"
 			if [[ "$line" == *=* && "$line" != \#* ]] && schema_is_secret "$key" 2>/dev/null; then
-				echo "$key: секрет хранится в secrets.conf, через config-write его менять нельзя"
+				echo "$key: a secret is kept in secrets.conf and cannot be changed through config-write"
 				return 3
 			fi
 		done <"$staged"
@@ -2412,7 +2415,7 @@ config_validate_staged() {
 		# A8: neither component has a config-test mode we can rely on,
 		# so the only check is that the file is not empty.
 		[[ -s "$staged" ]] && return 0
-		echo "$name: файл пустой"
+		echo "$name: the file is empty"
 		return 3
 		;;
 	*) suricata_check_set "$name" "$staged" ;;
@@ -2420,10 +2423,10 @@ config_validate_staged() {
 }
 
 cmd_config_read() {
-	[[ $# -eq 1 ]] || fail 2 "config-read: нужно имя файла"
+	[[ $# -eq 1 ]] || fail 2 "config-read: a file name is needed"
 	local path
-	path=$(config_path "$1") || fail 5 "неизвестное имя файла: $1"
-	[[ -f "$path" ]] || fail 4 "файл отсутствует: $1"
+	path=$(config_path "$1") || fail 5 "unknown file name: $1"
+	[[ -f "$path" ]] || fail 4 "file missing: $1"
 	cat "$path"
 }
 
@@ -2445,14 +2448,14 @@ apply_config() {
 }
 
 cmd_config_write() {
-	[[ $# -ge 1 && $# -le 2 ]] || fail 2 "config-write: <имя> [--apply|--check]"
+	[[ $# -ge 1 && $# -le 2 ]] || fail 2 "config-write: <name> [--apply|--check]"
 	local name="$1" apply=0 check=0
-	config_path "$name" >/dev/null || fail 5 "неизвестное имя файла: $name"
+	config_path "$name" >/dev/null || fail 5 "unknown file name: $name"
 	if [[ $# -eq 2 ]]; then
 		case "$2" in
 		--apply) apply=1 ;;
 		--check) check=1 ;;
-		*) fail 2 "config-write: неизвестный аргумент: $2" ;;
+		*) fail 2 "config-write: unknown argument: $2" ;;
 		esac
 	fi
 
@@ -2468,16 +2471,16 @@ cmd_config_write() {
 	if ((rc != 0)); then
 		rm -f "$staged"
 		[[ -n "$out" ]] && echo "$out"
-		((rc == 4)) && fail 4 "компонент отсутствует"
-		fail 3 "$name: проверка не пройдена, файл не изменён"
+		((rc == 4)) && fail 4 "component missing"
+		fail 3 "$name: check failed, file unchanged"
 	fi
 
 	if ((check)); then
-		# The panel's "Проверить": the verdict and the checker's own words,
+		# The panel's "Check": the verdict and the checker's own words,
 		# and nothing is replaced.
 		rm -f "$staged"
 		[[ -n "$out" ]] && echo "$out"
-		echo "$name: проверка пройдена, файл не изменён"
+		echo "$name: check passed, file unchanged"
 		return 0
 	fi
 
@@ -2490,33 +2493,33 @@ cmd_config_write() {
 }
 
 cmd_config_revert() {
-	[[ $# -eq 1 ]] || fail 2 "config-revert: нужно имя файла"
+	[[ $# -eq 1 ]] || fail 2 "config-revert: a file name is needed"
 	local name="$1" path latest mode
-	path=$(config_path "$name") || fail 5 "неизвестное имя файла: $name"
+	path=$(config_path "$name") || fail 5 "unknown file name: $name"
 	latest=$(printf '%s\n' "$(path_backups_dir)/$(basename "$path")".* | sort -V | tail -1)
 	[[ -e "$latest" ]] || latest=""
-	[[ -n "$latest" ]] || fail 1 "нет бэкапа для $name"
+	[[ -n "$latest" ]] || fail 1 "no backup for $name"
 	ctl_lock
 	mode=$(stat -c %a "$path" 2>/dev/null || echo 644)
 	atomic_write "$path" <"$latest"
 	chmod "$mode" "$path"
 	ctl_unlock
-	echo "восстановлено из $latest"
+	echo "restored from $latest"
 }
 
 # ctl_cmd_reconfigure [--dry-run] - the installer does the diff, the step
 # selection and the re-render; it never installs packages here, because
 # --force is not passed and a heavy change stops with code 3.
 ctl_cmd_reconfigure() {
-	[[ $# -le 1 ]] || fail 2 "reconfigure: лишние аргументы"
+	[[ $# -le 1 ]] || fail 2 "reconfigure: extra arguments"
 	local -a args=(reconfigure -y)
 	case "${1:-}" in
 	"") ;;
 	--dry-run) args+=(--dry-run) ;;
-	*) fail 2 "reconfigure: неизвестный аргумент: $1" ;;
+	*) fail 2 "reconfigure: unknown argument: $1" ;;
 	esac
 	INSTALLER="$SCRIPT_DIR/install.sh"
-	[[ -r "$INSTALLER" ]] || fail 1 "не найден install.sh"
+	[[ -r "$INSTALLER" ]] || fail 1 "install.sh not found"
 
 	# -y asks for an explicit ACCESS_CONFIRM when the access mode is not
 	# localhost. An unchanged mode is already confirmed; a changed one
@@ -2531,7 +2534,7 @@ ctl_cmd_reconfigure() {
 	bash "$INSTALLER" "${args[@]}"
 	local rc=$?
 	if ((rc == 3)); then
-		echo "dpistack: изменение требует переустановки или пересборки, выполните: dpistack reconfigure" >&2
+		echo "dpistack: this change needs a reinstall or rebuild, run: dpistack reconfigure" >&2
 	fi
 	return "$rc"
 }
@@ -2595,7 +2598,7 @@ settings_list() {
 		fi
 		if ((json == 0)); then
 			if [[ "$secret" == "yes" ]]; then
-				printf '%s=%s\n' "$key" "$([[ $set == true ]] && echo '(задан)' || echo '(не задан)')"
+				printf '%s=%s\n' "$key" "$([[ $set == true ]] && echo '(set)' || echo '(not set)')"
 			else
 				printf '%s=%s\n' "$key" "$value"
 			fi
@@ -2651,12 +2654,12 @@ settings_stage() {
 	staged="$staging/dpistack.conf"
 	cp "$(path_conf)" "$staged"
 	for pair in "$@"; do
-		[[ "$pair" == *=* ]] || fail 2 "settings: ожидается KEY=VALUE, получено: $pair"
+		[[ "$pair" == *=* ]] || fail 2 "settings: KEY=VALUE expected, got: $pair"
 		key="${pair%%=*}"
 		value="${pair#*=}"
-		schema_known "$key" || fail 5 "неизвестный ключ: $key"
+		schema_known "$key" || fail 5 "unknown key: $key"
 		if schema_is_secret "$key"; then
-			fail 3 "$key: секрет, меняется командой settings secret"
+			fail 3 "$key: a secret, changed with the settings secret command"
 		fi
 		awk -v k="$key" -v v="$value" 'BEGIN{done=0} index($0, k "=")==1 {print k "=" v; done=1; next} {print} END{if(!done) print k "=" v}' \
 			"$staged" >"$staged.new" && mv "$staged.new" "$staged"
@@ -2711,7 +2714,7 @@ settings_port_warnings() {
 settings_check() {
 	local staged out rc changed weight errors warnings first=1 key port who suggestion kind
 	settings_collect_pairs "$@"
-	[[ ${#SETTINGS_PAIRS[@]} -ge 1 ]] || fail 2 "settings check: нужен хотя бы один KEY=VALUE"
+	[[ ${#SETTINGS_PAIRS[@]} -ge 1 ]] || fail 2 "settings check: at least one KEY=VALUE is needed"
 	staged=$(settings_stage "${SETTINGS_PAIRS[@]}") || exit $?
 	changed=$(settings_changed "${SETTINGS_PAIRS[@]}")
 	# shellcheck disable=SC2086
@@ -2755,13 +2758,13 @@ settings_set() {
 	done
 	settings_collect_pairs "${pairs[@]}"
 	pairs=("${SETTINGS_PAIRS[@]}")
-	[[ ${#pairs[@]} -ge 1 ]] || fail 2 "settings set: нужен хотя бы один KEY=VALUE"
+	[[ ${#pairs[@]} -ge 1 ]] || fail 2 "settings set: at least one KEY=VALUE is needed"
 	local staged out rc changed weight warn
 	staged=$(settings_stage "${pairs[@]}") || exit $?
 	changed=$(settings_changed "${pairs[@]}")
 	if [[ -z "$changed" ]]; then
 		rm -f "$staged"
-		echo "без изменений"
+		echo "no changes"
 		return 0
 	fi
 	# shellcheck disable=SC2086
@@ -2771,7 +2774,7 @@ settings_set() {
 	if ((rc != 0)); then
 		rm -f "$staged"
 		[[ -n "$out" ]] && echo "$out"
-		fail 3 "settings: проверка не пройдена, dpistack.conf не изменён"
+		fail 3 "settings: check failed, dpistack.conf unchanged"
 	fi
 	# A busy port is a stop with a way out: the holder and a free port.
 	settings_load_staged "$staged"
@@ -2781,11 +2784,11 @@ settings_set() {
 		local key port who suggestion
 		IFS='|' read -r key port who suggestion _ <<<"$warn"
 		rm -f "$staged"
-		fail 3 "порт $port ($key) уже занят: $who${suggestion:+; свободный: $suggestion}"
+		fail 3 "port $port ($key) is already busy: $who${suggestion:+; free: $suggestion}"
 	fi
 	if [[ "$weight" == "heavy" && "$mode" == "apply" ]]; then
 		rm -f "$staged"
-		fail 3 "тяжёлое изменение ($(paste -sd, <<<"$changed")): нужен --apply-heavy"
+		fail 3 "heavy change ($(paste -sd, <<<"$changed")): --apply-heavy is needed"
 	fi
 	if ((confirm)); then
 		DPISTACK_ACCESS_CONFIRM=1
@@ -2794,11 +2797,11 @@ settings_set() {
 	config_commit dpistack.conf "$staged"
 	rm -f "$staged"
 	case "$mode" in
-	commit) echo "dpistack.conf записан, не применён" ;;
+	commit) echo "dpistack.conf written, not applied" ;;
 	apply)
 		if ! ctl_cmd_reconfigure; then
 			cmd_config_revert dpistack.conf >/dev/null
-			fail 1 "reconfigure не удался, dpistack.conf возвращён"
+			fail 1 "reconfigure failed, dpistack.conf restored"
 		fi
 		;;
 	heavy) settings_start_job "$confirm" ;;
@@ -2811,13 +2814,13 @@ settings_start_job() {
 	local -a args=(reconfigure -y --force)
 	[[ "$1" == "1" ]] && args+=(--set ACCESS_CONFIRM=yes)
 	case "$(systemctl is-active "$SETTINGS_UNIT.service" 2>/dev/null)" in
-	active | activating) fail 3 "применение уже идёт" ;;
+	active | activating) fail 3 "applying is already running" ;;
 	esac
 	systemctl reset-failed "$SETTINGS_UNIT.service" >/dev/null 2>&1 || true
-	systemd-run --quiet --unit="$SETTINGS_UNIT" --description="dpistack: применение настроек" \
+	systemd-run --quiet --unit="$SETTINGS_UNIT" --description="dpistack: applying settings" \
 		--collect "$SCRIPT_DIR/install.sh" "${args[@]}" >/dev/null ||
-		fail 1 "не удалось запустить применение"
-	echo "применение запущено: $SETTINGS_UNIT"
+		fail 1 "could not start applying"
+	echo "applying started: $SETTINGS_UNIT"
 }
 
 settings_job() {
@@ -2831,14 +2834,14 @@ settings_job() {
 
 # settings_secret <KEY> - the value comes on stdin and never in an argument.
 settings_secret() {
-	[[ $# -eq 1 ]] || fail 2 "settings secret: нужен KEY"
+	[[ $# -eq 1 ]] || fail 2 "settings secret: KEY is needed"
 	local key="$1" value tmp
 	if ! schema_known "$key" || ! schema_is_secret "$key"; then
-		fail 5 "$key: не секрет схемы"
+		fail 5 "$key: not a schema secret"
 	fi
 	IFS= read -r value || true
 	if [[ -n "$value" ]]; then
-		schema_validate_one "$key" "$value" >/dev/null || fail 3 "$key: значение не подходит"
+		schema_validate_one "$key" "$value" >/dev/null || fail 3 "$key: the value does not fit"
 	fi
 	ctl_lock
 	tmp=$(mktemp)
@@ -2852,7 +2855,7 @@ settings_secret() {
 	rm -f "$tmp"
 	ctl_unlock
 	if ! ctl_cmd_reconfigure; then
-		fail 1 "reconfigure не удался, секрет записан"
+		fail 1 "reconfigure failed, the secret is written"
 	fi
 }
 
@@ -2890,13 +2893,13 @@ conf_apply_value() {
 	if ((rc != 0)); then
 		rm -f "$staged"
 		[[ -n "$out" ]] && echo "$out"
-		fail 3 "$key: проверка не пройдена, файл не изменён"
+		fail 3 "$key: check failed, file unchanged"
 	fi
 	config_commit dpistack.conf "$staged"
 	rm -f "$staged"
 	if ! ctl_cmd_reconfigure; then
 		cmd_config_revert dpistack.conf >/dev/null
-		fail 1 "reconfigure не удался, dpistack.conf возвращён"
+		fail 1 "reconfigure failed, dpistack.conf restored"
 	fi
 }
 
@@ -2921,11 +2924,11 @@ mode_cancel_timer() {
 # mode_check_ips_possible - everything IPS needs, or the refusal (code 3).
 mode_check_ips_possible() {
 	[[ "$(conf_get SURICATA_RUNTIME native)" == "native" ]] ||
-		fail 3 "mode ips: только для SURICATA_RUNTIME=native"
+		fail 3 "mode ips: only for SURICATA_RUNTIME=native"
 	if [[ "$(conf_get IPS_METHOD nfq)" == "nfq" ]]; then
-		[[ -n "$(ips_backend)" ]] || fail 3 "mode ips: не найдены ни iptables, ни nft (нужны для очереди NFQUEUE)"
+		[[ -n "$(ips_backend)" ]] || fail 3 "mode ips: neither iptables nor nft found (needed for the NFQUEUE queue)"
 	fi
-	command -v suricata >/dev/null 2>&1 || fail 4 "mode ips: suricata не установлена"
+	command -v suricata >/dev/null 2>&1 || fail 4 "mode ips: suricata is not installed"
 }
 
 # mode_drop_rules_present - something can drop: a "drop" or "reject" rule in
@@ -2963,8 +2966,8 @@ cmd_mode_status() {
 	if ((json)); then
 		printf '{"mode":"%s","method":"%s","pending":%s,"remaining_sec":%d}\n' "$mode" "$method" "$pending" "$remaining"
 	else
-		echo "режим: $mode (метод $method)"
-		[[ "$pending" == "true" ]] && echo "ожидает mode-confirm: ${remaining} с до отката в ids"
+		echo "mode: $mode (method $method)"
+		[[ "$pending" == "true" ]] && echo "waiting for mode-confirm: ${remaining} s until the rollback to ids"
 	fi
 	return 0
 }
@@ -2986,25 +2989,25 @@ cmd_mode() {
 	while (($# > 0)); do
 		case "$1" in
 		--confirm-timeout)
-			[[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || fail 2 "mode: --confirm-timeout требует число секунд"
+			[[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || fail 2 "mode: --confirm-timeout needs a number of seconds"
 			timeout="$2"
 			shift 2
 			;;
-		*) fail 2 "mode: неизвестный аргумент: $1" ;;
+		*) fail 2 "mode: unknown argument: $1" ;;
 		esac
 	done
 	((timeout >= MODE_TIMEOUT_MIN && timeout <= MODE_TIMEOUT_MAX)) ||
-		fail 2 "mode: --confirm-timeout от $MODE_TIMEOUT_MIN до $MODE_TIMEOUT_MAX секунд"
+		fail 2 "mode: --confirm-timeout from $MODE_TIMEOUT_MIN to $MODE_TIMEOUT_MAX seconds"
 
 	if [[ "$target" == "ids" ]]; then
 		mode_go_ids
-		echo "режим ids"
+		echo "ids mode"
 		return 0
 	fi
 
 	mode_check_ips_possible
 	if [[ "$(conf_get SURICATA_MODE ids)" == "ips" && -z "$(mode_pending_deadline)" ]]; then
-		echo "уже в режиме ips"
+		echo "already in ips mode"
 		return 0
 	fi
 
@@ -3016,7 +3019,7 @@ cmd_mode() {
 		if ! ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)"; then
 			ips_fw_remove
 			conf_apply_value SURICATA_MODE ids
-			fail 1 "mode ips: правила файрвола не применились, режим возвращён в ids"
+			fail 1 "mode ips: the firewall rules were not applied, the mode is back to ids"
 		fi
 	fi
 
@@ -3028,24 +3031,24 @@ cmd_mode() {
 		"$(path_ctl_bin)" mode-rollback >/dev/null 2>&1; then
 		# Without a timer there is nothing to bring the host back.
 		mode_go_ids
-		fail 1 "mode ips: не удалось запустить таймер отката, режим возвращён в ids"
+		fail 1 "mode ips: could not start the rollback timer, the mode is back to ids"
 	fi
-	echo "режим ips включён; подтвердите командой mode-confirm в течение ${timeout} с, иначе вернётся ids"
+	echo "ips mode enabled; confirm with the mode-confirm command within ${timeout} s, or it goes back to ids"
 	mode_drop_rules_present ||
-		echo "предупреждение: правил drop нет (ни в local.rules, ни в drop.conf), IPS будет только оповещать, как IDS"
+		echo "warning: there are no drop rules (neither in local.rules nor in drop.conf), IPS will only alert, like IDS"
 }
 
 cmd_mode_confirm() {
-	[[ $# -eq 0 ]] || fail 2 "mode-confirm: без аргументов"
+	[[ $# -eq 0 ]] || fail 2 "mode-confirm: no arguments"
 	local deadline
 	deadline=$(mode_pending_deadline)
-	[[ -n "$deadline" ]] || fail 3 "mode-confirm: нечего подтверждать (переключения в ips нет или оно уже откатилось)"
+	[[ -n "$deadline" ]] || fail 3 "mode-confirm: nothing to confirm (there is no switch to ips or it has already rolled back)"
 	if (($(mode_now) > deadline)); then
-		fail 3 "mode-confirm: время подтверждения истекло, режим возвращается в ids"
+		fail 3 "mode-confirm: the confirmation time is over, the mode is going back to ids"
 	fi
 	mode_cancel_timer
 	rm -f "$(path_mode_pending)"
-	echo "режим ips подтверждён"
+	echo "ips mode confirmed"
 }
 
 # mode-rollback runs from the timer (and at boot): an unconfirmed switch
@@ -3053,14 +3056,14 @@ cmd_mode_confirm() {
 cmd_mode_rollback() {
 	[[ -n "$(mode_pending_deadline)" ]] || return 0
 	mode_go_ids
-	echo "режим ips не подтверждён, возвращён ids"
+	echo "ips mode not confirmed, back to ids"
 }
 
 cmd_fw() {
 	[[ $# -eq 1 ]] || fail 2 "fw: apply|remove|restore"
 	case "$1" in
 	apply)
-		ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw apply: файрвол отказал"
+		ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw apply: the firewall refused"
 		;;
 	remove) ips_fw_remove ;;
 	restore)
@@ -3069,7 +3072,7 @@ cmd_fw() {
 		if [[ -n "$(mode_pending_deadline)" ]]; then
 			cmd_mode_rollback
 		elif [[ "$(conf_get SURICATA_MODE ids)" == "ips" && "$(conf_get IPS_METHOD nfq)" == "nfq" ]]; then
-			ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw restore: файрвол отказал"
+			ips_fw_apply "$(conf_get IPS_NFQ_CHAINS INPUT,OUTPUT,FORWARD)" || fail 1 "fw restore: the firewall refused"
 		elif ips_fw_present; then
 			ips_fw_remove
 		fi
@@ -3087,16 +3090,16 @@ cmd_iface() {
 
 	case "$sub" in
 	list)
-		[[ $# -eq 0 ]] || fail 2 "iface list: без аргументов"
+		[[ $# -eq 0 ]] || fail 2 "iface list: no arguments"
 		printf '%s\n' "${current[@]}"
 		;;
 	add)
-		[[ $# -eq 1 ]] || fail 2 "iface add: нужно имя интерфейса"
+		[[ $# -eq 1 ]] || fail 2 "iface add: an interface name is needed"
 		if [[ ! "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,14}$ ]] || ! ip link show "$1" >/dev/null 2>&1; then
-			fail 5 "интерфейса нет в системе: $1"
+			fail 5 "the interface is not in the system: $1"
 		fi
 		if in_list "$1" "${current[@]}"; then
-			echo "уже в списке: $1"
+			echo "already in the list: $1"
 			return 0
 		fi
 		current+=("$1")
@@ -3106,9 +3109,9 @@ cmd_iface() {
 		)"
 		;;
 	remove)
-		[[ $# -eq 1 ]] || fail 2 "iface remove: нужно имя интерфейса"
-		in_list "$1" "${current[@]}" || fail 5 "интерфейса нет в IFACES: $1"
-		((${#current[@]} > 1)) || fail 3 "нельзя удалить последний интерфейс"
+		[[ $# -eq 1 ]] || fail 2 "iface remove: an interface name is needed"
+		in_list "$1" "${current[@]}" || fail 5 "the interface is not in IFACES: $1"
+		((${#current[@]} > 1)) || fail 3 "cannot remove the last interface"
 		local -a rest=() i
 		for i in "${current[@]}"; do
 			[[ "$i" == "$1" ]] || rest+=("$i")
@@ -3118,7 +3121,7 @@ cmd_iface() {
 			echo "${rest[*]}"
 		)"
 		;;
-	*) fail 2 "iface: неизвестная подкоманда: $sub" ;;
+	*) fail 2 "iface: unknown subcommand: $sub" ;;
 	esac
 }
 
@@ -3145,8 +3148,8 @@ rules_edit_line() {
 }
 
 cmd_rules_group() {
-	[[ $# -eq 2 ]] || fail 2 "rules-group: enable|disable <группа>"
-	[[ "$2" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail 5 "недопустимое имя группы"
+	[[ $# -eq 2 ]] || fail 2 "rules-group: enable|disable <group>"
+	[[ "$2" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail 5 "invalid group name"
 	case "$1" in
 	enable) rules_edit_line enable.conf add "group:$2.rules" ;;
 	disable) rules_edit_line enable.conf remove "group:$2.rules" ;;
@@ -3156,7 +3159,7 @@ cmd_rules_group() {
 
 cmd_rules_sid() {
 	[[ $# -eq 2 ]] || fail 2 "rules-sid: enable|disable <sid>"
-	[[ "$2" =~ ^[0-9]+$ ]] || fail 5 "sid должен быть числом"
+	[[ "$2" =~ ^[0-9]+$ ]] || fail 5 "sid must be a number"
 	case "$1" in
 	disable) rules_edit_line disable.conf add "$2" ;;
 	enable) rules_edit_line disable.conf remove "$2" ;;
@@ -3169,38 +3172,38 @@ cmd_rules_sources() {
 	local sub="$1" data_dir
 	shift
 	data_dir=$(path_rules_data_dir)
-	command -v suricata-update >/dev/null 2>&1 || fail 4 "suricata-update не установлен"
+	command -v suricata-update >/dev/null 2>&1 || fail 4 "suricata-update is not installed"
 	case "$sub" in
 	list)
 		if [[ $# -eq 1 && "$1" == "--enabled" ]]; then
 			suricata-update list-enabled-sources -D "$data_dir"
 			return
 		fi
-		[[ $# -eq 0 ]] || fail 2 "rules-sources list: без аргументов или --enabled"
+		[[ $# -eq 0 ]] || fail 2 "rules-sources list: no arguments or --enabled"
 		suricata-update list-sources -D "$data_dir"
 		;;
 	enable | disable | remove)
-		[[ $# -eq 1 ]] || fail 2 "rules-sources $sub: нужно имя источника"
+		[[ $# -eq 1 ]] || fail 2 "rules-sources $sub: a source name is needed"
 		# No leading "-": the name goes to suricata-update as an argument and
 		# would be read as an option.
-		[[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || fail 5 "недопустимое имя источника"
+		[[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] || fail 5 "invalid source name"
 		suricata-update "$sub-source" -D "$data_dir" "$1"
 		;;
 	add-url)
-		[[ $# -eq 1 ]] || fail 2 "rules-sources add-url: нужен URL"
-		[[ "$1" =~ ^https?://[A-Za-z0-9._:/@+,=-]+$ ]] || fail 5 "недопустимый URL"
+		[[ $# -eq 1 ]] || fail 2 "rules-sources add-url: a URL is needed"
+		[[ "$1" =~ ^https?://[A-Za-z0-9._:/@+,=-]+$ ]] || fail 5 "invalid URL"
 		suricata-update add-source -D "$data_dir" \
 			"dpistack-custom-$(printf '%s' "$1" | sha256sum | cut -c1-8)" "$1"
 		;;
-	*) fail 2 "rules-sources: неизвестная подкоманда: $sub" ;;
+	*) fail 2 "rules-sources: unknown subcommand: $sub" ;;
 	esac
 }
 
 cmd_rules_search() {
-	[[ $# -eq 1 && -n "$1" ]] || fail 2 "rules-search: нужен один запрос"
+	[[ $# -eq 1 && -n "$1" ]] || fail 2 "rules-search: exactly one query is needed"
 	local ruleset
 	ruleset=$(path_suricata_ruleset)
-	[[ -f "$ruleset" ]] || fail 4 "набор правил отсутствует"
+	[[ -f "$ruleset" ]] || fail 4 "no rule set"
 	# A number matches the sid exactly, anything else matches msg text.
 	RULES_Q="$1" awk -v max="$RULES_SEARCH_MAX" '
 		BEGIN { q = tolower(ENVIRON["RULES_Q"]); num = (q ~ /^[0-9]+$/) }
@@ -3225,8 +3228,8 @@ cmd_rules_search() {
 RULES_UPDATE_TAIL=40
 
 cmd_rules_update() {
-	[[ $# -eq 0 ]] || fail 2 "rules-update: без аргументов"
-	command -v suricata-update >/dev/null 2>&1 || fail 4 "suricata-update не установлен"
+	[[ $# -eq 0 ]] || fail 2 "rules-update: no arguments"
+	command -v suricata-update >/dev/null 2>&1 || fail 4 "suricata-update is not installed"
 	local ruleset snap log
 	ruleset=$(path_suricata_ruleset)
 	snap=$(mktemp)
@@ -3243,21 +3246,21 @@ cmd_rules_update() {
 	"${RULES_UPDATE_ARGV[@]}" >"$log" 2>&1 || ok=0
 	if ((ok)) && [[ "$(component_unit suricata)" == docker:* ]]; then
 		if ! docker_suricata_test >>"$log" 2>&1; then
-			echo "suricata -T не принял новый набор правил" >>"$log"
+			echo "suricata -T did not accept the new rule set" >>"$log"
 			ok=0
 		fi
 	elif ((ok)) && command -v suricata >/dev/null 2>&1; then
 		local check_dir
 		check_dir=$(mktemp -d)
 		if ! suricata -T -c "$(path_suricata_yaml)" -l "$check_dir" >>"$log" 2>&1; then
-			echo "suricata -T не принял новый набор правил" >>"$log"
+			echo "suricata -T did not accept the new rule set" >>"$log"
 			ok=0
 		fi
 		rm -rf "$check_dir"
 	fi
 	if ((ok)); then
 		suricata_reload_now >>"$log" 2>&1 || {
-			echo "перезагрузка правил не удалась" >>"$log"
+			echo "reloading the rules failed" >>"$log"
 			ok=0
 		}
 	fi
@@ -3269,7 +3272,7 @@ cmd_rules_update() {
 			cp -p "$snap" "$ruleset"
 			rm -f "$snap"
 		fi
-		fail 1 "rules-update не удался, прежний набор правил возвращён"
+		fail 1 "rules-update failed, the previous rule set is restored"
 	fi
 	[[ -n "$snap" ]] && rm -f "$snap"
 	return 0
@@ -3281,14 +3284,14 @@ cmd_test() {
 	[[ $# -ge 1 && $# -le 2 ]] || fail 2 "test: bittorrent|https|all [--json]"
 	local which="$1" json=0
 	if [[ $# -eq 2 ]]; then
-		[[ "$2" == "--json" ]] || fail 2 "test: неизвестный аргумент: $2"
+		[[ "$2" == "--json" ]] || fail 2 "test: unknown argument: $2"
 		json=1
 	fi
 	local -a names
 	case "$which" in
 	bittorrent | https) names=("$which") ;;
 	all) names=("${VERIFY_TESTS[@]}") ;;
-	*) fail 5 "неизвестный тест: $which" ;;
+	*) fail 5 "unknown test: $which" ;;
 	esac
 	# shellcheck disable=SC2034 # read by lib/step_verify.sh
 	VERIFY_HTTPS_URL=$(conf_get TEST_HTTPS_URL https://example.com)
@@ -3307,32 +3310,32 @@ cmd_health() {
 	case "${1:-}" in
 	"") ;;
 	--json) json=1 ;;
-	*) fail 2 "health: неизвестный аргумент" ;;
+	*) fail 2 "health: unknown argument" ;;
 	esac
-	[[ $# -le 1 ]] || fail 2 "health: лишние аргументы"
+	[[ $# -le 1 ]] || fail 2 "health: extra arguments"
 	local watch="$SCRIPT_DIR/bin/dpistack-watch"
-	[[ -x "$watch" ]] || fail 4 "dpistack-watch не установлен"
-	"$watch" || fail 1 "health: dpistack-watch завершился с ошибкой"
+	[[ -x "$watch" ]] || fail 4 "dpistack-watch is not installed"
+	"$watch" || fail 1 "health: dpistack-watch failed"
 	local file
 	file=$(path_health_json)
-	[[ -f "$file" ]] || fail 1 "health: $file не создан"
+	[[ -f "$file" ]] || fail 1 "health: $file was not created"
 	if ((json)); then
 		cat "$file"
 	else
-		jq -r '"overall: \(.overall)  (\(.ts))", (.checks[] | "\(.id)\t\(.status)\t\(.value)\t\(.detail)")' "$file" || fail 1 "health: нужен jq"
+		jq -r '"overall: \(.overall)  (\(.ts))", (.checks[] | "\(.id)\t\(.status)\t\(.value)\t\(.detail)")' "$file" || fail 1 "health: jq is needed"
 	fi
 }
 
 # ----------------------------------------------------------- panel-passwd
 
 cmd_panel_passwd() {
-	[[ $# -eq 0 ]] || fail 2 "panel-passwd: пароль читается со stdin"
+	[[ $# -eq 0 ]] || fail 2 "panel-passwd: the password is read from stdin"
 	local pw=""
 	IFS= read -r pw || true
-	[[ -n "$pw" ]] || fail 2 "panel-passwd: пустой пароль"
-	command -v argon2 >/dev/null 2>&1 || fail 1 "не установлен пакет argon2"
-	panel_auth_write "$pw" || fail 1 "не удалось записать хэш пароля"
-	echo "пароль панели обновлён"
+	[[ -n "$pw" ]] || fail 2 "panel-passwd: empty password"
+	command -v argon2 >/dev/null 2>&1 || fail 1 "the argon2 package is not installed"
+	panel_auth_write "$pw" || fail 1 "could not write the password hash"
+	echo "panel password updated"
 }
 
 ctl_main() {
@@ -3344,7 +3347,7 @@ ctl_main() {
 	# Every argument is checked before any command runs (4.5).
 	local arg
 	for arg in "$@"; do
-		[[ "$arg" =~ ^[A-Za-z0-9._:=/@+,\ -]*$ ]] || fail 5 "недопустимые символы в аргументе"
+		[[ "$arg" =~ ^[A-Za-z0-9._:=/@+,\ -]*$ ]] || fail 5 "invalid characters in the argument"
 	done
 
 	local cmd="$1"
@@ -3528,14 +3531,14 @@ put lib/menu.sh 644 <<'DPISTACK_BUNDLE_END'
 
 MENU_GROUPS=(capture components eve rules access metrics watch tests)
 declare -A MENU_GROUP_TITLE=(
-	[capture]="Захват и режим"
-	[components]="Компоненты и источники"
-	[eve]="EVE и хранение"
-	[rules]="Правила"
-	[access]="Доступ"
-	[metrics]="Метрики"
-	[watch]="Наблюдение и оповещения"
-	[tests]="Тесты"
+	[capture]="Capture and mode"
+	[components]="Components and sources"
+	[eve]="EVE and storage"
+	[rules]="Rules"
+	[access]="Access"
+	[metrics]="Metrics"
+	[watch]="Watch and alerts"
+	[tests]="Tests"
 )
 
 MENU_SHOW_ADVANCED=0
@@ -3573,7 +3576,7 @@ menu_close_input() {
 # menu_on_interrupt - Ctrl+C: change nothing, leave no temp files.
 menu_on_interrupt() {
 	echo >&2
-	echo "прервано, ничего не изменено" >&2
+	echo "interrupted, nothing changed" >&2
 	menu_close_input
 	exit 130
 }
@@ -3601,7 +3604,7 @@ menu_read() {
 # spinning forever on "" being treated as an unknown choice.
 menu_die_on_eof() {
 	if [[ "$MENU_EOF" == "1" ]]; then
-		echo "конец ввода, выхожу без применения" >&2
+		echo "end of input, leaving without applying" >&2
 		menu_close_input
 		exit 2
 	fi
@@ -3660,7 +3663,7 @@ panel_password_apply() {
 	fi
 
 	command -v argon2 >/dev/null 2>&1 || pkg_install argon2
-	panel_auth_write "$plaintext" || die 1 "не удалось записать хэш пароля панели (argon2)"
+	panel_auth_write "$plaintext" || die 1 "could not write the panel password hash (argon2)"
 	MENU_PANEL_PASSWORD=""
 }
 
@@ -3707,17 +3710,17 @@ menu_group_summary() {
 	# One short line per group for the main screen's right column.
 	case "$1" in
 	capture) echo "${CONF[SURICATA_MODE]^^}, ${CONF[IFACES]:-?}" ;;
-	components) echo "Suricata: ${CONF[SURICATA_SOURCE]}, nDPI: $([[ ${CONF[NDPI_ENABLE]} == yes ]] && echo да || echo нет)" ;;
+	components) echo "Suricata: ${CONF[SURICATA_SOURCE]}, nDPI: $([[ ${CONF[NDPI_ENABLE]} == yes ]] && echo yes || echo no)" ;;
 	eve)
 		local n
 		n=$(tr ',' '\n' <<<"${CONF[EVE_TYPES]}" | grep -c .)
-		echo "$n типов, ротация ${CONF[EVE_ROTATE]}"
+		echo "$n types, rotation ${CONF[EVE_ROTATE]}"
 		;;
 	rules) echo "${CONF[RULES_SOURCES]}, ${CONF[RULES_UPDATE_CALENDAR]}" ;;
 	access) echo "${CONF[ACCESS_MODE]}" ;;
-	metrics) echo "экспорт: $([[ ${CONF[METRICS_EXPORT]} == yes ]] && echo да || echo нет), бэкенд: ${CONF[METRICS_BACKEND]}" ;;
+	metrics) echo "export: $([[ ${CONF[METRICS_EXPORT]} == yes ]] && echo yes || echo no), backend: ${CONF[METRICS_BACKEND]}" ;;
 	watch) echo "${CONF[ALERT_CHANNELS]}" ;;
-	tests) echo "после установки: $([[ ${CONF[TEST_ON_INSTALL]} == yes ]] && echo да || echo нет)" ;;
+	tests) echo "after install: $([[ ${CONF[TEST_ON_INSTALL]} == yes ]] && echo yes || echo no)" ;;
 	esac
 }
 
@@ -3730,19 +3733,19 @@ menu_edit_key() {
 	while true; do
 		local current="${CONF[$key]:-}"
 		local opts="${SCHEMA_OPTIONS[$key]}"
-		echo "$key (сейчас: ${current:-<пусто>}, умолчание: ${SCHEMA_DEFAULT[$key]:-<пусто>})" >&2
-		[[ -n "$opts" ]] && echo "  варианты: $opts" >&2
+		echo "$key (now: ${current:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		[[ -n "$opts" ]] && echo "  options: $opts" >&2
 		local answer
 		if schema_is_secret "$key"; then
-			menu_read_secret answer "Новое значение (Enter - оставить, - сброс, ? подсказка): "
+			menu_read_secret answer "New value (Enter keeps, - resets, ? help): "
 		else
-			menu_read answer "Новое значение (Enter - оставить, - сброс, ? подсказка): "
+			menu_read answer "New value (Enter keeps, - resets, ? help): "
 		fi
 		menu_die_on_eof
 		case "$answer" in
 		"") return 0 ;;
 		"?")
-			echo "  ${key}: группа ${SCHEMA_GROUP[$key]}, тип ${SCHEMA_TYPE[$key]}" >&2
+			echo "  ${key}: group ${SCHEMA_GROUP[$key]}, type ${SCHEMA_TYPE[$key]}" >&2
 			continue
 			;;
 		"-")
@@ -3792,21 +3795,21 @@ menu_section_screen() {
 			mark=$(menu_mark_for_key "$key")
 			local shown
 			if schema_is_secret "$key"; then
-				shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo задан || echo "не задан")
+				shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
 			else
 				shown="${CONF[$key]:-}"
 			fi
 			printf '  %2d) %-28s = %s %s\n' "$i" "$key" "$shown" "$mark" >&2
 			i=$((i + 1))
 		done
-		echo "  a) $([[ $MENU_SHOW_ADVANCED == 1 ]] && echo "скрыть" || echo "показать") advanced   0) назад   ?) справка   q) выйти" >&2
+		echo "  a) $([[ $MENU_SHOW_ADVANCED == 1 ]] && echo "hide" || echo "show") advanced   0) back   ?) help   q) quit" >&2
 		local problems
 		problems=$(menu_problems_count)
 		if [[ "$problems" -gt 0 ]]; then
-			menu_red "Проблем: $problems" >&2
+			menu_red "Problems: $problems" >&2
 			echo >&2
 		else
-			echo "Проблем: $problems" >&2
+			echo "Problems: $problems" >&2
 		fi
 		local choice
 		menu_read choice "> "
@@ -3819,7 +3822,7 @@ menu_section_screen() {
 			continue
 			;;
 		'?')
-			echo "  Номер - править ключ; Enter/0 - назад; a - показать/скрыть advanced." >&2
+			echo "  Number - edit a key; Enter/0 - back; a - show/hide advanced." >&2
 			continue
 			;;
 		*)
@@ -3827,7 +3830,7 @@ menu_section_screen() {
 			if [[ "$choice" =~ ^[0-9]+$ ]] && ((10#$choice >= 1 && 10#$choice <= ${#keys[@]})); then
 				menu_edit_key "${keys[$((10#$choice - 1))]}"
 			else
-				echo "  непонятный пункт: $choice" >&2
+				echo "  unclear choice: $choice" >&2
 			fi
 			;;
 		esac
@@ -3837,22 +3840,22 @@ menu_section_screen() {
 menu_quit_confirm() {
 	[[ "$MENU_DIRTY" != "1" ]] && return 0
 	local answer
-	menu_read answer "Есть неприменённые правки. Выйти без применения? [y/N] "
-	[[ "$answer" =~ ^[yYдД] ]]
+	menu_read answer "There are unapplied edits. Leave without applying? [y/N] "
+	[[ "$answer" =~ ^[yY] ]]
 }
 
 menu_panel_password_screen() {
 	while true; do
 		local p1 p2
-		menu_read_secret p1 "Пароль панели: "
+		menu_read_secret p1 "Panel password: "
 		menu_die_on_eof
 		if [[ -z "$p1" ]]; then
-			echo "  пустой пароль не принимается" >&2
+			echo "  an empty password is not accepted" >&2
 			continue
 		fi
-		menu_read_secret p2 "Повторите пароль: "
+		menu_read_secret p2 "Repeat the password: "
 		if [[ "$p1" != "$p2" ]]; then
-			echo "  пароли не совпадают" >&2
+			echo "  the passwords do not match" >&2
 			continue
 		fi
 		MENU_PANEL_PASSWORD="$p1"
@@ -3862,12 +3865,12 @@ menu_panel_password_screen() {
 	done
 }
 
-# menu_quick_install - 5.1 "Быстрая установка": interfaces (ip -o link,
-# no lo, default-route one marked), Suricata source, access mode, panel
-# password; everything else keeps its default.
+# menu_quick_install - 5.1 "Quick install": interfaces (ip -o link,
+# no lo, default-route one marked), Suricata source, access mode, which
+# panel (full or lite), panel password; everything else keeps its default.
 menu_quick_install() {
 	echo >&2
-	menu_bold "Быстрая установка" >&2
+	menu_bold "Quick install" >&2
 	echo >&2
 	local default_iface
 	default_iface=$(ip -4 route show default 2>/dev/null | awk '/default/{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | head -1)
@@ -3883,12 +3886,12 @@ menu_quick_install() {
 	local i=1 name
 	for name in "${ifaces[@]}"; do
 		local tag=""
-		[[ "$name" == "$default_iface" ]] && tag=" (маршрут по умолчанию)"
+		[[ "$name" == "$default_iface" ]] && tag=" (default route)"
 		echo "  $i) $name$tag" >&2
 		i=$((i + 1))
 	done
 	local sel
-	menu_read sel "Интерфейсы (номера через запятую): "
+	menu_read sel "Interfaces (numbers, comma separated): "
 	local -a chosen=()
 	local n
 	IFS=',' read -ra sel_nums <<<"$sel"
@@ -3907,7 +3910,7 @@ menu_quick_install() {
 	fi
 
 	local src
-	menu_read src "Способ Suricata [source/oisf/distro, Enter=${CONF[SURICATA_SOURCE]}]: "
+	menu_read src "Suricata source [source/oisf/distro, Enter=${CONF[SURICATA_SOURCE]}]: "
 	if [[ -n "$src" ]]; then
 		local err
 		if err=$(schema_validate_one SURICATA_SOURCE "$src"); then
@@ -3919,7 +3922,7 @@ menu_quick_install() {
 	fi
 
 	local mode
-	menu_read mode "Режим доступа [localhost/lan/nginx, Enter=${CONF[ACCESS_MODE]}]: "
+	menu_read mode "Access mode [localhost/lan/nginx, Enter=${CONF[ACCESS_MODE]}]: "
 	if [[ -n "$mode" ]]; then
 		local err2
 		if err2=$(schema_validate_one ACCESS_MODE "$mode"); then
@@ -3927,6 +3930,19 @@ menu_quick_install() {
 			MENU_DIRTY=1
 		else
 			echo "  $err2" >&2
+		fi
+	fi
+
+	echo "  Panel: full (rich design, effects) or lite (same features, plain light page)" >&2
+	local edition
+	menu_read edition "Panel [full/lite, Enter=${CONF[PANEL_EDITION]}]: "
+	if [[ -n "$edition" ]]; then
+		local err3
+		if err3=$(schema_validate_one PANEL_EDITION "$edition"); then
+			config_set_kv PANEL_EDITION "$edition"
+			MENU_DIRTY=1
+		else
+			echo "  $err3" >&2
 		fi
 	fi
 
@@ -3939,73 +3955,73 @@ menu_check_system_screen() {
 	reasons=$(step_preflight_reasons)
 	echo >&2
 	if [[ -z "$reasons" ]]; then
-		echo "preflight: без замечаний" >&2
+		echo "preflight: no remarks" >&2
 	else
 		echo "preflight:" >&2
 		echo "  ${reasons//$'\n'/$'\n  '}" >&2
 	fi
 	local _enter
-	menu_read _enter "Enter для продолжения"
+	menu_read _enter "Enter to continue"
 }
 
 menu_plan_screen() {
 	echo >&2
 	run_plan >&2
 	local _enter
-	menu_read _enter "Enter для продолжения"
+	menu_read _enter "Enter to continue"
 }
 
 menu_save_to_file_screen() {
 	local path
-	menu_read path "Путь к файлу: "
+	menu_read path "File path: "
 	[[ -z "$path" ]] && return 0
 	config_write_conf "$path"
-	echo "  сохранено в $path" >&2
+	echo "  saved to $path" >&2
 }
 
 menu_load_from_file_screen() {
 	local path
-	menu_read path "Путь к файлу: "
+	menu_read path "File path: "
 	[[ -z "$path" || ! -f "$path" ]] && {
-		echo "  файл не найден" >&2
+		echo "  file not found" >&2
 		return 0
 	}
 	config_load_kv_file "$path"
 	local errs
 	errs=$(config_validate)
 	if [[ -n "$errs" ]]; then
-		echo "  в загруженном файле есть ошибки:" >&2
+		echo "  the loaded file has errors:" >&2
 		echo "  $errs" >&2
 	fi
 	MENU_DIRTY=1
 	menu_draft_save
 }
 
-# menu_main_screen -> 0 (user chose "Установить") or exits the process.
+# menu_main_screen -> 0 (user chose "Install") or exits the process.
 menu_main_screen() {
 	while true; do
 		echo >&2
-		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}") | $OS_ID ${OS_VERSION_ID:-}, $(uname -m) | systemd: $(command -v systemctl >/dev/null && echo да || echo нет)" >&2
-		echo "Установка. Конфиг: $(path_conf) (не создан)" >&2
+		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}") | $OS_ID ${OS_VERSION_ID:-}, $(uname -m) | systemd: $(command -v systemctl >/dev/null && echo yes || echo no)" >&2
+		echo "Install. Config: $(path_conf) (not created)" >&2
 		echo >&2
-		echo "  1) Быстрая установка" >&2
+		echo "  1) Quick install" >&2
 		local i=2 g
 		for g in "${MENU_GROUPS[@]}"; do
 			printf '  %2d) %-30s %s\n' "$i" "${MENU_GROUP_TITLE[$g]}" "$(menu_group_summary "$g")" >&2
 			i=$((i + 1))
 		done
-		printf '  %2d) %-30s %s\n' "$i" "Пароль панели" "$([[ $MENU_PANEL_PASSWORD_SET == 1 ]] && echo "задан" || echo "не задан")" >&2
+		printf '  %2d) %-30s %s\n' "$i" "Panel password" "$([[ $MENU_PANEL_PASSWORD_SET == 1 ]] && echo "set" || echo "not set")" >&2
 		echo >&2
-		echo "  c) Проверить систему   p) План   s) Сохранить в файл   l) Загрузить из файла" >&2
-		echo "  i) Установить          q) Выйти" >&2
+		echo "  c) Check the system   p) Plan   s) Save to file   l) Load from file" >&2
+		echo "  i) Install             q) Quit" >&2
 		local problems
 		problems=$(menu_problems_count)
 		echo >&2
 		if [[ "$problems" -gt 0 ]]; then
-			menu_red "Проблемы ($problems): $(menu_problems | head -1)" >&2
+			menu_red "Problems ($problems): $(menu_problems | head -1)" >&2
 			echo >&2
 		else
-			echo "Проблемы ($problems)" >&2
+			echo "Problems ($problems)" >&2
 		fi
 		local choice
 		menu_read choice "> "
@@ -4022,11 +4038,11 @@ menu_main_screen() {
 		} ;;
 		i)
 			if [[ "$problems" != "0" ]]; then
-				echo "  нельзя установить, пока есть проблемы" >&2
+				echo "  cannot install while there are problems" >&2
 				continue
 			fi
 			if [[ "$MENU_PANEL_PASSWORD_SET" != "1" ]]; then
-				echo "  без пароля панели установка недоступна" >&2
+				echo "  installation is unavailable without a panel password" >&2
 				continue
 			fi
 			# A busy port is a warning with a choice here, not a stop later.
@@ -4043,7 +4059,7 @@ menu_main_screen() {
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 2))" ]]; then
 				menu_panel_password_screen
 			else
-				echo "  непонятный пункт: $choice" >&2
+				echo "  unclear choice: $choice" >&2
 			fi
 			;;
 		esac
@@ -4053,9 +4069,9 @@ menu_main_screen() {
 menu_found_install_screen() {
 	while true; do
 		echo >&2
-		menu_bold "dpistack v${DPISTACK_VERSION} | Найдена установка" >&2
+		menu_bold "dpistack v${DPISTACK_VERSION} | Installation found" >&2
 		echo >&2
-		echo "  1) Настроить   2) Применить текущий конфиг заново   3) Меню управления   4) Выйти" >&2
+		echo "  1) Configure   2) Apply the current config again   3) Control menu   4) Quit" >&2
 		local choice
 		menu_read choice "> "
 		menu_die_on_eof
@@ -4067,13 +4083,13 @@ menu_found_install_screen() {
 			menu_close_input
 			exit 0
 			;;
-		*) echo "  непонятный пункт: $choice" >&2 ;;
+		*) echo "  unclear choice: $choice" >&2 ;;
 		esac
 	done
 }
 
 # menu_run_install - entry point for `install.sh install` without -y.
-# Returns 0 once the user chose "Установить"; the caller continues
+# Returns 0 once the user chose "Install"; the caller continues
 # into the normal validate/summary/preflight/apply pipeline (5.1 item
 # 1 onward), the same code -y runs directly.
 menu_run_install() {
@@ -4091,11 +4107,11 @@ menu_run_install() {
 			menu_run_manage
 			exit 0
 		fi
-		# rc=10 (настроить) falls through to the reconfigure menu below.
+		# rc=10 (configure) falls through to the reconfigure menu below.
 	elif [[ -f "$(path_conf_draft)" ]]; then
 		local answer
-		menu_read answer "Продолжить черновик? [Y/n] "
-		if [[ "$answer" =~ ^[nNнН] ]]; then
+		menu_read answer "Continue the draft? [Y/n] "
+		if [[ "$answer" =~ ^[nN] ]]; then
 			menu_draft_delete
 			config_reset
 			config_load_defaults
@@ -4128,17 +4144,17 @@ MENU_ALREADY_CONFIRMED=0
 menu_reconfigure_confirm_and_validate() {
 	config_diff_and_steps "$(path_conf)" >/dev/null
 	if [[ "$CONFIG_CHANGE_WEIGHT" == "none" ]]; then
-		echo "  изменений нет" >&2
+		echo "  no changes" >&2
 		return 1
 	fi
 
 	if [[ "$CONFIG_CHANGE_WEIGHT" == "heavy" ]]; then
-		echo "  Тяжёлые изменения затронут шаги: ${CONFIG_AFFECTED_STEPS[*]}" >&2
+		echo "  Heavy changes will affect the steps: ${CONFIG_AFFECTED_STEPS[*]}" >&2
 		local answer
-		menu_read answer "  Продолжить? [y/N] "
+		menu_read answer "  Continue? [y/N] "
 		menu_die_on_eof
-		if [[ ! "$answer" =~ ^[yYдД] ]]; then
-			echo "  отменено" >&2
+		if [[ ! "$answer" =~ ^[yY] ]]; then
+			echo "  cancelled" >&2
 			return 1
 		fi
 	fi
@@ -4147,7 +4163,7 @@ menu_reconfigure_confirm_and_validate() {
 	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
 		if [[ "$step" == "suricata" ]]; then
 			if ! suricata_validate_render "$(suricata_render_yaml)"; then
-				echo "  suricata -T упал на новом suricata.yaml, правки остаются в меню (см. вывод выше)" >&2
+				echo "  suricata -T failed on the new suricata.yaml, the edits stay in the menu (see the output above)" >&2
 				return 1
 			fi
 		fi
@@ -4162,28 +4178,28 @@ menu_diff_screen() {
 	echo >&2
 	config_diff_and_steps "$(path_conf)" >&2
 	local _enter
-	menu_read _enter "Enter для продолжения"
+	menu_read _enter "Enter to continue"
 }
 
-# menu_reconfigure_screen - 5.3's section screen. `0) Назад` only makes
+# menu_reconfigure_screen - 5.3's section screen. `0) Back` only makes
 # sense when opened from the control menu (not built until slice 15),
 # so a direct `dpistack reconfigure` behaves like `q` there, per spec.
 menu_reconfigure_screen() {
 	while true; do
 		echo >&2
 		menu_bold "dpistack v${DPISTACK_VERSION}" >&2
-		echo " | Настройка существующей установки" >&2
-		echo "Конфиг: $(path_conf)" >&2
+		echo " | Configuring an existing installation" >&2
+		echo "Config: $(path_conf)" >&2
 		echo >&2
 		local i=1 g
 		for g in "${MENU_GROUPS[@]}"; do
 			printf '  %2d) %-30s %s\n' "$i" "${MENU_GROUP_TITLE[$g]}" "$(menu_group_summary "$g")" >&2
 			i=$((i + 1))
 		done
-		printf '  %2d) %-30s %s\n' "$i" "Пароль панели" "сменить" >&2
+		printf '  %2d) %-30s %s\n' "$i" "Panel password" "change" >&2
 		echo >&2
-		echo "  d) Изменения (diff)   a) Применить   r) Отменить правки" >&2
-		echo "  s) Сохранить в файл   l) Загрузить из файла   q) Выйти$([[ "$MENU_BACK_ENABLED" == "1" ]] && echo "   b) Назад")" >&2
+		echo "  d) Changes (diff)   a) Apply   r) Discard edits" >&2
+		echo "  s) Save to file   l) Load from file   q) Quit$([[ "$MENU_BACK_ENABLED" == "1" ]] && echo "   b) Back")" >&2
 		local changed=0 key
 		for key in "${!CONF[@]}"; do
 			[[ "${CONF[$key]}" != "${MENU_OLD_CONF[$key]:-}" ]] && changed=$((changed + 1))
@@ -4191,9 +4207,9 @@ menu_reconfigure_screen() {
 		local rc_problems
 		rc_problems=$(menu_problems_count)
 		if [[ "$rc_problems" -gt 0 ]]; then
-			echo "Правки: $changed ключ(ей). $(menu_red "Проблемы: $rc_problems")" >&2
+			echo "Edits: $changed key(s). $(menu_red "Problems: $rc_problems")" >&2
 		else
-			echo "Правки: $changed ключ(ей). Проблемы: $rc_problems" >&2
+			echo "Edits: $changed key(s). Problems: $rc_problems" >&2
 		fi
 		local choice
 		menu_read choice "> "
@@ -4208,8 +4224,8 @@ menu_reconfigure_screen() {
 			;;
 		r)
 			local answer
-			menu_read answer "Сбросить все неприменённые правки? [y/N] "
-			if [[ "$answer" =~ ^[yYдД] ]]; then
+			menu_read answer "Discard all unapplied edits? [y/N] "
+			if [[ "$answer" =~ ^[yY] ]]; then
 				# shellcheck disable=SC2004 # CONF is associative (config.sh); $key is required, not arithmetic noise
 				for key in "${!MENU_OLD_CONF[@]}"; do CONF[$key]="${MENU_OLD_CONF[$key]}"; done
 				MENU_DIRTY=0
@@ -4222,7 +4238,7 @@ menu_reconfigure_screen() {
 			if [[ "$MENU_BACK_ENABLED" == "1" ]]; then
 				return 20
 			fi
-			echo "  непонятный пункт: $choice" >&2
+			echo "  unclear choice: $choice" >&2
 			;;
 		q) menu_quit_confirm && {
 			menu_close_input
@@ -4236,7 +4252,7 @@ menu_reconfigure_screen() {
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 1))" ]]; then
 				menu_panel_password_screen
 			else
-				echo "  непонятный пункт: $choice" >&2
+				echo "  unclear choice: $choice" >&2
 			fi
 			;;
 		esac
@@ -4244,7 +4260,7 @@ menu_reconfigure_screen() {
 }
 
 # menu_run_reconfigure - entry point for `install.sh reconfigure`
-# without -y. Returns 0 once the user chose "Применить".
+# without -y. Returns 0 once the user chose "Apply".
 menu_run_reconfigure() {
 	menu_open_input
 	for key in "${!CONF[@]}"; do MENU_OLD_CONF[$key]="${CONF[$key]}"; done
@@ -4287,26 +4303,26 @@ manage_ctl() {
 menu_manage_ctl() {
 	local ctl rc
 	if ! ctl=$(manage_ctl); then
-		echo "  dpistack не найден, проверьте установку (шаг selfinstall)" >&2
+		echo "  dpistack not found, check the installation (the selfinstall step)" >&2
 		return 1
 	fi
 	"$ctl" "$@"
 	rc=$?
-	((rc == 0)) || echo "  dpistack вернул код $rc" >&2
+	((rc == 0)) || echo "  dpistack returned code $rc" >&2
 	return "$rc"
 }
 
 menu_manage_summary() {
-	local ctl out active total health="нет данных"
+	local ctl out active total health="no data"
 	if ctl=$(manage_ctl) && out=$("$ctl" status --json 2>/dev/null) && command -v jq >/dev/null 2>&1; then
 		total=$(jq '[.components[] | select(.state != "absent")] | length' <<<"$out" 2>/dev/null)
 		active=$(jq '[.components[] | select(.state == "active")] | length' <<<"$out" 2>/dev/null)
-		printf 'компоненты: %s из %s активны' "${active:-?}" "${total:-?}"
+		printf 'components: %s of %s active' "${active:-?}" "${total:-?}"
 	else
-		printf 'компоненты: нет данных'
+		printf 'components: no data'
 	fi
 	if [[ -f "$(path_health_json)" ]] && command -v jq >/dev/null 2>&1; then
-		health=$(jq -r '.overall // "нет данных"' "$(path_health_json)" 2>/dev/null)
+		health=$(jq -r '.overall // "no data"' "$(path_health_json)" 2>/dev/null)
 	fi
 	printf '  |  health: %s' "$health"
 }
@@ -4317,16 +4333,16 @@ menu_manage_logs() {
 		printf '  %d) %s\n' "$i" "$id" >&2
 		i=$((i + 1))
 	done
-	menu_read choice "Компонент (номер, Enter - назад): "
+	menu_read choice "Component (number, Enter - back): "
 	menu_die_on_eof
 	[[ "$choice" =~ ^[0-9]+$ ]] || return 0
 	((10#$choice >= 1 && 10#$choice <= ${#MANAGE_COMPONENTS[@]})) || {
-		echo "  нет такого номера" >&2
+		echo "  no such number" >&2
 		return 0
 	}
 	id="${MANAGE_COMPONENTS[$((10#$choice - 1))]}"
 	menu_manage_ctl logs "$id" -n 200
-	menu_read choice "f - следить за журналом (Ctrl+C - выход), Enter - назад: "
+	menu_read choice "f - follow the log (Ctrl+C - exit), Enter - back: "
 	if [[ "$choice" == "f" ]]; then
 		# A no-op handler, not "ignore": the child keeps the default
 		# Ctrl+C and stops, the menu itself stays.
@@ -4339,34 +4355,34 @@ menu_manage_logs() {
 menu_manage_tests() {
 	local ctl out rc
 	ctl=$(manage_ctl) || {
-		echo "  dpistack не найден, проверьте установку (шаг selfinstall)" >&2
+		echo "  dpistack not found, check the installation (the selfinstall step)" >&2
 		return 1
 	}
 	out=$("$ctl" test all --json 2>&1)
 	rc=$?
 	if command -v jq >/dev/null 2>&1 && jq -e . >/dev/null 2>&1 <<<"$out"; then
-		jq -r '.[] | "  \(.name): \(.status) (\(.duration_ms) мс) - \(.detail)"' <<<"$out"
+		jq -r '.[] | "  \(.name): \(.status) (\(.duration_ms) ms) - \(.detail)"' <<<"$out"
 	else
 		printf '%s\n' "$out" >&2
 	fi
-	((rc == 0)) || echo "  есть непройденные тесты (код $rc)" >&2
+	((rc == 0)) || echo "  some tests failed (code $rc)" >&2
 }
 
 menu_manage_password() {
 	local p1 p2 ctl
-	menu_read_secret p1 "Новый пароль панели: "
+	menu_read_secret p1 "New panel password: "
 	menu_die_on_eof
 	[[ -n "$p1" ]] || {
-		echo "  пустой пароль не принимается" >&2
+		echo "  an empty password is not accepted" >&2
 		return 0
 	}
-	menu_read_secret p2 "Повторите пароль: "
+	menu_read_secret p2 "Repeat the password: "
 	if [[ "$p1" != "$p2" ]]; then
-		echo "  пароли не совпадают, ничего не изменено" >&2
+		echo "  the passwords do not match, nothing changed" >&2
 		return 0
 	fi
 	ctl=$(manage_ctl) || {
-		echo "  dpistack не найден, проверьте установку (шаг selfinstall)" >&2
+		echo "  dpistack not found, check the installation (the selfinstall step)" >&2
 		return 1
 	}
 	printf '%s\n' "$p1" | "$ctl" panel-passwd
@@ -4375,19 +4391,19 @@ menu_manage_password() {
 # menu_manage_uninstall - returns 0 only when the stack was removed.
 menu_manage_uninstall() {
 	local word mode
-	menu_read word "Введите слово «удалить» для подтверждения: "
+	menu_read word "Type the word \"remove\" to confirm: "
 	menu_die_on_eof
-	if [[ "$word" != "удалить" ]]; then
-		echo "  отменено" >&2
+	if [[ "$word" != "remove" ]]; then
+		echo "  cancelled" >&2
 		return 1
 	fi
-	echo "  1) обычное удаление   2) удаление с данными (--purge)" >&2
+	echo "  1) normal removal   2) removal with data (--purge)" >&2
 	menu_read mode "> "
 	case "$mode" in
 	1) (cmd_uninstall) ;;
 	2) (PURGE=1 cmd_uninstall) ;;
 	*)
-		echo "  отменено" >&2
+		echo "  cancelled" >&2
 		return 1
 		;;
 	esac
@@ -4398,18 +4414,18 @@ menu_run_manage() {
 	local choice rc answer
 	while true; do
 		echo >&2
-		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}")  |  Управление установленным стендом" >&2
-		echo "Конфиг: $(path_conf)  |  $(menu_manage_summary)" >&2
+		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}")  |  Managing the installed stand" >&2
+		echo "Config: $(path_conf)  |  $(menu_manage_summary)" >&2
 		echo >&2
-		echo "  1) Настроить                     разделы конфига, diff, применение" >&2
-		echo "  2) Статус компонентов" >&2
-		echo "  3) Логи" >&2
-		echo "  4) Запустить тесты" >&2
-		echo "  5) Обновить пакеты (upgrade)" >&2
-		echo "  6) Удалить (uninstall)" >&2
-		echo "  7) Пароль панели" >&2
+		echo "  1) Configure                     config sections, diff, apply" >&2
+		echo "  2) Component status" >&2
+		echo "  3) Logs" >&2
+		echo "  4) Run tests" >&2
+		echo "  5) Upgrade packages" >&2
+		echo "  6) Uninstall" >&2
+		echo "  7) Panel password" >&2
 		echo >&2
-		echo "  q) Выйти" >&2
+		echo "  q) Quit" >&2
 		menu_read choice "> "
 		menu_die_on_eof
 		case "$choice" in
@@ -4419,15 +4435,15 @@ menu_run_manage() {
 				cmd_reconfigure
 			)
 			rc=$?
-			((rc == 0)) || echo "  настройка завершилась с кодом $rc" >&2
+			((rc == 0)) || echo "  configuration finished with code $rc" >&2
 			;;
 		2) menu_manage_ctl status ;;
 		3) menu_manage_logs ;;
 		4) menu_manage_tests ;;
 		5)
-			menu_read answer "Обновить пакеты? [y/N] "
-			if [[ "$answer" =~ ^[yYдД] ]]; then
-				(cmd_upgrade) || echo "  upgrade завершился с ошибкой" >&2
+			menu_read answer "Upgrade packages? [y/N] "
+			if [[ "$answer" =~ ^[yY] ]]; then
+				(cmd_upgrade) || echo "  upgrade failed" >&2
 			fi
 			;;
 		6)
@@ -4441,7 +4457,7 @@ menu_run_manage() {
 			menu_close_input
 			return 0
 			;;
-		*) echo "  непонятный пункт: $choice" >&2 ;;
+		*) echo "  unclear choice: $choice" >&2 ;;
 		esac
 	done
 }
@@ -4502,7 +4518,7 @@ os_detect() {
 
 	# dpistack manages its services as systemd units, on every family.
 	if [[ "$OS_FAMILY" == "generic" && ! -d "$(path_systemd_marker)" ]]; then
-		die 3 "$OS_ID: нужен systemd (нет $(path_systemd_marker)); на системах с другим init dpistack не работает"
+		die 3 "$OS_ID: systemd is needed (no $(path_systemd_marker)); dpistack does not work on systems with another init"
 	fi
 
 	log "INFO" "detected $OS_ID $OS_VERSION_ID, family=$OS_FAMILY"
@@ -4539,7 +4555,7 @@ pkg_install() {
 		run pacman -S --noconfirm --needed "$@"
 		;;
 	generic)
-		echo "$OS_ID: пакеты этого дистрибутива установщик не ставит; установите вручную: $*" >&2
+		echo "$OS_ID: the installer does not install packages on this distribution; install them by hand: $*" >&2
 		return 1
 		;;
 	*)
@@ -4582,7 +4598,7 @@ pkg_repo_add() {
 		run dnf -y makecache
 		;;
 	*)
-		die 3 "pkg_repo_add: неизвестная комбинация family=$OS_FAMILY repo=$name"
+		die 3 "pkg_repo_add: unknown combination family=$OS_FAMILY repo=$name"
 		;;
 	esac
 }
@@ -4601,7 +4617,7 @@ pkg_pin() {
 		run zypper --non-interactive addlock "$1"
 		;;
 	*)
-		echo "$OS_ID: закрепление версии пакета $1 здесь не поддерживается (PIN_VERSIONS пропущен)" >&2
+		echo "$OS_ID: pinning the version of package $1 is not supported here (PIN_VERSIONS skipped)" >&2
 		;;
 	esac
 }
@@ -4704,7 +4720,7 @@ pkg_install_base() {
 			command -v "$c" >/dev/null 2>&1 || lacking+=("$c")
 		done
 		if [[ "${#lacking[@]}" -gt 0 ]]; then
-			echo "$OS_ID: не найдены команды: ${lacking[*]}; установите их пакетами дистрибутива и повторите" >&2
+			echo "$OS_ID: commands not found: ${lacking[*]}; install them with the distribution packages and repeat" >&2
 			return 1
 		fi
 		;;
@@ -4732,10 +4748,10 @@ pkg_enable_extra_repos() {
 		# missing, and that fails with a clear message later.
 		pkg_install dnf-plugins-core "https://dl.fedoraproject.org/pub/epel/epel-release-latest-${major}.noarch.rpm" || return 1
 		run subscription-manager repos "--enable=codeready-builder-for-rhel-${major}-$(uname -m)-rpms" ||
-			echo "rhel: репозиторий CodeReady Builder не включён (нужна подписка); для сборки из исходников включите его вручную" >&2
+			echo "rhel: the CodeReady Builder repository is not enabled (a subscription is needed); enable it by hand to build from source" >&2
 		;;
 	*)
-		echo "$OS_ID: включите EPEL и репозиторий -devel вручную, установщик их не трогает" >&2
+		echo "$OS_ID: enable EPEL and the -devel repository by hand, the installer does not touch them" >&2
 		;;
 	esac
 }
@@ -4764,7 +4780,7 @@ pkg_build_deps() {
 		pkg_install "${pkgs[@]}"
 		;;
 	*)
-		die 3 "pkg_build_deps: неизвестная семья пакетов: $OS_FAMILY"
+		die 3 "pkg_build_deps: unknown package family: $OS_FAMILY"
 		;;
 	esac
 }
@@ -4807,7 +4823,7 @@ pkg_select_rust() {
 	((${have:-0} >= SURICATA_RUST_MIN_MINOR)) && return 0
 	wanted=$(pkg_rust_versioned_minor)
 	if [[ -z "$wanted" ]]; then
-		echo "suricata: rustc 1.${have:-?} старше 1.${SURICATA_RUST_MIN_MINOR}, более новых пакетов rustc-1.N в репозиториях нет; сборка может упасть на configure (тогда SURICATA_SOURCE=oisf или distro)" >&2
+		echo "suricata: rustc 1.${have:-?} is older than 1.${SURICATA_RUST_MIN_MINOR}, there are no newer rustc-1.N packages in the repositories; the build may fail at configure (then use SURICATA_SOURCE=oisf or distro)" >&2
 		return 0
 	fi
 	pkg_install "rustc-1.$wanted" "cargo-1.$wanted" || return 1
@@ -4951,7 +4967,7 @@ selinux_port() {
 		[[ "$OS_FAMILY" == "dnf" ]] && pkg_install policycoreutils-python-utils
 	fi
 	if ! command -v semanage >/dev/null 2>&1; then
-		echo "selinux: semanage не найден, порт $port не получил тип $type" >&2
+		echo "selinux: semanage not found, port $port did not get the type $type" >&2
 		return 0
 	fi
 	if semanage port -l 2>/dev/null | awk -v t="$type" '$1 == t && $2 == "tcp" {$1 = ""; $2 = ""; gsub(/,/, " "); print}' | grep -qw -- "$port"; then
@@ -4959,7 +4975,7 @@ selinux_port() {
 	fi
 	run semanage port -a -t "$type" -p tcp "$port" ||
 		run semanage port -m -t "$type" -p tcp "$port" ||
-		echo "selinux: не удалось дать порту $port тип $type (возможно, у политики нет такого типа)" >&2
+		echo "selinux: could not give port $port the type $type (the policy may have no such type)" >&2
 	return 0
 }
 
@@ -5085,8 +5101,8 @@ path_ndpi_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib"; }
 DPISTACK_BUNDLE_END
 put lib/render.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# Template rendering (tech.md section 3: "подстановка @@KEY@@ и блоков
-# в templates/"). One implementation for every step, instead of a
+# Template rendering (tech.md section 3: "substitution of @@KEY@@ and blocks
+# in templates/"). One implementation for every step, instead of a
 # private awk in each step file.
 #
 #   render_template <template-file> [KEY=VALUE ...]
@@ -5102,7 +5118,7 @@ render_template() {
 	local tpl="$1"
 	shift
 	[[ -r "$tpl" ]] || {
-		echo "render: шаблон не найден: $tpl" >&2
+		echo "render: template not found: $tpl" >&2
 		return 1
 	}
 
@@ -5130,7 +5146,7 @@ render_template() {
 				fi
 			done
 			if ((!found)); then
-				echo "render: нет значения для блока @@${key}@@ в $tpl" >&2
+				echo "render: no value for the block @@${key}@@ in $tpl" >&2
 				rc=1
 			fi
 			continue
@@ -5140,7 +5156,7 @@ render_template() {
 			line="${line//@@${keys[$i]}@@/${values[$i]}}"
 		done
 		if [[ "$line" =~ @@[A-Z0-9_]+@@ ]]; then
-			echo "render: нет значения для ${BASH_REMATCH[0]} в $tpl" >&2
+			echo "render: no value for ${BASH_REMATCH[0]} in $tpl" >&2
 			rc=1
 		fi
 		printf '%s\n' "$line"
@@ -5421,7 +5437,7 @@ docker_service_check() {
 docker_service_apply() {
 	local svc="$1"
 	command -v docker >/dev/null 2>&1 || {
-		echo "docker: не найден, нужен для ${svc} с RUNTIME=docker" >&2
+		echo "docker: not found, needed for ${svc} with RUNTIME=docker" >&2
 		return 1
 	}
 	# Host directories the containers mount must exist, or Docker creates
@@ -5458,7 +5474,7 @@ runtime_release_native() {
 }
 
 docker_service_plan() {
-	echo "$1: docker compose, образ $(docker_image "$1"), network_mode: host (рендер $(path_compose_yaml))"
+	echo "$1: docker compose, image $(docker_image "$1"), network_mode: host (render $(path_compose_yaml))"
 }
 
 # docker_suricata_test - suricata -T inside the image against the same
@@ -5514,7 +5530,7 @@ put lib/schema.sh 644 <<'DPISTACK_BUNDLE_END'
 #   LEVEL   basic | advanced (5.0)
 #   GROUP   capture|components|eve|rules|access|metrics|watch|tests (5.0)
 #   STEPS   space separated step ids this key's change touches (5.3)
-#   WEIGHT  light | heavy (5.3, "лёгкое"/"тяжёлое")
+#   WEIGHT  light | heavy (5.3, "light"/"heavy")
 #   SECRET  yes | no (yes = lives in secrets.conf, never in dpistack.conf)
 
 # shellcheck disable=SC2034 # SCHEMA_DEFAULT/GROUP/STEPS/WEIGHT are read by lib/config.sh
@@ -5525,7 +5541,7 @@ SCHEMA_KEYS=()
 # Key/value combinations whose implementation does not exist yet
 # (tech.md 4.3: "docker", "ips", METRICS_BACKEND other than "none").
 # Present as valid enum members so the schema does not reject them
-# outright, but installer rejects them with "пока не поддерживается".
+# outright, but installer rejects them with "not supported yet".
 # Shape of every free-text key. These values end up in YAML, nginx and
 # systemd files, in curl and suricata-update arguments, all of them run
 # or read by root, and `dpistack-ctl config-write` lets the panel change
@@ -5633,7 +5649,7 @@ schema_init() {
 	_schema_add 'NTOPNG_PORT|int|3000|1..65535|advanced|access|ntopng access|light|no'
 	_schema_add 'PANEL_SOURCE|enum|auto|auto,build,prebuilt|advanced|components|panel|heavy|no'
 	_schema_add 'PANEL_RUNTIME|enum|native|native,docker|basic|components|panel|heavy|no'
-	_schema_add 'PANEL_MODE|enum|limited|limited,unlimited|advanced|components|panel|light|no'
+	_schema_add 'PANEL_EDITION|enum|full|full,lite|basic|components|panel|light|no'
 	_schema_add 'NGINX_MANAGE|enum|snippet|yes,snippet|advanced|access|access panel|light|no'
 	_schema_add 'NGINX_TLS|enum|none|none,selfsigned,existing|advanced|access|access panel|light|no'
 	_schema_add 'NGINX_CERT|free|||advanced|access|access panel|light|no'
@@ -5691,12 +5707,12 @@ schema_validate_one() {
 	local key="$1" value="$2"
 
 	if ! schema_known "$key"; then
-		echo "неизвестный ключ: $key"
+		echo "unknown key: $key"
 		return 1
 	fi
 
 	if schema_not_yet_supported "$key" "$value"; then
-		echo "$key=$value: пока не поддерживается"
+		echo "$key=$value: not supported yet"
 		return 1
 	fi
 
@@ -5715,7 +5731,7 @@ schema_validate_one() {
 			[[ "$value" == "$opt" ]] && ok=1
 		done
 		if [[ "$ok" -ne 1 ]]; then
-			echo "$key=$value: недопустимое значение, допустимо: $opts"
+			echo "$key=$value: invalid value, allowed: $opts"
 			return 1
 		fi
 		;;
@@ -5723,14 +5739,14 @@ schema_validate_one() {
 		# No leading zeros: bash reads "08" as a bad octal number, "010" as
 		# eight, and a value kept as "08" breaks every later calculation.
 		if ! [[ "$value" =~ ^(0|-?[1-9][0-9]*)$ ]]; then
-			echo "$key=$value: ожидалось целое число без ведущих нулей"
+			echo "$key=$value: an integer without leading zeros expected"
 			return 1
 		fi
 		local range="${SCHEMA_OPTIONS[$key]}"
 		if [[ -n "$range" ]]; then
 			local min="${range%..*}" max="${range#*..}"
 			if ((value < min || value > max)); then
-				echo "$key=$value: вне диапазона $range"
+				echo "$key=$value: out of range $range"
 				return 1
 			fi
 		fi
@@ -5740,15 +5756,15 @@ schema_validate_one() {
 		if [[ -n "$pattern" && ! "$value" =~ $pattern ]]; then
 			# A secret is never echoed back, not even in an error.
 			if schema_is_secret "$key"; then
-				echo "$key: недопустимый формат значения"
+				echo "$key: invalid value format"
 			else
-				echo "$key=$value: недопустимые символы или формат"
+				echo "$key=$value: invalid characters or format"
 			fi
 			return 1
 		fi
 		;;
 	*)
-		echo "$key: неизвестный тип схемы $type"
+		echo "$key: unknown schema type $type"
 		return 1
 		;;
 	esac
@@ -5927,9 +5943,9 @@ access_selinux_notice() {
 		# panel ports until this boolean is on.
 		if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
 			run setsebool -P httpd_can_network_connect 1 ||
-				echo "access: SELinux Enforcing, setsebool httpd_can_network_connect не прошёл: nginx не сможет проксировать на локальные порты" >&2
+				echo "access: SELinux Enforcing, setsebool httpd_can_network_connect failed: nginx cannot proxy to the local ports" >&2
 		else
-			echo "access: SELinux в режиме Enforcing; для ACCESS_MODE=${CONF[ACCESS_MODE]:-localhost} изменений не требуется" >&2
+			echo "access: SELinux is in Enforcing mode; for ACCESS_MODE=${CONF[ACCESS_MODE]:-localhost} no changes are needed" >&2
 		fi
 	fi
 }
@@ -6038,7 +6054,7 @@ access_firewall_sync() {
 	tool=$(access_fw_tool)
 	old=$(state_read_value "$ACCESS_FW_STATE_KEY")
 	if [[ -z "$tool" ]]; then
-		[[ ${#wanted[@]} -gt 0 ]] && echo "access: FIREWALL_MANAGE=auto, но ни ufw, ни firewalld не найдены - правила не применены" >&2
+		[[ ${#wanted[@]} -gt 0 ]] && echo "access: FIREWALL_MANAGE=auto, but neither ufw nor firewalld was found - the rules are not applied" >&2
 		return 0
 	fi
 	# firewalld installed but stopped: its permanent rules would be
@@ -6046,7 +6062,7 @@ access_firewall_sync() {
 	# accident. Say so and leave it to the administrator.
 	if [[ "$tool" == "firewalld" ]] && ! firewall-cmd --state >/dev/null 2>&1; then
 		if [[ ${#wanted[@]} -gt 0 || -n "$old" ]]; then
-			echo "access: firewalld не запущен - правила не применены (запустите firewalld и повторите reconfigure)" >&2
+			echo "access: firewalld is not running - the rules are not applied (start firewalld and repeat reconfigure)" >&2
 		fi
 		return 0
 	fi
@@ -6113,9 +6129,9 @@ step_access_apply() {
 	access_selinux_ports
 
 	if [[ "$mode" != "localhost" ]]; then
-		echo "access: ACCESS_MODE=$mode открывает веб-интерфейсы за пределы localhost." >&2
+		echo "access: ACCESS_MODE=$mode opens the web interfaces beyond localhost." >&2
 		if [[ "$mode" == "lan" ]]; then
-			echo "access: ntopng/EveBox/панель будут слушать на 0.0.0.0 и видны всей сети LAN_CIDR; пароли передаются по обычному HTTP, если не включён NGINX_TLS." >&2
+			echo "access: ntopng/EveBox/the panel will listen on 0.0.0.0 and be visible to the whole LAN_CIDR network; passwords go over plain HTTP unless NGINX_TLS is on." >&2
 		fi
 	fi
 
@@ -6134,7 +6150,7 @@ step_access_apply() {
 			command -v nginx >/dev/null 2>&1 || pkg_install nginx || return 1
 			write_rendered_file "$(path_nginx_confd)" "$rendered"
 			if ! access_nginx_test_ok; then
-				echo "access: nginx -t упал на отрендеренном конфиге, изменения не применены" >&2
+				echo "access: nginx -t failed on the rendered config, the changes are not applied" >&2
 				return 1
 			fi
 			run systemctl enable --now "$NGINX_UNIT" || return 1
@@ -6143,8 +6159,8 @@ step_access_apply() {
 			# snippet: never touches the system nginx.conf or reloads
 			# nginx (criterion 3) - just leaves the file for the owner.
 			write_rendered_file "$(path_nginx_snippet)" "$rendered"
-			echo "access: конфиг nginx не применён автоматически (NGINX_MANAGE=snippet)." >&2
-			echo "access: подключите его сами: include $(path_nginx_snippet); - и перезагрузите nginx." >&2
+			echo "access: the nginx config is not applied automatically (NGINX_MANAGE=snippet)." >&2
+			echo "access: include it yourself: include $(path_nginx_snippet); - and reload nginx." >&2
 		fi
 	fi
 
@@ -6161,7 +6177,7 @@ step_access_plan() {
 		echo "access: nginx (NGINX_MANAGE=${CONF[NGINX_MANAGE]:-snippet}, TLS=${CONF[NGINX_TLS]:-none})"
 	fi
 	if [[ "${CONF[FIREWALL_MANAGE]:-no}" == "auto" ]]; then
-		echo "access: ufw allow из $(access_effective_lan_cidr 2>/dev/null || echo "?")"
+		echo "access: ufw allow from $(access_effective_lan_cidr 2>/dev/null || echo "?")"
 	fi
 }
 
@@ -6247,7 +6263,7 @@ evebox_repo_add() {
 		# The stable rpm repository is added by its release package
 		# (OISF tracker #3807, evebox.org downloads).
 		run dnf install -y "$EVEBOX_RPM_RELEASE_URL" || {
-			echo "evebox: не удалось подключить репозиторий $EVEBOX_RPM_RELEASE_URL. Поставьте EveBox с https://evebox.org/#downloads и повторите install --only evebox, либо пропустите шаг: --skip evebox" >&2
+			echo "evebox: could not add the repository $EVEBOX_RPM_RELEASE_URL. Install EveBox from https://evebox.org/#downloads and repeat install --only evebox, or skip the step: --skip evebox" >&2
 			return 1
 		}
 		run dnf -y makecache || return 1
@@ -6286,7 +6302,7 @@ step_evebox_apply() {
 		runtime_release_native "$EVEBOX_UNIT" || return 1
 		write_rendered_file "$(path_evebox_yaml)" "$(evebox_render_conf)" || return 1
 		docker_service_apply evebox || return 1
-		echo "evebox: в контейнере, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}"); встроенные TLS и аутентификация EveBox отключены, доступ ограничивается сетью (ACCESS_MODE/firewall)." >&2
+		echo "evebox: in a container, listens on $(access_effective_bind_host):$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}"); the built-in TLS and authentication of EveBox are off, access is limited by the network (ACCESS_MODE/firewall)." >&2
 		return 0
 	fi
 	runtime_release_docker evebox || return 1
@@ -6305,20 +6321,20 @@ step_evebox_apply() {
 	run systemctl enable --now "$EVEBOX_UNIT" || return 1
 
 	if [[ "${CONF[EVEBOX_DB]:-sqlite}" == "elasticsearch" ]]; then
-		echo "evebox: EVEBOX_RETENTION_DAYS работает только с SQLite, для Elasticsearch удаление старых событий настраивается на стороне Elasticsearch." >&2
+		echo "evebox: EVEBOX_RETENTION_DAYS works only with SQLite, for Elasticsearch deleting old events is configured on the Elasticsearch side." >&2
 	fi
-	echo "evebox: слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}"); встроенные TLS и аутентификация EveBox отключены, доступ ограничивается сетью (ACCESS_MODE/firewall)." >&2
+	echo "evebox: listens on $(access_effective_bind_host):$(access_backend_port "${CONF[EVEBOX_PORT]:-5636}"); the built-in TLS and authentication of EveBox are off, access is limited by the network (ACCESS_MODE/firewall)." >&2
 	return 0
 }
 
 step_evebox_plan() {
 	if docker_wanted evebox; then
 		docker_service_plan evebox
-		echo "evebox: рендер $(path_evebox_yaml)"
+		echo "evebox: render $(path_evebox_yaml)"
 		return 0
 	fi
-	echo "evebox: репозиторий evebox.org, пакет $EVEBOX_PACKAGE, база ${CONF[EVEBOX_DB]:-sqlite}, порт ${CONF[EVEBOX_PORT]:-5636}, bind $(access_effective_bind_host)"
-	echo "evebox: рендер $(path_evebox_yaml)"
+	echo "evebox: repository evebox.org, package $EVEBOX_PACKAGE, database ${CONF[EVEBOX_DB]:-sqlite}, port ${CONF[EVEBOX_PORT]:-5636}, bind $(access_effective_bind_host)"
+	echo "evebox: render $(path_evebox_yaml)"
 }
 DPISTACK_BUNDLE_END
 put lib/step_metrics.sh 644 <<'DPISTACK_BUNDLE_END'
@@ -6522,7 +6538,7 @@ metrics_fetch_binary() {
 	local backend="$1" kind arch ver url tmp want got
 	kind=$(metrics_kind "$backend")
 	arch=$(metrics_arch) || {
-		echo "metrics: архитектура $(uname -m) не поддерживается (нужна amd64 или arm64)" >&2
+		echo "metrics: architecture $(uname -m) is not supported (amd64 or arm64 is needed)" >&2
 		return 1
 	}
 	ver=$(metrics_version "$backend")
@@ -6535,13 +6551,13 @@ metrics_fetch_binary() {
 	want="${!override:-${METRICS_SHA256[${kind}_${arch}]}}"
 	tmp=$(mktemp -d)
 	if ! run curl --proto '=https' --tlsv1.2 -fsSL -o "$tmp/archive.tar.gz" "$url"; then
-		echo "metrics: не удалось скачать $url" >&2
+		echo "metrics: could not download $url" >&2
 		rm -rf "$tmp"
 		return 1
 	fi
 	got=$(sha256sum "$tmp/archive.tar.gz" | awk '{print $1}')
 	if [[ "$got" != "$want" ]]; then
-		echo "metrics: контрольная сумма $url не совпала (ожидалась $want, получена $got), бинарник не установлен" >&2
+		echo "metrics: the checksum of $url did not match (expected $want, got $got), the binary is not installed" >&2
 		rm -rf "$tmp"
 		return 1
 	fi
@@ -6612,18 +6628,18 @@ step_metrics_plan() {
 	backend=$(metrics_backend)
 	installed=$(metrics_installed)
 	if [[ -n "$installed" && "$installed" != "$(metrics_marker "$backend")" ]]; then
-		echo "metrics: остановить ${installed} (данные остаются)"
+		echo "metrics: stop ${installed} (the data stays)"
 	fi
 	if [[ "$backend" == "none" ]]; then
-		[[ -z "$installed" ]] && echo "metrics: без изменений (METRICS_BACKEND=none, только эндпоинт /metrics)"
+		[[ -z "$installed" ]] && echo "metrics: no changes (METRICS_BACKEND=none, only the /metrics endpoint)"
 		return 0
 	fi
 	if [[ "$(metrics_runtime)" == "docker" ]]; then
 		docker_service_plan "$backend"
 	else
-		echo "metrics: $backend $(metrics_version "$backend") с релиза GitHub с проверкой sha256, юнит $(metrics_unit_name "$backend"), слушает $(metrics_listen "$backend"), хранение ${CONF[METRICS_RETENTION]:-30d}"
+		echo "metrics: $backend $(metrics_version "$backend") from a GitHub release with a sha256 check, unit $(metrics_unit_name "$backend"), listens on $(metrics_listen "$backend"), retention ${CONF[METRICS_RETENTION]:-30d}"
 	fi
-	echo "metrics: рендер $(path_scrape_yaml), цель $(metrics_scrape_target), токен из файла $(path_metrics_token)"
+	echo "metrics: render $(path_scrape_yaml), target $(metrics_scrape_target), token from file $(path_metrics_token)"
 }
 DPISTACK_BUNDLE_END
 put lib/step_ndpi.sh 644 <<'DPISTACK_BUNDLE_END'
@@ -6681,7 +6697,7 @@ ndpi_resolve_source() {
 	[[ "${CONF[NDPI_ENABLE]:-no}" == "yes" && "${CONF[NDPI_SOURCE]:-source}" == "pkg" ]] || return 1
 	[[ -z "$(ndpi_pkg_installed_version)" ]] || return 1
 	pkg_available "$NDPI_PACKAGE" && return 1
-	echo "ndpi: пакета $NDPI_PACKAGE нет в репозиториях, NDPI_SOURCE=pkg заменён на source (сборка из исходников)" >&2
+	echo "ndpi: package $NDPI_PACKAGE is not in the repositories, NDPI_SOURCE=pkg is replaced by source (build from source)" >&2
 	CONF[NDPI_SOURCE]=source
 }
 
@@ -6711,7 +6727,7 @@ ndpi_build_from_source() {
 	)
 	local rc=$?
 	if [[ "$rc" -ne 0 ]]; then
-		echo "nDPI: сборка из исходников упала (autogen/configure/make), см. вывод выше" >&2
+		echo "nDPI: the build from source failed (autogen/configure/make), see the output above" >&2
 		return 1
 	fi
 
@@ -6733,7 +6749,7 @@ step_ndpi_apply() {
 		ndpi_build_from_source
 		;;
 	*)
-		echo "NDPI_SOURCE=${CONF[NDPI_SOURCE]}: неизвестный источник" >&2
+		echo "NDPI_SOURCE=${CONF[NDPI_SOURCE]}: unknown source" >&2
 		return 1
 		;;
 	esac
@@ -6741,12 +6757,12 @@ step_ndpi_apply() {
 
 step_ndpi_plan() {
 	if [[ "${CONF[NDPI_ENABLE]:-no}" != "yes" ]]; then
-		echo "ndpi: NDPI_ENABLE=no, без изменений"
+		echo "ndpi: NDPI_ENABLE=no, no changes"
 		return 0
 	fi
 	case "${CONF[NDPI_SOURCE]:-source}" in
-	pkg) echo "ndpi: установка пакета $NDPI_PACKAGE" ;;
-	source) echo "ndpi: сборка из исходников ($NDPI_REPO_URL, ref=$(ndpi_target_ref | sed 's/^$/HEAD/'))" ;;
+	pkg) echo "ndpi: installing the package $NDPI_PACKAGE" ;;
+	source) echo "ndpi: build from source ($NDPI_REPO_URL, ref=$(ndpi_target_ref | sed 's/^$/HEAD/'))" ;;
 	esac
 }
 DPISTACK_BUNDLE_END
@@ -6804,7 +6820,7 @@ ntopng_repo_add_rpm() {
 		;;
 	*)
 		pkg_available "$NTOPNG_PACKAGE" || {
-			echo "ntopng: ntop.org не публикует репозиторий для $OS_ID и в репозиториях дистрибутива пакета нет; шаг можно пропустить: --skip ntopng" >&2
+			echo "ntopng: ntop.org does not publish a repository for $OS_ID and the distribution has no package; the step can be skipped: --skip ntopng" >&2
 			return 1
 		}
 		;;
@@ -6836,7 +6852,7 @@ ntopng_repo_add() {
 		version_id=$(. "$(path_os_release)" && echo "${VERSION_CODENAME:-}")
 	fi
 	if [[ -z "$version_id" ]]; then
-		log "ERROR" "ntopng: в os-release нет версии или имени релиза для репозитория ntop.org"
+		log "ERROR" "ntopng: os-release has no version or release name for the ntop.org repository"
 		return 1
 	fi
 	local deb_tmp
@@ -6876,7 +6892,7 @@ step_ntopng_apply() {
 		runtime_release_native "$NTOPNG_UNIT" || return 1
 		write_rendered_file "$(path_ntopng_conf)" "$(ntopng_render_conf)" || return 1
 		docker_service_apply ntopng || return 1
-		echo "ntopng: в контейнере, логин/пароль по умолчанию admin/admin, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - смените пароль в веб-интерфейсе." >&2
+		echo "ntopng: in a container, default login/password admin/admin, listens on $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - change the password in the web interface." >&2
 		return 0
 	fi
 	runtime_release_docker ntopng || return 1
@@ -6900,7 +6916,7 @@ step_ntopng_apply() {
 	# from here, so the default admin/admin credential is only ever
 	# safe when access_effective_bind_host keeps this on 127.0.0.1;
 	# step_access.sh prints its own louder warning for lan/nginx modes.
-	echo "ntopng: логин/пароль по умолчанию admin/admin, слушает на $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - смените пароль в веб-интерфейсе." >&2
+	echo "ntopng: default login/password admin/admin, listens on $(access_effective_bind_host):$(access_backend_port "${CONF[NTOPNG_PORT]:-3000}") - change the password in the web interface." >&2
 
 	return 0
 }
@@ -6908,11 +6924,11 @@ step_ntopng_apply() {
 step_ntopng_plan() {
 	if docker_wanted ntopng; then
 		docker_service_plan ntopng
-		echo "ntopng: рендер $(path_ntopng_conf), порт ${CONF[NTOPNG_PORT]:-3000} (сервис на $(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")), bind $(access_effective_bind_host)"
+		echo "ntopng: render $(path_ntopng_conf), port ${CONF[NTOPNG_PORT]:-3000} (service on $(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")), bind $(access_effective_bind_host)"
 		return 0
 	fi
-	echo "ntopng: интерфейсы $(ntopng_effective_ifaces), порт ${CONF[NTOPNG_PORT]:-3000} (сервис на $(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")), bind $(access_effective_bind_host)"
-	echo "ntopng: рендер $(path_ntopng_conf)"
+	echo "ntopng: interfaces $(ntopng_effective_ifaces), port ${CONF[NTOPNG_PORT]:-3000} (service on $(access_backend_port "${CONF[NTOPNG_PORT]:-3000}")), bind $(access_effective_bind_host)"
+	echo "ntopng: render $(path_ntopng_conf)"
 }
 DPISTACK_BUNDLE_END
 put lib/step_panel.sh 644 <<'DPISTACK_BUNDLE_END'
@@ -6920,7 +6936,8 @@ put lib/step_panel.sh 644 <<'DPISTACK_BUNDLE_END'
 # "panel" step: the system user `dpistack`, the sudoers rule that lets it
 # run only dpistack (tech.md 4.2, 4.5), the panel binary (PANEL_SOURCE:
 # built from panel/ with Go, or a ready dpistack-panel next to install.sh)
-# and the systemd unit with the resource budget (tech.md 9).
+# and the systemd unit (tech.md 9). PANEL_EDITION picks the panel: full, or
+# lite with the same features and a plain, light page.
 
 PANEL_USER="dpistack"
 PANEL_SERVICE="dpistack-panel.service"
@@ -6990,6 +7007,11 @@ panel_token_matches() {
 	fi
 }
 
+# panel_is_lite - 0 when PANEL_EDITION=lite.
+panel_is_lite() {
+	[[ "${CONF[PANEL_EDITION]:-full}" == "lite" ]]
+}
+
 # panel_args - the flags of the panel (tech.md 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
@@ -7002,13 +7024,14 @@ panel_args() {
 		if [[ "$mode" == "lan" && -z "$cidr" ]]; then
 			# The same closed fallback as the access step: nobody but the
 			# host itself gets in until LAN_CIDR is set by hand.
-			echo "panel: LAN_CIDR не определить, панель открыта только для 127.0.0.1 (задайте LAN_CIDR)" >&2
+			echo "panel: LAN_CIDR cannot be determined, the panel is open for 127.0.0.1 only (set LAN_CIDR)" >&2
 			cidr="127.0.0.1/32"
 		fi
 	fi
 	args="-addr ${host}:${port} -access ${mode}"
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
 	args+=" -auth-file $(path_panel_auth) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json)"
+	panel_is_lite && args+=" -lite"
 	# Without the flag the panel shows that viewing events is off.
 	[[ "${CONF[EVE_FILE]:-yes}" == "yes" ]] && args+=" -eve-file $(path_suricata_eve_json)"
 	# The Tests and Alerts screens read these two files whatever /metrics does.
@@ -7020,7 +7043,6 @@ panel_args() {
 		[[ "${CONF[EVEBOX_DB]:-sqlite}" == "sqlite" ]] && disks+=",$(path_evebox_data_dir)"
 		args+=" -metrics-token-file $(path_metrics_token) -rules-file $(path_suricata_ruleset) -disk-paths ${disks}"
 	fi
-	[[ "${CONF[PANEL_MODE]:-limited}" == "unlimited" ]] && args+=" -max-streams 32"
 	echo "$args"
 }
 
@@ -7030,19 +7052,7 @@ panel_render_service() {
 	render_template "$SCRIPT_DIR/templates/dpistack-panel.service.tpl" \
 		"USER=$PANEL_USER" \
 		"PANEL_BIN=$(path_panel_bin)" \
-		"RESOURCE_LIMITS=$(panel_resource_limits)" \
 		"ARGS=$args"
-}
-
-# panel_resource_limits - the unit lines of the budget. PANEL_MODE=unlimited
-# leaves the panel without one (no MemoryMax, no CPUQuota) for a host that
-# has the room and a large Suricata to watch.
-panel_resource_limits() {
-	if [[ "${CONF[PANEL_MODE]:-limited}" == "unlimited" ]]; then
-		echo "# PANEL_MODE=unlimited: no MemoryMax and no CPUQuota"
-	else
-		printf 'MemoryMax=64M\nCPUQuota=20%%'
-	fi
 }
 
 panel_unit_matches() {
@@ -7081,7 +7091,7 @@ panel_bin_install() {
 	if ! (cd "$ORIGIN_DIR/panel" &&
 		run env CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$tmp" ./cmd/panel); then
 		rm -f "$tmp"
-		log "ERROR" "panel: сборка не удалась (нужен Go не старее версии в panel/go.mod; готовый бинарник: PANEL_SOURCE=prebuilt)"
+		log "ERROR" "panel: the build failed (Go not older than the version in panel/go.mod is needed; a ready binary: PANEL_SOURCE=prebuilt)"
 		return 1
 	fi
 	run install -D -m 0755 "$tmp" "$bin" || {
@@ -7158,7 +7168,7 @@ step_panel_apply() {
 	tfile=$(path_metrics_token)
 	if panel_token_wanted; then
 		if [[ "${DRY_RUN:-0}" == "1" ]]; then
-			echo "+ записать $tfile (0640 root:$PANEL_USER)"
+			echo "+ write $tfile (0640 root:$PANEL_USER)"
 		else
 			printf '%s\n' "${SECRETS[METRICS_TOKEN]}" | atomic_write "$tfile" 0640 || return 1
 			run chown "root:$PANEL_USER" "$tfile" || return 1
@@ -7176,7 +7186,7 @@ step_panel_apply() {
 		printf '%s\n' "$content" >"$tmp"
 		if ! visudo -cf "$tmp" >&2; then
 			rm -f "$tmp"
-			log "ERROR" "panel: visudo отклонил правило sudoers"
+			log "ERROR" "panel: visudo rejected the sudoers rule"
 			return 1
 		fi
 		rm -f "$tmp"
@@ -7216,10 +7226,10 @@ step_panel_apply() {
 
 step_panel_plan() {
 	if docker_wanted panel; then
-		echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), $(docker_service_plan panel)"
+		echo "panel: user $PANEL_USER, sudoers $(path_sudoers) (dpistack only), binary $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), $(docker_service_plan panel)"
 		return 0
 	fi
-	echo "panel: пользователь $PANEL_USER, sudoers $(path_sudoers) (только dpistack), бинарник $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), юнит $PANEL_SERVICE"
+	echo "panel: user $PANEL_USER, sudoers $(path_sudoers) (dpistack only), binary $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), unit $PANEL_SERVICE"
 }
 
 # panel_report_metrics - the token of /metrics and a scrape_config entry
@@ -7230,11 +7240,11 @@ panel_report_metrics() {
 	panel_token_wanted || return 0
 	local mode="${CONF[ACCESS_MODE]:-localhost}" port="${CONF[PANEL_PORT]:-9800}" scheme="http" host="127.0.0.1"
 	if [[ "$mode" != "localhost" ]]; then
-		host="<адрес-сервера>"
+		host="<server-address>"
 	fi
 	[[ "$mode" == "nginx" && "${CONF[NGINX_TLS]:-none}" != "none" ]] && scheme="https"
-	echo "Создан METRICS_TOKEN для GET /metrics (сохраните: он больше нигде не показывается): ${SECRETS[METRICS_TOKEN]}"
-	echo "Строка для scrape_configs (Prometheus и VictoriaMetrics):"
+	echo "METRICS_TOKEN created for GET /metrics (save it: it is shown nowhere else): ${SECRETS[METRICS_TOKEN]}"
+	echo "Line for scrape_configs (Prometheus and VictoriaMetrics):"
 	cat <<EOF
   - job_name: dpistack
     metrics_path: /metrics
@@ -7337,7 +7347,7 @@ preflight_port_conflicts() {
 		if [[ "$port_key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
 			if ! step_access_check && preflight_port_busy "$public"; then
 				who=$(preflight_port_owner "$public")
-				echo "$port_key|$public|${who:-неизвестный процесс}|$(preflight_free_port "$port_key" "$((public + 1))")|nginx"
+				echo "$port_key|$public|${who:-unknown process}|$(preflight_free_port "$port_key" "$((public + 1))")|nginx"
 			fi
 			port=$(access_backend_port "$public")
 		else
@@ -7348,7 +7358,7 @@ preflight_port_conflicts() {
 		fi
 		if preflight_port_busy "$port"; then
 			who=$(preflight_port_owner "$port")
-			echo "$port_key|$port|${who:-неизвестный процесс}|$(preflight_free_port "$port_key" "$((public + 1))")|service"
+			echo "$port_key|$port|${who:-unknown process}|$(preflight_free_port "$port_key" "$((public + 1))")|service"
 		fi
 	done
 }
@@ -7364,29 +7374,29 @@ preflight_resolve_ports_interactive() {
 		[[ -z "$line" ]] && continue
 		IFS='|' read -r key port who suggestion kind <<<"$line"
 		echo >&2
-		echo "  ВНИМАНИЕ: порт $port ($key) уже занят: $who" >&2
+		echo "  WARNING: port $port ($key) is already busy: $who" >&2
 		while true; do
-			menu_read answer "  Другой порт для $key [${suggestion:-нет свободного}] (q: оставить): "
+			menu_read answer "  Another port for $key [${suggestion:-none free}] (q: keep): "
 			menu_die_on_eof
 			[[ -z "$answer" ]] && answer="$suggestion"
-			if [[ "$answer" == "q" || "$answer" == "й" ]]; then
+			if [[ "$answer" == "q" || "$answer" == "Q" ]]; then
 				rc=1
 				break
 			fi
 			if [[ ! "$answer" =~ ^[0-9]+$ ]] || ((10#$answer < 1 || 10#$answer > 65535)); then
-				echo "  нужно число от 1 до 65535" >&2
+				echo "  a number from 1 to 65535 is needed" >&2
 				continue
 			fi
 			answer=$((10#$answer))
 			if preflight_port_busy "$answer" || preflight_port_taken_by_conf "$answer" "$key"; then
-				echo "  порт $answer тоже занят, выберите другой" >&2
+				echo "  port $answer is busy too, choose another" >&2
 				continue
 			fi
 			if [[ "$kind" == "nginx" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] && [[ "$key" != "METRICS_BACKEND_PORT" ]]; then
 				local behind
 				behind=$(access_backend_port "$answer")
 				if ((behind > 65535)) || preflight_port_busy "$behind" || preflight_port_taken_by_conf "$behind" "$key"; then
-					echo "  с nginx за ним нужен ещё и порт $behind, он недоступен; выберите другой" >&2
+					echo "  with nginx in front it also needs port $behind, which is unavailable; choose another" >&2
 					continue
 				fi
 			fi
@@ -7408,23 +7418,23 @@ preflight_panel_reasons() {
 	panel_bin_current && return 0
 	if [[ "$(panel_source_mode)" == "prebuilt" ]]; then
 		if [[ ! -f "$(panel_prebuilt_path)" ]]; then
-			reasons+=("PANEL_SOURCE=prebuilt, но рядом с install.sh нет готового бинарника dpistack-panel (в архиве релиза он называется $(basename "$(panel_prebuilt_path)"))")
+			reasons+=("PANEL_SOURCE=prebuilt, but there is no ready dpistack-panel binary next to install.sh (in the release archive it is called $(basename "$(panel_prebuilt_path)"))")
 		fi
 		return 0
 	fi
 	if [[ ! -d "$ORIGIN_DIR/panel" ]]; then
-		reasons+=("панель нечем взять: рядом с install.sh нет ни готового бинарника ($(basename "$(panel_prebuilt_path)")), ни каталога panel/ с исходниками")
+		reasons+=("cannot get the panel: next to install.sh there is neither a ready binary ($(basename "$(panel_prebuilt_path)")), nor a panel/ directory with the sources")
 		return 0
 	fi
 	local need have
 	need=$(awk '/^go /{print $2; exit}' "$ORIGIN_DIR/panel/go.mod" 2>/dev/null)
 	if ! command -v go >/dev/null 2>&1; then
-		reasons+=("панель нечем взять: нет Go (нужен Go ${need:-новее}) и рядом с install.sh нет готового бинарника ($(basename "$(panel_prebuilt_path)"))")
+		reasons+=("cannot get the panel: there is no Go (Go ${need:-newer} is needed) and no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
 		return 0
 	fi
 	have=$(go version 2>/dev/null | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p')
 	if [[ -n "$need" && -n "$have" && "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" != "$need" ]]; then
-		reasons+=("панель нечем взять: Go $have старше требуемого $need и рядом с install.sh нет готового бинарника ($(basename "$(panel_prebuilt_path)"))")
+		reasons+=("cannot get the panel: Go $have is older than the required $need and there is no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
 	fi
 }
 
@@ -7432,15 +7442,15 @@ step_preflight_reasons() {
 	local reasons=()
 
 	if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-		reasons+=("нужны права root")
+		reasons+=("root rights are needed")
 	fi
 
 	if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4))); then
-		reasons+=("нужен Bash 4.4+, сейчас ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}")
+		reasons+=("Bash 4.4+ is needed, now ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}")
 	fi
 
 	if ! command -v systemctl >/dev/null 2>&1; then
-		reasons+=("systemd (systemctl) не найден, нужен для native runtime")
+		reasons+=("systemd (systemctl) not found, needed for the native runtime")
 	fi
 
 	if preflight_step_wanted panel; then
@@ -7450,7 +7460,7 @@ step_preflight_reasons() {
 	local key
 	for key in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME METRICS_BACKEND_RUNTIME PANEL_RUNTIME; do
 		if [[ "${CONF[$key]:-}" == "docker" ]] && ! command -v docker >/dev/null 2>&1; then
-			reasons+=("$key=docker, но docker не найден")
+			reasons+=("$key=docker, but docker was not found")
 		fi
 	done
 
@@ -7460,27 +7470,27 @@ step_preflight_reasons() {
 		local nkey
 		for nkey in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME; do
 			if [[ "${CONF[$nkey]:-native}" == "native" ]]; then
-				reasons+=("$nkey=native: на $OS_ID пакетов компонента установщик не ставит, задайте --set $nkey=docker")
+				reasons+=("$nkey=native: on $OS_ID the installer does not install the component packages, set --set $nkey=docker")
 			fi
 		done
 		if [[ "${CONF[METRICS_BACKEND]:-none}" != "none" && "${CONF[METRICS_BACKEND_RUNTIME]:-native}" == "native" ]]; then
-			reasons+=("METRICS_BACKEND_RUNTIME=native: на $OS_ID задайте --set METRICS_BACKEND_RUNTIME=docker")
+			reasons+=("METRICS_BACKEND_RUNTIME=native: on $OS_ID set --set METRICS_BACKEND_RUNTIME=docker")
 		fi
 		if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
-			reasons+=("NDPI_ENABLE=yes: плагину nDPI нужна Suricata, собранная на хосте; на $OS_ID задайте --set NDPI_ENABLE=no")
+			reasons+=("NDPI_ENABLE=yes: the nDPI plugin needs a Suricata built on the host; on $OS_ID set --set NDPI_ENABLE=no")
 		fi
 	fi
 	if [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "nfq" ]] && [[ -z "$(ips_backend)" ]]; then
-		reasons+=("SURICATA_MODE=ips с IPS_METHOD=nfq: не найдены ни iptables, ни nft (нужны для очереди NFQUEUE)")
+		reasons+=("SURICATA_MODE=ips with IPS_METHOD=nfq: neither iptables nor nft found (needed for the NFQUEUE queue)")
 	fi
 	if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" && "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
-		reasons+=("SURICATA_RUNTIME=docker: плагин nDPI в образ не ставится, задайте NDPI_ENABLE=no")
+		reasons+=("SURICATA_RUNTIME=docker: the nDPI plugin is not installed into the image, set NDPI_ENABLE=no")
 	fi
 	if command -v docker >/dev/null 2>&1; then
 		local dkey
 		for dkey in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME PANEL_RUNTIME; do
 			if [[ "${CONF[$dkey]:-}" == "docker" ]] && ! docker compose version >/dev/null 2>&1; then
-				reasons+=("$dkey=docker, но у docker нет плагина compose (docker compose version не отвечает)")
+				reasons+=("$dkey=docker, but docker has no compose plugin (docker compose version does not answer)")
 				break
 			fi
 		done
@@ -7489,11 +7499,11 @@ step_preflight_reasons() {
 	case "$(os_support_level)" in
 	unsupported)
 		if [[ "${DPISTACK_ALLOW_UNSUPPORTED:-0}" != "1" ]]; then
-			reasons+=("$OS_ID ${OS_VERSION_ID:-} не поддерживается (поддерживаются Ubuntu LTS от 22.04, Debian от 12, Rocky Linux и AlmaLinux от 8); продолжить на свой риск: DPISTACK_ALLOW_UNSUPPORTED=1")
+			reasons+=("$OS_ID ${OS_VERSION_ID:-} is not supported (supported: Ubuntu LTS from 22.04, Debian from 12, Rocky Linux and AlmaLinux from 8); to go on at your own risk: DPISTACK_ALLOW_UNSUPPORTED=1")
 		fi
 		;;
 	unverified)
-		log "WARN" "$OS_ID ${OS_VERSION_ID:-} не входит в список проверенных платформ (tech.md 11), установка продолжится"
+		log "WARN" "$OS_ID ${OS_VERSION_ID:-} is not in the list of tested platforms (tech.md 11), the installation goes on"
 		;;
 	esac
 
@@ -7502,7 +7512,7 @@ step_preflight_reasons() {
 	for iface in "${_preflight_ifaces[@]}"; do
 		[[ -z "$iface" ]] && continue
 		if ! net_iface_exists "$iface"; then
-			reasons+=("интерфейс $iface из IFACES не существует")
+			reasons+=("interface $iface from IFACES does not exist")
 		fi
 	done
 
@@ -7513,7 +7523,7 @@ step_preflight_reasons() {
 	if [[ "$avail_kb" =~ ^[0-9]+$ ]]; then
 		local need_kb=$((need_gb * 1024 * 1024))
 		if ((avail_kb < need_kb)); then
-			reasons+=("нужно не меньше ${need_gb}ГБ свободного места, есть меньше")
+			reasons+=("at least ${need_gb} GB of free space is needed, there is less")
 		fi
 	fi
 
@@ -7529,7 +7539,7 @@ step_preflight_reasons() {
 			local chroot
 			chroot=$(copr_chroot)
 			if [[ -n "$chroot" ]]; then
-				probes+=("OISF COPR для $chroot|${OISF_COPR_REPO_URL:-https://copr.fedorainfracloud.org/coprs/g/oisf/suricata-8.0/repo/${chroot}/group_oisf-suricata-8.0-${chroot}.repo}")
+				probes+=("OISF COPR for $chroot|${OISF_COPR_REPO_URL:-https://copr.fedorainfracloud.org/coprs/g/oisf/suricata-8.0/repo/${chroot}/group_oisf-suricata-8.0-${chroot}.repo}")
 			else
 				probes+=("OISF COPR|https://copr.fedorainfracloud.org/coprs/g/oisf/suricata-8.0/")
 			fi
@@ -7553,13 +7563,13 @@ step_preflight_reasons() {
 	fi
 	for probe in "${probes[@]}"; do
 		if ! curl -fsS --max-time 5 -o /dev/null -- "${probe#*|}"; then
-			reasons+=("репозиторий ${probe%%|*} недоступен (${probe#*|})")
+			reasons+=("repository ${probe%%|*} is unavailable (${probe#*|})")
 		fi
 	done
 
 	if [[ "${CONF[EVEBOX_DB]:-sqlite}" == "elasticsearch" ]]; then
 		if ! curl -fsS --max-time 5 -o /dev/null -- "${CONF[EVEBOX_ES_URL]:-}"; then
-			reasons+=("Elasticsearch из EVEBOX_ES_URL (${CONF[EVEBOX_ES_URL]:-}) недоступен")
+			reasons+=("Elasticsearch from EVEBOX_ES_URL (${CONF[EVEBOX_ES_URL]:-}) is unavailable")
 		fi
 	fi
 
@@ -7571,14 +7581,14 @@ step_preflight_reasons() {
 		[[ -z "$pline" ]] && continue
 		IFS='|' read -r pkey pport pwho psuggest pkind <<<"$pline"
 		if [[ "$pkind" == "nginx" ]]; then
-			reasons+=("порт $pport ($pkey) уже занят, а на нём должен слушать nginx (держит: $pwho)${psuggest:+; свободный: --set $pkey=$psuggest}")
+			reasons+=("port $pport ($pkey) is already busy, and nginx must listen on it (held by: $pwho)${psuggest:+; free: --set $pkey=$psuggest}")
 		else
-			reasons+=("порт $pport ($pkey) уже занят (держит: $pwho)${psuggest:+; свободный: --set $pkey=$psuggest}")
+			reasons+=("port $pport ($pkey) is already busy (held by: $pwho)${psuggest:+; free: --set $pkey=$psuggest}")
 		fi
 	done < <(preflight_port_conflicts)
 
 	if command -v getenforce >/dev/null 2>&1; then
-		log "INFO" "SELinux: $(getenforce 2>/dev/null || echo неизвестно)"
+		log "INFO" "SELinux: $(getenforce 2>/dev/null || echo unknown)"
 	fi
 
 	printf '%s\n' "${reasons[@]}"
@@ -7588,7 +7598,7 @@ step_preflight_check() {
 	local reasons
 	reasons=$(step_preflight_reasons)
 	if [[ -n "$reasons" ]]; then
-		echo "preflight: обнаружены проблемы:" >&2
+		echo "preflight: problems found:" >&2
 		echo "  - ${reasons//$'\n'/$'\n  - '}" >&2
 		return 1
 	fi
@@ -7602,7 +7612,7 @@ step_preflight_apply() {
 }
 
 step_preflight_plan() {
-	echo "preflight: без изменений"
+	echo "preflight: no changes"
 }
 DPISTACK_BUNDLE_END
 put lib/step_redis.sh 644 <<'DPISTACK_BUNDLE_END'
@@ -7648,7 +7658,7 @@ step_redis_plan() {
 		docker_service_plan redis
 		return 0
 	}
-	echo "redis: установка $REDIS_PACKAGE, systemctl enable --now $REDIS_UNIT"
+	echo "redis: installing $REDIS_PACKAGE, systemctl enable --now $REDIS_UNIT"
 }
 DPISTACK_BUNDLE_END
 put lib/step_rules.sh 644 <<'DPISTACK_BUNDLE_END'
@@ -7826,7 +7836,7 @@ step_rules_apply() {
 	else
 		log "RUN" "$(rules_update_command)"
 		if ! "${RULES_UPDATE_ARGV[@]}"; then
-			echo "suricata-update завершился с ошибкой, прежний набор правил сохранён" >&2
+			echo "suricata-update failed, the previous rule set is kept" >&2
 			return 1
 		fi
 		[[ -z "$running_version" ]] || state_write_value "$RULES_VERSION_STATE_KEY" "$running_version"
@@ -7838,11 +7848,11 @@ step_rules_apply() {
 		if docker_wanted suricata; then
 			if docker_service_running suricata; then
 				run docker_suricata_reload ||
-					echo "предупреждение: Suricata не приняла перезагрузку правил, они применятся при перезапуске" >&2
+					echo "warning: Suricata did not accept the rule reload, they apply at the next restart" >&2
 			fi
 		elif [[ -S "$socket" ]]; then
 			run suricatasc -c ruleset-reload-nonblocking "$socket" ||
-				echo "предупреждение: Suricata не приняла перезагрузку правил, они применятся при перезапуске" >&2
+				echo "warning: Suricata did not accept the rule reload, they apply at the next restart" >&2
 		fi
 	fi
 
@@ -7858,12 +7868,12 @@ step_rules_apply() {
 }
 
 step_rules_plan() {
-	echo "rules: источники ${CONF[RULES_SOURCES]:-} + URL из RULES_URLS"
-	echo "rules: enable.conf из групп ${CONF[RULES_GROUPS]:-}"
+	echo "rules: sources ${CONF[RULES_SOURCES]:-} + URLs from RULES_URLS"
+	echo "rules: enable.conf from the groups ${CONF[RULES_GROUPS]:-}"
 	if [[ "${CONF[RULES_UPDATE]:-on}" == "on" ]]; then
-		echo "rules: таймер $RULES_TIMER, OnCalendar=${CONF[RULES_UPDATE_CALENDAR]:-weekly}"
+		echo "rules: timer $RULES_TIMER, OnCalendar=${CONF[RULES_UPDATE_CALENDAR]:-weekly}"
 	else
-		echo "rules: RULES_UPDATE=off, таймер не создаётся/удаляется"
+		echo "rules: RULES_UPDATE=off, the timer is not created/is removed"
 	fi
 }
 DPISTACK_BUNDLE_END
@@ -7926,14 +7936,14 @@ step_selfinstall_apply() {
 }
 
 step_selfinstall_plan() {
-	echo "selfinstall: копия установщика в $(path_installer_copy_dir), команды dpistack и dpistack-watch в $(path_sbin_dir)"
+	echo "selfinstall: installer copy in $(path_installer_copy_dir), commands dpistack and dpistack-watch in $(path_sbin_dir)"
 }
 DPISTACK_BUNDLE_END
 put lib/step_suricata.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Suricata IDS: package install from distro/oisf, suricata.yaml and
 # logrotate rendering, systemd unit (tech.md slice 2). Source builds
-# and nDPI are schema.sh "пока не поддерживается" until slice 4.
+# and nDPI are schema.sh "not supported yet" until slice 4.
 
 SURICATA_PACKAGE="suricata"
 SURICATA_UNIT="suricata.service"
@@ -8151,7 +8161,7 @@ suricata_resolve_source() {
 		local fallback=distro
 		[[ "$OS_FAMILY" == "dnf" ]] && fallback=oisf
 		if [[ "$fallback" == "oisf" ]] || pkg_available "$SURICATA_PACKAGE"; then
-			echo "suricata: для сборки нужен Rust 1.${SURICATA_RUST_MIN_MINOR}, в репозиториях его нет; взят пакет Suricata ($fallback), nDPI выключен (плагин nDPI есть только в сборке из исходников)" >&2
+			echo "suricata: the build needs Rust 1.${SURICATA_RUST_MIN_MINOR}, which the repositories lack; took the Suricata package ($fallback), nDPI is off (the nDPI plugin exists only in a build from source)" >&2
 			CONF[SURICATA_SOURCE]=$fallback
 			CONF[NDPI_ENABLE]=no
 			return 0
@@ -8159,13 +8169,13 @@ suricata_resolve_source() {
 	fi
 	[[ "$source" == "distro" || "$source" == "oisf" ]] || return 1
 	if [[ "$source" == "oisf" && "$OS_FAMILY" == "apt" && "$OS_ID" != "ubuntu" ]]; then
-		reason="PPA OISF существует только для Ubuntu"
+		reason="the OISF PPA exists for Ubuntu only"
 	elif [[ "$source" == "distro" ]] && ! pkg_available "$SURICATA_PACKAGE"; then
-		reason="пакета $SURICATA_PACKAGE нет в репозиториях"
+		reason="package $SURICATA_PACKAGE is not in the repositories"
 	else
 		return 1
 	fi
-	echo "suricata: $reason, SURICATA_SOURCE=$source заменён на source (сборка из исходников)" >&2
+	echo "suricata: $reason, SURICATA_SOURCE=$source is replaced by source (build from source)" >&2
 	CONF[SURICATA_SOURCE]=source
 }
 
@@ -8221,7 +8231,7 @@ suricata_build_from_source() {
 	)
 	local rc=$?
 	if [[ "$rc" -ne 0 ]]; then
-		echo "suricata: сборка из исходников упала (autogen/configure/make)" >&2
+		echo "suricata: the build from source failed (autogen/configure/make)" >&2
 		return 1
 	fi
 
@@ -8448,7 +8458,7 @@ step_suricata_apply() {
 	rendered_yaml=$(suricata_render_yaml) || return 1
 	if [[ "${DRY_RUN:-0}" != "1" ]]; then
 		suricata_validate_render "$rendered_yaml" || {
-			echo "suricata: suricata -T отклонил отрисованный suricata.yaml (серия $(suricata_conf_version)); файл на диске не изменён" >&2
+			echo "suricata: suricata -T rejected the rendered suricata.yaml (series $(suricata_conf_version)); the file on disk is unchanged" >&2
 			return 1
 		}
 	fi
@@ -8486,23 +8496,23 @@ step_suricata_apply() {
 step_suricata_plan() {
 	if docker_wanted suricata; then
 		docker_service_plan suricata
-		echo "suricata: рендер $(path_suricata_yaml) для интерфейсов ${CONF[IFACES]:-}"
-		echo "suricata: рендер $(path_suricata_logrotate)"
+		echo "suricata: render $(path_suricata_yaml) for interfaces ${CONF[IFACES]:-}"
+		echo "suricata: render $(path_suricata_logrotate)"
 		return 0
 	fi
 	if [[ "${CONF[SURICATA_SOURCE]:-}" == "source" ]]; then
-		echo "suricata: сборка из исходников ($SURICATA_REPO_URL, ref=$(suricata_target_ref), nDPI=${CONF[NDPI_ENABLE]:-no})"
+		echo "suricata: build from source ($SURICATA_REPO_URL, ref=$(suricata_target_ref), nDPI=${CONF[NDPI_ENABLE]:-no})"
 	else
-		echo "suricata: установка/обновление пакета ($OS_FAMILY, источник ${CONF[SURICATA_SOURCE]:-distro})"
+		echo "suricata: installing/upgrading the package ($OS_FAMILY, source ${CONF[SURICATA_SOURCE]:-distro})"
 	fi
-	echo "suricata: рендер $(path_suricata_yaml) для интерфейсов ${CONF[IFACES]:-}"
-	echo "suricata: рендер $(path_suricata_logrotate)"
+	echo "suricata: render $(path_suricata_yaml) for interfaces ${CONF[IFACES]:-}"
+	echo "suricata: render $(path_suricata_logrotate)"
 	if suricata_mode_dropin_wanted; then
-		echo "suricata: режим ips через NFQUEUE (drop-in $(path_suricata_mode_dropin), очередь ${IPS_QUEUE_NUM})"
+		echo "suricata: ips mode through NFQUEUE (drop-in $(path_suricata_mode_dropin), queue ${IPS_QUEUE_NUM})"
 	elif [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" ]]; then
-		echo "suricata: режим ips через af-packet copy-mode (интерфейсы парами)"
+		echo "suricata: ips mode through af-packet copy-mode (interfaces in pairs)"
 	fi
-	echo "suricata: юнит $(path_fw_unit) восстанавливает цепочку DPISTACK при загрузке"
+	echo "suricata: unit $(path_fw_unit) restores the DPISTACK chain at boot"
 	echo "suricata: systemctl enable --now $SURICATA_UNIT"
 }
 DPISTACK_BUNDLE_END
@@ -8581,23 +8591,23 @@ verify_test_bittorrent() {
 	verify_p2p_enabled && p2p=1
 	verify_plugin_loaded && plugin=1
 	if ((!p2p && !plugin)); then
-		verify_set skip "нет ни правил группы emerging-p2p, ни плагина nDPI: включите emerging-p2p (RULES_GROUPS) или NDPI_ENABLE=yes"
+		verify_set skip "there are neither emerging-p2p rules nor the nDPI plugin: enable emerging-p2p (RULES_GROUPS) or NDPI_ENABLE=yes"
 		return 0
 	fi
 	# The replay runs the host's suricata on a pcap. With Suricata in a
 	# container there is none on the host and the container is busy
 	# capturing: say so, do not report a missing package.
 	if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" ]]; then
-		verify_set skip "Suricata в контейнере: реплей pcap на хосте недоступен; события и алерты проверяйте на живом трафике (TEST_BT_LIVE=yes)"
+		verify_set skip "Suricata in a container: pcap replay on the host is unavailable; check events and alerts on live traffic (TEST_BT_LIVE=yes)"
 		return 0
 	fi
 	if ! command -v suricata >/dev/null 2>&1; then
-		verify_set fail "suricata не установлен"
+		verify_set fail "suricata is not installed"
 		return 0
 	fi
 	local pcap="$VERIFY_DATA_DIR/bittorrent.pcap"
 	if [[ ! -r "$pcap" ]]; then
-		verify_set fail "не найден $pcap"
+		verify_set fail "$pcap not found"
 		return 0
 	fi
 
@@ -8622,7 +8632,7 @@ RULES
 		"RULE_FILES=$rule_files" \
 		"PLUGINS=$plugins" >"$tmp/suricata-test.yaml" || {
 		rm -rf "$tmp"
-		verify_set fail "не удалось подготовить suricata-test.yaml"
+		verify_set fail "could not prepare suricata-test.yaml"
 		return 0
 	}
 
@@ -8634,13 +8644,13 @@ RULES
 
 	if [[ -z "$sig" ]]; then
 		if ((rc != 0)); then
-			verify_set fail "suricata -r завершился с кодом $rc: $(printf '%s' "$out" | tail -1)"
+			verify_set fail "suricata -r exited with code $rc: $(printf '%s' "$out" | tail -1)"
 		else
-			verify_set fail "реплей bittorrent.pcap не дал алерта с BitTorrent: проверьте, что правила emerging-p2p загружены в suricata.rules или плагин nDPI подключён"
+			verify_set fail "replaying bittorrent.pcap gave no BitTorrent alert: check that the emerging-p2p rules are loaded into suricata.rules or the nDPI plugin is connected"
 		fi
 		return 0
 	fi
-	verify_set pass "сигнатура: $sig"
+	verify_set pass "signature: $sig"
 	[[ "$VERIFY_BT_LIVE" == "yes" ]] && verify_bittorrent_live "$pcap"
 	return 0
 }
@@ -8650,22 +8660,22 @@ RULES
 verify_bittorrent_live() {
 	local pcap="$1" iface="${VERIFY_IFACES%%,*}" offset i
 	if ! command -v tcpreplay >/dev/null 2>&1; then
-		verify_set fail "TEST_BT_LIVE=yes, но tcpreplay не установлен"
+		verify_set fail "TEST_BT_LIVE=yes, but tcpreplay is not installed"
 		return 0
 	fi
 	offset=$(verify_eve_size)
 	if ! tcpreplay -i "$iface" "$pcap" >/dev/null 2>&1; then
-		verify_set fail "tcpreplay не смог отправить pcap в $iface"
+		verify_set fail "tcpreplay could not send the pcap to $iface"
 		return 0
 	fi
 	for ((i = 0; i < VERIFY_WAIT; i++)); do
 		if verify_eve_since "$offset" | grep -E '"event_type": *"alert"' | grep -qF 'BitTorrent'; then
-			verify_set pass "$VERIFY_DETAIL; живой прогон через $iface: событие в eve.json"
+			verify_set pass "$VERIFY_DETAIL; live run through $iface: an event in eve.json"
 			return 0
 		fi
 		sleep 1
 	done
-	verify_set fail "офлайн-проверка прошла, но в живом eve.json нет события после tcpreplay в $iface"
+	verify_set fail "the offline check passed, but the live eve.json has no event after tcpreplay on $iface"
 }
 
 verify_url_host() {
@@ -8676,12 +8686,12 @@ verify_test_https() {
 	local url="$VERIFY_HTTPS_URL" host eve offset i cerr rc
 	host=$(verify_url_host "$url")
 	if [[ -z "$host" ]]; then
-		verify_set fail "в TEST_HTTPS_URL нет хоста: $url"
+		verify_set fail "TEST_HTTPS_URL has no host: $url"
 		return 0
 	fi
 	eve=$(path_suricata_eve_json)
 	if [[ ! -f "$eve" ]]; then
-		verify_set fail "не найден $eve: Suricata не пишет события, запущена ли она и включён ли EVE_FILE"
+		verify_set fail "$eve not found: Suricata writes no events, check that it is running and EVE_FILE is on"
 		return 0
 	fi
 
@@ -8691,13 +8701,13 @@ verify_test_https() {
 	cerr=$(curl -sS --max-time 15 -o /dev/null -- "$url" 2>&1)
 	rc=$?
 	if ((rc != 0)); then
-		verify_set fail "curl не прошёл (код $rc): $(printf '%s' "$cerr" | head -1)"
+		verify_set fail "curl failed (code $rc): $(printf '%s' "$cerr" | head -1)"
 		return 0
 	fi
 
 	for ((i = 0; i < VERIFY_WAIT; i++)); do
 		if verify_eve_since "$offset" | grep -F '"event_type":"tls"' | grep -qF "\"sni\":\"$host\""; then
-			verify_set pass "событие tls с sni=$host получено"
+			verify_set pass "tls event with sni=$host received"
 			return 0
 		fi
 		sleep 1
@@ -8706,11 +8716,11 @@ verify_test_https() {
 	local default_if hint=""
 	default_if=$(ip -4 route show default 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
 	if [[ -n "$default_if" && ",$VERIFY_IFACES," != *",$default_if,"* ]]; then
-		hint="curl идёт через $default_if, а Suricata слушает $VERIFY_IFACES: пакеты не видны"
+		hint="curl goes through $default_if, while Suricata listens on $VERIFY_IFACES: the packets are not seen"
 	else
-		hint="проверьте, что Suricata видит интерфейс, через который идёт curl (IFACES=$VERIFY_IFACES)"
+		hint="check that Suricata sees the interface curl goes through (IFACES=$VERIFY_IFACES)"
 	fi
-	verify_set fail "curl прошёл, но события tls с sni=$host нет за ${VERIFY_WAIT} с: $hint"
+	verify_set fail "curl passed, but there is no tls event with sni=$host within ${VERIFY_WAIT} s: $hint"
 }
 
 # verify_record <name> <status> <detail> <ms> - keeps the last result
@@ -8767,7 +8777,7 @@ verify_run() {
 			printf '{"name":"%s","status":"%s","detail":"%s","duration_ms":%s}' \
 				"$name" "$VERIFY_STATUS" "$(verify_json_escape "$VERIFY_DETAIL")" "$ms"
 		else
-			printf '%s: %s (%s мс) - %s\n' "$name" "$VERIFY_STATUS" "$ms" "$VERIFY_DETAIL"
+			printf '%s: %s (%s ms) - %s\n' "$name" "$VERIFY_STATUS" "$ms" "$VERIFY_DETAIL"
 		fi
 	done
 	((json)) && printf ']\n'
@@ -8776,7 +8786,7 @@ verify_run() {
 
 verify_final_report() {
 	((${#VERIFY_FAILED_NAMES[@]} > 0)) || return 0
-	echo "ВНИМАНИЕ: проверочные тесты не прошли: ${VERIFY_FAILED_NAMES[*]} (установка не отменена, повторить: dpistack test all)"
+	echo "WARNING: the check tests failed: ${VERIFY_FAILED_NAMES[*]} (the installation is not cancelled, repeat with: dpistack test all)"
 }
 
 step_verify_check() {
@@ -8802,9 +8812,9 @@ step_verify_apply() {
 
 step_verify_plan() {
 	if [[ "${CONF[TEST_ON_INSTALL]:-yes}" == "yes" ]]; then
-		echo "verify: проверочные тесты (${VERIFY_TESTS[*]}) после установки"
+		echo "verify: check tests (${VERIFY_TESTS[*]}) after install"
 	else
-		echo "verify: TEST_ON_INSTALL=no, тесты не запускаются"
+		echo "verify: TEST_ON_INSTALL=no, the tests do not run"
 	fi
 }
 DPISTACK_BUNDLE_END
@@ -8874,9 +8884,9 @@ step_watch_apply() {
 
 step_watch_plan() {
 	if watch_enabled; then
-		echo "watch: $(path_watch_bin), таймер каждые ${CONF[WATCH_INTERVAL_SEC]:-60} с"
+		echo "watch: $(path_watch_bin), timer every ${CONF[WATCH_INTERVAL_SEC]:-60} s"
 	else
-		echo "watch: WATCH_ENABLE=no, таймер не нужен"
+		echo "watch: WATCH_ENABLE=no, no timer is needed"
 	fi
 }
 DPISTACK_BUNDLE_END
@@ -8928,11 +8938,10 @@ Group=@@USER@@
 ExecStart=@@PANEL_BIN@@ @@ARGS@@
 Restart=on-failure
 RestartSec=5
-# Resource budget (tech.md 9) when PANEL_MODE=limited; with unlimited the
-# unit has none. NoNewPrivileges and ProtectSystem are left
+# No MemoryMax or CPUQuota: the lite edition (PANEL_EDITION=lite) is the way
+# to a lighter panel (tech.md 9). NoNewPrivileges and ProtectSystem are left
 # out on purpose: sudo inherits the unit's restrictions, and dpistack
 # could not write to /etc under them.
-@@RESOURCE_LIMITS@@
 ProtectHome=yes
 PrivateTmp=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
@@ -11009,6 +11018,27 @@ reference-config-file: /etc/suricata/reference.config
 DPISTACK_BUNDLE_END
 put tests/data/README.md 644 <<'DPISTACK_BUNDLE_END'
 # tests/data/bittorrent.pcap
+
+English | [Русский](README.ru.md)
+
+Source: received from the project owner (a public training sample, 2007-04-11, 53 packets, TCP `10.10.10.23:1044` <-> `10.10.10.22:47309`).
+
+The content was confirmed by hand (`tcpdump -X` and a parse of the BT wire protocol): 2 handshakes (`\x13BitTorrent protocol`), 1 bitfield, 48 `request` (piece request), 7 `have`, 1 `interested`, 2 `unchoke`.
+
+## How to use it
+
+Replay with any rule set:
+
+```
+suricata -r tests/data/bittorrent.pcap -S <rules-file> -l <outdir> -k none
+```
+
+The file is reused by `tests/pkg_dnf.bats` and by the nDPI and Suricata step tests, and by `dpistack test bittorrent` (the replay check).
+DPISTACK_BUNDLE_END
+put tests/data/README.ru.md 644 <<'DPISTACK_BUNDLE_END'
+# tests/data/bittorrent.pcap
+
+[English](README.md) | Русский
 
 Источник: получен от владельца проекта (публичный тренировочный сэмпл, 2007-04-11, 53 пакета, TCP `10.10.10.23:1044` ↔ `10.10.10.22:47309`).
 

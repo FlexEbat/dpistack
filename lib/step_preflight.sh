@@ -87,7 +87,7 @@ preflight_port_conflicts() {
 		if [[ "$port_key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
 			if ! step_access_check && preflight_port_busy "$public"; then
 				who=$(preflight_port_owner "$public")
-				echo "$port_key|$public|${who:-неизвестный процесс}|$(preflight_free_port "$port_key" "$((public + 1))")|nginx"
+				echo "$port_key|$public|${who:-unknown process}|$(preflight_free_port "$port_key" "$((public + 1))")|nginx"
 			fi
 			port=$(access_backend_port "$public")
 		else
@@ -98,7 +98,7 @@ preflight_port_conflicts() {
 		fi
 		if preflight_port_busy "$port"; then
 			who=$(preflight_port_owner "$port")
-			echo "$port_key|$port|${who:-неизвестный процесс}|$(preflight_free_port "$port_key" "$((public + 1))")|service"
+			echo "$port_key|$port|${who:-unknown process}|$(preflight_free_port "$port_key" "$((public + 1))")|service"
 		fi
 	done
 }
@@ -114,29 +114,29 @@ preflight_resolve_ports_interactive() {
 		[[ -z "$line" ]] && continue
 		IFS='|' read -r key port who suggestion kind <<<"$line"
 		echo >&2
-		echo "  ВНИМАНИЕ: порт $port ($key) уже занят: $who" >&2
+		echo "  WARNING: port $port ($key) is already busy: $who" >&2
 		while true; do
-			menu_read answer "  Другой порт для $key [${suggestion:-нет свободного}] (q: оставить): "
+			menu_read answer "  Another port for $key [${suggestion:-none free}] (q: keep): "
 			menu_die_on_eof
 			[[ -z "$answer" ]] && answer="$suggestion"
-			if [[ "$answer" == "q" || "$answer" == "й" ]]; then
+			if [[ "$answer" == "q" || "$answer" == "Q" ]]; then
 				rc=1
 				break
 			fi
 			if [[ ! "$answer" =~ ^[0-9]+$ ]] || ((10#$answer < 1 || 10#$answer > 65535)); then
-				echo "  нужно число от 1 до 65535" >&2
+				echo "  a number from 1 to 65535 is needed" >&2
 				continue
 			fi
 			answer=$((10#$answer))
 			if preflight_port_busy "$answer" || preflight_port_taken_by_conf "$answer" "$key"; then
-				echo "  порт $answer тоже занят, выберите другой" >&2
+				echo "  port $answer is busy too, choose another" >&2
 				continue
 			fi
 			if [[ "$kind" == "nginx" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] && [[ "$key" != "METRICS_BACKEND_PORT" ]]; then
 				local behind
 				behind=$(access_backend_port "$answer")
 				if ((behind > 65535)) || preflight_port_busy "$behind" || preflight_port_taken_by_conf "$behind" "$key"; then
-					echo "  с nginx за ним нужен ещё и порт $behind, он недоступен; выберите другой" >&2
+					echo "  with nginx in front it also needs port $behind, which is unavailable; choose another" >&2
 					continue
 				fi
 			fi
@@ -158,23 +158,23 @@ preflight_panel_reasons() {
 	panel_bin_current && return 0
 	if [[ "$(panel_source_mode)" == "prebuilt" ]]; then
 		if [[ ! -f "$(panel_prebuilt_path)" ]]; then
-			reasons+=("PANEL_SOURCE=prebuilt, но рядом с install.sh нет готового бинарника dpistack-panel (в архиве релиза он называется $(basename "$(panel_prebuilt_path)"))")
+			reasons+=("PANEL_SOURCE=prebuilt, but there is no ready dpistack-panel binary next to install.sh (in the release archive it is called $(basename "$(panel_prebuilt_path)"))")
 		fi
 		return 0
 	fi
 	if [[ ! -d "$ORIGIN_DIR/panel" ]]; then
-		reasons+=("панель нечем взять: рядом с install.sh нет ни готового бинарника ($(basename "$(panel_prebuilt_path)")), ни каталога panel/ с исходниками")
+		reasons+=("cannot get the panel: next to install.sh there is neither a ready binary ($(basename "$(panel_prebuilt_path)")), nor a panel/ directory with the sources")
 		return 0
 	fi
 	local need have
 	need=$(awk '/^go /{print $2; exit}' "$ORIGIN_DIR/panel/go.mod" 2>/dev/null)
 	if ! command -v go >/dev/null 2>&1; then
-		reasons+=("панель нечем взять: нет Go (нужен Go ${need:-новее}) и рядом с install.sh нет готового бинарника ($(basename "$(panel_prebuilt_path)"))")
+		reasons+=("cannot get the panel: there is no Go (Go ${need:-newer} is needed) and no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
 		return 0
 	fi
 	have=$(go version 2>/dev/null | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p')
 	if [[ -n "$need" && -n "$have" && "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" != "$need" ]]; then
-		reasons+=("панель нечем взять: Go $have старше требуемого $need и рядом с install.sh нет готового бинарника ($(basename "$(panel_prebuilt_path)"))")
+		reasons+=("cannot get the panel: Go $have is older than the required $need and there is no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
 	fi
 }
 
@@ -182,15 +182,15 @@ step_preflight_reasons() {
 	local reasons=()
 
 	if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-		reasons+=("нужны права root")
+		reasons+=("root rights are needed")
 	fi
 
 	if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4))); then
-		reasons+=("нужен Bash 4.4+, сейчас ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}")
+		reasons+=("Bash 4.4+ is needed, now ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}")
 	fi
 
 	if ! command -v systemctl >/dev/null 2>&1; then
-		reasons+=("systemd (systemctl) не найден, нужен для native runtime")
+		reasons+=("systemd (systemctl) not found, needed for the native runtime")
 	fi
 
 	if preflight_step_wanted panel; then
@@ -200,7 +200,7 @@ step_preflight_reasons() {
 	local key
 	for key in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME METRICS_BACKEND_RUNTIME PANEL_RUNTIME; do
 		if [[ "${CONF[$key]:-}" == "docker" ]] && ! command -v docker >/dev/null 2>&1; then
-			reasons+=("$key=docker, но docker не найден")
+			reasons+=("$key=docker, but docker was not found")
 		fi
 	done
 
@@ -210,27 +210,27 @@ step_preflight_reasons() {
 		local nkey
 		for nkey in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME; do
 			if [[ "${CONF[$nkey]:-native}" == "native" ]]; then
-				reasons+=("$nkey=native: на $OS_ID пакетов компонента установщик не ставит, задайте --set $nkey=docker")
+				reasons+=("$nkey=native: on $OS_ID the installer does not install the component packages, set --set $nkey=docker")
 			fi
 		done
 		if [[ "${CONF[METRICS_BACKEND]:-none}" != "none" && "${CONF[METRICS_BACKEND_RUNTIME]:-native}" == "native" ]]; then
-			reasons+=("METRICS_BACKEND_RUNTIME=native: на $OS_ID задайте --set METRICS_BACKEND_RUNTIME=docker")
+			reasons+=("METRICS_BACKEND_RUNTIME=native: on $OS_ID set --set METRICS_BACKEND_RUNTIME=docker")
 		fi
 		if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
-			reasons+=("NDPI_ENABLE=yes: плагину nDPI нужна Suricata, собранная на хосте; на $OS_ID задайте --set NDPI_ENABLE=no")
+			reasons+=("NDPI_ENABLE=yes: the nDPI plugin needs a Suricata built on the host; on $OS_ID set --set NDPI_ENABLE=no")
 		fi
 	fi
 	if [[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "nfq" ]] && [[ -z "$(ips_backend)" ]]; then
-		reasons+=("SURICATA_MODE=ips с IPS_METHOD=nfq: не найдены ни iptables, ни nft (нужны для очереди NFQUEUE)")
+		reasons+=("SURICATA_MODE=ips with IPS_METHOD=nfq: neither iptables nor nft found (needed for the NFQUEUE queue)")
 	fi
 	if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" && "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
-		reasons+=("SURICATA_RUNTIME=docker: плагин nDPI в образ не ставится, задайте NDPI_ENABLE=no")
+		reasons+=("SURICATA_RUNTIME=docker: the nDPI plugin is not installed into the image, set NDPI_ENABLE=no")
 	fi
 	if command -v docker >/dev/null 2>&1; then
 		local dkey
 		for dkey in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME PANEL_RUNTIME; do
 			if [[ "${CONF[$dkey]:-}" == "docker" ]] && ! docker compose version >/dev/null 2>&1; then
-				reasons+=("$dkey=docker, но у docker нет плагина compose (docker compose version не отвечает)")
+				reasons+=("$dkey=docker, but docker has no compose plugin (docker compose version does not answer)")
 				break
 			fi
 		done
@@ -239,11 +239,11 @@ step_preflight_reasons() {
 	case "$(os_support_level)" in
 	unsupported)
 		if [[ "${DPISTACK_ALLOW_UNSUPPORTED:-0}" != "1" ]]; then
-			reasons+=("$OS_ID ${OS_VERSION_ID:-} не поддерживается (поддерживаются Ubuntu LTS от 22.04, Debian от 12, Rocky Linux и AlmaLinux от 8); продолжить на свой риск: DPISTACK_ALLOW_UNSUPPORTED=1")
+			reasons+=("$OS_ID ${OS_VERSION_ID:-} is not supported (supported: Ubuntu LTS from 22.04, Debian from 12, Rocky Linux and AlmaLinux from 8); to go on at your own risk: DPISTACK_ALLOW_UNSUPPORTED=1")
 		fi
 		;;
 	unverified)
-		log "WARN" "$OS_ID ${OS_VERSION_ID:-} не входит в список проверенных платформ (tech.md 11), установка продолжится"
+		log "WARN" "$OS_ID ${OS_VERSION_ID:-} is not in the list of tested platforms (tech.md 11), the installation goes on"
 		;;
 	esac
 
@@ -252,7 +252,7 @@ step_preflight_reasons() {
 	for iface in "${_preflight_ifaces[@]}"; do
 		[[ -z "$iface" ]] && continue
 		if ! net_iface_exists "$iface"; then
-			reasons+=("интерфейс $iface из IFACES не существует")
+			reasons+=("interface $iface from IFACES does not exist")
 		fi
 	done
 
@@ -263,7 +263,7 @@ step_preflight_reasons() {
 	if [[ "$avail_kb" =~ ^[0-9]+$ ]]; then
 		local need_kb=$((need_gb * 1024 * 1024))
 		if ((avail_kb < need_kb)); then
-			reasons+=("нужно не меньше ${need_gb}ГБ свободного места, есть меньше")
+			reasons+=("at least ${need_gb} GB of free space is needed, there is less")
 		fi
 	fi
 
@@ -279,7 +279,7 @@ step_preflight_reasons() {
 			local chroot
 			chroot=$(copr_chroot)
 			if [[ -n "$chroot" ]]; then
-				probes+=("OISF COPR для $chroot|${OISF_COPR_REPO_URL:-https://copr.fedorainfracloud.org/coprs/g/oisf/suricata-8.0/repo/${chroot}/group_oisf-suricata-8.0-${chroot}.repo}")
+				probes+=("OISF COPR for $chroot|${OISF_COPR_REPO_URL:-https://copr.fedorainfracloud.org/coprs/g/oisf/suricata-8.0/repo/${chroot}/group_oisf-suricata-8.0-${chroot}.repo}")
 			else
 				probes+=("OISF COPR|https://copr.fedorainfracloud.org/coprs/g/oisf/suricata-8.0/")
 			fi
@@ -303,13 +303,13 @@ step_preflight_reasons() {
 	fi
 	for probe in "${probes[@]}"; do
 		if ! curl -fsS --max-time 5 -o /dev/null -- "${probe#*|}"; then
-			reasons+=("репозиторий ${probe%%|*} недоступен (${probe#*|})")
+			reasons+=("repository ${probe%%|*} is unavailable (${probe#*|})")
 		fi
 	done
 
 	if [[ "${CONF[EVEBOX_DB]:-sqlite}" == "elasticsearch" ]]; then
 		if ! curl -fsS --max-time 5 -o /dev/null -- "${CONF[EVEBOX_ES_URL]:-}"; then
-			reasons+=("Elasticsearch из EVEBOX_ES_URL (${CONF[EVEBOX_ES_URL]:-}) недоступен")
+			reasons+=("Elasticsearch from EVEBOX_ES_URL (${CONF[EVEBOX_ES_URL]:-}) is unavailable")
 		fi
 	fi
 
@@ -321,14 +321,14 @@ step_preflight_reasons() {
 		[[ -z "$pline" ]] && continue
 		IFS='|' read -r pkey pport pwho psuggest pkind <<<"$pline"
 		if [[ "$pkind" == "nginx" ]]; then
-			reasons+=("порт $pport ($pkey) уже занят, а на нём должен слушать nginx (держит: $pwho)${psuggest:+; свободный: --set $pkey=$psuggest}")
+			reasons+=("port $pport ($pkey) is already busy, and nginx must listen on it (held by: $pwho)${psuggest:+; free: --set $pkey=$psuggest}")
 		else
-			reasons+=("порт $pport ($pkey) уже занят (держит: $pwho)${psuggest:+; свободный: --set $pkey=$psuggest}")
+			reasons+=("port $pport ($pkey) is already busy (held by: $pwho)${psuggest:+; free: --set $pkey=$psuggest}")
 		fi
 	done < <(preflight_port_conflicts)
 
 	if command -v getenforce >/dev/null 2>&1; then
-		log "INFO" "SELinux: $(getenforce 2>/dev/null || echo неизвестно)"
+		log "INFO" "SELinux: $(getenforce 2>/dev/null || echo unknown)"
 	fi
 
 	printf '%s\n' "${reasons[@]}"
@@ -338,7 +338,7 @@ step_preflight_check() {
 	local reasons
 	reasons=$(step_preflight_reasons)
 	if [[ -n "$reasons" ]]; then
-		echo "preflight: обнаружены проблемы:" >&2
+		echo "preflight: problems found:" >&2
 		echo "  - ${reasons//$'\n'/$'\n  - '}" >&2
 		return 1
 	fi
@@ -352,5 +352,5 @@ step_preflight_apply() {
 }
 
 step_preflight_plan() {
-	echo "preflight: без изменений"
+	echo "preflight: no changes"
 }

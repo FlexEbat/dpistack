@@ -63,7 +63,7 @@ test("idle IDS: IPS button on, IDS button off, no confirm button", async () => {
   const els = makeEls();
   stop = start(api, els, () => {});
   await settle();
-  assert.equal(els.status.textContent, "Режим: IDS");
+  assert.equal(els.status.textContent, "Mode: IDS");
   assert.equal(els.ips.disabled, false);
   assert.equal(els.ids.disabled, true);
   assert.equal(els.confirm.hidden, true);
@@ -75,9 +75,9 @@ test("pending switch: the countdown goes down once a second and shows the confir
   stop = start(api, els, () => {});
   await settle();
   assert.equal(els.confirm.hidden, false);
-  assert.match(els.message.textContent, /через 10 с/);
+  assert.match(els.message.textContent, /in 10 s/);
   mock.timers.tick(3000);
-  assert.match(els.message.textContent, /через 7 с/);
+  assert.match(els.message.textContent, /in 7 s/);
 });
 
 test("at zero the countdown stops and the server is asked after 3 s what became of the switch", async () => {
@@ -86,7 +86,7 @@ test("at zero the countdown stops and the server is asked after 3 s what became 
   stop = start(api, els, () => {});
   await settle();
   mock.timers.tick(2000);
-  assert.match(els.message.textContent, /через 0 с/);
+  assert.match(els.message.textContent, /in 0 s/);
   const before = calls.length;
   mock.timers.tick(2900);
   assert.equal(calls.length, before, "no request before the 3 s pass");
@@ -94,7 +94,7 @@ test("at zero the countdown stops and the server is asked after 3 s what became 
   await settle();
   assert.equal(calls.length, before + 1);
   assert.equal(els.confirm.hidden, true, "rolled back: no confirm button");
-  assert.equal(els.status.textContent, "Режим: IDS");
+  assert.equal(els.status.textContent, "Mode: IDS");
   assert.equal(els.message.textContent, "");
   // and the countdown does not keep running
   const n = calls.length;
@@ -113,9 +113,9 @@ test("the server is late: still pending at zero, the screen keeps asking and doe
   mock.timers.tick(3100);
   await settle();
   assert.equal(els.confirm.hidden, false);
-  assert.match(els.message.textContent, /через 0 с/);
+  assert.match(els.message.textContent, /in 0 s/);
   mock.timers.tick(1100);
-  assert.match(els.message.textContent, /через 0 с/);
+  assert.match(els.message.textContent, /in 0 s/);
 });
 
 test("IPS button: a refused confirm() sends nothing", async () => {
@@ -127,12 +127,12 @@ test("IPS button: a refused confirm() sends nothing", async () => {
   els.ips.onclick();
   await settle();
   assert.equal(confirmTexts.length, 1);
-  assert.match(confirmTexts[0], /Включить IPS/);
+  assert.match(confirmTexts[0], /Enable IPS/);
   assert.equal(calls.filter((c) => c.method === "POST").length, 0);
 });
 
 test("IPS button: an accepted confirm() posts acknowledged:true and starts the countdown from the answer", async () => {
-  responses = [ids, { ok: true, output: "режим ips включён", mode: pending(120) }];
+  responses = [ids, { ok: true, output: "ips mode enabled", mode: pending(120) }];
   const els = makeEls();
   stop = start(api, els, () => {});
   await settle();
@@ -143,7 +143,7 @@ test("IPS button: an accepted confirm() posts acknowledged:true and starts the c
   assert.deepEqual(post.body, { mode: "ips", acknowledged: true });
   assert.equal(els.confirm.hidden, false);
   mock.timers.tick(5000);
-  assert.match(els.confirm.hidden ? "" : els.message.textContent, /через 115 с/);
+  assert.match(els.confirm.hidden ? "" : els.message.textContent, /in 115 s/);
 });
 
 test("while a switch is applied the buttons are disabled, afterwards they are back", async () => {
@@ -174,7 +174,7 @@ test("Confirm IPS posts to /api/mode/confirm and the countdown ends", async () =
     (path) => {
       if (path === "/api/mode/confirm") {
         done = true;
-        return { ok: true, output: "режим ips подтверждён", mode: confirmed };
+        return { ok: true, output: "ips mode confirmed", mode: confirmed };
       }
       return done ? confirmed : pending(30);
     },
@@ -188,9 +188,9 @@ test("Confirm IPS posts to /api/mode/confirm and the countdown ends", async () =
   assert.equal(els.confirm.hidden, true);
   mock.timers.tick(30000); // no countdown any more, only the 5 s poller asks
   await settle();
-  assert.equal(els.status.textContent, "Режим: IPS (метод nfq)");
+  assert.equal(els.status.textContent, "Mode: IPS (method nfq)");
   assert.equal(els.confirm.hidden, true);
-  assert.doesNotMatch(els.message.textContent, /через/);
+  assert.doesNotMatch(els.message.textContent, /in \d+ s/);
 });
 
 test("IDS button asks for confirmation too and posts ids without acknowledged", async () => {
@@ -201,12 +201,12 @@ test("IDS button asks for confirmation too and posts ids without acknowledged", 
   assert.equal(els.ids.disabled, false);
   els.ids.onclick();
   await settle();
-  assert.match(confirmTexts[0], /Вернуть режим IDS/);
+  assert.match(confirmTexts[0], /Go back to IDS mode/);
   assert.deepEqual(calls.find((c) => c.method === "POST").body, { mode: "ids" });
 });
 
 test("an error of the server is shown, the real mode is read again and the error stays", async () => {
-  const boom = Object.assign(new Error("режим уже переключается"), { status: 409 });
+  const boom = Object.assign(new Error("the mode is already switching"), { status: 409 });
   responses = [(_path, opts) => (opts?.method === "POST" ? boom : ids)];
   const els = makeEls();
   stop = start(api, els, () => {});
@@ -215,11 +215,11 @@ test("an error of the server is shown, the real mode is read again and the error
   await settle();
   assert.equal(calls.at(-1).path, "/api/mode", "the mode was read again");
   assert.equal(calls.at(-1).method, "GET");
-  assert.equal(els.error.textContent, "режим уже переключается");
+  assert.equal(els.error.textContent, "the mode is already switching");
 });
 
 test("401 goes to the login handler, not to the screen", async () => {
-  const unauth = Object.assign(new Error("нужен вход"), { status: 401 });
+  const unauth = Object.assign(new Error("sign-in required"), { status: 401 });
   responses = [unauth];
   let got = null;
   const els = makeEls();

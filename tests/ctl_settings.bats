@@ -82,13 +82,13 @@ teardown() {
 	grep -qx 'STATS_INTERVAL_SEC=45' "$CONF_FILE"
 	grep -q "interval: 45" "$YAML"
 	run "$CTL" settings set --apply STATS_INTERVAL_SEC=45
-	[[ "$output" == *"без изменений"* ]]
+	[[ "$output" == *"no changes"* ]]
 }
 
 @test "settings set without --apply only records, a heavy change without --apply-heavy is refused" {
 	run "$CTL" settings set STATS_INTERVAL_SEC=60
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"не применён"* ]]
+	[[ "$output" == *"not applied"* ]]
 	grep -qx 'STATS_INTERVAL_SEC=60' "$CONF_FILE"
 	before="$(sha256sum "$CONF_FILE" | cut -d' ' -f1)"
 	run "$CTL" settings set --apply SURICATA_SOURCE=distro
@@ -100,7 +100,7 @@ teardown() {
 @test "settings set --apply-heavy starts the transient unit with --force, a second start is refused" {
 	run "$CTL" settings set --apply-heavy SURICATA_SOURCE=distro
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"применение запущено"* ]]
+	[[ "$output" == *"applying started"* ]]
 	grep -q 'systemd-run.*--unit=dpistack-apply.*reconfigure -y --force' "$MOCK_CALLS_LOG"
 	! grep -q 'ACCESS_CONFIRM' "$MOCK_CALLS_LOG"
 }
@@ -109,7 +109,7 @@ teardown() {
 	before="$(sha256sum "$CONF_FILE" | cut -d' ' -f1)"
 	MOCK_SS_LISTEN=9900 MOCK_SS_PROC=nginx run "$CTL" settings set --apply PANEL_PORT=9900
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"порт 9900 (PANEL_PORT) уже занят: nginx; свободный: 9901"* ]]
+	[[ "$output" == *"port 9900 (PANEL_PORT) is already busy: nginx; free: 9901"* ]]
 	[ "$(sha256sum "$CONF_FILE" | cut -d' ' -f1)" = "$before" ]
 	MOCK_SS_LISTEN=9900 run "$CTL" settings check PANEL_PORT=9900
 	echo "$output" | jq -e '.warnings[0].key=="PANEL_PORT" and .warnings[0].suggestion==9901' >/dev/null
@@ -124,7 +124,7 @@ teardown() {
 	run grep -q 'ABCdef' "$CONF_FILE"
 	[ "$status" -ne 0 ]
 	run "$CTL" settings list
-	[[ "$output" == *"ALERT_TG_TOKEN=(задан)"* ]]
+	[[ "$output" == *"ALERT_TG_TOKEN=(set)"* ]]
 	[[ "$output" != *ABCdef* ]]
 	# not a secret key
 	run bash -c "echo x | '$CTL' settings secret PANEL_PORT"

@@ -45,7 +45,7 @@ install_base() {
 	[ "$status" -eq 0 ]
 	grep -q '^-w=0.0.0.0:3000$' "$DPISTACK_ROOT/etc/ntopng/ntopng.conf"
 	grep -q '^  host: "0.0.0.0"$' "$DPISTACK_ROOT/etc/evebox/evebox.yaml"
-	[[ "$output" == *"видны всей сети"* ]]
+	[[ "$output" == *"visible to the whole"* ]]
 }
 
 @test "criterion 3: nginx+snippet never touches nginx.conf or reloads nginx" {
@@ -137,19 +137,19 @@ install_base() {
 @test "nginx mode refuses a public port that has no room for the service port" {
 	run install_base --set ACCESS_MODE=nginx --set ACCESS_CONFIRM=yes --set NTOPNG_PORT=60000
 	[ "$status" -eq 2 ]
-	[[ "$output" == *"NTOPNG_PORT не больше 55535"* ]]
+	[[ "$output" == *"NTOPNG_PORT not above 55535"* ]]
 }
 
 @test "nginx mode: preflight stops when the public port is taken by something else" {
 	MOCK_SS_LISTEN="9800" run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"порт 9800 (PANEL_PORT) уже занят, а на нём должен слушать nginx"* ]]
+	[[ "$output" == *"port 9800 (PANEL_PORT) is already busy, and nginx must listen on it"* ]]
 }
 
 @test "nginx mode: preflight also checks the service port" {
 	MOCK_SS_LISTEN="19800" run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"порт 19800 (PANEL_PORT) уже занят"* ]]
+	[[ "$output" == *"port 19800 (PANEL_PORT) is already busy"* ]]
 }
 
 # --- R156: a busy port is a warning with a choice, not only a stop ---------
@@ -167,7 +167,7 @@ load_preflight() {
 
 @test "R156: a busy port names its holder and a free port to pass with --set" {
 	MOCK_SS_LISTEN=9800 MOCK_SS_PROC=nginx run load_preflight 'CONF[ACCESS_MODE]=localhost; step_preflight_reasons'
-	[[ "$output" == *"порт 9800 (PANEL_PORT) уже занят (держит: nginx); свободный: --set PANEL_PORT=9801"* ]]
+	[[ "$output" == *"port 9800 (PANEL_PORT) is already busy (held by: nginx); free: --set PANEL_PORT=9801"* ]]
 }
 
 @test "R156: the suggested port skips ports that are busy or used by another key" {
@@ -187,9 +187,9 @@ load_preflight() {
 		CONF[ACCESS_MODE]=localhost; CONF[PANEL_PORT]=9800
 		preflight_resolve_ports_interactive; echo "rc=$? PANEL_PORT=${CONF[PANEL_PORT]}"'
 	rm -f "$f"
-	[[ "$output" == *"ВНИМАНИЕ: порт 9800 (PANEL_PORT) уже занят"* ]]
-	[[ "$output" == *"нужно число от 1 до 65535"* ]]
-	[[ "$output" == *"порт 9800 тоже занят"* ]]
+	[[ "$output" == *"WARNING: port 9800 (PANEL_PORT) is already busy"* ]]
+	[[ "$output" == *"a number from 1 to 65535 is needed"* ]]
+	[[ "$output" == *"port 9800 is busy too"* ]]
 	[[ "$output" == *"rc=0 PANEL_PORT=9801"* ]]
 }
 

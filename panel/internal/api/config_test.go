@@ -45,24 +45,24 @@ config-read) cat "$dir/$name" ;;
 config-write)
   cat > "$dir/.staged"
   if grep -q BAD "$dir/.staged"; then
-    echo "validator: ошибка в строке 3"
-    echo "dpistack: $name: проверка не пройдена, файл не изменён" >&2
+    echo "validator: error on line 3"
+    echo "dpistack: $name: check failed, file unchanged" >&2
     exit 3
   fi
-  if [ "$3" = "--check" ]; then echo "проверка пройдена: suricata -T успешно"; exit 0; fi
+  if [ "$3" = "--check" ]; then echo "check passed: suricata -T ok"; exit 0; fi
   cp "$dir/$name" "$dir/$name.bak"
   cp "$dir/.staged" "$dir/$name"
   if [ "$3" = "--apply" ]; then
     if [ "$name" = dpistack.conf ] && grep -q HEAVY "$dir/.staged"; then
-      echo "dpistack: тяжёлое изменение (SURICATA_SOURCE): выполните install.sh reconfigure" >&2
+      echo "dpistack: heavy change (SURICATA_SOURCE): run install.sh reconfigure" >&2
       exit 3
     fi
-    echo "применено: $name"
+    echo "applied: $name"
   fi
-  echo "сохранено" ;;
+  echo "saved" ;;
 config-revert)
-  if [ -f "$dir/$name.bak" ]; then cp "$dir/$name.bak" "$dir/$name"; echo "восстановлено из бэкапа"
-  else echo "dpistack: нет бэкапа для $name" >&2; exit 1; fi ;;
+  if [ -f "$dir/$name.bak" ]; then cp "$dir/$name.bak" "$dir/$name"; echo "restored from backup"
+  else echo "dpistack: no backup for $name" >&2; exit 1; fi ;;
 esac
 `
 	path := filepath.Join(dir, "ctl")
@@ -119,7 +119,7 @@ func decode(t *testing.T, w *httptest.ResponseRecorder) configAnswer {
 	return a
 }
 
-// Criterion 1: "Проверить" shows the checker's words and saves nothing; a
+// Criterion 1: "Check" shows the checker's words and saves nothing; a
 // save that fails the check leaves the file as it was.
 func TestCheckAndSaveOfAFileThatFailsTheCheck(t *testing.T) {
 	c := newConfigCtl(t)
@@ -127,7 +127,7 @@ func TestCheckAndSaveOfAFileThatFailsTheCheck(t *testing.T) {
 	cookies, csrf := e.login()
 
 	w := send(e, "POST", "/api/config/suricata.yaml/check", "new: yaml\n", cookies, csrf)
-	if got := decode(t, w); w.Code != 200 || !strings.Contains(got.Output, "проверка пройдена") {
+	if got := decode(t, w); w.Code != 200 || !strings.Contains(got.Output, "check passed") {
 		t.Fatalf("good check: %d %s", w.Code, w.Body)
 	}
 	if !c.called(t, "config-write suricata.yaml --check") {
@@ -144,7 +144,7 @@ func TestCheckAndSaveOfAFileThatFailsTheCheck(t *testing.T) {
 		if w.Code != http.StatusUnprocessableEntity {
 			t.Errorf("%s %s: %d, want 422", method, path, w.Code)
 		}
-		if !strings.Contains(got.Output, "ошибка в строке 3") || !strings.Contains(got.Error, "проверка не пройдена") {
+		if !strings.Contains(got.Output, "error on line 3") || !strings.Contains(got.Error, "check failed") {
 			t.Errorf("%s %s: the checker's words are lost: %s", method, path, w.Body)
 		}
 	}
@@ -168,7 +168,7 @@ func TestSaveAndApply(t *testing.T) {
 	cookies, csrf := e.login()
 
 	w := send(e, "PUT", "/api/config/suricata.yaml?apply=1", "new: yaml\n", cookies, csrf)
-	if got := decode(t, w); w.Code != 200 || !strings.Contains(got.Output, "применено") {
+	if got := decode(t, w); w.Code != 200 || !strings.Contains(got.Output, "applied") {
 		t.Fatalf("apply: %d %s", w.Code, w.Body)
 	}
 	if !c.called(t, "config-write suricata.yaml --apply") {
@@ -203,13 +203,13 @@ func TestRevertAsksCtlForTheBackup(t *testing.T) {
 	e := setup(t, withConfigCtl(c))
 	cookies, csrf := e.login()
 
-	if w := send(e, "POST", "/api/config/suricata.yaml/revert", "", cookies, csrf); w.Code < 400 || !strings.Contains(decode(t, w).Error, "нет бэкапа") {
+	if w := send(e, "POST", "/api/config/suricata.yaml/revert", "", cookies, csrf); w.Code < 400 || !strings.Contains(decode(t, w).Error, "no backup") {
 		t.Errorf("revert without a backup: %d %s", w.Code, w.Body)
 	}
 
 	send(e, "PUT", "/api/config/suricata.yaml", "new: yaml\n", cookies, csrf)
 	w := send(e, "POST", "/api/config/suricata.yaml/revert", "", cookies, csrf)
-	if got := decode(t, w); w.Code != 200 || !strings.Contains(got.Output, "восстановлено") {
+	if got := decode(t, w); w.Code != 200 || !strings.Contains(got.Output, "restored") {
 		t.Fatalf("revert: %d %s", w.Code, w.Body)
 	}
 	if !c.called(t, "config-revert suricata.yaml") {

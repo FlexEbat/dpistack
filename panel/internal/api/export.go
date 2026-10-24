@@ -13,7 +13,7 @@ import (
 // guards every request. Without a token configured the page does not exist.
 func (s *server) metricsExport(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.Export == nil || s.cfg.ExportToken == "" {
-		writeError(w, http.StatusNotFound, "не найдено")
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	// The scheme must be there: a bare token is not accepted. The word
@@ -27,7 +27,7 @@ func (s *server) metricsExport(w http.ResponseWriter, r *http.Request) {
 	a, b := sha256.Sum256([]byte(got)), sha256.Sum256([]byte(s.cfg.ExportToken))
 	if !hasScheme || got == "" || subtle.ConstantTimeCompare(a[:], b[:]) != 1 {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="dpistack"`)
-		writeError(w, http.StatusUnauthorized, "нужен токен")
+		writeError(w, http.StatusUnauthorized, "a token is required")
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")

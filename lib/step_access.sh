@@ -108,9 +108,9 @@ access_selinux_notice() {
 		# panel ports until this boolean is on.
 		if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
 			run setsebool -P httpd_can_network_connect 1 ||
-				echo "access: SELinux Enforcing, setsebool httpd_can_network_connect не прошёл: nginx не сможет проксировать на локальные порты" >&2
+				echo "access: SELinux Enforcing, setsebool httpd_can_network_connect failed: nginx cannot proxy to the local ports" >&2
 		else
-			echo "access: SELinux в режиме Enforcing; для ACCESS_MODE=${CONF[ACCESS_MODE]:-localhost} изменений не требуется" >&2
+			echo "access: SELinux is in Enforcing mode; for ACCESS_MODE=${CONF[ACCESS_MODE]:-localhost} no changes are needed" >&2
 		fi
 	fi
 }
@@ -219,7 +219,7 @@ access_firewall_sync() {
 	tool=$(access_fw_tool)
 	old=$(state_read_value "$ACCESS_FW_STATE_KEY")
 	if [[ -z "$tool" ]]; then
-		[[ ${#wanted[@]} -gt 0 ]] && echo "access: FIREWALL_MANAGE=auto, но ни ufw, ни firewalld не найдены - правила не применены" >&2
+		[[ ${#wanted[@]} -gt 0 ]] && echo "access: FIREWALL_MANAGE=auto, but neither ufw nor firewalld was found - the rules are not applied" >&2
 		return 0
 	fi
 	# firewalld installed but stopped: its permanent rules would be
@@ -227,7 +227,7 @@ access_firewall_sync() {
 	# accident. Say so and leave it to the administrator.
 	if [[ "$tool" == "firewalld" ]] && ! firewall-cmd --state >/dev/null 2>&1; then
 		if [[ ${#wanted[@]} -gt 0 || -n "$old" ]]; then
-			echo "access: firewalld не запущен - правила не применены (запустите firewalld и повторите reconfigure)" >&2
+			echo "access: firewalld is not running - the rules are not applied (start firewalld and repeat reconfigure)" >&2
 		fi
 		return 0
 	fi
@@ -294,9 +294,9 @@ step_access_apply() {
 	access_selinux_ports
 
 	if [[ "$mode" != "localhost" ]]; then
-		echo "access: ACCESS_MODE=$mode открывает веб-интерфейсы за пределы localhost." >&2
+		echo "access: ACCESS_MODE=$mode opens the web interfaces beyond localhost." >&2
 		if [[ "$mode" == "lan" ]]; then
-			echo "access: ntopng/EveBox/панель будут слушать на 0.0.0.0 и видны всей сети LAN_CIDR; пароли передаются по обычному HTTP, если не включён NGINX_TLS." >&2
+			echo "access: ntopng/EveBox/the panel will listen on 0.0.0.0 and be visible to the whole LAN_CIDR network; passwords go over plain HTTP unless NGINX_TLS is on." >&2
 		fi
 	fi
 
@@ -315,7 +315,7 @@ step_access_apply() {
 			command -v nginx >/dev/null 2>&1 || pkg_install nginx || return 1
 			write_rendered_file "$(path_nginx_confd)" "$rendered"
 			if ! access_nginx_test_ok; then
-				echo "access: nginx -t упал на отрендеренном конфиге, изменения не применены" >&2
+				echo "access: nginx -t failed on the rendered config, the changes are not applied" >&2
 				return 1
 			fi
 			run systemctl enable --now "$NGINX_UNIT" || return 1
@@ -324,8 +324,8 @@ step_access_apply() {
 			# snippet: never touches the system nginx.conf or reloads
 			# nginx (criterion 3) - just leaves the file for the owner.
 			write_rendered_file "$(path_nginx_snippet)" "$rendered"
-			echo "access: конфиг nginx не применён автоматически (NGINX_MANAGE=snippet)." >&2
-			echo "access: подключите его сами: include $(path_nginx_snippet); - и перезагрузите nginx." >&2
+			echo "access: the nginx config is not applied automatically (NGINX_MANAGE=snippet)." >&2
+			echo "access: include it yourself: include $(path_nginx_snippet); - and reload nginx." >&2
 		fi
 	fi
 
@@ -342,7 +342,7 @@ step_access_plan() {
 		echo "access: nginx (NGINX_MANAGE=${CONF[NGINX_MANAGE]:-snippet}, TLS=${CONF[NGINX_TLS]:-none})"
 	fi
 	if [[ "${CONF[FIREWALL_MANAGE]:-no}" == "auto" ]]; then
-		echo "access: ufw allow из $(access_effective_lan_cidr 2>/dev/null || echo "?")"
+		echo "access: ufw allow from $(access_effective_lan_cidr 2>/dev/null || echo "?")"
 	fi
 }
 

@@ -32,25 +32,25 @@ func (s *server) modeSet(w http.ResponseWriter, r *http.Request) {
 		ConfirmTimeout int    `json:"confirm_timeout"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "неверный запрос")
+		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	if body.Mode != "ids" && body.Mode != "ips" {
-		writeError(w, http.StatusBadRequest, "режим: ids или ips")
+		writeError(w, http.StatusBadRequest, "mode: ids or ips")
 		return
 	}
 	if body.Mode == "ips" {
 		if !body.Acknowledged {
-			writeError(w, http.StatusBadRequest, "переключение в IPS нужно подтвердить: без подтверждения в течение отведённого времени режим вернётся в ids")
+			writeError(w, http.StatusBadRequest, "switching to IPS must be confirmed: without a confirmation in the given time the mode goes back to ids")
 			return
 		}
 		if body.ConfirmTimeout != 0 && (body.ConfirmTimeout < ctl.ModeConfirmMin || body.ConfirmTimeout > ctl.ModeConfirmMax) {
-			writeError(w, http.StatusBadRequest, "время подтверждения: от 10 до 3600 секунд")
+			writeError(w, http.StatusBadRequest, "confirmation time: 10 to 3600 seconds")
 			return
 		}
 	}
 	if !s.ops.begin(&s.ops.modeBusy) {
-		writeError(w, http.StatusConflict, "режим уже переключается")
+		writeError(w, http.StatusConflict, "the mode is already switching")
 		return
 	}
 	defer s.ops.end(&s.ops.modeBusy)
@@ -72,7 +72,7 @@ func (s *server) modeSet(w http.ResponseWriter, r *http.Request) {
 // modeConfirm handles POST /api/mode/confirm: keeps the ips mode.
 func (s *server) modeConfirm(w http.ResponseWriter, r *http.Request) {
 	if !s.ops.begin(&s.ops.modeBusy) {
-		writeError(w, http.StatusConflict, "режим переключается, подождите")
+		writeError(w, http.StatusConflict, "the mode is switching, wait")
 		return
 	}
 	defer s.ops.end(&s.ops.modeBusy)

@@ -22,8 +22,8 @@ check)
 set)
   cat > "$dir/stdin.set"
   if [ -f "$dir/set.rc" ]; then cat "$dir/set.out"; exit $(cat "$dir/set.rc"); fi
-  echo "применено" ;;
-secret) cat > "$dir/stdin.secret"; echo "секрет записан" ;;
+  echo "applied" ;;
+secret) cat > "$dir/stdin.secret"; echo "secret written" ;;
 job) echo '{"state":"inactive","result":"","log":["a","b"]}' ;;
 esac
 `
@@ -100,13 +100,13 @@ func TestSettingsCheckSendsPairsOnStdinSorted(t *testing.T) {
 
 func TestSettingsCheckFailureIsAnAnswer(t *testing.T) {
 	c := settingsCtl(t)
-	c.write(t, "check.json", `{"ok":false,"weight":"light","changed":["STATS_INTERVAL_SEC"],"errors":["STATS_INTERVAL_SEC: вне диапазона 5..300"],"warnings":[]}`)
+	c.write(t, "check.json", `{"ok":false,"weight":"light","changed":["STATS_INTERVAL_SEC"],"errors":["STATS_INTERVAL_SEC: out of range 5..300"],"warnings":[]}`)
 	c.write(t, "check.rc", "3")
 	e := setup(t, withOpsCtl(c))
 	cookies, csrf := e.login()
 	w := send(e, "POST", "/api/settings/check", `{"values":{"STATS_INTERVAL_SEC":"9999"}}`, cookies, csrf)
 	m := jsonMap(t, w.Body.Bytes())
-	if w.Code != 200 || m["ok"] != false || !strings.Contains(w.Body.String(), "вне диапазона") {
+	if w.Code != 200 || m["ok"] != false || !strings.Contains(w.Body.String(), "out of range") {
 		t.Errorf("%d %s", w.Code, w.Body)
 	}
 }
@@ -136,12 +136,12 @@ func TestSettingsApplyLightAndHeavy(t *testing.T) {
 
 func TestSettingsApplyStopsOnAFailedCheckAndWritesNothing(t *testing.T) {
 	c := settingsCtl(t)
-	c.write(t, "check.json", `{"ok":false,"weight":"light","changed":["STATS_INTERVAL_SEC"],"errors":["плохо"],"warnings":[]}`)
+	c.write(t, "check.json", `{"ok":false,"weight":"light","changed":["STATS_INTERVAL_SEC"],"errors":["bad"],"warnings":[]}`)
 	c.write(t, "check.rc", "3")
 	e := setup(t, withOpsCtl(c))
 	cookies, csrf := e.login()
 	w := send(e, "POST", "/api/settings/apply", `{"values":{"STATS_INTERVAL_SEC":"9999"}}`, cookies, csrf)
-	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "плохо") {
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "bad") {
 		t.Errorf("%d %s", w.Code, w.Body)
 	}
 	for _, call := range c.calls(t) {
@@ -153,12 +153,12 @@ func TestSettingsApplyStopsOnAFailedCheckAndWritesNothing(t *testing.T) {
 
 func TestSettingsApplyBusyPortIsAnAnswerWithAFreePort(t *testing.T) {
 	c := settingsCtl(t)
-	c.write(t, "set.out", "порт 9900 (PANEL_PORT) уже занят: nginx; свободный: 9901")
+	c.write(t, "set.out", "port 9900 (PANEL_PORT) is already busy: nginx; free: 9901")
 	c.write(t, "set.rc", "3")
 	e := setup(t, withOpsCtl(c))
 	cookies, csrf := e.login()
 	w := send(e, "POST", "/api/settings/apply", `{"values":{"PANEL_PORT":"9900"}}`, cookies, csrf)
-	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "свободный: 9901") {
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "free: 9901") {
 		t.Errorf("%d %s", w.Code, w.Body)
 	}
 }
@@ -169,7 +169,7 @@ func TestSettingsApplyNoChange(t *testing.T) {
 	e := setup(t, withOpsCtl(c))
 	cookies, csrf := e.login()
 	w := send(e, "POST", "/api/settings/apply", `{"values":{"STATS_INTERVAL_SEC":"30"}}`, cookies, csrf)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "без изменений") {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "no changes") {
 		t.Errorf("%d %s", w.Code, w.Body)
 	}
 	for _, call := range c.calls(t) {

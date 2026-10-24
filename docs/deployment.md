@@ -1,64 +1,61 @@
-# Варианты развёртывания
+# Deployment options
 
-Каждый из компонентов запускается независимо либо на хосте (`native`), либо в контейнере Docker (`docker`):
+English | [Русский](deployment.ru.md)
 
-| Ключ | Компонент |
+Each component runs independently either on the host (`native`) or in a Docker container (`docker`):
+
+| Key | Component |
 | --- | --- |
 | `SURICATA_RUNTIME` | Suricata |
 | `EVEBOX_RUNTIME` | EveBox |
-| `NTOPNG_RUNTIME` | ntopng (redis за ним идёт следом) |
-| `METRICS_BACKEND_RUNTIME` | хранилище метрик (VictoriaMetrics или Prometheus) |
-| `PANEL_RUNTIME` | панель управления |
+| `NTOPNG_RUNTIME` | ntopng (redis follows it) |
+| `METRICS_BACKEND_RUNTIME` | the metrics storage (VictoriaMetrics or Prometheus) |
+| `PANEL_RUNTIME` | the control panel |
 
-Допустимы все 32 сочетания; единственное ограничение: при `SURICATA_RUNTIME=docker` в образ не ставится плагин nDPI, задайте `NDPI_ENABLE=no`. Нужен Docker с плагином `compose`.
+All 32 combinations are allowed; the only limit: with `SURICATA_RUNTIME=docker` the nDPI plugin is not installed into the image, so set `NDPI_ENABLE=no`. You need Docker with the `compose` plugin.
 
-## Примеры
+## Examples
 
-Панель в контейнере, Suricata на хосте:
+The panel in a container, Suricata on the host:
 
 ```
 sudo dpistack install -y --set PANEL_RUNTIME=docker
 ```
 
-Suricata в контейнере, панель на хосте:
+Suricata in a container, the panel on the host:
 
 ```
 sudo dpistack install -y --set SURICATA_RUNTIME=docker --set NDPI_ENABLE=no
 ```
 
-Всё в контейнерах:
+Everything in containers:
 
 ```
 sudo dpistack install -y --set SURICATA_RUNTIME=docker --set EVEBOX_RUNTIME=docker \
   --set NTOPNG_RUNTIME=docker --set PANEL_RUNTIME=docker --set NDPI_ENABLE=no
 ```
 
-Переключение runtime у уже установленного компонента: меняется ключ (экран «Настройки» или `dpistack settings set --apply-heavy`), прежний вариант останавливается, новый создаётся.
+Switching the runtime of an installed component: change the key (the Settings screen or `dpistack settings set --apply-heavy`), the old variant is stopped and the new one is created.
 
-## Как устроены контейнеры
+## How the containers work
 
-Файл `/opt/dpistack/compose/compose.yaml` создаёт установщик; управлять контейнерами вручную не нужно: `dpistack status|start|stop|restart|logs` работают с ними так же, как со службами. Контейнеры идут с `network_mode: host`, поэтому порты и правила доступа (`ACCESS_MODE`) те же, что у служб на хосте.
+The installer creates the file `/opt/dpistack/compose/compose.yaml`; you do not need to manage the containers by hand: `dpistack status|start|stop|restart|logs` work with them the way they do with services. The containers run with `network_mode: host`, so the ports and the access rules (`ACCESS_MODE`) are the same as for services on the host.
 
-### Панель в контейнере
+### The panel in a container
 
-- Образ `dpistack-panel:<хэш бинарника>` собирается на хосте командой `docker build` из каталога, в котором лежат только бинарник панели и Dockerfile на основе `alpine`. Новый бинарник даёт новый образ, прежний не пересобирается.
-- Контейнер запускается с `pid: host` и `privileged: true`: команды управления панель выполняет на хосте через `nsenter -t 1 -m -u -i -n -p`, как `dpistack` от root. Контейнер называет себя в переменной `DPISTACK_CALLER=panel`, и `dpistack` пускает его только к командам управления (без `install`, `upgrade`, `uninstall`).
-- Файлы подключаются по тем же путям, что на хосте: `/etc/dpistack` (только чтение), `/var/lib/dpistack`, `/var/log/suricata`, `/var/lib/suricata`, `/var/lib/evebox` (только чтение).
-- Юнит `dpistack-panel.service` при этом не используется и удаляется; при возврате к `native` контейнер удаляется, юнит создаётся заново.
+- The image `dpistack-panel:<hash of the binary>` is built on the host with `docker build` from a directory that holds only the panel binary and a Dockerfile based on `alpine`. A new binary gives a new image, the old one is not rebuilt.
+- The container starts with `pid: host` and `privileged: true`: the panel runs control commands on the host through `nsenter -t 1 -m -u -i -n -p`, like `dpistack` as root. The container names itself in the variable `DPISTACK_CALLER=panel`, and `dpistack` lets it reach the control commands only (not `install`, `upgrade`, `uninstall`).
+- Files are mounted at the same paths as on the host: `/etc/dpistack` (read only), `/var/lib/dpistack`, `/var/log/suricata`, `/var/lib/suricata`, `/var/lib/evebox` (read only).
+- The `dpistack-panel.service` unit is not used then and is removed; when you go back to `native` the container is removed and the unit is created again.
 
-Панель с привилегиями root на хосте: так же, как и при запуске через `sudo`, взлом панели равен взлому хоста. Ограничение по `DPISTACK_CALLER` защищает от ошибок, а не от злоумышленника с доступом к контейнеру.
+The panel has root rights on the host: just as with `sudo`, a hacked panel is a hacked host. The `DPISTACK_CALLER` limit protects against mistakes, not against an attacker who has access to the container.
 
-## Режимы панели
+## Panel edition
 
-`PANEL_MODE` задаёт бюджет ресурсов самой панели:
+`PANEL_EDITION` is `full` (the default) or `lite`. It does not change what the panel can do, only the page it serves: `full` is the rich dark console with the particle background, `lite` is a plain, light page for small hosts (see [dashboard.md](dashboard.md)). The panel unit has no `MemoryMax` or `CPUQuota`, in a container or on the host, and the number of open log streams is fixed at 4. Switch the edition on the Settings screen or with `dpistack settings set --apply PANEL_EDITION=lite`.
 
-| Значение | Что получает панель |
-| --- | --- |
-| `limited` (по умолчанию) | юнит с `MemoryMax=64M` и `CPUQuota=20%`, до 4 одновременных потоков журналов |
-| `unlimited` | юнит без `MemoryMax` и `CPUQuota`, до 32 потоков журналов |
+An old `dpistack.conf` that still has `PANEL_MODE` (the limited/unlimited switch of earlier versions) keeps loading: the key is ignored.
 
-`unlimited` подходит хосту с запасом ресурсов и большим объёмом событий. Режим переключается на экране «Настройки» или `dpistack settings set --apply PANEL_MODE=unlimited`. Для панели в контейнере ограничений юнита нет в обоих режимах, различается только число потоков.
+## Access and ports
 
-## Доступ и порты
-
-`ACCESS_MODE`: `localhost` (по умолчанию, только с этой машины), `lan` (сеть `LAN_CIDR`, по умолчанию определяется по интерфейсу) и `nginx` (nginx проксирует панель, EveBox и ntopng, опционально с TLS: `NGINX_TLS=selfsigned|existing`). Режимы `lan` и `nginx` включаются только после явного подтверждения. Порты: панель 9800, EveBox 5636, ntopng 3000; занятый порт даёт предупреждение и выбор другого (см. [installation.md](installation.md)).
+`ACCESS_MODE`: `localhost` (the default, from this machine only), `lan` (the network `LAN_CIDR`, detected from the interface by default) and `nginx` (nginx proxies the panel, EveBox and ntopng, optionally with TLS: `NGINX_TLS=selfsigned|existing`). The `lan` and `nginx` modes are enabled only after an explicit confirmation. Ports: panel 9800, EveBox 5636, ntopng 3000; a busy port gives a warning and a choice of another one (see [installation.md](installation.md)).

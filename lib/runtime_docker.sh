@@ -270,7 +270,7 @@ docker_service_check() {
 docker_service_apply() {
 	local svc="$1"
 	command -v docker >/dev/null 2>&1 || {
-		echo "docker: не найден, нужен для ${svc} с RUNTIME=docker" >&2
+		echo "docker: not found, needed for ${svc} with RUNTIME=docker" >&2
 		return 1
 	}
 	# Host directories the containers mount must exist, or Docker creates
@@ -307,7 +307,7 @@ runtime_release_native() {
 }
 
 docker_service_plan() {
-	echo "$1: docker compose, образ $(docker_image "$1"), network_mode: host (рендер $(path_compose_yaml))"
+	echo "$1: docker compose, image $(docker_image "$1"), network_mode: host (render $(path_compose_yaml))"
 }
 
 # docker_suricata_test - suricata -T inside the image against the same

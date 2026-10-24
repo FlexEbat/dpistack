@@ -1,20 +1,22 @@
-# Платформы
+# Platforms
 
-dpistack управляет службами через systemd, поэтому на любой платформе нужен systemd. Установщик определяет семейство по `/etc/os-release` (`ID`, затем `ID_LIKE`).
+English | [Русский](platforms.ru.md)
 
-| Семейство | Дистрибутивы | Пакетный менеджер | Компоненты на хосте | Компоненты в Docker |
+dpistack manages services through systemd, so any platform needs systemd. The installer detects the family from `/etc/os-release` (`ID`, then `ID_LIKE`).
+
+| Family | Distributions | Package manager | Components on the host | Components in Docker |
 | --- | --- | --- | --- | --- |
-| `apt` | Ubuntu LTS от 22.04, Debian от 12 и производные | `apt-get` | да | да |
-| `dnf` | Rocky Linux и AlmaLinux от 8, Fedora, RHEL, CentOS Stream, Amazon Linux | `dnf` | да | да |
-| `zypper` | openSUSE, SLES | `zypper` | нет | да |
-| `pacman` | Arch Linux, Manjaro, EndeavourOS | `pacman` | нет | да |
-| `generic` | любой другой Linux с systemd | не используется | нет | да |
+| `apt` | Ubuntu LTS from 22.04, Debian from 12 and derivatives | `apt-get` | yes | yes |
+| `dnf` | Rocky Linux and AlmaLinux from 8, Fedora, RHEL, CentOS Stream, Amazon Linux | `dnf` | yes | yes |
+| `zypper` | openSUSE, SLES | `zypper` | no | yes |
+| `pacman` | Arch Linux, Manjaro, EndeavourOS | `pacman` | no | yes |
+| `generic` | any other Linux with systemd | not used | no | yes |
 
-Уровни поддержки печатаются при запуске: **supported** (Ubuntu LTS от 22.04, Debian от 12, Rocky и AlmaLinux от 8), **unverified** (остальные известные семейства: запуск идёт с предупреждением), **unsupported** (старее указанных версий).
+Support levels are printed at start: **supported** (Ubuntu LTS from 22.04, Debian from 12, Rocky and AlmaLinux from 8), **unverified** (the other known families: the run goes on with a warning), **unsupported** (older than the versions above).
 
-## Что значит «в Docker» на zypper, pacman и generic
+## What "in Docker" means on zypper, pacman and generic
 
-Пакеты Suricata, EveBox, ntopng и nDPI для этих систем установщик не ставит. Все компоненты запускаются контейнерами, панель при желании тоже:
+The installer does not install the Suricata, EveBox, ntopng and nDPI packages for these systems. All components run as containers, and the panel can too:
 
 ```
 sudo ./install.sh install -y \
@@ -22,15 +24,15 @@ sudo ./install.sh install -y \
   --set NDPI_ENABLE=no
 ```
 
-Если оставить `native`, проверка перед установкой остановится и назовёт ключи, которые нужно задать. Плагин nDPI собирается вместе с Suricata на хосте, поэтому в контейнерной схеме `NDPI_ENABLE=no`.
+If you leave `native`, the check before the install stops and names the keys you must set. The nDPI plugin is built together with Suricata on the host, so in the container scheme `NDPI_ENABLE=no`.
 
-С нужными пакетами и Docker на хосте:
+With the needed packages and Docker on the host:
 
-- `zypper` и `pacman`: установщик сам ставит базовые утилиты (`curl`, `jq`, `git`, `openssl`, `sudo`, `iproute2` и другие);
-- `generic`: установщик проверяет наличие `ip`, `visudo`, `openssl`, `jq` и просит поставить недостающее пакетами дистрибутива; сам он на таких системах ничего не устанавливает.
+- `zypper` and `pacman`: the installer itself installs the base tools (`curl`, `jq`, `git`, `openssl`, `sudo`, `iproute2` and others);
+- `generic`: the installer checks for `ip`, `visudo`, `openssl` and `jq` and asks you to install what is missing with the distribution packages; it installs nothing itself on such systems.
 
-Закрепление версий пакетов (`PIN_VERSIONS`) работает на `apt`, `dnf` и `zypper`; на остальных пропускается с сообщением.
+Pinning package versions (`PIN_VERSIONS`) works on `apt`, `dnf` and `zypper`; on the others it is skipped with a message.
 
-## Система без systemd
+## A system without systemd
 
-Alpine, Void с runit, Gentoo с OpenRC и подобные: установщик завершается с кодом 3 и сообщением `нужен systemd`.
+Alpine, Void with runit, Gentoo with OpenRC and the like: the installer exits with code 3 and the message `systemd is needed`.

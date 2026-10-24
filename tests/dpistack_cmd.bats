@@ -75,7 +75,7 @@ dp_input() {
 	marker="$INSTALLER_DIR/lib/paths.sh"
 	touch -d "@1000000000" "$marker"
 	run bash "$REPO_DIR/install.sh" status --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
-	[[ "$output" == *"selfinstall: в порядке"* ]]
+	[[ "$output" == *"selfinstall: ok"* ]]
 	run install_base
 	[ "$status" -eq 0 ]
 	[ "$(stat -c %Y "$marker")" = "1000000000" ]
@@ -95,11 +95,11 @@ dp_input() {
 	dp_input q
 	DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Управление установленным стендом"* ]]
-	for item in "Настроить" "Статус компонентов" "Логи" "Запустить тесты" "Обновить пакеты" "Удалить" "Пароль панели"; do
+	[[ "$output" == *"Managing the installed stand"* ]]
+	for item in "Configure" "Component status" "Logs" "Run tests" "Upgrade packages" "Uninstall" "Panel password"; do
 		[[ "$output" == *"$item"* ]]
 	done
-	[[ "$output" != *"Быстрая установка"* ]]
+	[[ "$output" != *"Quick install"* ]]
 	[[ "$output" == *"dpistack v$(grep -o '"[0-9.]*"' "$REPO_DIR/lib/common.sh" | head -1 | tr -d '"')"* ]]
 }
 
@@ -108,8 +108,8 @@ dp_input() {
 	ln -s "$REPO_DIR/install.sh" "$DPISTACK_ROOT/usr/local/sbin/dpistack"
 	dp_input q y
 	DPISTACK_INPUT="$INPUT" run "$DPISTACK_ROOT/usr/local/sbin/dpistack"
-	[[ "$output" == *"Быстрая установка"* ]]
-	[[ "$output" != *"Управление установленным стендом"* ]]
+	[[ "$output" == *"Quick install"* ]]
+	[[ "$output" != *"Managing the installed stand"* ]]
 }
 
 @test "criterion 5: status, logs and tests call dpistack-ctl; a failing helper keeps the menu alive" {
@@ -126,7 +126,7 @@ dp_input() {
 	dp_input 2 4 q
 	STUB_RC=3 DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"dpistack вернул код 3"* ]]
+	[[ "$output" == *"dpistack returned code 3"* ]]
 	[ "$(grep -c . "$STUB_LOG")" -ge 2 ]
 }
 
@@ -134,35 +134,35 @@ dp_input() {
 	run install_base
 	dp_input q y
 	DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack" reconfigure
-	[[ "$output" == *"Настройка существующей установки"* ]]
-	[[ "$output" != *"b) Назад"* ]]
+	[[ "$output" == *"Configuring an existing installation"* ]]
+	[[ "$output" != *"b) Back"* ]]
 
 	dp_input 1 b q
 	DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Настройка существующей установки"* ]]
-	[[ "$output" == *"b) Назад"* ]]
+	[[ "$output" == *"Configuring an existing installation"* ]]
+	[[ "$output" == *"b) Back"* ]]
 	# After Back the management menu is shown again.
-	[ "$(grep -o "Управление установленным стендом" <<<"$output" | wc -l)" -eq 2 ]
+	[ "$(grep -o "Managing the installed stand" <<<"$output" | wc -l)" -eq 2 ]
 }
 
 @test "criterion 7: uninstall needs the word, wrong input or empty changes nothing" {
 	run install_base
-	for answer in "нет" ""; do
+	for answer in "no" ""; do
 		dp_input 6 "$answer" q
 		DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
 		[ "$status" -eq 0 ]
-		[[ "$output" == *"отменено"* ]]
+		[[ "$output" == *"cancelled"* ]]
 		[ -f "$CONF" ]
 	done
-	dp_input 6 "удалить" "" q
+	dp_input 6 "remove" "" q
 	DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
 	[ -f "$CONF" ]
 }
 
 @test "criterion 7 and 10: confirmed uninstall removes the commands and the installer copy" {
 	run install_base
-	dp_input 6 "удалить" 1
+	dp_input 6 "remove" 1
 	DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
 	[ "$status" -eq 0 ]
 	[ ! -e "$CONF" ]
@@ -178,7 +178,7 @@ dp_input() {
 @test "criterion 7: choice 2 runs uninstall with --purge" {
 	run install_base
 	[ -f "$DPISTACK_ROOT/etc/suricata/suricata.yaml" ]
-	dp_input 6 "удалить" 2
+	dp_input 6 "remove" 2
 	DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"--purge"* ]]
@@ -190,8 +190,8 @@ dp_input() {
 	dp_input 3 q
 	DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack" install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Найдена установка"* ]]
-	[[ "$output" == *"Управление установленным стендом"* ]]
+	[[ "$output" == *"Installation found"* ]]
+	[[ "$output" == *"Managing the installed stand"* ]]
 }
 
 @test "criterion 9: the verbs of the privileged side are verbs of dpistack itself, the old name is a symlink" {
@@ -213,7 +213,7 @@ dp_input() {
 	chmod +x "$fake/id"
 	PATH="$fake:$PATH" run bash "$REPO_DIR/install.sh" version
 	[ "$status" -eq 1 ]
-	[[ "$output" == *"только от root"* ]]
+	[[ "$output" == *"as root only"* ]]
 	PATH="$fake:$PATH" run bash "$REPO_DIR/install.sh" status --json
 	[ "$status" -eq 1 ]
 	PATH="$fake:$PATH" run bash "$REPO_DIR/install.sh" settings list
@@ -249,6 +249,6 @@ STUB
 	: >"$STUB_LOG"
 	dp_input 7 "one" "two" q
 	DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
-	[[ "$output" == *"пароли не совпадают"* ]]
+	[[ "$output" == *"the passwords do not match"* ]]
 	! grep -q "panel-passwd" "$STUB_LOG"
 }

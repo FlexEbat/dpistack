@@ -24,7 +24,7 @@ var evePollEvery = time.Second
 
 var eveType = regexp.MustCompile(`^[a-z0-9_]{1,32}$`)
 
-const eveOff = "просмотр событий выключен (EVE_FILE=no)"
+const eveOff = "event view is off (EVE_FILE=no)"
 
 // eveEvent is one event as the screen gets it: the line itself is kept
 // intact under "event".
@@ -50,16 +50,16 @@ func eveQuery(r *http.Request) (eve.Query, string) {
 	v := r.URL.Query()
 	q.Type = v.Get("type")
 	if q.Type != "" && !eveType.MatchString(q.Type) {
-		return q, "type: строчные латинские буквы, цифры и _ (до 32 знаков)"
+		return q, "type: lowercase Latin letters, digits and _ (up to 32 characters)"
 	}
 	q.Text = strings.TrimSpace(v.Get("q"))
 	if len([]rune(q.Text)) > 100 {
-		return q, "q: не длиннее 100 знаков"
+		return q, "q: at most 100 characters"
 	}
 	if raw := v.Get("since"); raw != "" {
 		t, err := time.Parse(time.RFC3339Nano, raw)
 		if err != nil {
-			return q, "since: время в формате RFC 3339, например 2026-10-15T10:00:00Z"
+			return q, "since: a time in RFC 3339 format, for example 2026-10-15T10:00:00Z"
 		}
 		q.Since = t
 	}
@@ -75,7 +75,7 @@ func (s *server) eveList(w http.ResponseWriter, r *http.Request) {
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 || n > eveMax {
-			writeError(w, http.StatusBadRequest, "limit: целое число от 1 до "+strconv.Itoa(eveMax))
+			writeError(w, http.StatusBadRequest, "limit: an integer from 1 to "+strconv.Itoa(eveMax))
 			return
 		}
 		limit = n
@@ -92,7 +92,7 @@ func (s *server) eveList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.cfg.Eve.Poll(); err != nil {
-		writeError(w, http.StatusInternalServerError, "не удалось прочитать eve.json: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "could not read eve.json: "+err.Error())
 		return
 	}
 	events := []eveEvent{}
@@ -113,7 +113,7 @@ func (s *server) eveList(w http.ResponseWriter, r *http.Request) {
 func (s *server) eveStream(w http.ResponseWriter, r *http.Request) {
 	typ := r.URL.Query().Get("type")
 	if typ != "" && !eveType.MatchString(typ) {
-		writeError(w, http.StatusBadRequest, "type: строчные латинские буквы, цифры и _ (до 32 знаков)")
+		writeError(w, http.StatusBadRequest, "type: lowercase Latin letters, digits and _ (up to 32 characters)")
 		return
 	}
 	if s.cfg.Eve == nil {
@@ -121,14 +121,14 @@ func (s *server) eveStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.takeStream() {
-		writeError(w, http.StatusTooManyRequests, "слишком много открытых потоков, закройте лишние вкладки")
+		writeError(w, http.StatusTooManyRequests, "too many open streams, close the extra tabs")
 		return
 	}
 	defer s.streams.Add(-1)
 
 	// Catch up with the file first, so that only what comes later is sent.
 	if err := s.cfg.Eve.Poll(); err != nil {
-		writeError(w, http.StatusInternalServerError, "не удалось прочитать eve.json: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "could not read eve.json: "+err.Error())
 		return
 	}
 	cursor := s.cfg.Eve.LastID()

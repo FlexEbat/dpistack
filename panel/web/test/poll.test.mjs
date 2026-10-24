@@ -76,7 +76,7 @@ test("metrics: the answer for the range clicked first does not overwrite the new
   pending[1].resolve({ series: {} }); // 24h answers first
   await settle();
   assert.equal(els.error.textContent, "");
-  pending[0].reject(new Error("старый ответ 1h")); // then the late 1h one
+  pending[0].reject(new Error("old answer 1h")); // then the late 1h one
   await settle();
   assert.equal(els.error.textContent, "", "the late answer for the old range showed its error");
 });

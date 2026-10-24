@@ -27,7 +27,7 @@ echo "$*" >> '@LOG@'
 dir='@DIR@'
 one() {
   st=$(cat "$dir/$1.status" 2>/dev/null || echo pass)
-  printf '{"name":"%s","status":"%s","detail":"detail of %s: причина","duration_ms":12}' "$1" "$st" "$1"
+  printf '{"name":"%s","status":"%s","detail":"detail of %s: reason","duration_ms":12}' "$1" "$st" "$1"
   [ "$st" = fail ] && echo 1 > "$dir/anyfail"
 }
 case "$1" in
@@ -46,14 +46,14 @@ iface)
   case "$2" in
   list) cat "$dir/ifaces" ;;
   add)
-    grep -qx "$3" "$dir/system" || { echo "dpistack: интерфейса нет в системе: $3" >&2; exit 5; }
-    grep -qx "$3" "$dir/ifaces" && { echo "уже в списке: $3"; exit 0; }
+    grep -qx "$3" "$dir/system" || { echo "dpistack: the interface is not in the system: $3" >&2; exit 5; }
+    grep -qx "$3" "$dir/ifaces" && { echo "already in the list: $3"; exit 0; }
     [ -f "$dir/HOLD" ] && while [ -f "$dir/HOLD" ]; do sleep 0.05; done
-    [ -f "$dir/FAIL" ] && { echo "dpistack: reconfigure не удался, dpistack.conf возвращён" >&2; exit 1; }
+    [ -f "$dir/FAIL" ] && { echo "dpistack: reconfigure failed, dpistack.conf restored" >&2; exit 1; }
     echo "$3" >> "$dir/ifaces"; echo "interface $3 added" ;;
   remove)
-    grep -qx "$3" "$dir/ifaces" || { echo "dpistack: интерфейса нет в IFACES: $3" >&2; exit 5; }
-    [ "$(wc -l < "$dir/ifaces")" -gt 1 ] || { echo "dpistack: нельзя удалить последний интерфейс" >&2; exit 3; }
+    grep -qx "$3" "$dir/ifaces" || { echo "dpistack: the interface is not in IFACES: $3" >&2; exit 5; }
+    [ "$(wc -l < "$dir/ifaces")" -gt 1 ] || { echo "dpistack: cannot remove the last interface" >&2; exit 3; }
     grep -vx "$3" "$dir/ifaces" > "$dir/i.tmp"; mv "$dir/i.tmp" "$dir/ifaces"; echo "interface $3 removed" ;;
   esac ;;
 mode)
@@ -62,17 +62,17 @@ mode)
     m=$(cat "$dir/mode" 2>/dev/null || echo ids)
     if [ -f "$dir/remaining" ]; then p=true; r=$(cat "$dir/remaining"); else p=false; r=0; fi
     printf '{"mode":"%s","method":"nfq","pending":%s,"remaining_sec":%s}\n' "$m" "$p" "$r" ;;
-  ids) rm -f "$dir/remaining"; echo ids > "$dir/mode"; echo "режим ids" ;;
+  ids) rm -f "$dir/remaining"; echo ids > "$dir/mode"; echo "ids mode" ;;
   ips)
     [ -f "$dir/HOLD" ] && while [ -f "$dir/HOLD" ]; do sleep 0.05; done
-    [ -f "$dir/FAIL" ] && { echo "dpistack: mode ips: не найден iptables (нужен для цепочки DPISTACK)" >&2; exit 3; }
+    [ -f "$dir/FAIL" ] && { echo "dpistack: mode ips: iptables not found (needed for the DPISTACK chain)" >&2; exit 3; }
     t=120; [ "$3" = "--confirm-timeout" ] && t="$4"
     echo ips > "$dir/mode"; echo "$t" > "$dir/remaining"
-    echo "режим ips включён; подтвердите командой mode-confirm в течение $t с, иначе вернётся ids" ;;
+    echo "ips mode enabled; confirm with the mode-confirm command within $t s, or it goes back to ids" ;;
   esac ;;
 mode-confirm)
-  [ -f "$dir/remaining" ] || { echo "dpistack: mode-confirm: нечего подтверждать" >&2; exit 3; }
-  rm -f "$dir/remaining"; echo "режим ips подтверждён" ;;
+  [ -f "$dir/remaining" ] || { echo "dpistack: mode-confirm: nothing to confirm" >&2; exit 3; }
+  rm -f "$dir/remaining"; echo "ips mode confirmed" ;;
 esac
 `
 
@@ -157,7 +157,7 @@ func TestTestsRunShowsEveryResultWithItsReason(t *testing.T) {
 
 	code, got, body := run("bittorrent")
 	if code != 200 || len(got) != 1 || got[0].Name != "bittorrent" || got[0].Status != "pass" ||
-		!strings.Contains(got[0].Detail, "причина") || got[0].DurationMS != 12 {
+		!strings.Contains(got[0].Detail, "reason") || got[0].DurationMS != 12 {
 		t.Fatalf("bittorrent: %d %s", code, body)
 	}
 	if !c.called(t, "test bittorrent --json") {
@@ -174,7 +174,7 @@ func TestTestsRunShowsEveryResultWithItsReason(t *testing.T) {
 	c.write(t, "https.status", "fail")
 	code, got, body = run("all")
 	if code != 200 || len(got) != 2 || got[0].Status != "pass" || got[1].Name != "https" || got[1].Status != "fail" ||
-		!strings.Contains(got[1].Detail, "причина") {
+		!strings.Contains(got[1].Detail, "reason") {
 		t.Fatalf("all with a failure: %d %s", code, body)
 	}
 
@@ -257,8 +257,8 @@ func TestSecondTestRunIs409AndLastSaysRunning(t *testing.T) {
 func TestLastResultSurvivesARestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tests-last.json")
 	content := `{"results":[
-{"name":"bittorrent","status":"pass","detail":"сигнатура: ET P2P BitTorrent DHT ping request","duration_ms":812,"timestamp":"2026-10-08T12:00:00Z"},
-{"name":"https","status":"fail","detail":"curl не прошёл","duration_ms":15000,"timestamp":"2026-10-08T12:01:00Z"}
+{"name":"bittorrent","status":"pass","detail":"signature: ET P2P BitTorrent DHT ping request","duration_ms":812,"timestamp":"2026-10-08T12:00:00Z"},
+{"name":"https","status":"fail","detail":"curl failed","duration_ms":15000,"timestamp":"2026-10-08T12:01:00Z"}
 ]}`
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -284,7 +284,7 @@ func TestLastResultSurvivesARestart(t *testing.T) {
 	after := read(setup(t, withTestsFile(path))) // a new panel process, the same file
 	for _, l := range []last{before, after} {
 		if len(l.Results) != 2 || l.Results[0].Name != "bittorrent" || l.Results[1].Status != "fail" ||
-			l.Results[1].Detail != "curl не прошёл" || l.Results[0].Timestamp != "2026-10-08T12:00:00Z" {
+			l.Results[1].Detail != "curl failed" || l.Results[0].Timestamp != "2026-10-08T12:00:00Z" {
 			t.Fatalf("last results: %+v", l)
 		}
 	}

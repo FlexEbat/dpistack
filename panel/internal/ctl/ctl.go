@@ -293,7 +293,7 @@ func (r *Runner) runWith(ctx context.Context, limit int, timeout time.Duration, 
 	}
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("%w: не ответил за %s", ErrUnavailable, timeout)
+			return nil, fmt.Errorf("%w: no answer in %s", ErrUnavailable, timeout)
 		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {

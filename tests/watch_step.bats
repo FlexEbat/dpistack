@@ -43,7 +43,7 @@ install_base() {
 	run install_base
 	[ "$status" -eq 0 ]
 	run bash "$REPO_DIR/install.sh" status --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
-	[[ "$output" == *"watch: в порядке"* ]]
+	[[ "$output" == *"watch: ok"* ]]
 	: >"$MOCK_CALLS_LOG"
 	run install_base
 	[ "$status" -eq 0 ]

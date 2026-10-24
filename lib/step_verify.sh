@@ -72,23 +72,23 @@ verify_test_bittorrent() {
 	verify_p2p_enabled && p2p=1
 	verify_plugin_loaded && plugin=1
 	if ((!p2p && !plugin)); then
-		verify_set skip "нет ни правил группы emerging-p2p, ни плагина nDPI: включите emerging-p2p (RULES_GROUPS) или NDPI_ENABLE=yes"
+		verify_set skip "there are neither emerging-p2p rules nor the nDPI plugin: enable emerging-p2p (RULES_GROUPS) or NDPI_ENABLE=yes"
 		return 0
 	fi
 	# The replay runs the host's suricata on a pcap. With Suricata in a
 	# container there is none on the host and the container is busy
 	# capturing: say so, do not report a missing package.
 	if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" ]]; then
-		verify_set skip "Suricata в контейнере: реплей pcap на хосте недоступен; события и алерты проверяйте на живом трафике (TEST_BT_LIVE=yes)"
+		verify_set skip "Suricata in a container: pcap replay on the host is unavailable; check events and alerts on live traffic (TEST_BT_LIVE=yes)"
 		return 0
 	fi
 	if ! command -v suricata >/dev/null 2>&1; then
-		verify_set fail "suricata не установлен"
+		verify_set fail "suricata is not installed"
 		return 0
 	fi
 	local pcap="$VERIFY_DATA_DIR/bittorrent.pcap"
 	if [[ ! -r "$pcap" ]]; then
-		verify_set fail "не найден $pcap"
+		verify_set fail "$pcap not found"
 		return 0
 	fi
 
@@ -113,7 +113,7 @@ RULES
 		"RULE_FILES=$rule_files" \
 		"PLUGINS=$plugins" >"$tmp/suricata-test.yaml" || {
 		rm -rf "$tmp"
-		verify_set fail "не удалось подготовить suricata-test.yaml"
+		verify_set fail "could not prepare suricata-test.yaml"
 		return 0
 	}
 
@@ -125,13 +125,13 @@ RULES
 
 	if [[ -z "$sig" ]]; then
 		if ((rc != 0)); then
-			verify_set fail "suricata -r завершился с кодом $rc: $(printf '%s' "$out" | tail -1)"
+			verify_set fail "suricata -r exited with code $rc: $(printf '%s' "$out" | tail -1)"
 		else
-			verify_set fail "реплей bittorrent.pcap не дал алерта с BitTorrent: проверьте, что правила emerging-p2p загружены в suricata.rules или плагин nDPI подключён"
+			verify_set fail "replaying bittorrent.pcap gave no BitTorrent alert: check that the emerging-p2p rules are loaded into suricata.rules or the nDPI plugin is connected"
 		fi
 		return 0
 	fi
-	verify_set pass "сигнатура: $sig"
+	verify_set pass "signature: $sig"
 	[[ "$VERIFY_BT_LIVE" == "yes" ]] && verify_bittorrent_live "$pcap"
 	return 0
 }
@@ -141,22 +141,22 @@ RULES
 verify_bittorrent_live() {
 	local pcap="$1" iface="${VERIFY_IFACES%%,*}" offset i
 	if ! command -v tcpreplay >/dev/null 2>&1; then
-		verify_set fail "TEST_BT_LIVE=yes, но tcpreplay не установлен"
+		verify_set fail "TEST_BT_LIVE=yes, but tcpreplay is not installed"
 		return 0
 	fi
 	offset=$(verify_eve_size)
 	if ! tcpreplay -i "$iface" "$pcap" >/dev/null 2>&1; then
-		verify_set fail "tcpreplay не смог отправить pcap в $iface"
+		verify_set fail "tcpreplay could not send the pcap to $iface"
 		return 0
 	fi
 	for ((i = 0; i < VERIFY_WAIT; i++)); do
 		if verify_eve_since "$offset" | grep -E '"event_type": *"alert"' | grep -qF 'BitTorrent'; then
-			verify_set pass "$VERIFY_DETAIL; живой прогон через $iface: событие в eve.json"
+			verify_set pass "$VERIFY_DETAIL; live run through $iface: an event in eve.json"
 			return 0
 		fi
 		sleep 1
 	done
-	verify_set fail "офлайн-проверка прошла, но в живом eve.json нет события после tcpreplay в $iface"
+	verify_set fail "the offline check passed, but the live eve.json has no event after tcpreplay on $iface"
 }
 
 verify_url_host() {
@@ -167,12 +167,12 @@ verify_test_https() {
 	local url="$VERIFY_HTTPS_URL" host eve offset i cerr rc
 	host=$(verify_url_host "$url")
 	if [[ -z "$host" ]]; then
-		verify_set fail "в TEST_HTTPS_URL нет хоста: $url"
+		verify_set fail "TEST_HTTPS_URL has no host: $url"
 		return 0
 	fi
 	eve=$(path_suricata_eve_json)
 	if [[ ! -f "$eve" ]]; then
-		verify_set fail "не найден $eve: Suricata не пишет события, запущена ли она и включён ли EVE_FILE"
+		verify_set fail "$eve not found: Suricata writes no events, check that it is running and EVE_FILE is on"
 		return 0
 	fi
 
@@ -182,13 +182,13 @@ verify_test_https() {
 	cerr=$(curl -sS --max-time 15 -o /dev/null -- "$url" 2>&1)
 	rc=$?
 	if ((rc != 0)); then
-		verify_set fail "curl не прошёл (код $rc): $(printf '%s' "$cerr" | head -1)"
+		verify_set fail "curl failed (code $rc): $(printf '%s' "$cerr" | head -1)"
 		return 0
 	fi
 
 	for ((i = 0; i < VERIFY_WAIT; i++)); do
 		if verify_eve_since "$offset" | grep -F '"event_type":"tls"' | grep -qF "\"sni\":\"$host\""; then
-			verify_set pass "событие tls с sni=$host получено"
+			verify_set pass "tls event with sni=$host received"
 			return 0
 		fi
 		sleep 1
@@ -197,11 +197,11 @@ verify_test_https() {
 	local default_if hint=""
 	default_if=$(ip -4 route show default 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
 	if [[ -n "$default_if" && ",$VERIFY_IFACES," != *",$default_if,"* ]]; then
-		hint="curl идёт через $default_if, а Suricata слушает $VERIFY_IFACES: пакеты не видны"
+		hint="curl goes through $default_if, while Suricata listens on $VERIFY_IFACES: the packets are not seen"
 	else
-		hint="проверьте, что Suricata видит интерфейс, через который идёт curl (IFACES=$VERIFY_IFACES)"
+		hint="check that Suricata sees the interface curl goes through (IFACES=$VERIFY_IFACES)"
 	fi
-	verify_set fail "curl прошёл, но события tls с sni=$host нет за ${VERIFY_WAIT} с: $hint"
+	verify_set fail "curl passed, but there is no tls event with sni=$host within ${VERIFY_WAIT} s: $hint"
 }
 
 # verify_record <name> <status> <detail> <ms> - keeps the last result
@@ -258,7 +258,7 @@ verify_run() {
 			printf '{"name":"%s","status":"%s","detail":"%s","duration_ms":%s}' \
 				"$name" "$VERIFY_STATUS" "$(verify_json_escape "$VERIFY_DETAIL")" "$ms"
 		else
-			printf '%s: %s (%s мс) - %s\n' "$name" "$VERIFY_STATUS" "$ms" "$VERIFY_DETAIL"
+			printf '%s: %s (%s ms) - %s\n' "$name" "$VERIFY_STATUS" "$ms" "$VERIFY_DETAIL"
 		fi
 	done
 	((json)) && printf ']\n'
@@ -267,7 +267,7 @@ verify_run() {
 
 verify_final_report() {
 	((${#VERIFY_FAILED_NAMES[@]} > 0)) || return 0
-	echo "ВНИМАНИЕ: проверочные тесты не прошли: ${VERIFY_FAILED_NAMES[*]} (установка не отменена, повторить: dpistack test all)"
+	echo "WARNING: the check tests failed: ${VERIFY_FAILED_NAMES[*]} (the installation is not cancelled, repeat with: dpistack test all)"
 }
 
 step_verify_check() {
@@ -293,8 +293,8 @@ step_verify_apply() {
 
 step_verify_plan() {
 	if [[ "${CONF[TEST_ON_INSTALL]:-yes}" == "yes" ]]; then
-		echo "verify: проверочные тесты (${VERIFY_TESTS[*]}) после установки"
+		echo "verify: check tests (${VERIFY_TESTS[*]}) after install"
 	else
-		echo "verify: TEST_ON_INSTALL=no, тесты не запускаются"
+		echo "verify: TEST_ON_INSTALL=no, the tests do not run"
 	fi
 }

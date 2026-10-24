@@ -28,11 +28,11 @@ for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
 done
 unset _lib
 if ! declare -F path_conf >/dev/null; then
-	echo "dpistack-watch: не найден lib/paths.sh" >&2
+	echo "dpistack-watch: lib/paths.sh not found" >&2
 	exit 1
 fi
 command -v jq >/dev/null 2>&1 || {
-	echo "dpistack-watch: не установлен jq" >&2
+	echo "dpistack-watch: jq is not installed" >&2
 	exit 1
 }
 
@@ -82,7 +82,7 @@ check_process() {
 	local id="$1" state="${COMP_STATE[$1]:-absent}"
 	case "$state" in
 	active) record "$id.process" ok "$state" "" ;;
-	absent) record "$id.process" na "$state" "компонент не установлен" ;;
+	absent) record "$id.process" na "$state" "component not installed" ;;
 	*) record "$id.process" crit "$state" "$id: $state" ;;
 	esac
 }
@@ -113,7 +113,7 @@ check_port() {
 	local id="$1" port misses key
 	port=$(component_port "$id")
 	if [[ "${COMP_STATE[$id]:-absent}" == "absent" || -z "$port" ]]; then
-		record "$id.port" na "" "компонент не установлен"
+		record "$id.port" na "" "component not installed"
 		return
 	fi
 	key="watch.miss.$id"
@@ -126,27 +126,27 @@ check_port() {
 	misses=$((${misses:-0} + 1))
 	state_write_value "$key" "$misses"
 	if ((misses >= PORT_CRIT_AFTER_MISSES)); then
-		record "$id.port" crit "$port" "порт $port не слушается $misses прогонов подряд"
+		record "$id.port" crit "$port" "port $port is not listening for $misses runs in a row"
 	else
-		record "$id.port" warn "$port" "порт $port не слушается"
+		record "$id.port" warn "$port" "port $port is not listening"
 	fi
 }
 
 check_eve_fresh() {
 	if ! eve_checks_apply; then
-		record suricata.eve_fresh na "" "EVE_FILE=no или нет stats в EVE_TYPES"
+		record suricata.eve_fresh na "" "EVE_FILE=no or no stats in EVE_TYPES"
 		return
 	fi
 	local eve mtime age
 	eve=$(path_suricata_eve_json)
 	if [[ ! -f "$eve" ]]; then
-		record suricata.eve_fresh warn "" "eve.json не найден"
+		record suricata.eve_fresh warn "" "eve.json not found"
 		return
 	fi
 	mtime=$(stat -c %Y "$eve")
 	age=$(($(now) - mtime))
 	if ge "$age" "${CONF[WATCH_EVE_STALE_SEC]}"; then
-		record suricata.eve_fresh crit "$age" "новых событий нет $age с"
+		record suricata.eve_fresh crit "$age" "no new events for $age s"
 	else
 		record suricata.eve_fresh ok "$age" ""
 	fi
@@ -154,13 +154,13 @@ check_eve_fresh() {
 
 check_drop_rate() {
 	if ! eve_checks_apply; then
-		record suricata.drop_rate na "" "EVE_FILE=no или нет stats в EVE_TYPES"
+		record suricata.drop_rate na "" "EVE_FILE=no or no stats in EVE_TYPES"
 		return
 	fi
 	local eve
 	eve=$(path_suricata_eve_json)
 	if [[ ! -f "$eve" ]]; then
-		record suricata.drop_rate na "" "eve.json не найден"
+		record suricata.drop_rate na "" "eve.json not found"
 		return
 	fi
 	# Only the tail is read, never the whole file (9: eve.json is not parsed whole).
@@ -168,13 +168,13 @@ check_drop_rate() {
 	rows=$(tail -c 4194304 "$eve" | grep -F '"event_type":"stats"' | tail -n 2 |
 		jq -r '[.stats.capture.kernel_packets, .stats.capture.kernel_drops] | select(all(. != null)) | @tsv' 2>/dev/null)
 	if [[ $(wc -l <<<"$rows") -lt 2 ]]; then
-		record suricata.drop_rate na "" "нет двух событий stats"
+		record suricata.drop_rate na "" "fewer than two stats events"
 		return
 	fi
 	read -r p0 d0 < <(sed -n 1p <<<"$rows")
 	read -r p1 d1 < <(sed -n 2p <<<"$rows")
 	if ((p1 < p0 || d1 < d0)); then
-		record suricata.drop_rate ok "" "счётчики сброшены, интервал пропущен"
+		record suricata.drop_rate ok "" "counters were reset, the interval is skipped"
 		return
 	fi
 	# Thresholds are compared as integers (drops*100 against pct*packets),
@@ -210,12 +210,12 @@ check_disk_free() {
 		fi
 	done
 	if [[ -z "$worst_total" ]]; then
-		record disk.free na "" "нет каталогов для проверки"
+		record disk.free na "" "no directories to check"
 		return
 	fi
 	local pct detail
 	pct=$(awk -v a="$worst_avail" -v t="$worst_total" 'BEGIN{printf "%.2f", a * 100 / t}')
-	detail="$worst_path: свободно $pct%"
+	detail="$worst_path: $pct% free"
 	if awk -v a="$worst_avail" -v t="$worst_total" -v c="${CONF[WATCH_DISK_CRIT_PCT]}" 'BEGIN{exit !(a * 100 <= c * t)}'; then
 		record disk.free crit "$pct" "$detail"
 	elif awk -v a="$worst_avail" -v t="$worst_total" -v c="${CONF[WATCH_DISK_WARN_PCT]}" 'BEGIN{exit !(a * 100 <= c * t)}'; then
@@ -227,22 +227,22 @@ check_disk_free() {
 
 check_rules_age() {
 	if [[ "${CONF[RULES_UPDATE]}" == "off" || "${COMP_STATE[suricata]:-absent}" == "absent" ]]; then
-		record rules.age na "" "обновление правил выключено или Suricata не установлена"
+		record rules.age na "" "rule updates are off or Suricata is not installed"
 		return
 	fi
 	local rules mtime age_sec age_days crit_days="${CONF[WATCH_RULES_CRIT_DAYS]}" warn_days="${CONF[WATCH_RULES_WARN_DAYS]}"
 	rules=$(path_suricata_ruleset)
 	if [[ ! -f "$rules" ]]; then
-		record rules.age warn "" "suricata.rules не найден"
+		record rules.age warn "" "suricata.rules not found"
 		return
 	fi
 	mtime=$(stat -c %Y "$rules")
 	age_sec=$(($(now) - mtime))
 	age_days=$(awk -v s="$age_sec" 'BEGIN{printf "%.2f", s / 86400}')
 	if ge "$age_sec" "$((crit_days * 86400))"; then
-		record rules.age crit "$age_days" "правилам $age_days дн."
+		record rules.age crit "$age_days" "rules are $age_days days old"
 	elif ge "$age_sec" "$((warn_days * 86400))"; then
-		record rules.age warn "$age_days" "правилам $age_days дн."
+		record rules.age warn "$age_days" "rules are $age_days days old"
 	else
 		record rules.age ok "$age_days" ""
 	fi
@@ -274,7 +274,7 @@ channel_on() {
 }
 
 channel_error() {
-	echo "dpistack-watch: канал $1: $2" >&2
+	echo "dpistack-watch: channel $1: $2" >&2
 }
 
 # curl_cfg_escape <text> - a value inside quotes of a curl config line.
@@ -289,19 +289,19 @@ curl_cfg_escape() {
 
 alert_log() {
 	local sev="$1" msg="$2"
-	logger -t dpistack-watch -p "daemon.$sev" -- "$msg" || channel_error log "logger завершился с ошибкой"
+	logger -t dpistack-watch -p "daemon.$sev" -- "$msg" || channel_error log "logger failed"
 }
 
 alert_tg() {
 	local msg="$1" token="${SECRETS[ALERT_TG_TOKEN]:-}" chat="${CONF[ALERT_TG_CHAT_ID]:-}"
 	if [[ -z "$token" || -z "$chat" ]]; then
-		channel_error tg "не заданы ALERT_TG_TOKEN или ALERT_TG_CHAT_ID"
+		channel_error tg "ALERT_TG_TOKEN or ALERT_TG_CHAT_ID is not set"
 		return 1
 	fi
 	printf 'url = "https://api.telegram.org/bot%s/sendMessage"\ndata-urlencode = "chat_id=%s"\ndata-urlencode = "text=%s"\n' \
 		"$(curl_cfg_escape "$token")" "$(curl_cfg_escape "$chat")" "$(curl_cfg_escape "$msg")" |
 		curl -sS --fail --max-time 10 -o /dev/null -K - 2>/dev/null || {
-		channel_error tg "отправка не удалась"
+		channel_error tg "sending failed"
 		return 1
 	}
 }
@@ -310,7 +310,7 @@ alert_mail() {
 	local subject="$1" msg="$2" url="${SECRETS[ALERT_SMTP_URL]:-}"
 	local to="${CONF[ALERT_MAIL_TO]:-}" from="${CONF[ALERT_MAIL_FROM]:-}"
 	if [[ -z "$url" || -z "$to" || -z "$from" ]]; then
-		channel_error mail "не заданы ALERT_SMTP_URL, ALERT_MAIL_TO или ALERT_MAIL_FROM"
+		channel_error mail "ALERT_SMTP_URL, ALERT_MAIL_TO or ALERT_MAIL_FROM is not set"
 		return 1
 	fi
 	local body cfg rcpt rc
@@ -330,7 +330,7 @@ alert_mail() {
 	rc=$?
 	rm -f "$body"
 	((rc == 0)) || {
-		channel_error mail "отправка не удалась"
+		channel_error mail "sending failed"
 		return 1
 	}
 }
@@ -342,11 +342,11 @@ notify() {
 	host=$(hostname -s 2>/dev/null || echo host)
 	case "$kind" in
 	recovery)
-		msg="[dpistack] $host: $id восстановлено ($from -> $to)"
+		msg="[dpistack] $host: $id recovered ($from -> $to)"
 		sev=notice
 		;;
 	repeat)
-		msg="[dpistack] $host: $id всё ещё $to: $detail (с $since)"
+		msg="[dpistack] $host: $id is still $to: $detail (since $since)"
 		;;
 	*) msg="[dpistack] $host: $id $from -> $to: $detail" ;;
 	esac
@@ -448,11 +448,11 @@ autorestart() {
 			((now_s - t < 3600)) && kept+=("$t")
 		done
 		if ((${#kept[@]} >= RESTARTS_PER_HOUR)); then
-			echo "dpistack-watch: $id: лимит перезапусков ($RESTARTS_PER_HOUR в час) исчерпан" >&2
+			echo "dpistack-watch: $id: restart limit ($RESTARTS_PER_HOUR per hour) used up" >&2
 			stamps="${kept[*]}"
 		else
-			echo "dpistack-watch: перезапуск $id" >&2
-			"$CTL" restart "$id" >/dev/null 2>&1 || echo "dpistack-watch: перезапуск $id не удался" >&2
+			echo "dpistack-watch: restarting $id" >&2
+			"$CTL" restart "$id" >/dev/null 2>&1 || echo "dpistack-watch: restarting $id failed" >&2
 			kept+=("$now_s")
 			stamps="${kept[*]}"
 		fi

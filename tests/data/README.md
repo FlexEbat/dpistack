@@ -1,17 +1,17 @@
 # tests/data/bittorrent.pcap
 
-Источник: получен от владельца проекта (публичный тренировочный сэмпл, 2007-04-11, 53 пакета, TCP `10.10.10.23:1044` ↔ `10.10.10.22:47309`).
+English | [Русский](README.ru.md)
 
-Содержимое подтверждено вручную (`tcpdump -X` + разбор BT wire-protocol): 2 handshake (`\x13BitTorrent protocol`), 1 bitfield, 48 `request` (piece request), 7 `have`, 1 `interested`, 2 `unchoke`. Полный разбор и повторяемые команды — в `docs/prototype.md`, раздел «BitTorrent pcap и сигнатура».
+Source: received from the project owner (a public training sample, 2007-04-11, 53 packets, TCP `10.10.10.23:1044` <-> `10.10.10.22:47309`).
 
-## Как использовать
+The content was confirmed by hand (`tcpdump -X` and a parse of the BT wire protocol): 2 handshakes (`\x13BitTorrent protocol`), 1 bitfield, 48 `request` (piece request), 7 `have`, 1 `interested`, 2 `unchoke`.
 
-Реплей с любым набором правил:
+## How to use it
+
+Replay with any rule set:
 
 ```
 suricata -r tests/data/bittorrent.pcap -S <rules-file> -l <outdir> -k none
 ```
 
-**Известное ограничение окружения, в котором готовился слайс 0:** официальный набор ET Open (`emerging-p2p`) недоступен без сети до `rules.emergingthreats.net`, а nDPI не собран (см. `docs/prototype.md`, A3/A2). Поэтому официальный критерий приёмки слайса 0 (сигнатура ET P2P и/или `ndpi-protocol:BitTorrent`) на этом файле пока проверен только самописным тестовым правилом на magic-байты handshake — не заменяет реальный прогон с ET/nDPI.
-
-Файл переиспользуется в дальнейших тестах: `tests/pkg_dnf.bats` и тестах слайсов 2/4 (nDPI/Suricata).
+The file is reused by `tests/pkg_dnf.bats` and by the nDPI and Suricata step tests, and by `dpistack test bittorrent` (the replay check).

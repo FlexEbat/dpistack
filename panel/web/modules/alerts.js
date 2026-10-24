@@ -3,7 +3,7 @@
 import { tickets } from "./poll.js";
 
 const POLL_MS = 10000;
-const WORD = { ok: "норма", warn: "предупреждение", crit: "авария", na: "нет данных" };
+const WORD = { ok: "ok", warn: "warning", crit: "critical", na: "no data" };
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -33,14 +33,14 @@ export function start(api, els, onError) {
 
   function fillChecks(checks) {
     const chosen = els.check.value;
-    els.check.replaceChildren(option("", "Все проверки"), ...checks.map((c) => option(c, c)));
+    els.check.replaceChildren(option("", "All checks"), ...checks.map((c) => option(c, c)));
     els.check.value = checks.includes(chosen) ? chosen : "";
   }
 
   function table(alerts) {
     const t = el("table");
     const head = el("tr");
-    for (const h of ["Время", "Проверка", "Было", "Стало", "Подробности"]) head.append(el("th", "", h));
+    for (const h of ["Time", "Check", "Was", "Now", "Details"]) head.append(el("th", "", h));
     t.append(head);
     for (const a of alerts) {
       const tr = el("tr");
@@ -68,9 +68,9 @@ export function start(api, els, onError) {
       els.error.textContent = "";
       fillChecks(res.checks);
       if (!res.file_present) {
-        els.list.replaceChildren(el("p", "muted", "Журнала оповещений ещё нет: ни одна проверка не меняла статус."));
+        els.list.replaceChildren(el("p", "muted", "No alert history yet: no check has changed its status."));
       } else if (res.alerts.length === 0) {
-        els.list.replaceChildren(el("p", "muted", "Оповещений по этой проверке нет."));
+        els.list.replaceChildren(el("p", "muted", "No alerts for this check."));
       } else {
         els.list.replaceChildren(table(res.alerts));
       }

@@ -1,6 +1,6 @@
 // The mode block of the Components screen: IDS or IPS. Switching to IPS can
 // cut the host off the network when the rules are wrong, so it is confirmed
-// first, and then a countdown runs: unless "Подтвердить IPS" is pressed
+// first, and then a countdown runs: unless "Confirm IPS" is pressed
 // before it ends, the server takes the mode back to IDS by itself.
 
 const POLL_MS = 5000;
@@ -27,13 +27,13 @@ export function start(api, els, onError) {
   function paint(st) {
     last = st;
     const name = st.mode === "ips" ? "IPS" : "IDS";
-    els.status.textContent = `Режим: ${name}` + (st.mode === "ips" ? ` (метод ${st.method})` : "");
+    els.status.textContent = `Mode: ${name}` + (st.mode === "ips" ? ` (method ${st.method})` : "");
     els.ips.disabled = busy || (st.mode === "ips" && !st.pending);
     els.ids.disabled = busy || st.mode === "ids";
     els.confirm.hidden = !st.pending;
     els.confirm.disabled = busy;
     if (st.pending) {
-      els.message.textContent = `Подтвердите IPS: через ${remaining} с режим вернётся в IDS.`;
+      els.message.textContent = `Confirm IPS: in ${remaining} s the mode goes back to IDS.`;
     } else if (!els.message.dataset.keep) {
       els.message.textContent = "";
     }
@@ -78,7 +78,7 @@ export function start(api, els, onError) {
   async function post(path, body) {
     els.error.textContent = "";
     els.message.dataset.keep = "";
-    els.message.textContent = "Применяю, это может занять минуту…";
+    els.message.textContent = "Applying, this may take a minute…";
     setBusy(true);
     try {
       const res = await api(path, {
@@ -86,7 +86,7 @@ export function start(api, els, onError) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body || {}),
       });
-      els.message.textContent = res.output || "Готово";
+      els.message.textContent = res.output || "Done";
       els.message.dataset.keep = "1";
       if (res.mode) render(res.mode);
       else await load();
@@ -101,13 +101,13 @@ export function start(api, els, onError) {
 
   els.ips.onclick = () => {
     const ok = confirm(
-      "Включить IPS? Suricata будет перезапущена, а трафик хоста пойдёт через неё и может блокироваться правилами drop. " +
-        "После включения у вас будет время нажать «Подтвердить IPS»; если не успеть, режим сам вернётся в IDS.",
+      "Enable IPS? Suricata will be restarted, and the host traffic will go through it and may be blocked by drop rules. " +
+        "After enabling you have a short time to press \"Confirm IPS\"; if you miss it, the mode returns to IDS by itself.",
     );
     if (ok) post("/api/mode", { mode: "ips", acknowledged: true });
   };
   els.ids.onclick = () => {
-    if (confirm("Вернуть режим IDS? Suricata будет перезапущена.")) post("/api/mode", { mode: "ids" });
+    if (confirm("Go back to IDS mode? Suricata will be restarted.")) post("/api/mode", { mode: "ids" });
   };
   els.confirm.onclick = () => post("/api/mode/confirm");
 

@@ -108,7 +108,7 @@ token_value() { sed -n 's/^METRICS_TOKEN=//p' "$DPISTACK_ROOT/etc/dpistack/secre
 @test "criterion 5: the tarball's sha256 is checked, a mismatch installs nothing" {
 	DPISTACK_METRICS_SHA256_VM_AMD64="0000000000000000000000000000000000000000000000000000000000000000" run with_vm
 	[ "$status" -ne 0 ]
-	[[ "$output" == *"контрольная сумма"* ]]
+	[[ "$output" == *"the checksum"* ]]
 	[ ! -e "$DPISTACK_ROOT/usr/local/bin/victoria-metrics-prod" ]
 	[ ! -e "$VM_UNIT" ]
 	! grep -q '^systemctl enable --now dpistack-vm.service' "$MOCK_CALLS_LOG"

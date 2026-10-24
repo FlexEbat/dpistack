@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Covers slice 1 criteria 2, 5, 9. SURICATA_SOURCE=oisf/NDPI_ENABLE=no
 # are set explicitly because slice 2 marks their defaults
-# (source/yes) as "пока не поддерживается" until slice 4.
+# (source/yes) as "not supported yet" until slice 4.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -28,22 +28,22 @@ teardown() {
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
 	for step in ndpi metrics; do
-		[[ "$output" == *"$step ... без изменений"* ]]
+		[[ "$output" == *"$step ... no changes"* ]]
 	done
 	# suricata, rules, redis, ntopng, evebox, access, panel have real check/apply logic by now
 	# (slices 2-7, 10, 12, 13, 15): a fresh root has nothing installed yet, so they
-	# correctly plan work instead of claiming "без изменений" - dry-run's
+	# correctly plan work instead of claiming "no changes" - dry-run's
 	# job is to not touch disk, not to pretend there is nothing to do.
-	[[ "$output" == *"suricata ... нужно применить"* ]]
-	[[ "$output" == *"rules ... нужно применить"* ]]
-	[[ "$output" == *"redis ... нужно применить"* ]]
-	[[ "$output" == *"ntopng ... нужно применить"* ]]
-	[[ "$output" == *"evebox ... нужно применить"* ]]
-	[[ "$output" == *"access ... нужно применить"* ]]
-	[[ "$output" == *"panel ... нужно применить"* ]]
-	[[ "$output" == *"verify ... нужно применить"* ]]
-	[[ "$output" == *"watch ... нужно применить"* ]]
-	[[ "$output" == *"selfinstall ... нужно применить"* ]]
+	[[ "$output" == *"suricata ... needs applying"* ]]
+	[[ "$output" == *"rules ... needs applying"* ]]
+	[[ "$output" == *"redis ... needs applying"* ]]
+	[[ "$output" == *"ntopng ... needs applying"* ]]
+	[[ "$output" == *"evebox ... needs applying"* ]]
+	[[ "$output" == *"access ... needs applying"* ]]
+	[[ "$output" == *"panel ... needs applying"* ]]
+	[[ "$output" == *"verify ... needs applying"* ]]
+	[[ "$output" == *"watch ... needs applying"* ]]
+	[[ "$output" == *"selfinstall ... needs applying"* ]]
 	[ ! -e "$CONF_FILE" ]
 	[ ! -e "$DPISTACK_ROOT/var/lib/dpistack/state" ]
 	[ ! -e "$DPISTACK_ROOT/etc/suricata/suricata.yaml" ]
@@ -72,7 +72,7 @@ teardown() {
 	[ "$status" -eq 0 ]
 	run bash "$REPO_DIR/install.sh" reconfigure --dry-run -y
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"изменений нет"* ]]
+	[[ "$output" == *"no changes"* ]]
 }
 
 @test "install --dry-run -y does not write panel.auth or print a panel password (R81)" {
@@ -80,7 +80,7 @@ teardown() {
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
 	[ ! -e "$DPISTACK_ROOT/etc/dpistack/panel.auth" ]
-	[[ "$output" != *"Создан пароль панели"* ]]
+	[[ "$output" != *"Panel password created"* ]]
 
 	DPISTACK_PANEL_PASSWORD="dry-run-secret-123" run bash "$REPO_DIR/install.sh" install --dry-run -y \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
@@ -93,7 +93,7 @@ teardown() {
 	for opt in --set --config --only --skip; do
 		run timeout 10 bash "$REPO_DIR/install.sh" install "$opt"
 		[ "$status" -eq 2 ]
-		[[ "$output" == *"нет значения"* ]]
+		[[ "$output" == *"needs a value"* ]]
 	done
 }
 
@@ -124,5 +124,5 @@ EOF_T
 	run env REPO_DIR="$REPO_DIR" bash "$BATS_TEST_TMPDIR/t.sh"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"new content"* ]]
-	[[ "$output" != *"изменён вручную"* ]]
+	[[ "$output" != *"was changed by hand"* ]]
 }

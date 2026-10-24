@@ -95,25 +95,25 @@ func (s *server) rulesSourceChange(w http.ResponseWriter, r *http.Request) {
 		URL    string `json:"url"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "неверный запрос")
+		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	var arg string
 	switch body.Action {
 	case "enable", "disable", "remove":
 		if !sourceName.MatchString(body.Name) {
-			writeError(w, http.StatusBadRequest, "недопустимое имя источника")
+			writeError(w, http.StatusBadRequest, "invalid source name")
 			return
 		}
 		arg = body.Name
 	case "add-url":
 		if !sourceURL.MatchString(body.URL) {
-			writeError(w, http.StatusBadRequest, "адрес должен начинаться с http:// или https://; знаки ? & % и кавычки в адресе не поддерживаются")
+			writeError(w, http.StatusBadRequest, "the address must start with http:// or https://; the characters ? & % and quotes are not supported in it")
 			return
 		}
 		arg = body.URL
 	default:
-		writeError(w, http.StatusBadRequest, "action: enable, disable, remove или add-url")
+		writeError(w, http.StatusBadRequest, "action: enable, disable, remove or add-url")
 		return
 	}
 	out, err := s.cfg.Ctl.RulesSource(r.Context(), body.Action, arg)
@@ -131,7 +131,7 @@ func (s *server) rulesSourceChange(w http.ResponseWriter, r *http.Request) {
 // ruleset. One update runs at a time.
 func (s *server) rulesUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.rules.begin() {
-		writeError(w, http.StatusConflict, "обновление правил уже идёт")
+		writeError(w, http.StatusConflict, "a rules update is already running")
 		return
 	}
 	_ = http.NewResponseController(w).SetWriteDeadline(s.cfg.Now().Add(updateAllowance))
@@ -158,11 +158,11 @@ func (s *server) rulesUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *server) rulesSearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
-		writeError(w, http.StatusBadRequest, "введите sid или часть текста правила")
+		writeError(w, http.StatusBadRequest, "enter a sid or part of the rule text")
 		return
 	}
 	if !searchQuery.MatchString(q) {
-		writeError(w, http.StatusBadRequest, "в запросе допустимы латинские буквы, цифры, пробел и знаки . _ : = / @ + , - (до 100 знаков)")
+		writeError(w, http.StatusBadRequest, "the query may contain Latin letters, digits, space and the characters . _ : = / @ + , - (up to 100 characters)")
 		return
 	}
 	rules, err := s.cfg.Ctl.RulesSearch(r.Context(), q)
@@ -180,7 +180,7 @@ func (s *server) rulesSearch(w http.ResponseWriter, r *http.Request) {
 func (s *server) rulesGroup(w http.ResponseWriter, r *http.Request) {
 	group, action := r.PathValue("group"), r.PathValue("action")
 	if !groupName.MatchString(group) || (action != "enable" && action != "disable") {
-		writeError(w, http.StatusNotFound, "нет такой группы или действия")
+		writeError(w, http.StatusNotFound, "no such group or action")
 		return
 	}
 	out, err := s.cfg.Ctl.RulesGroup(r.Context(), action, group)
@@ -195,7 +195,7 @@ func (s *server) rulesGroup(w http.ResponseWriter, r *http.Request) {
 func (s *server) rulesSID(w http.ResponseWriter, r *http.Request) {
 	sid, action := r.PathValue("sid"), r.PathValue("action")
 	if !ruleSID.MatchString(sid) || (action != "enable" && action != "disable") {
-		writeError(w, http.StatusNotFound, "нет такого правила или действия")
+		writeError(w, http.StatusNotFound, "no such rule or action")
 		return
 	}
 	out, err := s.cfg.Ctl.RulesSID(r.Context(), action, sid)

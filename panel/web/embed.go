@@ -6,5 +6,5 @@ import "embed"
 
 // Files is the static site served at /.
 //
-//go:embed index.html app.css app.js modules
+//go:embed index.html full.css lite.css fx.js nofx.js app.js modules
 var Files embed.FS

@@ -26,7 +26,7 @@ export function start(api, els, onError, onChanged) {
 
   function render(names) {
     if (names.length === 0) {
-      els.list.replaceChildren(el("p", "muted", "Интерфейсов нет."));
+      els.list.replaceChildren(el("p", "muted", "No interfaces."));
       return;
     }
     const t = el("table");
@@ -34,12 +34,12 @@ export function start(api, els, onError, onChanged) {
       const tr = el("tr");
       tr.append(el("td", "", name));
       const td = el("td", "actions");
-      const b = el("button", "", "Удалить");
+      const b = el("button", "", "Remove");
       b.type = "button";
       // The last interface cannot be removed; the server says so too.
       b.disabled = names.length === 1;
       if (names.length === 1) b.dataset.last = "1";
-      b.title = names.length === 1 ? "Нельзя удалить последний интерфейс" : "";
+      b.title = names.length === 1 ? "The last interface cannot be removed" : "";
       b.addEventListener("click", () => change("remove", name));
       td.append(b);
       tr.append(td);
@@ -62,10 +62,10 @@ export function start(api, els, onError, onChanged) {
   }
 
   async function change(verb, name) {
-    const what = verb === "add" ? `Добавить интерфейс «${name}»` : `Удалить интерфейс «${name}»`;
-    if (!confirm(`${what}? Suricata будет перезапущена.`)) return;
+    const what = verb === "add" ? `Add interface "${name}"` : `Remove interface "${name}"`;
+    if (!confirm(`${what}? Suricata will be restarted.`)) return;
     els.error.textContent = "";
-    els.message.textContent = "Применяю, это может занять минуту…";
+    els.message.textContent = "Applying, this may take a minute…";
     setBusy(true);
     try {
       const res = await api(`/api/iface/${verb}`, {
@@ -73,7 +73,7 @@ export function start(api, els, onError, onChanged) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
-      els.message.textContent = res.output || "Готово";
+      els.message.textContent = res.output || "Done";
       if (res.ifaces) render(res.ifaces);
       else await load();
       if (verb === "add") els.name.value = "";

@@ -12,22 +12,22 @@ const NS = "http://www.w3.org/2000/svg";
 // What the screen shows per series, in order. Conversions keep the numbers
 // readable: bytes become megabytes, the free share becomes percent.
 export const SERIES = [
-  { name: "pps", title: "Пакеты в секунду", format: (v) => `${Math.round(v).toLocaleString("ru-RU")} пак/с` },
-  { name: "drops", title: "Потери пакетов в секунду", format: (v) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} пак/с` },
-  { name: "cpu", title: "CPU панели", format: (v) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 1 })} %` },
-  { name: "rss", title: "Память панели", format: bytes },
-  { name: "eve_size", title: "Размер eve.json", format: bytes },
-  { name: "disk", title: "Свободно на диске с логами", scale: 100, format: (v) => `${v.toLocaleString("ru-RU", { maximumFractionDigits: 1 })} %` },
+  { name: "pps", title: "Packets per second", format: (v) => `${Math.round(v).toLocaleString("en-US")} pkt/s` },
+  { name: "drops", title: "Packet drops per second", format: (v) => `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })} pkt/s` },
+  { name: "cpu", title: "Panel CPU", format: (v) => `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} %` },
+  { name: "rss", title: "Panel memory", format: bytes },
+  { name: "eve_size", title: "eve.json size", format: bytes },
+  { name: "disk", title: "Free space on the log disk", scale: 100, format: (v) => `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} %` },
 ];
 
 function bytes(v) {
-  const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+  const units = ["B", "KB", "MB", "GB", "TB"];
   let i = 0;
   while (v >= 1024 && i < units.length - 1) {
     v /= 1024;
     i++;
   }
-  return `${v.toLocaleString("ru-RU", { maximumFractionDigits: v < 10 && i > 0 ? 1 : 0 })} ${units[i]}`;
+  return `${v.toLocaleString("en-US", { maximumFractionDigits: v < 10 && i > 0 ? 1 : 0 })} ${units[i]}`;
 }
 
 function el(tag, className, text) {
@@ -81,16 +81,16 @@ function card(def, series) {
   c.append(el("h3", "", def.title));
   if (!series || !series.available) {
     // Unavailable is said in words: a zero line would claim the opposite.
-    c.append(el("p", "muted", `Нет данных: ${(series && series.reason) || "ряд недоступен"}.`));
+    c.append(el("p", "muted", `No data: ${(series && series.reason) || "series unavailable"}.`));
     return c;
   }
   const scale = def.scale || 1;
   const values = series.values.map((v) => (v === null ? null : v * scale));
   const last = [...values].reverse().find((v) => v !== null && v !== undefined);
-  c.append(el("p", "chart-last", last === undefined ? "нет значений за период" : `сейчас ${def.format(last)}`));
+  c.append(el("p", "chart-last", last === undefined ? "no values in this period" : `now ${def.format(last)}`));
   c.append(chart(values));
   const known = values.filter((v) => v !== null && v !== undefined);
-  if (known.length) c.append(el("p", "muted", `за период: от ${def.format(Math.min(...known))} до ${def.format(Math.max(...known))}`));
+  if (known.length) c.append(el("p", "muted", `in this period: from ${def.format(Math.min(...known))} to ${def.format(Math.max(...known))}`));
   return c;
 }
 

@@ -32,10 +32,10 @@ install_base() {
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no "$@"
 }
 
-@test "criterion 8: uninstall on a clean system exits 0 with 'нечего удалять'" {
+@test "criterion 8: uninstall on a clean system exits 0 with 'nothing to remove'" {
 	run bash "$REPO_DIR/install.sh" uninstall
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"нечего удалять"* ]]
+	[[ "$output" == *"nothing to remove"* ]]
 }
 
 @test "criterion 6: plain uninstall removes dpistack's own units/config, keeps component configs" {

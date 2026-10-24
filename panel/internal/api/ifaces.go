@@ -31,22 +31,22 @@ func (s *server) ifaceList(w http.ResponseWriter, r *http.Request) {
 func (s *server) ifaceChange(w http.ResponseWriter, r *http.Request) {
 	verb := r.PathValue("action")
 	if verb != "add" && verb != "remove" {
-		writeError(w, http.StatusNotFound, "нет такого действия")
+		writeError(w, http.StatusNotFound, "no such action")
 		return
 	}
 	var body struct {
 		Name string `json:"name"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "неверный запрос")
+		writeError(w, http.StatusBadRequest, "bad request")
 		return
 	}
 	if !ifaceName.MatchString(body.Name) {
-		writeError(w, http.StatusBadRequest, "имя интерфейса: до 15 знаков, буквы, цифры, точка, дефис и подчёркивание")
+		writeError(w, http.StatusBadRequest, "interface name: up to 15 characters, letters, digits, dot, hyphen and underscore")
 		return
 	}
 	if !s.ops.begin(&s.ops.ifaceBusy) {
-		writeError(w, http.StatusConflict, "список интерфейсов уже меняется")
+		writeError(w, http.StatusConflict, "the interface list is already changing")
 		return
 	}
 	defer s.ops.end(&s.ops.ifaceBusy)

@@ -2,9 +2,9 @@
 import { tickets } from "./poll.js";
 
 const POLL_MS = 10000;
-const STATE = { active: "работает", inactive: "остановлен", failed: "сбой", absent: "не установлен" };
-const VERB = { start: "Запустить", stop: "Остановить", restart: "Перезапустить" };
-const VERB_ASK = { start: "Запустить", stop: "Остановить", restart: "Перезапустить" };
+const STATE = { active: "running", inactive: "stopped", failed: "failed", absent: "not installed" };
+const VERB = { start: "Start", stop: "Stop", restart: "Restart" };
+const VERB_ASK = { start: "Start", stop: "Stop", restart: "Restart" };
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -18,29 +18,29 @@ function el(tag, className, text) {
 // need a second, separate confirmation that the server demands (409 with
 // confirm_required).
 async function act(api, id, action) {
-  if (!confirm(`${VERB_ASK[action]} компонент «${id}»?`)) return null;
+  if (!confirm(`${VERB_ASK[action]} component "${id}"?`)) return null;
   const path = `/api/components/${encodeURIComponent(id)}/${action}`;
   try {
     const res = await api(path, { method: "POST" });
-    return res.output || "Готово";
+    return res.output || "Done";
   } catch (err) {
     if (err.status !== 409) throw err;
-    if (!confirm("Это затронет саму панель, связь прервётся. Точно продолжить?")) return null;
+    if (!confirm("This affects the panel itself and the connection will drop. Continue?")) return null;
     const res = await api(path + "?confirm=yes", { method: "POST" });
-    return res.output || "Готово";
+    return res.output || "Done";
   }
 }
 
 async function reload(api) {
-  if (!confirm("Перечитать правила Suricata без остановки?")) return null;
+  if (!confirm("Reload Suricata rules without stopping it?")) return null;
   const res = await api("/api/suricata/reload", { method: "POST" });
-  return res.output || "Правила перечитаны";
+  return res.output || "Rules reloaded";
 }
 
 export function render(status, areas, run) {
   const t = el("table");
   const head = el("tr");
-  for (const h of ["Компонент", "Состояние", "Версия", "Действия"]) head.append(el("th", "", h));
+  for (const h of ["Component", "State", "Version", "Actions"]) head.append(el("th", "", h));
   t.append(head);
 
   for (const c of status.components) {
@@ -55,7 +55,7 @@ export function render(status, areas, run) {
       actions.append(b);
     }
     if (c.id === "suricata" && c.state === "active") {
-      const b = el("button", "", "Перечитать правила");
+      const b = el("button", "", "Reload rules");
       b.type = "button";
       b.addEventListener("click", () => run(() => reload(areas.api)));
       actions.append(b);

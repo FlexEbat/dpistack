@@ -41,7 +41,7 @@ compose_cmd="docker compose -p dpistack -f"
 	for key in SURICATA_RUNTIME EVEBOX_RUNTIME NTOPNG_RUNTIME; do
 		run install_base --dry-run --set "$key=docker"
 		[ "$status" -eq 0 ]
-		[[ "$output" != *"пока не поддерживается"* ]]
+		[[ "$output" != *"not supported yet"* ]]
 	done
 }
 
@@ -95,14 +95,14 @@ compose_cmd="docker compose -p dpistack -f"
 @test "Suricata in docker with nDPI on stops in preflight with code 3" {
 	run bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=source --set NDPI_ENABLE=yes --set SURICATA_RUNTIME=docker
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"плагин nDPI"* ]]
+	[[ "$output" == *"nDPI plugin"* ]]
 	[ ! -f "$COMPOSE" ]
 }
 
 @test "a docker without the compose plugin stops in preflight with code 3" {
 	MOCK_DOCKER_COMPOSE_EXIT=1 run install_base --set EVEBOX_RUNTIME=docker
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"нет плагина compose"* ]]
+	[[ "$output" == *"has no compose plugin"* ]]
 }
 
 @test "criterion 5: dpistack leaves iptables, DOCKER-USER and Docker networks alone" {
@@ -195,8 +195,8 @@ compose_cmd="docker compose -p dpistack -f"
 	run install_base --set SURICATA_RUNTIME=docker
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"bittorrent: skip"* ]]
-	[[ "$output" == *"Suricata в контейнере"* ]]
-	[[ "$output" != *"suricata не установлен"* ]]
+	[[ "$output" == *"Suricata in a container"* ]]
+	[[ "$output" != *"suricata is not installed"* ]]
 }
 
 @test "a native component keeps its units: nothing changed for runtime native" {

@@ -52,7 +52,7 @@ ndpi_resolve_source() {
 	[[ "${CONF[NDPI_ENABLE]:-no}" == "yes" && "${CONF[NDPI_SOURCE]:-source}" == "pkg" ]] || return 1
 	[[ -z "$(ndpi_pkg_installed_version)" ]] || return 1
 	pkg_available "$NDPI_PACKAGE" && return 1
-	echo "ndpi: пакета $NDPI_PACKAGE нет в репозиториях, NDPI_SOURCE=pkg заменён на source (сборка из исходников)" >&2
+	echo "ndpi: package $NDPI_PACKAGE is not in the repositories, NDPI_SOURCE=pkg is replaced by source (build from source)" >&2
 	CONF[NDPI_SOURCE]=source
 }
 
@@ -82,7 +82,7 @@ ndpi_build_from_source() {
 	)
 	local rc=$?
 	if [[ "$rc" -ne 0 ]]; then
-		echo "nDPI: сборка из исходников упала (autogen/configure/make), см. вывод выше" >&2
+		echo "nDPI: the build from source failed (autogen/configure/make), see the output above" >&2
 		return 1
 	fi
 
@@ -104,7 +104,7 @@ step_ndpi_apply() {
 		ndpi_build_from_source
 		;;
 	*)
-		echo "NDPI_SOURCE=${CONF[NDPI_SOURCE]}: неизвестный источник" >&2
+		echo "NDPI_SOURCE=${CONF[NDPI_SOURCE]}: unknown source" >&2
 		return 1
 		;;
 	esac
@@ -112,11 +112,11 @@ step_ndpi_apply() {
 
 step_ndpi_plan() {
 	if [[ "${CONF[NDPI_ENABLE]:-no}" != "yes" ]]; then
-		echo "ndpi: NDPI_ENABLE=no, без изменений"
+		echo "ndpi: NDPI_ENABLE=no, no changes"
 		return 0
 	fi
 	case "${CONF[NDPI_SOURCE]:-source}" in
-	pkg) echo "ndpi: установка пакета $NDPI_PACKAGE" ;;
-	source) echo "ndpi: сборка из исходников ($NDPI_REPO_URL, ref=$(ndpi_target_ref | sed 's/^$/HEAD/'))" ;;
+	pkg) echo "ndpi: installing the package $NDPI_PACKAGE" ;;
+	source) echo "ndpi: build from source ($NDPI_REPO_URL, ref=$(ndpi_target_ref | sed 's/^$/HEAD/'))" ;;
 	esac
 }

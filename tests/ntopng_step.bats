@@ -63,5 +63,5 @@ load_ntopng() {
 	run bash "$REPO_DIR/install.sh" status \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"ntopng: в порядке"* ]]
+	[[ "$output" == *"ntopng: ok"* ]]
 }

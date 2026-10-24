@@ -79,7 +79,7 @@ fam() {
 	os_release rhel "fedora" 9.4
 	run fam 'subscription-manager() { return 1; }; pkg_enable_extra_repos'
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"CodeReady Builder не включён"* ]]
+	[[ "$output" == *"CodeReady Builder repository is not enabled"* ]]
 }
 
 @test "dnf: the build dependencies of Suricata and nDPI use the rpm names" {
@@ -179,7 +179,7 @@ fam() {
 @test "a dnf host is no longer a preflight failure" {
 	os_release rocky "rhel centos fedora" 9.4
 	run fam 'step_preflight_reasons'
-	[[ "$output" != *"пока не поддерживается"* ]]
+	[[ "$output" != *"not supported yet"* ]]
 }
 
 rust_case() {
@@ -192,7 +192,7 @@ rust_case() {
 @test "no Rust 1.75 anywhere: the distribution package, nDPI off, a message" {
 	run rust_case ''
 	[[ "$output" == *"rc=0 source=distro ndpi=no"* ]]
-	[[ "$output" == *"нужен Rust 1.75"* ]]
+	[[ "$output" == *"needs Rust 1.75"* ]]
 }
 
 @test "a rustc-1.N package, a current rustc or a pinned version keep the source build" {
@@ -245,7 +245,7 @@ inst_dry() {
 	printf 'Iface\tDestination\tGateway\neth9\t00000000\t0100A8C0\n' >"$DPISTACK_ROOT/proc/net/route"
 	MOCK_IP_EXISTING_IFACES=eth9 run inst_dry --set SURICATA_SOURCE=distro --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"интерфейса enp2s0 нет, взят eth9"* ]]
+	[[ "$output" == *"interface enp2s0 does not exist, took eth9"* ]]
 	[[ "$output" == *"IFACES=eth9"* ]]
 }
 
@@ -255,7 +255,7 @@ inst_dry() {
 	printf 'Iface\tDestination\tGateway\neth9\t00000000\t0100A8C0\n' >"$DPISTACK_ROOT/proc/net/route"
 	MOCK_IP_EXISTING_IFACES=eth9 run inst_dry --set IFACES=nope --set SURICATA_SOURCE=distro --set NDPI_ENABLE=no
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"интерфейс nope"* ]]
+	[[ "$output" == *"interface nope"* ]]
 }
 
 @test "nDPI: the default and a pinned version are compared as commits, not as text" {
@@ -410,20 +410,20 @@ preflight_reasons() {
 @test "preflight refuses an unsupported release and names the way around it" {
 	os_release ubuntu debian 20.04
 	run preflight_reasons
-	[[ "$output" == *"ubuntu 20.04 не поддерживается"* ]]
+	[[ "$output" == *"ubuntu 20.04 is not supported"* ]]
 	[[ "$output" == *"DPISTACK_ALLOW_UNSUPPORTED=1"* ]]
 	DPISTACK_ALLOW_UNSUPPORTED=1 run preflight_reasons
-	[[ "$output" != *"не поддерживается"* ]]
+	[[ "$output" != *"is not supported"* ]]
 }
 
 @test "preflight lets a supported release and warns about an unverified one" {
 	os_release debian debian 12
 	run preflight_reasons
-	[[ "$output" != *"не поддерживается"* ]]
-	[[ "$output" != *"не входит в список"* ]]
+	[[ "$output" != *"is not supported"* ]]
+	[[ "$output" != *"is not in the list"* ]]
 	os_release fedora fedora 41
 	run preflight_reasons
-	[[ "$output" == *"не входит в список проверенных платформ"* ]]
+	[[ "$output" == *"is not in the list of tested platforms"* ]]
 }
 
 @test "dnf: the OISF COPR is enabled for SURICATA_SOURCE=oisf" {
@@ -491,13 +491,13 @@ preflight_reasons() {
 	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" DIAG_OUT="$out" bash "$REPO_DIR/install.sh" diag --no-color
 	[ "$status" -eq 0 ]
 	[ -s "$out" ]
-	grep -q '^===== платформа =====$' "$out"
-	grep -q 'уровень=supported' "$out"
+	grep -q '^===== platform =====$' "$out"
+	grep -q 'level=supported' "$out"
 	grep -q '^===== dpistack.conf =====$' "$out"
 	grep -q '^IFACES=eth0$' "$out"
 	if grep -q 's3cret' "$out"; then false; fi
 	if grep -q '12345:abcdef' "$out"; then false; fi
-	grep -q '<скрыто>' "$out"
+	grep -q '<hidden>' "$out"
 	[[ "$output" != *"s3cret"* ]]
 }
 

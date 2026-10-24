@@ -62,13 +62,13 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 @test "criterion 7: SURICATA_MODE=ips is accepted, and its preconditions are checked" {
 	run install_base --dry-run --set SURICATA_MODE=ips
 	[ "$status" -eq 0 ]
-	[[ "$output" != *"пока не поддерживается"* ]]
+	[[ "$output" != *"not supported yet"* ]]
 	run install_base --dry-run --set SURICATA_MODE=ips --set SURICATA_RUNTIME=docker --set NDPI_ENABLE=no
 	[ "$status" -eq 2 ]
-	[[ "$output" == *"только с SURICATA_RUNTIME=native"* ]]
+	[[ "$output" == *"only with SURICATA_RUNTIME=native"* ]]
 	run install_base --dry-run --set SURICATA_MODE=ips --set IPS_METHOD=afpacket
 	[ "$status" -eq 2 ]
-	[[ "$output" == *"чётное число интерфейсов"* ]]
+	[[ "$output" == *"even number of interfaces"* ]]
 	run install_base --dry-run --set IPS_NFQ_CHAINS=INPUT,FOO
 	[ "$status" -eq 2 ]
 	[[ "$output" == *"IPS_NFQ_CHAINS"* ]]
@@ -159,14 +159,14 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	advance 121
 	run "$CTL" mode-confirm
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"время подтверждения истекло"* ]]
+	[[ "$output" == *"confirmation time is over"* ]]
 }
 
 @test "criterion 2: when the rollback timer cannot be started the switch is undone at once" {
 	installed
 	MOCK_SYSTEMD_RUN_EXIT=1 run "$CTL" mode ips
 	[ "$status" -eq 1 ]
-	[[ "$output" == *"таймер отката"* ]]
+	[[ "$output" == *"rollback timer"* ]]
 	grep -q '^SURICATA_MODE=ids$' "$CONF_FILE"
 	if grep -q 'DPISTACK' "$STATE4"; then false; fi
 	[ ! -e "$PENDING" ]
@@ -280,18 +280,18 @@ advance() { echo $(($(cat "$CLOCK_FILE") + $1)) >"$CLOCK_FILE"; }
 	installed
 	run "$CTL" mode ips
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"правил drop нет"* ]]
+	[[ "$output" == *"no drop rules"* ]]
 	run "$CTL" mode ids
 	mkdir -p "$DPISTACK_ROOT/etc/suricata/rules"
 	echo 'drop tcp any any -> any 8080 (msg:"x"; sid:1000001; rev:1;)' >"$DPISTACK_ROOT/etc/suricata/rules/local.rules"
 	run "$CTL" mode ips
 	[ "$status" -eq 0 ]
-	[[ "$output" != *"правил drop нет"* ]]
+	[[ "$output" != *"no drop rules"* ]]
 	run "$CTL" mode ids
 	: >"$DPISTACK_ROOT/etc/suricata/rules/local.rules"
 	echo 'group:emerging-p2p.rules' >"$DPISTACK_ROOT/etc/suricata/drop.conf"
 	run "$CTL" mode ips
-	[[ "$output" != *"правил drop нет"* ]]
+	[[ "$output" != *"no drop rules"* ]]
 }
 
 @test "a failed rollback service is reset before the next timer is started, so the unit name is free" {
@@ -373,7 +373,7 @@ nft_only_path() {
 	done
 	PATH="$EMPTY_BIN:/usr/bin:/bin" run "$CTL" mode ips
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"ни iptables, ни nft"* ]]
+	[[ "$output" == *"neither iptables nor nft"* ]]
 	grep -q '^SURICATA_MODE=ids$' "$CONF_FILE"
 	rm -rf "$EMPTY_BIN"
 }

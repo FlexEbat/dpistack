@@ -50,12 +50,12 @@ NTOPNG_IFACES=
 NTOPNG_PORT=3000
 NTOPNG_RUNTIME=native
 NTOPNG_VERSION=
+# full: rich design with background effects; lite: the same features on a plain, light page
+PANEL_EDITION=full
 PANEL_PORT=9800
 PANEL_SOURCE=auto
 # native: a systemd unit; docker: a container (network host), the commands reach the host through nsenter
 PANEL_RUNTIME=native
-# limited: the panel unit has a memory and CPU budget (64M, 20%); unlimited: none
-PANEL_MODE=limited
 PIN_VERSIONS=no
 RULES_GROUPS=emerging-p2p,emerging-policy
 RULES_SOURCES=et/open

@@ -163,7 +163,7 @@ stats_line() {
 	touch -d "@$((NOW - 10))" "$EVE"
 	run "$WATCH"
 	[ "$(field suricata.drop_rate status)" = "ok" ]
-	[[ "$(field suricata.drop_rate detail)" == *"сброшены"* ]]
+	[[ "$(field suricata.drop_rate detail)" == *"were reset"* ]]
 
 	# One stats event is not enough to compute anything.
 	echo '{"event_type":"stats"}' >"$EVE"

@@ -3,8 +3,8 @@ import { tickets } from "./poll.js";
 
 const POLL_MS = 10000;
 
-const OVERALL = { ok: "Всё в порядке", warn: "Есть предупреждения", crit: "Есть неисправности", na: "Нет данных" };
-const STATE = { active: "работает", inactive: "остановлен", failed: "сбой", absent: "не установлен" };
+const OVERALL = { ok: "All good", warn: "There are warnings", crit: "There are faults", na: "No data" };
+const STATE = { active: "running", inactive: "stopped", failed: "failed", absent: "not installed" };
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -47,28 +47,28 @@ export function render(status, areas) {
   areas.overall.replaceChildren(
     badge(overall),
     el("span", "overall-text", OVERALL[overall] || overall),
-    el("span", "muted", health ? "проверено " + fmtTime(health.ts) : "сторож ещё не записал отчёт"),
+    el("span", "muted", health ? "checked " + fmtTime(health.ts) : "the watchdog has not written a report yet"),
   );
 
   const rows = status.components.map((c) => [
     c.id,
     c.runtime,
     STATE[c.state] || c.state,
-    c.enabled ? "да" : "нет",
+    c.enabled ? "yes" : "no",
     c.version || "",
   ]);
-  const comps = [table(["Компонент", "Запуск", "Состояние", "Автозапуск", "Версия"], rows)];
-  if (status.ndpi_plugin) comps.push(el("p", "muted", "Плагин nDPI: " + status.ndpi_plugin));
+  const comps = [table(["Component", "Start", "State", "Autostart", "Version"], rows)];
+  if (status.ndpi_plugin) comps.push(el("p", "muted", "nDPI plugin: " + status.ndpi_plugin));
   areas.components.replaceChildren(...comps);
 
   const checks = health ? health.checks : [];
   areas.checks.replaceChildren(
     checks.length
       ? table(
-          ["Проверка", "Статус", "Подробности", "С какого момента"],
+          ["Check", "Status", "Details", "Since"],
           checks.map((c) => [c.id, badge(c.status), c.detail || c.value || "", fmtTime(c.since)]),
         )
-      : el("p", "muted", "Проверок пока нет."),
+      : el("p", "muted", "No checks yet."),
   );
 }
 
