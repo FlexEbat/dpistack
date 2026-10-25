@@ -35,7 +35,7 @@ source "$LIB_DIR/runtime_docker.sh"
 # shellcheck source=lib/ips.sh
 source "$LIB_DIR/ips.sh"
 
-STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics access panel watch verify)
+STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics nodeexp grafana access panel watch verify)
 for _step in "${STEPS_ORDER[@]}"; do
 	# shellcheck disable=SC1090
 	source "$LIB_DIR/step_${_step}.sh"
@@ -44,8 +44,11 @@ unset _step
 # shellcheck source=lib/ctl.sh
 source "$LIB_DIR/ctl.sh"
 
-BIN_NAME="${DPISTACK_CALLED_AS:-$(basename -- "$0")}"
-unset DPISTACK_CALLED_AS
+BIN_NAME="$(basename -- "$0")"
+# Test hook: every argument is a verb. Not inherited by the installer that
+# `reconfigure` starts.
+VERBS_ONLY="${DPISTACK_VERBS_ONLY:-0}"
+unset DPISTACK_VERBS_ONLY
 
 NON_INTERACTIVE=0
 ADVANCED=0
@@ -561,6 +564,17 @@ cmd_uninstall() {
 		run systemctl daemon-reload
 	fi
 
+	# node_exporter and Grafana are dpistack's own additions too.
+	if [[ -n "$(nodeexp_installed)" ]]; then
+		nodeexp_stop_installed || true
+		rm -f "$(path_nodeexp_unit)" "$(path_nodeexp_bin)"
+	fi
+	if [[ -n "$(grafana_installed)" ]]; then
+		grafana_stop_installed || true
+		rm -rf "$(path_grafana_unit)" "$(path_grafana_home)"
+	fi
+	run systemctl daemon-reload
+
 	if [[ "${CONF[SURICATA_SOURCE]:-}" == "source" ]]; then
 		run systemctl disable --now "$SURICATA_UNIT" 2>/dev/null || true
 		rm -f "$(path_suricata_service_unit)"
@@ -603,7 +617,7 @@ cmd_uninstall() {
 	rm -rf "$(path_state_dir)"
 
 	# Last, because `dpistack uninstall` runs from the copy it removes.
-	rm -f "$(path_dpistack_bin)" "$(path_ctl_legacy_bin)" "$(path_watch_bin)"
+	rm -f "$(path_dpistack_bin)" "$(path_retired_ctl)" "$(path_watch_bin)"
 	rm -rf "$(path_installer_copy_dir)"
 
 	echo "done"
@@ -734,9 +748,9 @@ restricted_caller() {
 # are an installer command.
 dispatch_ctl() {
 	local verb="${1:-}" arg
-	# Callers that predate the merge (units, scripts) use the old name and
-	# the old meaning of `reconfigure`; the panel is restricted.
-	if [[ "$BIN_NAME" == "dpistack-ctl" ]] || restricted_caller; then
+	# The panel is restricted to the control verbs. DPISTACK_VERBS_ONLY=1 is
+	# a test hook: every argument is a verb, `reconfigure` included.
+	if [[ "$VERBS_ONLY" == "1" ]] || restricted_caller; then
 		ctl_main "$@"
 		exit $?
 	fi

@@ -81,10 +81,11 @@ panel_is_lite() {
 # panel_args - the flags of the panel (tech.md 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
-	local mode="${CONF[ACCESS_MODE]:-localhost}" port
+	local mode port
+	mode=$(access_policy)
 	port=$(access_backend_port "${CONF[PANEL_PORT]:-9800}")
-	local host="127.0.0.1" args cidr=""
-	[[ "$mode" == "lan" ]] && host="0.0.0.0"
+	local host args cidr=""
+	host=$(access_effective_bind_host)
 	if [[ "$mode" != "localhost" ]]; then
 		cidr=$(access_effective_lan_cidr) || cidr=""
 		if [[ "$mode" == "lan" && -z "$cidr" ]]; then
@@ -304,8 +305,9 @@ step_panel_plan() {
 panel_report_metrics() {
 	[[ "${METRICS_TOKEN_JUST_GENERATED:-0}" == "1" && "${DRY_RUN:-0}" != "1" ]] || return 0
 	panel_token_wanted || return 0
-	local mode="${CONF[ACCESS_MODE]:-localhost}" port="${CONF[PANEL_PORT]:-9800}" scheme="http" host="127.0.0.1"
-	if [[ "$mode" != "localhost" ]]; then
+	local mode="${CONF[ACCESS_MODE]:-localhost}" port="${CONF[PANEL_PORT]:-9800}" scheme="http" host
+	host=$(access_effective_bind_host)
+	if [[ "$mode" == "lan" && "$host" == "0.0.0.0" ]] || [[ "$mode" == "nginx" ]]; then
 		host="<server-address>"
 	fi
 	[[ "$mode" == "nginx" && "${CONF[NGINX_TLS]:-none}" != "none" ]] && scheme="https"

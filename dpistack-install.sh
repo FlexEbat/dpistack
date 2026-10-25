@@ -70,7 +70,7 @@ source "$LIB_DIR/runtime_docker.sh"
 # shellcheck source=lib/ips.sh
 source "$LIB_DIR/ips.sh"
 
-STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics access panel watch verify)
+STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics nodeexp grafana access panel watch verify)
 for _step in "${STEPS_ORDER[@]}"; do
 	# shellcheck disable=SC1090
 	source "$LIB_DIR/step_${_step}.sh"
@@ -79,8 +79,11 @@ unset _step
 # shellcheck source=lib/ctl.sh
 source "$LIB_DIR/ctl.sh"
 
-BIN_NAME="${DPISTACK_CALLED_AS:-$(basename -- "$0")}"
-unset DPISTACK_CALLED_AS
+BIN_NAME="$(basename -- "$0")"
+# Test hook: every argument is a verb. Not inherited by the installer that
+# `reconfigure` starts.
+VERBS_ONLY="${DPISTACK_VERBS_ONLY:-0}"
+unset DPISTACK_VERBS_ONLY
 
 NON_INTERACTIVE=0
 ADVANCED=0
@@ -596,6 +599,17 @@ cmd_uninstall() {
 		run systemctl daemon-reload
 	fi
 
+	# node_exporter and Grafana are dpistack's own additions too.
+	if [[ -n "$(nodeexp_installed)" ]]; then
+		nodeexp_stop_installed || true
+		rm -f "$(path_nodeexp_unit)" "$(path_nodeexp_bin)"
+	fi
+	if [[ -n "$(grafana_installed)" ]]; then
+		grafana_stop_installed || true
+		rm -rf "$(path_grafana_unit)" "$(path_grafana_home)"
+	fi
+	run systemctl daemon-reload
+
 	if [[ "${CONF[SURICATA_SOURCE]:-}" == "source" ]]; then
 		run systemctl disable --now "$SURICATA_UNIT" 2>/dev/null || true
 		rm -f "$(path_suricata_service_unit)"
@@ -638,7 +652,7 @@ cmd_uninstall() {
 	rm -rf "$(path_state_dir)"
 
 	# Last, because `dpistack uninstall` runs from the copy it removes.
-	rm -f "$(path_dpistack_bin)" "$(path_ctl_legacy_bin)" "$(path_watch_bin)"
+	rm -f "$(path_dpistack_bin)" "$(path_retired_ctl)" "$(path_watch_bin)"
 	rm -rf "$(path_installer_copy_dir)"
 
 	echo "done"
@@ -769,9 +783,9 @@ restricted_caller() {
 # are an installer command.
 dispatch_ctl() {
 	local verb="${1:-}" arg
-	# Callers that predate the merge (units, scripts) use the old name and
-	# the old meaning of `reconfigure`; the panel is restricted.
-	if [[ "$BIN_NAME" == "dpistack-ctl" ]] || restricted_caller; then
+	# The panel is restricted to the control verbs. DPISTACK_VERBS_ONLY=1 is
+	# a test hook: every argument is a verb, `reconfigure` included.
+	if [[ "$VERBS_ONLY" == "1" ]] || restricted_caller; then
 		ctl_main "$@"
 		exit $?
 	fi
@@ -896,7 +910,7 @@ command -v jq >/dev/null 2>&1 || {
 # awk prints decimals by the locale; "5,00" would break the JSON values.
 export LC_NUMERIC=C
 
-CTL="${DPISTACK_CTL:-$SCRIPT_DIR/dpistack}"
+CTL="${DPISTACK_BIN:-$SCRIPT_DIR/dpistack}"
 [[ -x "$CTL" ]] || CTL="$SCRIPT_DIR/../install.sh"
 RESTARTS_PER_HOUR=3
 PORT_CRIT_AFTER_MISSES=3 # missing for more than two runs in a row
@@ -963,6 +977,8 @@ component_port() {
 	redis) echo 6379 ;;
 	panel) backend_port "${CONF[PANEL_PORT]}" ;;
 	victoriametrics | prometheus) echo "${CONF[METRICS_BACKEND_PORT]}" ;;
+	node_exporter) echo "${CONF[NODE_EXPORTER_PORT]}" ;;
+	grafana) echo "${CONF[GRAFANA_PORT]}" ;;
 	esac
 }
 
@@ -1330,7 +1346,7 @@ main() {
 
 	load_component_states
 	local id
-	for id in suricata evebox ntopng redis panel victoriametrics prometheus; do
+	for id in suricata evebox ntopng redis panel victoriametrics prometheus node_exporter grafana; do
 		# Backends are listed by `ctl status` only when selected.
 		[[ -n "${COMP_STATE[$id]:-}" ]] || continue
 		check_process "$id"
@@ -1355,7 +1371,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.23.0"
+DPISTACK_VERSION="0.24.0"
 
 : "${DRY_RUN:=0}"
 
@@ -1735,8 +1751,25 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
-	if [[ "${CONF[ACCESS_MODE]:-}" != "localhost" && "${ACCESS_CONFIRM:-}" != "yes" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
-		echo "ACCESS_MODE=${CONF[ACCESS_MODE]} in non-interactive mode needs --set ACCESS_CONFIRM=yes"
+	local bind_value="${CONF[BIND_ADDR]:-auto}" bind_open=0
+	if [[ "$bind_value" != "auto" ]]; then
+		local octet bad=0
+		IFS=. read -ra _octets <<<"$bind_value"
+		for octet in "${_octets[@]}"; do
+			((10#$octet <= 255)) || bad=1
+		done
+		if ((bad)) || [[ "$bind_value" == "0.0.0.0" ]]; then
+			echo "BIND_ADDR=$bind_value is not an address of a host; use auto or an IPv4 address of this machine"
+			errors=$((errors + 1))
+		elif [[ "$bind_value" != 127.* ]]; then
+			bind_open=1
+		fi
+	fi
+	if [[ "${CONF[ACCESS_MODE]:-}" == "nginx" ]]; then
+		bind_open=0
+	fi
+	if { [[ "${CONF[ACCESS_MODE]:-}" != "localhost" ]] || ((bind_open)); } && [[ "${ACCESS_CONFIRM:-}" != "yes" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
+		echo "ACCESS_MODE=${CONF[ACCESS_MODE]} with BIND_ADDR=${bind_value} in non-interactive mode needs --set ACCESS_CONFIRM=yes"
 		errors=$((errors + 1))
 	fi
 
@@ -1956,7 +1989,7 @@ put lib/ctl.sh 755 <<'DPISTACK_BUNDLE_END'
 # Exit codes: 0 ok, 1 error, 2 usage, 3 check failed, 4 component
 # absent, 5 name outside the allowed list.
 
-COMPONENTS=(suricata evebox ntopng redis victoriametrics prometheus panel watch rules)
+COMPONENTS=(suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana panel watch rules)
 LOGS_MAX=1000
 LOGS_DEFAULT=100
 
@@ -1998,7 +2031,7 @@ Usage: dpistack <command> [arguments]
 Config names: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
                 enable.conf disable.conf modify.conf drop.conf
 
-Components: suricata evebox ntopng redis victoriametrics prometheus panel watch rules
+Components: suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana panel watch rules
 USAGE
 }
 
@@ -2031,7 +2064,7 @@ unit_loaded() {
 # component_unit <id> - prints the unit that controls the component.
 component_unit() {
 	# docker runtime: no unit, the compose service is addressed as docker:<id>.
-	if [[ "$1" =~ ^(suricata|evebox|ntopng|redis|victoriametrics|prometheus|panel)$ && "$(component_runtime "$1")" == "docker" ]]; then
+	if [[ "$1" =~ ^(suricata|evebox|ntopng|redis|victoriametrics|prometheus|node_exporter|grafana|panel)$ && "$(component_runtime "$1")" == "docker" ]]; then
 		echo "docker:$1"
 		return
 	fi
@@ -2049,6 +2082,8 @@ component_unit() {
 		;;
 	victoriametrics) echo "dpistack-vm.service" ;;
 	prometheus) echo "prometheus.service" ;;
+	node_exporter) echo "dpistack-node-exporter.service" ;;
+	grafana) echo "dpistack-grafana.service" ;;
 	panel) echo "dpistack-panel.service" ;;
 	watch) echo "dpistack-watch.timer" ;;
 	rules) echo "dpistack-rules.timer" ;;
@@ -2061,6 +2096,8 @@ component_listed() {
 	victoriametrics | prometheus)
 		[[ "$(conf_get METRICS_BACKEND none)" == "$1" ]]
 		;;
+	node_exporter) [[ "$(conf_get NODE_EXPORTER_ENABLE no)" == "yes" ]] ;;
+	grafana) [[ "$(conf_get GRAFANA_ENABLE no)" == "yes" ]] ;;
 	*) return 0 ;;
 	esac
 }
@@ -2071,6 +2108,8 @@ component_runtime() {
 	evebox) conf_get EVEBOX_RUNTIME native ;;
 	ntopng | redis) conf_get NTOPNG_RUNTIME native ;;
 	victoriametrics | prometheus) conf_get METRICS_BACKEND_RUNTIME native ;;
+	node_exporter) conf_get NODE_EXPORTER_RUNTIME native ;;
+	grafana) conf_get GRAFANA_RUNTIME native ;;
 	panel) conf_get PANEL_RUNTIME native ;;
 	*) echo native ;;
 	esac
@@ -2524,9 +2563,11 @@ ctl_cmd_reconfigure() {
 	# -y asks for an explicit ACCESS_CONFIRM when the access mode is not
 	# localhost. An unchanged mode is already confirmed; a changed one
 	# must go through install.sh reconfigure.
-	local applied_access
+	local applied_access applied_bind
 	applied_access=$(state_read_value "applied.ACCESS_MODE")
-	if [[ -n "$applied_access" && "$applied_access" == "$(conf_get ACCESS_MODE localhost)" ]] ||
+	applied_bind=$(state_read_value "applied.BIND_ADDR")
+	if [[ -n "$applied_access" && "$applied_access" == "$(conf_get ACCESS_MODE localhost)" &&
+	"${applied_bind:-auto}" == "$(conf_get BIND_ADDR auto)" ]] ||
 		[[ "${DPISTACK_ACCESS_CONFIRM:-0}" == "1" ]]; then
 		args+=(--set ACCESS_CONFIRM=yes)
 	fi
@@ -3865,6 +3906,64 @@ menu_panel_password_screen() {
 	done
 }
 
+# menu_pick_bind - which address the web services listen on: this machine
+# only (127.0.0.1 / all addresses in lan mode) or one of its own addresses.
+menu_pick_bind() {
+	local -a ifaces=() addrs=()
+	local line n=0 answer
+	while read -r line; do
+		[[ -n "$line" ]] || continue
+		ifaces+=("${line%% *}")
+		addrs+=("${line#* }")
+	done < <(access_local_addresses)
+	((${#addrs[@]})) || return 0
+	echo "  Listen address (BIND_ADDR):" >&2
+	echo "    0) auto: 127.0.0.1 (this machine only), or every address in lan mode" >&2
+	for n in "${!addrs[@]}"; do
+		printf '    %d) %s on %s\n' "$((n + 1))" "${addrs[$n]}" "${ifaces[$n]}" >&2
+	done
+	menu_read answer "Listen address [number or address, Enter=${CONF[BIND_ADDR]}]: "
+	[[ -n "$answer" ]] || return 0
+	if [[ "$answer" =~ ^[0-9]+$ ]] && ((answer <= ${#addrs[@]})); then
+		if ((answer == 0)); then answer="auto"; else answer="${addrs[$((answer - 1))]}"; fi
+	fi
+	local err
+	if err=$(schema_validate_one BIND_ADDR "$answer"); then
+		config_set_kv BIND_ADDR "$answer"
+		MENU_DIRTY=1
+	else
+		echo "  $err" >&2
+	fi
+}
+
+# menu_ask_yes_no <KEY> <question> - a yes/no question that sets KEY.
+menu_ask_yes_no() {
+	local key="$1" question="$2" answer
+	menu_read answer "$question [y/n, Enter=${CONF[$key]/yes/y}]: "
+	case "$answer" in
+	y | Y | yes) config_set_kv "$key" yes && MENU_DIRTY=1 ;;
+	n | N | no) config_set_kv "$key" no && MENU_DIRTY=1 ;;
+	esac
+}
+
+# menu_pick_monitoring - the optional metrics stack: a storage (Prometheus or
+# VictoriaMetrics), Grafana and node_exporter, each chosen on its own.
+menu_pick_monitoring() {
+	echo "  Metrics stack (each part is optional and chosen separately):" >&2
+	local backend err
+	menu_read backend "Metrics storage [none/victoriametrics/prometheus, Enter=${CONF[METRICS_BACKEND]}]: "
+	if [[ -n "$backend" ]]; then
+		if err=$(schema_validate_one METRICS_BACKEND "$backend"); then
+			config_set_kv METRICS_BACKEND "$backend"
+			MENU_DIRTY=1
+		else
+			echo "  $err" >&2
+		fi
+	fi
+	menu_ask_yes_no GRAFANA_ENABLE "Install Grafana (dashboards)"
+	menu_ask_yes_no NODE_EXPORTER_ENABLE "Install node_exporter (host metrics)"
+}
+
 # menu_quick_install - 5.1 "Quick install": interfaces (ip -o link,
 # no lo, default-route one marked), Suricata source, access mode, which
 # panel (full or lite), panel password; everything else keeps its default.
@@ -3932,6 +4031,12 @@ menu_quick_install() {
 			echo "  $err2" >&2
 		fi
 	fi
+
+	if [[ "${CONF[ACCESS_MODE]}" != "nginx" ]]; then
+		menu_pick_bind
+	fi
+
+	menu_pick_monitoring
 
 	echo "  Panel: full (rich design, effects) or lite (same features, plain light page)" >&2
 	local edition
@@ -4279,14 +4384,14 @@ menu_run_reconfigure() {
 
 # shellcheck disable=SC2034 # read by menu_reconfigure_screen
 MENU_BACK_ENABLED=0
-MANAGE_COMPONENTS=(suricata evebox ntopng redis panel)
+MANAGE_COMPONENTS=(suricata evebox ntopng redis panel victoriametrics prometheus node_exporter grafana)
 
 # manage_ctl - the installed dpistack, or the install.sh next to this file
 # when run from a clone (the verbs are the same).
 manage_ctl() {
-	# DPISTACK_CTL names another program that answers the verbs (tests).
-	if [[ -n "${DPISTACK_CTL:-}" && -x "$DPISTACK_CTL" ]]; then
-		echo "$DPISTACK_CTL"
+	# DPISTACK_BIN names another program that answers the verbs (tests).
+	if [[ -n "${DPISTACK_BIN:-}" && -x "$DPISTACK_BIN" ]]; then
+		echo "$DPISTACK_BIN"
 		return 0
 	fi
 	if [[ -x "$(path_ctl_bin)" ]]; then
@@ -5038,6 +5143,13 @@ path_prometheus_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/prometheus"; }
 path_suricata_mode_dropin() { echo "${DPISTACK_ROOT}/etc/systemd/system/suricata.service.d/dpistack-mode.conf"; }
 path_fw_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-fw.service"; }
 path_mode_pending() { echo "$(path_state_dir)/mode.pending"; }
+path_nodeexp_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/node_exporter"; }
+path_nodeexp_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-node-exporter.service"; }
+path_grafana_home() { echo "${DPISTACK_ROOT}/opt/dpistack/grafana"; }
+path_grafana_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-grafana.service"; }
+path_grafana_ini() { echo "${DPISTACK_ROOT}/etc/dpistack/grafana.ini"; }
+path_grafana_data_dir() { echo "${DPISTACK_ROOT}/var/lib/dpistack-grafana"; }
+path_grafana_prov_dir() { echo "${DPISTACK_ROOT}/etc/dpistack/grafana-provisioning"; }
 path_vm_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-vm.service"; }
 path_prometheus_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/prometheus.service"; }
 
@@ -5051,7 +5163,8 @@ path_dpistack_bin() { echo "$(path_sbin_dir)/dpistack"; }
 # One command: the privileged verbs are verbs of dpistack itself. The old
 # name stays as a symlink so units written by an earlier version keep working.
 path_ctl_bin() { path_dpistack_bin; }
-path_ctl_legacy_bin() { echo "$(path_sbin_dir)/dpistack-ctl"; }
+# path_retired_ctl - the old second command name; removed on install and uninstall.
+path_retired_ctl() { echo "$(path_sbin_dir)/dpistack-ctl"; }
 path_watch_bin() { echo "$(path_sbin_dir)/dpistack-watch"; }
 path_watch_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.service"; }
 path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.timer"; }
@@ -5188,9 +5301,11 @@ DOCKER_IMAGE_NTOPNG="${DOCKER_IMAGE_NTOPNG:-ntop/ntopng}"
 DOCKER_IMAGE_REDIS="${DOCKER_IMAGE_REDIS:-redis}"
 DOCKER_IMAGE_VICTORIAMETRICS="${DOCKER_IMAGE_VICTORIAMETRICS:-victoriametrics/victoria-metrics}"
 DOCKER_IMAGE_PROMETHEUS="${DOCKER_IMAGE_PROMETHEUS:-prom/prometheus}"
+DOCKER_IMAGE_NODE_EXPORTER="${DOCKER_IMAGE_NODE_EXPORTER:-prom/node-exporter}"
+DOCKER_IMAGE_GRAFANA="${DOCKER_IMAGE_GRAFANA:-grafana/grafana-oss}"
 # Services in start order (ntopng needs redis).
 DOCKER_PANEL_BASE_IMAGE="${DOCKER_PANEL_BASE_IMAGE:-alpine:3.21}"
-DOCKER_SERVICES_ORDER=(suricata evebox redis ntopng victoriametrics prometheus panel)
+DOCKER_SERVICES_ORDER=(suricata evebox redis ntopng victoriametrics prometheus node_exporter grafana panel)
 
 # docker_service_runtime <service> - native or docker, from CONF.
 # redis follows ntopng: it is ntopng's own store (step_redis.sh).
@@ -5206,6 +5321,12 @@ docker_service_runtime() {
 		else
 			echo native
 		fi
+		;;
+	node_exporter)
+		if [[ "${CONF[NODE_EXPORTER_ENABLE]:-no}" == "yes" ]]; then echo "${CONF[NODE_EXPORTER_RUNTIME]:-native}"; else echo native; fi
+		;;
+	grafana)
+		if [[ "${CONF[GRAFANA_ENABLE]:-no}" == "yes" ]]; then echo "${CONF[GRAFANA_RUNTIME]:-native}"; else echo native; fi
 		;;
 	panel) echo "${CONF[PANEL_RUNTIME]:-native}" ;;
 	*) echo native ;;
@@ -5231,6 +5352,8 @@ docker_image() {
 	redis) echo "${DOCKER_IMAGE_REDIS}:${DOCKER_TAG_REDIS:-7-alpine}" ;;
 	victoriametrics) echo "${DOCKER_IMAGE_VICTORIAMETRICS}:${DOCKER_TAG_VICTORIAMETRICS:-$METRICS_VM_VERSION}" ;;
 	prometheus) echo "${DOCKER_IMAGE_PROMETHEUS}:${DOCKER_TAG_PROMETHEUS:-$METRICS_PROM_VERSION}" ;;
+	node_exporter) echo "${DOCKER_IMAGE_NODE_EXPORTER}:${DOCKER_TAG_NODE_EXPORTER:-$NODEEXP_VERSION}" ;;
+	grafana) echo "${DOCKER_IMAGE_GRAFANA}:${DOCKER_TAG_GRAFANA:-$GRAFANA_VERSION}" ;;
 	panel) echo "dpistack-panel:$(docker_panel_tag)" ;;
 	esac
 }
@@ -5344,6 +5467,33 @@ ${common}
     volumes:
       - ${root}/etc/ntopng:/etc/ntopng:ro
       - ${root}/var/lib/ntopng:/var/lib/ntopng
+BLOCK
+		;;
+	node_exporter)
+		cat <<BLOCK
+${common}
+    pid: host
+    command: ["--path.rootfs=/host", "--web.listen-address=$(nodeexp_listen)"]
+    volumes:
+      - /:/host:ro,rslave
+BLOCK
+		;;
+	grafana)
+		local gids
+		gids="$(id -u "$MONITOR_USER" 2>/dev/null || echo 0):$(id -g "$MONITOR_USER" 2>/dev/null || echo 0)"
+		cat <<BLOCK
+${common}
+    user: "${gids}"
+    environment:
+      GF_PATHS_DATA: "$(path_grafana_data_dir)"
+      GF_PATHS_PROVISIONING: "$(path_grafana_prov_dir)"
+      GF_SERVER_HTTP_ADDR: "$(access_effective_bind_host)"
+      GF_SERVER_HTTP_PORT: "$(grafana_port)"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - $(path_grafana_data_dir):$(path_grafana_data_dir)
+      - $(path_grafana_prov_dir):$(path_grafana_prov_dir):ro
 BLOCK
 		;;
 	panel)
@@ -5544,7 +5694,7 @@ SCHEMA_KEYS=()
 # outright, but installer rejects them with "not supported yet".
 # Shape of every free-text key. These values end up in YAML, nginx and
 # systemd files, in curl and suricata-update arguments, all of them run
-# or read by root, and `dpistack-ctl config-write` lets the panel change
+# or read by root, and `dpistack config-write` lets the panel change
 # them. Anything outside the shape is rejected before it is written
 # anywhere: no quotes, backslashes, `$`, backticks, `;`, braces, pipes
 # (except in BPF) and no leading `-` that a command would read as an option.
@@ -5556,6 +5706,7 @@ SCHEMA_PATTERN[SURICATA_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
 SCHEMA_PATTERN[NDPI_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
 SCHEMA_PATTERN[NTOPNG_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
 SCHEMA_PATTERN[EVEBOX_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
+SCHEMA_PATTERN[BIND_ADDR]='^(auto|[0-9]{1,3}(\.[0-9]{1,3}){3})$'
 SCHEMA_PATTERN[IFACES]="^${_word}(,${_word})*\$"
 SCHEMA_PATTERN[NTOPNG_IFACES]="^${_word}(,${_word})*\$"
 SCHEMA_PATTERN[BPF_FILTER]='^[]A-Za-z0-9 .,:/()!&|<>=+*%_[-]*$'
@@ -5643,7 +5794,8 @@ schema_init() {
 	_schema_add 'EVEBOX_PORT|int|5636|1..65535|advanced|access|evebox access|light|no'
 	_schema_add 'EVEBOX_RETENTION_DAYS|int|30|0..36500|advanced|eve|evebox access|light|no'
 
-	_schema_add 'ACCESS_MODE|enum|localhost|localhost,lan,nginx|basic|access|access panel|light|no'
+	_schema_add 'ACCESS_MODE|enum|localhost|localhost,lan,nginx|basic|access|access panel nodeexp grafana|light|no'
+	_schema_add 'BIND_ADDR|free|auto||basic|access|access panel evebox ntopng metrics nodeexp grafana|light|no'
 	_schema_add 'LAN_CIDR|free|auto||advanced|access|access panel|light|no'
 	_schema_add 'PANEL_PORT|int|9800|1..65535|advanced|access|access panel|light|no'
 	_schema_add 'NTOPNG_PORT|int|3000|1..65535|advanced|access|ntopng access|light|no'
@@ -5657,11 +5809,17 @@ schema_init() {
 	_schema_add 'FIREWALL_MANAGE|enum|no|no,auto|advanced|access|access panel|light|no'
 
 	_schema_add 'METRICS_EXPORT|enum|yes|yes,no|advanced|metrics|metrics panel|light|no'
-	_schema_add 'METRICS_BACKEND|enum|none|none,victoriametrics,prometheus|basic|metrics|metrics|heavy|no'
+	_schema_add 'METRICS_BACKEND|enum|none|none,victoriametrics,prometheus|basic|metrics|metrics grafana|heavy|no'
 	_schema_add 'METRICS_BACKEND_RUNTIME|enum|native|native,docker|advanced|metrics|metrics|heavy|no'
-	_schema_add 'METRICS_BACKEND_PORT|int||1..65535|advanced|metrics|metrics panel|light|no'
+	_schema_add 'METRICS_BACKEND_PORT|int||1..65535|advanced|metrics|metrics panel grafana|light|no'
 	_schema_add 'METRICS_RETENTION|free|30d||advanced|metrics|metrics panel|light|no'
 
+	_schema_add 'NODE_EXPORTER_ENABLE|enum|no|yes,no|basic|metrics|nodeexp metrics|heavy|no'
+	_schema_add 'NODE_EXPORTER_RUNTIME|enum|native|native,docker|advanced|metrics|nodeexp|heavy|no'
+	_schema_add 'NODE_EXPORTER_PORT|int|9100|1..65535|advanced|metrics|nodeexp metrics|light|no'
+	_schema_add 'GRAFANA_ENABLE|enum|no|yes,no|basic|metrics|grafana|heavy|no'
+	_schema_add 'GRAFANA_RUNTIME|enum|native|native,docker|advanced|metrics|grafana|heavy|no'
+	_schema_add 'GRAFANA_PORT|int|3030|1..65535|advanced|metrics|grafana|light|no'
 	_schema_add 'WATCH_ENABLE|enum|yes|yes,no|advanced|watch|watch|light|no'
 	_schema_add 'WATCH_INTERVAL_SEC|int|60|10..3600|advanced|watch|watch|light|no'
 	_schema_add 'WATCH_EVE_STALE_SEC|int|300|10..86400|advanced|watch|watch|light|no'
@@ -5858,11 +6016,51 @@ access_backend_port() {
 	fi
 }
 
+# access_explicit_bind - the address chosen in BIND_ADDR; fails for auto.
+access_explicit_bind() {
+	local v="${CONF[BIND_ADDR]:-auto}"
+	[[ -z "$v" || "$v" == "auto" ]] && return 1
+	echo "$v"
+}
+
+# access_effective_bind_host - the one place that decides where the web
+# services listen. localhost: BIND_ADDR or 127.0.0.1; lan: BIND_ADDR or
+# 0.0.0.0; nginx: the services stay on 127.0.0.1 behind nginx.
 access_effective_bind_host() {
+	local explicit
+	explicit=$(access_explicit_bind) || explicit=""
 	case "${CONF[ACCESS_MODE]:-localhost}" in
-	lan) echo "0.0.0.0" ;;
+	lan) echo "${explicit:-0.0.0.0}" ;;
+	localhost) echo "${explicit:-127.0.0.1}" ;;
 	*) echo "127.0.0.1" ;;
 	esac
+}
+
+# access_connect_host - the address another service of this host uses to reach
+# a listener: the bind address, 127.0.0.1 when it listens on every address.
+access_connect_host() {
+	local host
+	host=$(access_effective_bind_host)
+	[[ "$host" == "0.0.0.0" ]] && host="127.0.0.1"
+	echo "$host"
+}
+
+# access_policy - who the panel lets in: localhost, lan or nginx. A
+# non-loopback BIND_ADDR with ACCESS_MODE=localhost opens the panels to the
+# local network, so it counts as lan.
+access_policy() {
+	local mode="${CONF[ACCESS_MODE]:-localhost}" host
+	if [[ "$mode" == "localhost" ]]; then
+		host=$(access_effective_bind_host)
+		[[ "$host" == 127.* ]] || mode="lan"
+	fi
+	echo "$mode"
+}
+
+# access_local_addresses - "interface address" lines for the IPv4 addresses
+# of this host that could be chosen in BIND_ADDR.
+access_local_addresses() {
+	ip -o -4 addr show scope global 2>/dev/null | awk '{split($4, a, "/"); print $2, a[1]}'
 }
 
 access_detect_lan_cidr() {
@@ -6027,7 +6225,7 @@ access_fw_wanted() {
 	local cidr port
 	local -a ports=()
 	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
-	case "${CONF[ACCESS_MODE]:-localhost}" in
+	case "$(access_policy)" in
 	nginx)
 		ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
 		;;
@@ -6123,15 +6321,16 @@ step_access_check() {
 }
 
 step_access_apply() {
-	local mode="${CONF[ACCESS_MODE]:-localhost}"
+	local mode="${CONF[ACCESS_MODE]:-localhost}" policy
+	policy=$(access_policy)
 
 	access_selinux_notice
 	access_selinux_ports
 
-	if [[ "$mode" != "localhost" ]]; then
-		echo "access: ACCESS_MODE=$mode opens the web interfaces beyond localhost." >&2
-		if [[ "$mode" == "lan" ]]; then
-			echo "access: ntopng/EveBox/the panel will listen on 0.0.0.0 and be visible to the whole LAN_CIDR network; passwords go over plain HTTP unless NGINX_TLS is on." >&2
+	if [[ "$policy" != "localhost" ]]; then
+		echo "access: ACCESS_MODE=$mode with bind address $(access_effective_bind_host) opens the web interfaces beyond localhost." >&2
+		if [[ "$policy" == "lan" ]]; then
+			echo "access: ntopng/EveBox/the panel will listen on $(access_effective_bind_host) and be visible to the whole LAN_CIDR network; passwords go over plain HTTP unless NGINX_TLS is on." >&2
 		fi
 	fi
 
@@ -6337,6 +6536,211 @@ step_evebox_plan() {
 	echo "evebox: render $(path_evebox_yaml)"
 }
 DPISTACK_BUNDLE_END
+put lib/step_grafana.sh 644 <<'DPISTACK_BUNDLE_END'
+#!/usr/bin/env bash
+# Grafana: dashboards over the metrics backend. Optional (GRAFANA_ENABLE),
+# native or docker. The native build is the vendor tarball from
+# dl.grafana.com; its sha256 comes from the vendor's .sha256 file next to the
+# tarball, fetched over TLS at install time (DPISTACK_GRAFANA_SHA256 pins it
+# by hand). With a metrics backend selected the backend is provisioned as the
+# default data source. Grafana's own first login is admin/admin and asks for
+# a new password.
+
+GRAFANA_VERSION="${DPISTACK_GRAFANA_VERSION:-12.2.0}"
+
+grafana_wanted() { [[ "${CONF[GRAFANA_ENABLE]:-no}" == "yes" ]]; }
+grafana_runtime() { echo "${CONF[GRAFANA_RUNTIME]:-native}"; }
+grafana_port() { echo "${CONF[GRAFANA_PORT]:-3030}"; }
+
+grafana_marker() {
+	if [[ "$(grafana_runtime)" == "docker" ]]; then
+		echo "docker:grafana"
+	else
+		echo "native:grafana:${GRAFANA_VERSION}"
+	fi
+}
+grafana_installed() { state_read_value "grafana.installed" 2>/dev/null || true; }
+
+# grafana_datasource_url - host:port of the metrics backend, empty without one.
+grafana_datasource_url() {
+	local backend="${CONF[METRICS_BACKEND]:-none}"
+	[[ "$backend" == "none" ]] && return 0
+	echo "$(access_connect_host):$(metrics_port "$backend")"
+}
+
+grafana_render_ini() {
+	render_template "$SCRIPT_DIR/templates/grafana.ini.tpl" \
+		"DATA=$(path_grafana_data_dir)" "PROV=$(path_grafana_prov_dir)" \
+		"ADDR=$(access_effective_bind_host)" "PORT=$(grafana_port)"
+}
+
+grafana_render_unit() {
+	render_template "$SCRIPT_DIR/templates/grafana.service.tpl" \
+		"USER=$MONITOR_USER" "HOME=$(path_grafana_home)" "INI=$(path_grafana_ini)"
+}
+
+grafana_render_datasource() {
+	local url
+	url=$(grafana_datasource_url)
+	[[ -n "$url" ]] || return 0
+	render_template "$SCRIPT_DIR/templates/grafana-datasource.yaml.tpl" "URL=$url"
+}
+
+grafana_datasource_path() { echo "$(path_grafana_prov_dir)/datasources/dpistack.yaml"; }
+
+# grafana_files_current - the ini and the data source on disk are what this
+# config renders (no data source file when there is no backend).
+grafana_files_current() {
+	metrics_file_current "$(path_grafana_ini)" "$(grafana_render_ini)" || return 1
+	local ds
+	ds=$(grafana_render_datasource)
+	if [[ -n "$ds" ]]; then
+		metrics_file_current "$(grafana_datasource_path)" "$ds" || return 1
+	else
+		[[ ! -e "$(grafana_datasource_path)" ]] || return 1
+	fi
+}
+
+grafana_arch() { nodeexp_arch; }
+
+grafana_fetch() {
+	local arch url tmp want got
+	arch=$(grafana_arch) || {
+		echo "grafana: architecture $(uname -m) is not supported (amd64 or arm64 is needed)" >&2
+		return 1
+	}
+	url="https://dl.grafana.com/oss/release/grafana-${GRAFANA_VERSION}.linux-${arch}.tar.gz"
+	tmp=$(mktemp -d)
+	if ! run curl --proto '=https' --tlsv1.2 -fsSL -o "$tmp/archive.tar.gz" "$url"; then
+		echo "grafana: could not download $url" >&2
+		rm -rf "$tmp"
+		return 1
+	fi
+	want="${DPISTACK_GRAFANA_SHA256:-}"
+	if [[ -z "$want" ]]; then
+		if ! want=$(curl --proto '=https' --tlsv1.2 -fsSL "${url}.sha256" 2>/dev/null | awk '{print $1; exit}') || [[ -z "$want" ]]; then
+			echo "grafana: could not read the vendor checksum ${url}.sha256, the binary is not installed" >&2
+			rm -rf "$tmp"
+			return 1
+		fi
+	fi
+	got=$(sha256sum "$tmp/archive.tar.gz" | awk '{print $1}')
+	if [[ "$got" != "$want" ]]; then
+		echo "grafana: the checksum of $url did not match (expected $want, got $got), the binary is not installed" >&2
+		rm -rf "$tmp"
+		return 1
+	fi
+	local home
+	home=$(path_grafana_home)
+	run rm -rf "$home" || return 1
+	run install -d -m 0755 "$home" || return 1
+	run tar -xzf "$tmp/archive.tar.gz" -C "$home" --strip-components=1 || {
+		rm -rf "$tmp"
+		return 1
+	}
+	rm -rf "$tmp"
+}
+
+grafana_stop_installed() {
+	local installed runtime
+	installed=$(grafana_installed)
+	[[ -n "$installed" ]] || return 0
+	runtime="${installed%%:*}"
+	if [[ "$runtime" == "docker" ]]; then
+		if command -v docker >/dev/null 2>&1 && [[ -f "$(path_compose_yaml)" ]]; then
+			docker_compose_argv
+			run "${DOCKER_COMPOSE_ARGV[@]}" rm -fsv grafana || return 1
+		fi
+	else
+		run systemctl disable --now "dpistack-grafana.service" 2>/dev/null || true
+	fi
+	return 0
+}
+
+# grafana_write_files - the ini, the data source and the directories.
+grafana_write_files() {
+	local d
+	for d in "$(path_grafana_data_dir)" "$(path_grafana_prov_dir)/datasources"; do
+		run install -d -m 0750 "$d" || return 1
+	done
+	run chown -R "$MONITOR_USER:" "$(path_grafana_data_dir)" || return 1
+	run chmod o+x "$(dirname "$(path_grafana_ini)")" || return 1
+	write_rendered_file "$(path_grafana_ini)" "$(grafana_render_ini)" 0644 || return 1
+	local ds
+	ds=$(grafana_render_datasource)
+	if [[ -n "$ds" ]]; then
+		write_rendered_file "$(grafana_datasource_path)" "$ds" 0644 || return 1
+		run chmod -R o+rX "$(path_grafana_prov_dir)" || return 1
+	else
+		run rm -f "$(grafana_datasource_path)" || return 1
+	fi
+}
+
+step_grafana_check() {
+	local installed
+	installed=$(grafana_installed)
+	if ! grafana_wanted; then
+		[[ -z "$installed" ]]
+		return
+	fi
+	[[ "$installed" == "$(grafana_marker)" ]] || return 1
+	grafana_files_current || return 1
+	if [[ "$(grafana_runtime)" == "docker" ]]; then
+		docker_service_check grafana
+		return
+	fi
+	[[ -x "$(path_grafana_home)/bin/grafana" ]] || return 1
+	metrics_file_current "$(path_grafana_unit)" "$(grafana_render_unit)" || return 1
+	systemctl is-active --quiet "dpistack-grafana.service"
+}
+
+step_grafana_apply() {
+	local installed refetch=0
+	installed=$(grafana_installed)
+	if [[ -n "$installed" ]] && { ! grafana_wanted || [[ "$installed" != "$(grafana_marker)" ]]; }; then
+		refetch=1
+		grafana_stop_installed || return 1
+		state_write_value "grafana.installed" "" || return 1
+	fi
+	grafana_wanted || return 0
+
+	monitor_ensure_user || return 1
+	grafana_write_files || return 1
+	if [[ "$(grafana_runtime)" == "docker" ]]; then
+		docker_service_apply grafana || return 1
+	else
+		if [[ ! -x "$(path_grafana_home)/bin/grafana" || "$refetch" == "1" ]]; then
+			grafana_fetch || return 1
+		fi
+		write_rendered_file "$(path_grafana_unit)" "$(grafana_render_unit)" || return 1
+		run systemctl daemon-reload || return 1
+		run systemctl enable --now "dpistack-grafana.service" || return 1
+		run systemctl restart "dpistack-grafana.service" || return 1
+	fi
+	echo "grafana: listens on $(access_effective_bind_host):$(grafana_port); the first login is admin/admin, Grafana asks for a new password at once." >&2
+	state_write_value "grafana.installed" "$(grafana_marker)"
+}
+
+step_grafana_plan() {
+	local installed
+	installed=$(grafana_installed)
+	if [[ -n "$installed" ]] && { ! grafana_wanted || [[ "$installed" != "$(grafana_marker)" ]]; }; then
+		echo "grafana: stop ${installed}"
+	fi
+	if ! grafana_wanted; then
+		[[ -z "$installed" ]] && echo "grafana: no changes (GRAFANA_ENABLE=no)"
+		return 0
+	fi
+	if [[ "$(grafana_runtime)" == "docker" ]]; then
+		docker_service_plan grafana
+	else
+		echo "grafana: Grafana ${GRAFANA_VERSION} from dl.grafana.com with a sha256 check, unit dpistack-grafana.service, listens on $(access_effective_bind_host):$(grafana_port)"
+	fi
+	local url
+	url=$(grafana_datasource_url)
+	echo "grafana: data source ${url:-none (no metrics backend)}"
+}
+DPISTACK_BUNDLE_END
 put lib/step_metrics.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Metrics backend (slice 28): VictoriaMetrics single-node or Prometheus,
@@ -6411,12 +6815,21 @@ metrics_runtime() { echo "${CONF[METRICS_BACKEND_RUNTIME]:-native}"; }
 
 # The panel's own listening port: behind nginx it is PORT+10000 over plain
 # HTTP, which is what the collector can reach without TLS.
-metrics_scrape_target() { echo "127.0.0.1:$(access_backend_port "${CONF[PANEL_PORT]:-9800}")"; }
+metrics_scrape_target() {
+	local host
+	host=$(access_effective_bind_host)
+	[[ "$host" == "0.0.0.0" ]] && host="127.0.0.1"
+	echo "${host}:$(access_backend_port "${CONF[PANEL_PORT]:-9800}")"
+}
 
 metrics_render_scrape() {
 	render_template "$SCRIPT_DIR/templates/scrape.yaml.tpl" \
 		"TOKEN_FILE=$(path_metrics_token)" \
 		"TARGET=$(metrics_scrape_target)"
+	# node_exporter is scraped by the same backend when it is installed.
+	if nodeexp_wanted; then
+		printf '  - job_name: node\n    static_configs:\n      - targets: ['"'"'%s'"'"']\n' "$(nodeexp_target)"
+	fi
 }
 
 metrics_render_unit() {
@@ -6766,6 +7179,165 @@ step_ndpi_plan() {
 	esac
 }
 DPISTACK_BUNDLE_END
+put lib/step_nodeexp.sh 644 <<'DPISTACK_BUNDLE_END'
+#!/usr/bin/env bash
+# node_exporter: host metrics (CPU, memory, disk, network) for the metrics
+# backend. Optional (NODE_EXPORTER_ENABLE), native or docker. The native
+# binary comes from the project's GitHub release with a pinned sha256
+# (DPISTACK_NODEEXP_* override the pins for tests and for moving to a newer
+# release by hand).
+
+MONITOR_USER="dpistack-monitor"
+NODEEXP_VERSION="${DPISTACK_NODEEXP_VERSION:-v1.12.1}"
+declare -A NODEEXP_SHA256=(
+	[amd64]="b51d8a76aa2a9156a55d501aca6276fae09e262259a5e4e831d2c2222f084e63"
+	[arm64]="ad35b605f9954b9f1ffddf5ba054bdc5a98d790b9eae5291e1eeb83f1ecbd0e7"
+)
+
+nodeexp_wanted() { [[ "${CONF[NODE_EXPORTER_ENABLE]:-no}" == "yes" ]]; }
+nodeexp_runtime() { echo "${CONF[NODE_EXPORTER_RUNTIME]:-native}"; }
+nodeexp_port() { echo "${CONF[NODE_EXPORTER_PORT]:-9100}"; }
+nodeexp_listen() { echo "$(access_effective_bind_host):$(nodeexp_port)"; }
+
+# nodeexp_target - where the metrics backend scrapes it (same host).
+nodeexp_target() { echo "$(access_connect_host):$(nodeexp_port)"; }
+
+nodeexp_marker() {
+	if [[ "$(nodeexp_runtime)" == "docker" ]]; then
+		echo "docker:node_exporter"
+	else
+		echo "native:node_exporter:${NODEEXP_VERSION}"
+	fi
+}
+nodeexp_installed() { state_read_value "nodeexp.installed" 2>/dev/null || true; }
+
+nodeexp_render_unit() {
+	render_template "$SCRIPT_DIR/templates/node-exporter.service.tpl" \
+		"USER=$MONITOR_USER" "BIN=$(path_nodeexp_bin)" "LISTEN=$(nodeexp_listen)"
+}
+
+nodeexp_arch() {
+	case "${DPISTACK_METRICS_ARCH:-$(uname -m)}" in
+	x86_64 | amd64) echo amd64 ;;
+	aarch64 | arm64) echo arm64 ;;
+	*) return 1 ;;
+	esac
+}
+
+# monitor_ensure_user - the system user of node_exporter and Grafana.
+monitor_ensure_user() {
+	getent passwd "$MONITOR_USER" >/dev/null 2>&1 && return 0
+	run useradd --system --no-create-home --shell /usr/sbin/nologin "$MONITOR_USER"
+}
+
+nodeexp_fetch_binary() {
+	local arch ver url tmp want got
+	arch=$(nodeexp_arch) || {
+		echo "node_exporter: architecture $(uname -m) is not supported (amd64 or arm64 is needed)" >&2
+		return 1
+	}
+	ver="$NODEEXP_VERSION"
+	url="https://github.com/prometheus/node_exporter/releases/download/${ver}/node_exporter-${ver#v}.linux-${arch}.tar.gz"
+	local override="DPISTACK_NODEEXP_SHA256_${arch^^}"
+	want="${!override:-${NODEEXP_SHA256[$arch]}}"
+	tmp=$(mktemp -d)
+	if ! run curl --proto '=https' --tlsv1.2 -fsSL -o "$tmp/archive.tar.gz" "$url"; then
+		echo "node_exporter: could not download $url" >&2
+		rm -rf "$tmp"
+		return 1
+	fi
+	got=$(sha256sum "$tmp/archive.tar.gz" | awk '{print $1}')
+	if [[ "$got" != "$want" ]]; then
+		echo "node_exporter: the checksum of $url did not match (expected $want, got $got), the binary is not installed" >&2
+		rm -rf "$tmp"
+		return 1
+	fi
+	run tar -xzf "$tmp/archive.tar.gz" -C "$tmp" || {
+		rm -rf "$tmp"
+		return 1
+	}
+	run install -D -m 0755 "$tmp/node_exporter-${ver#v}.linux-${arch}/node_exporter" "$(path_nodeexp_bin)" || {
+		rm -rf "$tmp"
+		return 1
+	}
+	rm -rf "$tmp"
+}
+
+nodeexp_stop_installed() {
+	local installed runtime
+	installed=$(nodeexp_installed)
+	[[ -n "$installed" ]] || return 0
+	runtime="${installed%%:*}"
+	if [[ "$runtime" == "docker" ]]; then
+		if command -v docker >/dev/null 2>&1 && [[ -f "$(path_compose_yaml)" ]]; then
+			docker_compose_argv
+			run "${DOCKER_COMPOSE_ARGV[@]}" rm -fsv node_exporter || return 1
+		fi
+	else
+		run systemctl disable --now "dpistack-node-exporter.service" 2>/dev/null || true
+	fi
+	return 0
+}
+
+step_nodeexp_check() {
+	local installed
+	installed=$(nodeexp_installed)
+	if ! nodeexp_wanted; then
+		[[ -z "$installed" ]]
+		return
+	fi
+	[[ "$installed" == "$(nodeexp_marker)" ]] || return 1
+	if [[ "$(nodeexp_runtime)" == "docker" ]]; then
+		docker_service_check node_exporter
+		return
+	fi
+	[[ -x "$(path_nodeexp_bin)" ]] || return 1
+	metrics_file_current "$(path_nodeexp_unit)" "$(nodeexp_render_unit)" || return 1
+	systemctl is-active --quiet "dpistack-node-exporter.service"
+}
+
+step_nodeexp_apply() {
+	local installed refetch=0
+	installed=$(nodeexp_installed)
+	if [[ -n "$installed" ]] && { ! nodeexp_wanted || [[ "$installed" != "$(nodeexp_marker)" ]]; }; then
+		refetch=1
+		nodeexp_stop_installed || return 1
+		state_write_value "nodeexp.installed" "" || return 1
+	fi
+	nodeexp_wanted || return 0
+
+	if [[ "$(nodeexp_runtime)" == "docker" ]]; then
+		docker_service_apply node_exporter || return 1
+	else
+		monitor_ensure_user || return 1
+		if [[ ! -x "$(path_nodeexp_bin)" || "$refetch" == "1" ]]; then
+			nodeexp_fetch_binary || return 1
+		fi
+		write_rendered_file "$(path_nodeexp_unit)" "$(nodeexp_render_unit)" || return 1
+		run systemctl daemon-reload || return 1
+		run systemctl enable --now "dpistack-node-exporter.service" || return 1
+		run systemctl restart "dpistack-node-exporter.service" || return 1
+	fi
+	state_write_value "nodeexp.installed" "$(nodeexp_marker)"
+}
+
+step_nodeexp_plan() {
+	local installed
+	installed=$(nodeexp_installed)
+	if [[ -n "$installed" ]] && { ! nodeexp_wanted || [[ "$installed" != "$(nodeexp_marker)" ]]; }; then
+		echo "nodeexp: stop ${installed}"
+	fi
+	if ! nodeexp_wanted; then
+		[[ -z "$installed" ]] && echo "nodeexp: no changes (NODE_EXPORTER_ENABLE=no)"
+		return 0
+	fi
+	if [[ "$(nodeexp_runtime)" == "docker" ]]; then
+		docker_service_plan node_exporter
+	else
+		echo "nodeexp: node_exporter ${NODEEXP_VERSION} from a GitHub release with a sha256 check, unit dpistack-node-exporter.service, listens on $(nodeexp_listen)"
+	fi
+}
+DPISTACK_BUNDLE_END
 put lib/step_ntopng.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # ntopng: ntop.org apt repo, ntopng package, ntopng.conf rendered from
@@ -7015,10 +7587,11 @@ panel_is_lite() {
 # panel_args - the flags of the panel (tech.md 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
-	local mode="${CONF[ACCESS_MODE]:-localhost}" port
+	local mode port
+	mode=$(access_policy)
 	port=$(access_backend_port "${CONF[PANEL_PORT]:-9800}")
-	local host="127.0.0.1" args cidr=""
-	[[ "$mode" == "lan" ]] && host="0.0.0.0"
+	local host args cidr=""
+	host=$(access_effective_bind_host)
 	if [[ "$mode" != "localhost" ]]; then
 		cidr=$(access_effective_lan_cidr) || cidr=""
 		if [[ "$mode" == "lan" && -z "$cidr" ]]; then
@@ -7238,8 +7811,9 @@ step_panel_plan() {
 panel_report_metrics() {
 	[[ "${METRICS_TOKEN_JUST_GENERATED:-0}" == "1" && "${DRY_RUN:-0}" != "1" ]] || return 0
 	panel_token_wanted || return 0
-	local mode="${CONF[ACCESS_MODE]:-localhost}" port="${CONF[PANEL_PORT]:-9800}" scheme="http" host="127.0.0.1"
-	if [[ "$mode" != "localhost" ]]; then
+	local mode="${CONF[ACCESS_MODE]:-localhost}" port="${CONF[PANEL_PORT]:-9800}" scheme="http" host
+	host=$(access_effective_bind_host)
+	if [[ "$mode" == "lan" && "$host" == "0.0.0.0" ]] || [[ "$mode" == "nginx" ]]; then
 		host="<server-address>"
 	fi
 	[[ "$mode" == "nginx" && "${CONF[NGINX_TLS]:-none}" != "none" ]] && scheme="https"
@@ -7515,6 +8089,13 @@ step_preflight_reasons() {
 			reasons+=("interface $iface from IFACES does not exist")
 		fi
 	done
+
+	local bind_addr="${CONF[BIND_ADDR]:-auto}"
+	if [[ "$bind_addr" != "auto" && "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]] && [[ "$bind_addr" != 127.* ]]; then
+		if ! access_local_addresses | awk -v a="$bind_addr" '$2 == a {found = 1} END {exit !found}'; then
+			reasons+=("BIND_ADDR=$bind_addr is not an address of this host")
+		fi
+	fi
 
 	local need_gb=1
 	[[ "${CONF[SURICATA_SOURCE]:-}" == "source" ]] && need_gb=4
@@ -7882,9 +8463,9 @@ put lib/step_selfinstall.sh 644 <<'DPISTACK_BUNDLE_END'
 # "selfinstall" step (tech.md 5.2): copies the installer and its helpers
 # to /usr/local/lib/dpistack/installer/ and puts the persistent commands
 # in /usr/local/sbin: `dpistack` (a symlink to install.sh, so $0 is
-# "dpistack"; it carries the privileged verbs too) and dpistack-watch. The old
-# name dpistack-ctl is a symlink to the same file. After this the stack
-# no longer needs the original clone or archive.
+# "dpistack"; it carries the privileged verbs too) and dpistack-watch. A
+# leftover dpistack-ctl link of an earlier version is removed. After this the
+# stack no longer needs the original clone or archive.
 
 SELFINSTALL_PAYLOAD=(install.sh lib templates bin tests/data)
 SELFINSTALL_HASH_KEY="selfinstall.tree_hash"
@@ -7903,7 +8484,7 @@ selfinstall_is_target() {
 
 step_selfinstall_check() {
 	selfinstall_is_target && return 0
-	[[ -L "$(path_dpistack_bin)" && -L "$(path_ctl_legacy_bin)" && -x "$(path_watch_bin)" ]] || return 1
+	[[ -L "$(path_dpistack_bin)" && ! -e "$(path_retired_ctl)" && ! -L "$(path_retired_ctl)" && -x "$(path_watch_bin)" ]] || return 1
 	[[ -x "$(path_installer_copy_dir)/install.sh" ]] || return 1
 	[[ "$(state_read_value "$SELFINSTALL_HASH_KEY")" == "$(selfinstall_source_hash)" ]]
 }
@@ -7930,7 +8511,7 @@ step_selfinstall_apply() {
 
 	run install -D -m 0755 "$dest/bin/dpistack-watch" "$(path_watch_bin)" || return 1
 	run ln -sfn "$dest/install.sh" "$(path_dpistack_bin)" || return 1
-	run ln -sfn "$(path_dpistack_bin)" "$(path_ctl_legacy_bin)" || return 1
+	run rm -f "$(path_retired_ctl)" || return 1
 	state_write_value "$SELFINSTALL_HASH_KEY" "$(selfinstall_source_hash)"
 	return 0
 }
@@ -9021,6 +9602,55 @@ input:
   paths:
 @@EVEBOX_INPUT_PATHS@@
 DPISTACK_BUNDLE_END
+put templates/grafana-datasource.yaml.tpl 644 <<'DPISTACK_BUNDLE_END'
+# Managed by dpistack: the metrics backend as the default data source.
+apiVersion: 1
+datasources:
+  - name: dpistack
+    type: prometheus
+    access: proxy
+    url: http://@@URL@@
+    isDefault: true
+DPISTACK_BUNDLE_END
+put templates/grafana.ini.tpl 644 <<'DPISTACK_BUNDLE_END'
+# Managed by dpistack: install and reconfigure overwrite this file.
+[paths]
+data = @@DATA@@
+logs = @@DATA@@/log
+plugins = @@DATA@@/plugins
+provisioning = @@PROV@@
+
+[server]
+http_addr = @@ADDR@@
+http_port = @@PORT@@
+
+[analytics]
+reporting_enabled = false
+check_for_updates = false
+
+[log]
+mode = console
+DPISTACK_BUNDLE_END
+put templates/grafana.service.tpl 644 <<'DPISTACK_BUNDLE_END'
+[Unit]
+Description=dpistack Grafana
+After=network.target
+
+[Service]
+Type=simple
+User=@@USER@@
+WorkingDirectory=@@HOME@@
+ExecStart=@@HOME@@/bin/grafana server --homepath=@@HOME@@ --config=@@INI@@
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
+DPISTACK_BUNDLE_END
 put templates/logrotate.tpl 644 <<'DPISTACK_BUNDLE_END'
 @@EVE_JSON_PATH@@ {
     @@ROTATE_DIRECTIVE@@
@@ -9059,6 +9689,25 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
+DPISTACK_BUNDLE_END
+put templates/node-exporter.service.tpl 644 <<'DPISTACK_BUNDLE_END'
+[Unit]
+Description=dpistack node_exporter
+After=network.target
+
+[Service]
+Type=simple
+User=@@USER@@
+ExecStart=@@BIN@@ --web.listen-address=@@LISTEN@@
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
 DPISTACK_BUNDLE_END
 put templates/ntopng.conf.tpl 644 <<'DPISTACK_BUNDLE_END'
 # dpistack-rendered ntopng.conf. ntopng's config file is one

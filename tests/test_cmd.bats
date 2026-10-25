@@ -1,11 +1,11 @@
 #!/usr/bin/env bats
-# Covers slice 12 criteria 1-6 (dpistack-ctl test, tests-last.json, the
+# Covers slice 12 criteria 1-6 (dpistack test, tests-last.json, the
 # verify step) on stubs: suricata -r and curl are fakes that leave the
 # same traces the real ones would.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-	CTL="$REPO_DIR/tests/helpers/dpistack-ctl"
+	CTL="$REPO_DIR/tests/helpers/verbs"
 	DPISTACK_ROOT="$(mktemp -d)"
 	export DPISTACK_ROOT
 	mkdir -p "$DPISTACK_ROOT/etc/dpistack" "$DPISTACK_ROOT/etc/suricata" \

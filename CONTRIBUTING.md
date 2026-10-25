@@ -1,6 +1,5 @@
 # Contributing
 
-English | [Русский](CONTRIBUTING.ru.md)
 
 Thank you for your interest in dpistack. Below: how to prepare the environment, make a change and take it to a merge. There is a separate short note for AI agents: [AGENTS.md](AGENTS.md).
 

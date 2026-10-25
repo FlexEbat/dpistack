@@ -256,6 +256,13 @@ step_preflight_reasons() {
 		fi
 	done
 
+	local bind_addr="${CONF[BIND_ADDR]:-auto}"
+	if [[ "$bind_addr" != "auto" && "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]] && [[ "$bind_addr" != 127.* ]]; then
+		if ! access_local_addresses | awk -v a="$bind_addr" '$2 == a {found = 1} END {exit !found}'; then
+			reasons+=("BIND_ADDR=$bind_addr is not an address of this host")
+		fi
+	fi
+
 	local need_gb=1
 	[[ "${CONF[SURICATA_SOURCE]:-}" == "source" ]] && need_gb=4
 	local avail_kb

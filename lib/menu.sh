@@ -339,6 +339,64 @@ menu_panel_password_screen() {
 	done
 }
 
+# menu_pick_bind - which address the web services listen on: this machine
+# only (127.0.0.1 / all addresses in lan mode) or one of its own addresses.
+menu_pick_bind() {
+	local -a ifaces=() addrs=()
+	local line n=0 answer
+	while read -r line; do
+		[[ -n "$line" ]] || continue
+		ifaces+=("${line%% *}")
+		addrs+=("${line#* }")
+	done < <(access_local_addresses)
+	((${#addrs[@]})) || return 0
+	echo "  Listen address (BIND_ADDR):" >&2
+	echo "    0) auto: 127.0.0.1 (this machine only), or every address in lan mode" >&2
+	for n in "${!addrs[@]}"; do
+		printf '    %d) %s on %s\n' "$((n + 1))" "${addrs[$n]}" "${ifaces[$n]}" >&2
+	done
+	menu_read answer "Listen address [number or address, Enter=${CONF[BIND_ADDR]}]: "
+	[[ -n "$answer" ]] || return 0
+	if [[ "$answer" =~ ^[0-9]+$ ]] && ((answer <= ${#addrs[@]})); then
+		if ((answer == 0)); then answer="auto"; else answer="${addrs[$((answer - 1))]}"; fi
+	fi
+	local err
+	if err=$(schema_validate_one BIND_ADDR "$answer"); then
+		config_set_kv BIND_ADDR "$answer"
+		MENU_DIRTY=1
+	else
+		echo "  $err" >&2
+	fi
+}
+
+# menu_ask_yes_no <KEY> <question> - a yes/no question that sets KEY.
+menu_ask_yes_no() {
+	local key="$1" question="$2" answer
+	menu_read answer "$question [y/n, Enter=${CONF[$key]/yes/y}]: "
+	case "$answer" in
+	y | Y | yes) config_set_kv "$key" yes && MENU_DIRTY=1 ;;
+	n | N | no) config_set_kv "$key" no && MENU_DIRTY=1 ;;
+	esac
+}
+
+# menu_pick_monitoring - the optional metrics stack: a storage (Prometheus or
+# VictoriaMetrics), Grafana and node_exporter, each chosen on its own.
+menu_pick_monitoring() {
+	echo "  Metrics stack (each part is optional and chosen separately):" >&2
+	local backend err
+	menu_read backend "Metrics storage [none/victoriametrics/prometheus, Enter=${CONF[METRICS_BACKEND]}]: "
+	if [[ -n "$backend" ]]; then
+		if err=$(schema_validate_one METRICS_BACKEND "$backend"); then
+			config_set_kv METRICS_BACKEND "$backend"
+			MENU_DIRTY=1
+		else
+			echo "  $err" >&2
+		fi
+	fi
+	menu_ask_yes_no GRAFANA_ENABLE "Install Grafana (dashboards)"
+	menu_ask_yes_no NODE_EXPORTER_ENABLE "Install node_exporter (host metrics)"
+}
+
 # menu_quick_install - 5.1 "Quick install": interfaces (ip -o link,
 # no lo, default-route one marked), Suricata source, access mode, which
 # panel (full or lite), panel password; everything else keeps its default.
@@ -406,6 +464,12 @@ menu_quick_install() {
 			echo "  $err2" >&2
 		fi
 	fi
+
+	if [[ "${CONF[ACCESS_MODE]}" != "nginx" ]]; then
+		menu_pick_bind
+	fi
+
+	menu_pick_monitoring
 
 	echo "  Panel: full (rich design, effects) or lite (same features, plain light page)" >&2
 	local edition
@@ -753,14 +817,14 @@ menu_run_reconfigure() {
 
 # shellcheck disable=SC2034 # read by menu_reconfigure_screen
 MENU_BACK_ENABLED=0
-MANAGE_COMPONENTS=(suricata evebox ntopng redis panel)
+MANAGE_COMPONENTS=(suricata evebox ntopng redis panel victoriametrics prometheus node_exporter grafana)
 
 # manage_ctl - the installed dpistack, or the install.sh next to this file
 # when run from a clone (the verbs are the same).
 manage_ctl() {
-	# DPISTACK_CTL names another program that answers the verbs (tests).
-	if [[ -n "${DPISTACK_CTL:-}" && -x "$DPISTACK_CTL" ]]; then
-		echo "$DPISTACK_CTL"
+	# DPISTACK_BIN names another program that answers the verbs (tests).
+	if [[ -n "${DPISTACK_BIN:-}" && -x "$DPISTACK_BIN" ]]; then
+		echo "$DPISTACK_BIN"
 		return 0
 	fi
 	if [[ -x "$(path_ctl_bin)" ]]; then

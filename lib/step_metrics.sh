@@ -71,12 +71,21 @@ metrics_runtime() { echo "${CONF[METRICS_BACKEND_RUNTIME]:-native}"; }
 
 # The panel's own listening port: behind nginx it is PORT+10000 over plain
 # HTTP, which is what the collector can reach without TLS.
-metrics_scrape_target() { echo "127.0.0.1:$(access_backend_port "${CONF[PANEL_PORT]:-9800}")"; }
+metrics_scrape_target() {
+	local host
+	host=$(access_effective_bind_host)
+	[[ "$host" == "0.0.0.0" ]] && host="127.0.0.1"
+	echo "${host}:$(access_backend_port "${CONF[PANEL_PORT]:-9800}")"
+}
 
 metrics_render_scrape() {
 	render_template "$SCRIPT_DIR/templates/scrape.yaml.tpl" \
 		"TOKEN_FILE=$(path_metrics_token)" \
 		"TARGET=$(metrics_scrape_target)"
+	# node_exporter is scraped by the same backend when it is installed.
+	if nodeexp_wanted; then
+		printf '  - job_name: node\n    static_configs:\n      - targets: ['"'"'%s'"'"']\n' "$(nodeexp_target)"
+	fi
 }
 
 metrics_render_unit() {

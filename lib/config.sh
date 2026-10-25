@@ -150,8 +150,25 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
-	if [[ "${CONF[ACCESS_MODE]:-}" != "localhost" && "${ACCESS_CONFIRM:-}" != "yes" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
-		echo "ACCESS_MODE=${CONF[ACCESS_MODE]} in non-interactive mode needs --set ACCESS_CONFIRM=yes"
+	local bind_value="${CONF[BIND_ADDR]:-auto}" bind_open=0
+	if [[ "$bind_value" != "auto" ]]; then
+		local octet bad=0
+		IFS=. read -ra _octets <<<"$bind_value"
+		for octet in "${_octets[@]}"; do
+			((10#$octet <= 255)) || bad=1
+		done
+		if ((bad)) || [[ "$bind_value" == "0.0.0.0" ]]; then
+			echo "BIND_ADDR=$bind_value is not an address of a host; use auto or an IPv4 address of this machine"
+			errors=$((errors + 1))
+		elif [[ "$bind_value" != 127.* ]]; then
+			bind_open=1
+		fi
+	fi
+	if [[ "${CONF[ACCESS_MODE]:-}" == "nginx" ]]; then
+		bind_open=0
+	fi
+	if { [[ "${CONF[ACCESS_MODE]:-}" != "localhost" ]] || ((bind_open)); } && [[ "${ACCESS_CONFIRM:-}" != "yes" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
+		echo "ACCESS_MODE=${CONF[ACCESS_MODE]} with BIND_ADDR=${bind_value} in non-interactive mode needs --set ACCESS_CONFIRM=yes"
 		errors=$((errors + 1))
 	fi
 

@@ -71,6 +71,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | --- | --- | --- | --- | --- |
 | `EVEBOX_PORT` | integer 1..65535 | `5636` | light | EveBox port. (advanced) |
 | `ACCESS_MODE` | localhost \| lan \| nginx | `localhost` | light | Who can open the panels: localhost, the local network or through nginx. |
+| `BIND_ADDR` | string | `auto` | light | Address the web services listen on: auto (127.0.0.1, or every address in lan mode) or one IPv4 address of this host, for example 192.168.1.156. A non-loopback address opens the panels to LAN_CIDR. |
 | `LAN_CIDR` | string | `auto` | light | The network allowed in lan mode, or auto. (advanced) |
 | `PANEL_PORT` | integer 1..65535 | `9800` | light | Port of this panel. (advanced) |
 | `NTOPNG_PORT` | integer 1..65535 | `3000` | light | ntopng port. (advanced) |
@@ -89,6 +90,12 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `METRICS_BACKEND_RUNTIME` | native \| docker | `native` | heavy | Metrics storage on the host or in Docker. (advanced) |
 | `METRICS_BACKEND_PORT` | integer 1..65535 | empty | light | Metrics storage port. (advanced) |
 | `METRICS_RETENTION` | string | `30d` | light | How long to keep metrics, for example 30d. (advanced) |
+| `NODE_EXPORTER_ENABLE` | yes \| no | `no` | heavy | Install node_exporter (CPU, memory, disk and network of the host); the metrics storage scrapes it. |
+| `NODE_EXPORTER_RUNTIME` | native \| docker | `native` | heavy | Where node_exporter runs: on the host or in a Docker container. (advanced) |
+| `NODE_EXPORTER_PORT` | integer 1..65535 | `9100` | light | node_exporter port. (advanced) |
+| `GRAFANA_ENABLE` | yes \| no | `no` | heavy | Install Grafana for dashboards; the metrics storage becomes its default data source. |
+| `GRAFANA_RUNTIME` | native \| docker | `native` | heavy | Where Grafana runs: on the host or in a Docker container. (advanced) |
+| `GRAFANA_PORT` | integer 1..65535 | `3030` | light | Grafana port. The first login is admin/admin and Grafana asks for a new password. (advanced) |
 | `METRICS_TOKEN` | secret | empty | heavy | Access token for /metrics. Stored apart. (advanced) |
 
 ## Watch and alerts

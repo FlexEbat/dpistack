@@ -1,6 +1,5 @@
 # Security policy
 
-English | [Русский](SECURITY.ru.md)
 
 dpistack runs as root on a host that sees network traffic, so reports about
 privilege escalation, command injection, or leaked secrets are taken

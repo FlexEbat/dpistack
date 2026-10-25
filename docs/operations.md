@@ -17,7 +17,7 @@ All commands run as root (`sudo dpistack ...`). `dpistack` without arguments ope
 | `dpistack diag` | a report for troubleshooting: platform, versions, config without secrets, services, logs |
 | `dpistack version` | the bundle version |
 
-Components: `suricata`, `evebox`, `ntopng`, `redis`, `victoriametrics`, `prometheus`, `panel`, `watch`, `rules`. Components in Docker are controlled with the same commands.
+Components: `suricata`, `evebox`, `ntopng`, `redis`, `victoriametrics`, `prometheus`, `node_exporter`, `grafana`, `panel`, `watch`, `rules`. The storage, `node_exporter` and `grafana` exist only when selected. Components in Docker are controlled with the same commands.
 
 ## Settings
 
@@ -75,6 +75,18 @@ The `dpistack-watch` timer checks, every `WATCH_INTERVAL_SEC`, the services, the
 ## Metrics
 
 See the "Metrics" section of [README.md](../README.md): the `/metrics` endpoint, the token, a ready entry for `scrape_configs`, the built-in VictoriaMetrics or Prometheus storage.
+
+## The metrics stack
+
+Each part is its own choice, in the quick install, on the Settings screen or with `dpistack settings set`:
+
+| Part | Key | What it does |
+| --- | --- | --- |
+| storage | `METRICS_BACKEND=victoriametrics\|prometheus` | keeps `METRICS_RETENTION` of data and scrapes the panel's `/metrics` |
+| node_exporter | `NODE_EXPORTER_ENABLE=yes` | host metrics on port 9100; a `node` job is added to the storage's `scrape.yaml` |
+| Grafana | `GRAFANA_ENABLE=yes` | dashboards on port 3030; with a storage it is provisioned as the default data source; the first login is `admin`/`admin` |
+
+`*_RUNTIME` picks the host or Docker for each part. All of them listen where `BIND_ADDR` and `ACCESS_MODE` say; none is proxied by nginx. Native binaries come from the projects' releases: node_exporter and the storages with a pinned sha256, Grafana with the checksum published by the vendor next to the tarball. Turning a part off stops it and keeps its data.
 
 ## Backups
 

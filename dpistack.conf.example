@@ -10,6 +10,8 @@
 # key's row in tech.md 4.3 for what "auto" resolves to.
 
 ACCESS_MODE=localhost
+# auto: 127.0.0.1 (localhost) or 0.0.0.0 (lan); or an IPv4 address of this host, for example 192.168.1.156
+BIND_ADDR=auto
 ALERT_CHANNELS=panel,log
 ALERT_MAIL_FROM=
 ALERT_MAIL_TO=
@@ -39,6 +41,14 @@ METRICS_BACKEND_PORT=
 METRICS_BACKEND_RUNTIME=native
 METRICS_EXPORT=yes
 METRICS_RETENTION=30d
+# Grafana for dashboards; its default data source is the metrics backend (first login admin/admin)
+GRAFANA_ENABLE=no
+GRAFANA_PORT=3030
+GRAFANA_RUNTIME=native
+# node_exporter: host metrics, scraped by the metrics backend
+NODE_EXPORTER_ENABLE=no
+NODE_EXPORTER_PORT=9100
+NODE_EXPORTER_RUNTIME=native
 NDPI_ENABLE=yes
 NDPI_SOURCE=source
 NDPI_VERSION=

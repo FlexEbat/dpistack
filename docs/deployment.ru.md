@@ -10,9 +10,11 @@
 | `EVEBOX_RUNTIME` | EveBox |
 | `NTOPNG_RUNTIME` | ntopng (redis за ним идёт следом) |
 | `METRICS_BACKEND_RUNTIME` | хранилище метрик (VictoriaMetrics или Prometheus) |
+| `GRAFANA_RUNTIME` | Grafana (только при `GRAFANA_ENABLE=yes`) |
+| `NODE_EXPORTER_RUNTIME` | node_exporter (только при `NODE_EXPORTER_ENABLE=yes`) |
 | `PANEL_RUNTIME` | панель управления |
 
-Допустимы все 32 сочетания; единственное ограничение: при `SURICATA_RUNTIME=docker` в образ не ставится плагин nDPI, задайте `NDPI_ENABLE=no`. Нужен Docker с плагином `compose`.
+Допустимы любые сочетания; единственное ограничение: при `SURICATA_RUNTIME=docker` в образ не ставится плагин nDPI, задайте `NDPI_ENABLE=no`. Нужен Docker с плагином `compose`.
 
 ## Примеры
 
@@ -55,6 +57,18 @@ sudo dpistack install -y --set SURICATA_RUNTIME=docker --set EVEBOX_RUNTIME=dock
 `PANEL_EDITION`: `full` (по умолчанию) или `lite`. Она не меняет возможности панели, только страницу, которую она отдаёт: `full` это насыщенная тёмная консоль с фоном из частиц, `lite` простая светлая страница для небольших хостов (см. [dashboard.ru.md](dashboard.ru.md)). У юнита панели нет `MemoryMax` и `CPUQuota`, ни в контейнере, ни на хосте, а число открытых потоков журналов равно 4. Редакция переключается на экране «Настройки» или `dpistack settings set --apply PANEL_EDITION=lite`.
 
 Старый `dpistack.conf` с `PANEL_MODE` (переключатель limited/unlimited прежних версий) продолжает загружаться: ключ игнорируется.
+
+## Адрес прослушивания
+
+`BIND_ADDR` решает, на каком адресе слушают веб-службы (ntopng, EveBox, панель, хранилище метрик, Grafana, node_exporter):
+
+| `ACCESS_MODE` | `BIND_ADDR=auto` | `BIND_ADDR=<адрес этого хоста>` |
+| --- | --- | --- |
+| `localhost` | `127.0.0.1`, клиенты только с этой машины | этот адрес; панель пускает клиентов из `LAN_CIDR` |
+| `lan` | `0.0.0.0`, клиенты из `LAN_CIDR` | только этот адрес, клиенты из `LAN_CIDR` |
+| `nginx` | службы на `127.0.0.1` за nginx | игнорируется |
+
+В меню установщик перечисляет IPv4-адреса хоста (из `ip addr`), и вы выбираете один, например `192.168.1.156` на `enp2s0`. `preflight` останавливается с кодом 3, если адреса нет на этом хосте. Не loopback-адрес открывает панели для вашей сети, поэтому требует того же подтверждения, что и `lan` (без терминала: `--set ACCESS_CONFIRM=yes`).
 
 ## Доступ и порты
 

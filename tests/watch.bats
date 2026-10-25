@@ -1,12 +1,12 @@
 #!/usr/bin/env bats
-# Covers slice 13 criteria 1-8: dpistack-watch and `dpistack-ctl health`.
+# Covers slice 13 criteria 1-8: dpistack-watch and `dpistack health`.
 # systemctl, ss and df are fakes; the clock is pinned with DPISTACK_NOW
 # and file ages are set with touch, so threshold edges are exact.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 	WATCH="$REPO_DIR/bin/dpistack-watch"
-	CTL="$REPO_DIR/tests/helpers/dpistack-ctl"
+	CTL="$REPO_DIR/tests/helpers/verbs"
 	DPISTACK_ROOT="$(mktemp -d)"
 	export DPISTACK_ROOT
 	NOW=1790000000

@@ -1,6 +1,5 @@
 # AGENTS.md
 
-English | [Русский](AGENTS.ru.md)
 
 Instructions for AI agents and automation that make changes in this repository. For people: [CONTRIBUTING.md](CONTRIBUTING.md). The full specification and the decisions: [tech.md](tech.md); where they disagree, tech.md wins.
 
@@ -32,7 +31,7 @@ dpistack: an installer and a panel for the nDPI, Suricata, EveBox and ntopng sta
 5. Every decision and contract is recorded in tech.md. The program version in `lib/common.sh` and in tech.md changes together.
 6. New behavior comes with a test: bats for the shell, `go test` for the panel, `node --test` for the pure logic of the interface.
 7. Prefer ready-made solutions (packages, images, tools) to writing your own code when they exist.
-8. The program is English only: messages, the menu, errors and the panel text. Documents are written in English first and kept in Russian next to them (`*.ru.md`); change both.
+8. The program is English only: messages, the menu, errors and the panel text. The README and `docs/*.md` come in English and Russian (`*.ru.md`): change both. `tech.md`, `AGENTS.md`, `CONTRIBUTING.md` and `SECURITY.md` are English only.
 
 ## Style and traps
 

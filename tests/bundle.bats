@@ -129,8 +129,8 @@ strip_times() { sed 's/^[0-9T:-]*Z //'; }
 	diff -r "$root_a/usr/local/lib/dpistack/installer" "$root_b/usr/local/lib/dpistack/installer"
 	# the binary pcap came through the base64 heredoc intact
 	cmp "$REPO_DIR/tests/data/bittorrent.pcap" "$root_b/usr/local/lib/dpistack/installer/tests/data/bittorrent.pcap"
-	[ -x "$root_b/usr/local/sbin/dpistack-ctl" ]
-	run env DPISTACK_ROOT="$root_b" "$root_b/usr/local/sbin/dpistack-ctl" version
+	[ ! -e "$root_b/usr/local/sbin/dpistack-ctl" ]
+	run env DPISTACK_ROOT="$root_b" "$root_b/usr/local/sbin/dpistack" version
 	[ "$status" -eq 0 ]
 	[[ "$output" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }

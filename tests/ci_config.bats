@@ -139,7 +139,7 @@ list_actions() {
 }
 
 @test "README covers what slice 25 requires" {
-	for needle in "Topology limit" "Threat model" "Quick install" "dpistack.conf" "reconfigure" "dpistack-ctl" "scrape_configs" "VictoriaMetrics" "vmagent" "Prometheus"; do
+	for needle in "Topology limit" "Threat model" "Quick install" "dpistack.conf" "reconfigure" "dpistack" "scrape_configs" "VictoriaMetrics" "vmagent" "Prometheus"; do
 		grep -q "$needle" "$REPO_DIR/README.md" || {
 			echo "README lacks: $needle"
 			return 1

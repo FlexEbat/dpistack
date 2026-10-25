@@ -23,11 +23,51 @@ access_backend_port() {
 	fi
 }
 
+# access_explicit_bind - the address chosen in BIND_ADDR; fails for auto.
+access_explicit_bind() {
+	local v="${CONF[BIND_ADDR]:-auto}"
+	[[ -z "$v" || "$v" == "auto" ]] && return 1
+	echo "$v"
+}
+
+# access_effective_bind_host - the one place that decides where the web
+# services listen. localhost: BIND_ADDR or 127.0.0.1; lan: BIND_ADDR or
+# 0.0.0.0; nginx: the services stay on 127.0.0.1 behind nginx.
 access_effective_bind_host() {
+	local explicit
+	explicit=$(access_explicit_bind) || explicit=""
 	case "${CONF[ACCESS_MODE]:-localhost}" in
-	lan) echo "0.0.0.0" ;;
+	lan) echo "${explicit:-0.0.0.0}" ;;
+	localhost) echo "${explicit:-127.0.0.1}" ;;
 	*) echo "127.0.0.1" ;;
 	esac
+}
+
+# access_connect_host - the address another service of this host uses to reach
+# a listener: the bind address, 127.0.0.1 when it listens on every address.
+access_connect_host() {
+	local host
+	host=$(access_effective_bind_host)
+	[[ "$host" == "0.0.0.0" ]] && host="127.0.0.1"
+	echo "$host"
+}
+
+# access_policy - who the panel lets in: localhost, lan or nginx. A
+# non-loopback BIND_ADDR with ACCESS_MODE=localhost opens the panels to the
+# local network, so it counts as lan.
+access_policy() {
+	local mode="${CONF[ACCESS_MODE]:-localhost}" host
+	if [[ "$mode" == "localhost" ]]; then
+		host=$(access_effective_bind_host)
+		[[ "$host" == 127.* ]] || mode="lan"
+	fi
+	echo "$mode"
+}
+
+# access_local_addresses - "interface address" lines for the IPv4 addresses
+# of this host that could be chosen in BIND_ADDR.
+access_local_addresses() {
+	ip -o -4 addr show scope global 2>/dev/null | awk '{split($4, a, "/"); print $2, a[1]}'
 }
 
 access_detect_lan_cidr() {
@@ -192,7 +232,7 @@ access_fw_wanted() {
 	local cidr port
 	local -a ports=()
 	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
-	case "${CONF[ACCESS_MODE]:-localhost}" in
+	case "$(access_policy)" in
 	nginx)
 		ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
 		;;
@@ -288,15 +328,16 @@ step_access_check() {
 }
 
 step_access_apply() {
-	local mode="${CONF[ACCESS_MODE]:-localhost}"
+	local mode="${CONF[ACCESS_MODE]:-localhost}" policy
+	policy=$(access_policy)
 
 	access_selinux_notice
 	access_selinux_ports
 
-	if [[ "$mode" != "localhost" ]]; then
-		echo "access: ACCESS_MODE=$mode opens the web interfaces beyond localhost." >&2
-		if [[ "$mode" == "lan" ]]; then
-			echo "access: ntopng/EveBox/the panel will listen on 0.0.0.0 and be visible to the whole LAN_CIDR network; passwords go over plain HTTP unless NGINX_TLS is on." >&2
+	if [[ "$policy" != "localhost" ]]; then
+		echo "access: ACCESS_MODE=$mode with bind address $(access_effective_bind_host) opens the web interfaces beyond localhost." >&2
+		if [[ "$policy" == "lan" ]]; then
+			echo "access: ntopng/EveBox/the panel will listen on $(access_effective_bind_host) and be visible to the whole LAN_CIDR network; passwords go over plain HTTP unless NGINX_TLS is on." >&2
 		fi
 	fi
 

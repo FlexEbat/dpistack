@@ -6,7 +6,7 @@
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-	CTL="$REPO_DIR/tests/helpers/dpistack-ctl"
+	CTL="$REPO_DIR/tests/helpers/verbs"
 	DPISTACK_ROOT="$(mktemp -d)"
 	export DPISTACK_ROOT
 	mkdir -p "$DPISTACK_ROOT/etc"
