@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # Covers slice 15: selfinstall, the persistent `dpistack` command and the
-# management menu. dpistack-ctl is a stub after the install, so the menu
+# management menu. dpistack is replaced by a stub for the menu, so the menu
 # is tested on what it calls, not on the helper itself.
 
 setup() {
@@ -36,15 +36,15 @@ install_base() {
 # stub_ctl - replaces the installed helper with one that logs its
 # arguments and exits with $STUB_RC.
 stub_ctl() {
-	rm -f "$SBIN/dpistack-ctl"
-	cat >"$SBIN/dpistack-ctl" <<'STUB'
+	rm -f "$SBIN/dpistack-stub"
+	cat >"$SBIN/dpistack-stub" <<'STUB'
 #!/usr/bin/env bash
 echo "$*" >>"$STUB_LOG"
 echo "stub-out: $*"
 exit "${STUB_RC:-0}"
 STUB
-	chmod +x "$SBIN/dpistack-ctl"
-	export DPISTACK_CTL="$SBIN/dpistack-ctl"
+	chmod +x "$SBIN/dpistack-stub"
+	export DPISTACK_BIN="$SBIN/dpistack-stub"
 }
 
 # dp_input <lines...> - menu input, one line each
@@ -57,7 +57,7 @@ dp_input() {
 	[ "$status" -eq 0 ]
 	[ -L "$SBIN/dpistack" ]
 	[ -x "$SBIN/dpistack" ]
-	[ -x "$SBIN/dpistack-ctl" ]
+	[ ! -e "$SBIN/dpistack-ctl" ]
 	[ -x "$SBIN/dpistack-watch" ]
 	[ "$(readlink -f "$SBIN/dpistack")" = "$INSTALLER_DIR/install.sh" ]
 
@@ -112,7 +112,7 @@ dp_input() {
 	[[ "$output" != *"Managing the installed stand"* ]]
 }
 
-@test "criterion 5: status, logs and tests call dpistack-ctl; a failing helper keeps the menu alive" {
+@test "criterion 5: status, logs and tests call dpistack; a failing helper keeps the menu alive" {
 	run install_base
 	stub_ctl
 	dp_input 2 3 1 "" 4 q
@@ -194,10 +194,10 @@ dp_input() {
 	[[ "$output" == *"Managing the installed stand"* ]]
 }
 
-@test "criterion 9: the verbs of the privileged side are verbs of dpistack itself, the old name is a symlink" {
+@test "criterion 9: the verbs of the privileged side are verbs of dpistack itself, there is no second command" {
 	run install_base
 	[ -L "$SBIN/dpistack" ]
-	[ "$(readlink -f "$SBIN/dpistack-ctl")" = "$(readlink -f "$SBIN/dpistack")" ]
+	[ ! -e "$SBIN/dpistack-ctl" ]
 	run "$SBIN/dpistack" version
 	[ "$status" -eq 0 ]
 	run "$SBIN/dpistack" logs suricata -n 5000
@@ -232,14 +232,14 @@ dp_input() {
 
 @test "criterion 7 extra: the panel password from the menu goes to ctl panel-passwd via stdin" {
 	run install_base
-	rm -f "$SBIN/dpistack-ctl"
-	cat >"$SBIN/dpistack-ctl" <<'STUB'
+	rm -f "$SBIN/dpistack-stub"
+	cat >"$SBIN/dpistack-stub" <<'STUB'
 #!/usr/bin/env bash
 if [[ "$1" == "panel-passwd" ]]; then read -r pw; echo "len=${#pw}" >>"$STUB_LOG"; fi
 echo "$*" >>"$STUB_LOG"
 STUB
-	chmod +x "$SBIN/dpistack-ctl"
-	export DPISTACK_CTL="$SBIN/dpistack-ctl"
+	chmod +x "$SBIN/dpistack-stub"
+	export DPISTACK_BIN="$SBIN/dpistack-stub"
 	dp_input 7 "S3cret-pass" "S3cret-pass" q
 	DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
 	[ "$status" -eq 0 ]
@@ -251,4 +251,13 @@ STUB
 	DPISTACK_INPUT="$INPUT" run "$SBIN/dpistack"
 	[[ "$output" == *"the passwords do not match"* ]]
 	! grep -q "panel-passwd" "$STUB_LOG"
+}
+
+@test "a dpistack-ctl link left by an earlier version is removed on install" {
+	mkdir -p "$SBIN"
+	ln -s "$SBIN/dpistack" "$SBIN/dpistack-ctl"
+	run install_base
+	[ "$status" -eq 0 ]
+	[ ! -e "$SBIN/dpistack-ctl" ]
+	[ ! -L "$SBIN/dpistack-ctl" ]
 }

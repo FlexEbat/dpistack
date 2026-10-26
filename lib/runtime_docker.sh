@@ -21,9 +21,11 @@ DOCKER_IMAGE_NTOPNG="${DOCKER_IMAGE_NTOPNG:-ntop/ntopng}"
 DOCKER_IMAGE_REDIS="${DOCKER_IMAGE_REDIS:-redis}"
 DOCKER_IMAGE_VICTORIAMETRICS="${DOCKER_IMAGE_VICTORIAMETRICS:-victoriametrics/victoria-metrics}"
 DOCKER_IMAGE_PROMETHEUS="${DOCKER_IMAGE_PROMETHEUS:-prom/prometheus}"
+DOCKER_IMAGE_NODE_EXPORTER="${DOCKER_IMAGE_NODE_EXPORTER:-prom/node-exporter}"
+DOCKER_IMAGE_GRAFANA="${DOCKER_IMAGE_GRAFANA:-grafana/grafana-oss}"
 # Services in start order (ntopng needs redis).
 DOCKER_PANEL_BASE_IMAGE="${DOCKER_PANEL_BASE_IMAGE:-alpine:3.21}"
-DOCKER_SERVICES_ORDER=(suricata evebox redis ntopng victoriametrics prometheus panel)
+DOCKER_SERVICES_ORDER=(suricata evebox redis ntopng victoriametrics prometheus node_exporter grafana panel)
 
 # docker_service_runtime <service> - native or docker, from CONF.
 # redis follows ntopng: it is ntopng's own store (step_redis.sh).
@@ -39,6 +41,12 @@ docker_service_runtime() {
 		else
 			echo native
 		fi
+		;;
+	node_exporter)
+		if [[ "${CONF[NODE_EXPORTER_ENABLE]:-no}" == "yes" ]]; then echo "${CONF[NODE_EXPORTER_RUNTIME]:-native}"; else echo native; fi
+		;;
+	grafana)
+		if [[ "${CONF[GRAFANA_ENABLE]:-no}" == "yes" ]]; then echo "${CONF[GRAFANA_RUNTIME]:-native}"; else echo native; fi
 		;;
 	panel) echo "${CONF[PANEL_RUNTIME]:-native}" ;;
 	*) echo native ;;
@@ -64,6 +72,8 @@ docker_image() {
 	redis) echo "${DOCKER_IMAGE_REDIS}:${DOCKER_TAG_REDIS:-7-alpine}" ;;
 	victoriametrics) echo "${DOCKER_IMAGE_VICTORIAMETRICS}:${DOCKER_TAG_VICTORIAMETRICS:-$METRICS_VM_VERSION}" ;;
 	prometheus) echo "${DOCKER_IMAGE_PROMETHEUS}:${DOCKER_TAG_PROMETHEUS:-$METRICS_PROM_VERSION}" ;;
+	node_exporter) echo "${DOCKER_IMAGE_NODE_EXPORTER}:${DOCKER_TAG_NODE_EXPORTER:-$NODEEXP_VERSION}" ;;
+	grafana) echo "${DOCKER_IMAGE_GRAFANA}:${DOCKER_TAG_GRAFANA:-$GRAFANA_VERSION}" ;;
 	panel) echo "dpistack-panel:$(docker_panel_tag)" ;;
 	esac
 }
@@ -177,6 +187,33 @@ ${common}
     volumes:
       - ${root}/etc/ntopng:/etc/ntopng:ro
       - ${root}/var/lib/ntopng:/var/lib/ntopng
+BLOCK
+		;;
+	node_exporter)
+		cat <<BLOCK
+${common}
+    pid: host
+    command: ["--path.rootfs=/host", "--web.listen-address=$(nodeexp_listen)"]
+    volumes:
+      - /:/host:ro,rslave
+BLOCK
+		;;
+	grafana)
+		local gids
+		gids="$(id -u "$MONITOR_USER" 2>/dev/null || echo 0):$(id -g "$MONITOR_USER" 2>/dev/null || echo 0)"
+		cat <<BLOCK
+${common}
+    user: "${gids}"
+    environment:
+      GF_PATHS_DATA: "$(path_grafana_data_dir)"
+      GF_PATHS_PROVISIONING: "$(path_grafana_prov_dir)"
+      GF_SERVER_HTTP_ADDR: "$(access_effective_bind_host)"
+      GF_SERVER_HTTP_PORT: "$(grafana_port)"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - $(path_grafana_data_dir):$(path_grafana_data_dir)
+      - $(path_grafana_prov_dir):$(path_grafana_prov_dir):ro
 BLOCK
 		;;
 	panel)

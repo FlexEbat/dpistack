@@ -7,7 +7,7 @@ setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 	DPISTACK_ROOT="$(mktemp -d)"
 	export DPISTACK_ROOT
-	CTL="$REPO_DIR/tests/helpers/dpistack-ctl"
+	CTL="$REPO_DIR/tests/helpers/verbs"
 	# The libraries define their own `run`, which would shadow bats' run,
 	# so every check that needs them goes through `lib`.
 	PRE="source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'; source '$REPO_DIR/lib/schema.sh'; source '$REPO_DIR/lib/os.sh'"

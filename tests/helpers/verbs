@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Test helper: runs the verbs of dpistack with DPISTACK_VERBS_ONLY=1, so every
+# argument is a verb and `reconfigure` is the non-interactive, light-only one.
+# The same code as `dpistack <verb>` (tech.md 4.5).
+DPISTACK_VERBS_ONLY=1 exec bash "$(dirname "$(readlink -f "$0")")/../../install.sh" "$@"

@@ -31,6 +31,13 @@ path_prometheus_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/prometheus"; }
 path_suricata_mode_dropin() { echo "${DPISTACK_ROOT}/etc/systemd/system/suricata.service.d/dpistack-mode.conf"; }
 path_fw_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-fw.service"; }
 path_mode_pending() { echo "$(path_state_dir)/mode.pending"; }
+path_nodeexp_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/node_exporter"; }
+path_nodeexp_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-node-exporter.service"; }
+path_grafana_home() { echo "${DPISTACK_ROOT}/opt/dpistack/grafana"; }
+path_grafana_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-grafana.service"; }
+path_grafana_ini() { echo "${DPISTACK_ROOT}/etc/dpistack/grafana.ini"; }
+path_grafana_data_dir() { echo "${DPISTACK_ROOT}/var/lib/dpistack-grafana"; }
+path_grafana_prov_dir() { echo "${DPISTACK_ROOT}/etc/dpistack/grafana-provisioning"; }
 path_vm_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-vm.service"; }
 path_prometheus_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/prometheus.service"; }
 
@@ -44,7 +51,8 @@ path_dpistack_bin() { echo "$(path_sbin_dir)/dpistack"; }
 # One command: the privileged verbs are verbs of dpistack itself. The old
 # name stays as a symlink so units written by an earlier version keep working.
 path_ctl_bin() { path_dpistack_bin; }
-path_ctl_legacy_bin() { echo "$(path_sbin_dir)/dpistack-ctl"; }
+# path_retired_ctl - the old second command name; removed on install and uninstall.
+path_retired_ctl() { echo "$(path_sbin_dir)/dpistack-ctl"; }
 path_watch_bin() { echo "$(path_sbin_dir)/dpistack-watch"; }
 path_watch_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.service"; }
 path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.timer"; }

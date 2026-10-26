@@ -28,16 +28,16 @@ setup() {
 	done < <(sed -n 's/^#\{0,1\}\([A-Z][A-Z0-9_]*\)=.*/\1/p' "$REPO_DIR/dpistack.conf.example" | sort -u)
 }
 
-@test "every document comes in English and in Russian: X.md has X.ru.md and the other way round" {
+@test "the README and the guides come in English and in Russian; AGENTS, CONTRIBUTING, SECURITY and tech.md are English only" {
 	cd "$REPO_DIR"
-	for doc in README.md AGENTS.md CONTRIBUTING.md SECURITY.md tech.md docs/*.md tests/data/README.md; do
+	for doc in README.md docs/*.md tests/data/README.md; do
 		case "$doc" in *.ru.md) continue ;; esac
 		[ -s "${doc%.md}.ru.md" ] || {
 			echo "no Russian twin: $doc"
 			return 1
 		}
 	done
-	for doc in README.ru.md AGENTS.ru.md CONTRIBUTING.ru.md SECURITY.ru.md tech.ru.md docs/*.ru.md tests/data/README.ru.md; do
+	for doc in README.ru.md docs/*.ru.md tests/data/README.ru.md; do
 		[ -s "${doc%.ru.md}.md" ] || {
 			echo "no English twin: $doc"
 			return 1
@@ -47,7 +47,7 @@ setup() {
 
 @test "each document links to its twin in the other language" {
 	cd "$REPO_DIR"
-	for doc in README AGENTS CONTRIBUTING SECURITY docs/dashboard docs/deployment docs/installation docs/operations docs/platforms docs/troubleshooting docs/configuration; do
+	for doc in README docs/dashboard docs/deployment docs/installation docs/operations docs/platforms docs/troubleshooting docs/configuration; do
 		grep -q "$(basename "$doc").ru.md" "$doc.md" || {
 			echo "$doc.md does not link to its Russian twin"
 			return 1
@@ -61,7 +61,7 @@ setup() {
 
 @test "every local link in the documents points to an existing file" {
 	cd "$REPO_DIR"
-	for doc in README.md README.ru.md AGENTS.md AGENTS.ru.md CONTRIBUTING.md CONTRIBUTING.ru.md docs/*.md; do
+	for doc in README.md README.ru.md AGENTS.md CONTRIBUTING.md SECURITY.md docs/*.md; do
 		dir=$(dirname "$doc")
 		while IFS= read -r target; do
 			[ -e "$dir/$target" ] || {
@@ -74,6 +74,6 @@ setup() {
 
 @test "the documents carry no remark that the software was not tried in real conditions" {
 	cd "$REPO_DIR"
-	run grep -rniE 'не проверен|на реальн(ом|ой|ых) (стенд|хост|систем)|проверено пока|only on stubs|untested|not tested' README.md README.ru.md AGENTS.md AGENTS.ru.md CONTRIBUTING.md CONTRIBUTING.ru.md docs
+	run grep -rniE 'не проверен|на реальн(ом|ой|ых) (стенд|хост|систем)|проверено пока|only on stubs|untested|not tested' README.md README.ru.md AGENTS.md CONTRIBUTING.md SECURITY.md docs
 	[ "$status" -ne 0 ]
 }

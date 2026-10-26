@@ -10,9 +10,11 @@ Each component runs independently either on the host (`native`) or in a Docker c
 | `EVEBOX_RUNTIME` | EveBox |
 | `NTOPNG_RUNTIME` | ntopng (redis follows it) |
 | `METRICS_BACKEND_RUNTIME` | the metrics storage (VictoriaMetrics or Prometheus) |
+| `GRAFANA_RUNTIME` | Grafana (only with `GRAFANA_ENABLE=yes`) |
+| `NODE_EXPORTER_RUNTIME` | node_exporter (only with `NODE_EXPORTER_ENABLE=yes`) |
 | `PANEL_RUNTIME` | the control panel |
 
-All 32 combinations are allowed; the only limit: with `SURICATA_RUNTIME=docker` the nDPI plugin is not installed into the image, so set `NDPI_ENABLE=no`. You need Docker with the `compose` plugin.
+Every combination is allowed; the only limit: with `SURICATA_RUNTIME=docker` the nDPI plugin is not installed into the image, so set `NDPI_ENABLE=no`. You need Docker with the `compose` plugin.
 
 ## Examples
 
@@ -55,6 +57,18 @@ The panel has root rights on the host: just as with `sudo`, a hacked panel is a 
 `PANEL_EDITION` is `full` (the default) or `lite`. It does not change what the panel can do, only the page it serves: `full` is the rich dark console with the particle background, `lite` is a plain, light page for small hosts (see [dashboard.md](dashboard.md)). The panel unit has no `MemoryMax` or `CPUQuota`, in a container or on the host, and the number of open log streams is fixed at 4. Switch the edition on the Settings screen or with `dpistack settings set --apply PANEL_EDITION=lite`.
 
 An old `dpistack.conf` that still has `PANEL_MODE` (the limited/unlimited switch of earlier versions) keeps loading: the key is ignored.
+
+## Listen address
+
+`BIND_ADDR` decides on which address the web services (ntopng, EveBox, the panel, the metrics storage, Grafana, node_exporter) listen:
+
+| `ACCESS_MODE` | `BIND_ADDR=auto` | `BIND_ADDR=<address of this host>` |
+| --- | --- | --- |
+| `localhost` | `127.0.0.1`, clients from this machine only | that address; the panel lets in clients from `LAN_CIDR` |
+| `lan` | `0.0.0.0`, clients from `LAN_CIDR` | that address only, clients from `LAN_CIDR` |
+| `nginx` | services on `127.0.0.1` behind nginx | ignored |
+
+In the menu the installer lists the IPv4 addresses of the host (from `ip addr`) and you pick one, for example `192.168.1.156` on `enp2s0`. `preflight` stops with code 3 if the address is not one of this host's. A non-loopback address opens the panels to your network, so it needs the same confirmation as `lan` (without a terminal: `--set ACCESS_CONFIRM=yes`).
 
 ## Access and ports
 

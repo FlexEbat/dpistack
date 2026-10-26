@@ -9,6 +9,8 @@ Start with the report: `sudo dpistack diag`. It collects the platform, versions,
 | `the command runs as root only` | `dpistack` and `install.sh` run as root only: `sudo dpistack ...` |
 | `port N (KEY) is already busy (held by: ...)` | another process holds the port: pick the free port from the hint (`--set KEY=port`, the menu or the Settings screen) or stop the process |
 | `KEY=native: ... set --set KEY=docker` | this system has no packages of the component: run it in Docker, see [platforms.md](platforms.md) |
+| `BIND_ADDR=... is not an address of this host` | the address is not on any interface: pick one from `ip -4 addr` (the menu lists them) or use `auto` |
+| Grafana asks for a password | the first login is `admin`/`admin`; Grafana asks for a new password at once |
 | `systemd is needed` | a system without systemd is not supported |
 | `suricata -T rejected the rendered suricata.yaml` | the config did not suit the installed Suricata; the file on disk is unchanged. Suricata itself prints the reason above in the output. Check `suricata -V` and the keys that affect the config |
 | `heavy changes ... need --force` | the change starts an install or a rebuild: apply it with `--force` (or `settings set --apply-heavy`) |

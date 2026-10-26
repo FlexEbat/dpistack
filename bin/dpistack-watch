@@ -39,7 +39,7 @@ command -v jq >/dev/null 2>&1 || {
 # awk prints decimals by the locale; "5,00" would break the JSON values.
 export LC_NUMERIC=C
 
-CTL="${DPISTACK_CTL:-$SCRIPT_DIR/dpistack}"
+CTL="${DPISTACK_BIN:-$SCRIPT_DIR/dpistack}"
 [[ -x "$CTL" ]] || CTL="$SCRIPT_DIR/../install.sh"
 RESTARTS_PER_HOUR=3
 PORT_CRIT_AFTER_MISSES=3 # missing for more than two runs in a row
@@ -106,6 +106,8 @@ component_port() {
 	redis) echo 6379 ;;
 	panel) backend_port "${CONF[PANEL_PORT]}" ;;
 	victoriametrics | prometheus) echo "${CONF[METRICS_BACKEND_PORT]}" ;;
+	node_exporter) echo "${CONF[NODE_EXPORTER_PORT]}" ;;
+	grafana) echo "${CONF[GRAFANA_PORT]}" ;;
 	esac
 }
 
@@ -473,7 +475,7 @@ main() {
 
 	load_component_states
 	local id
-	for id in suricata evebox ntopng redis panel victoriametrics prometheus; do
+	for id in suricata evebox ntopng redis panel victoriametrics prometheus node_exporter grafana; do
 		# Backends are listed by `ctl status` only when selected.
 		[[ -n "${COMP_STATE[$id]:-}" ]] || continue
 		check_process "$id"

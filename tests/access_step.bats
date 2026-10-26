@@ -202,3 +202,56 @@ load_preflight() {
 	rm -f "$f"
 	[[ "$output" == *"rc=1 PANEL_PORT=9800"* ]]
 }
+
+# ---- BIND_ADDR: listen on one address of this host ----
+
+@test "BIND_ADDR=192.168.1.156 with ACCESS_MODE=localhost: ntopng, EveBox and the panel listen on that address, the panel lets the LAN in" {
+	MOCK_IP_ADDRS="enp2s0=192.168.1.156/24" run install_base --set ACCESS_MODE=localhost \
+		--set BIND_ADDR=192.168.1.156 --set LAN_CIDR=192.168.1.0/24 --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 0 ]
+	grep -q '^-w=192.168.1.156:3000$' "$DPISTACK_ROOT/etc/ntopng/ntopng.conf"
+	grep -q '^  host: "192.168.1.156"$' "$DPISTACK_ROOT/etc/evebox/evebox.yaml"
+	unit="$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service"
+	grep -q -- '-addr 192.168.1.156:9800 -access lan -lan-cidr 192.168.1.0/24' "$unit"
+}
+
+@test "BIND_ADDR=auto keeps 127.0.0.1 and the localhost policy" {
+	run install_base --set BIND_ADDR=auto
+	[ "$status" -eq 0 ]
+	grep -q '^-w=127.0.0.1:3000$' "$DPISTACK_ROOT/etc/ntopng/ntopng.conf"
+	grep -q -- '-addr 127.0.0.1:9800 -access localhost' "$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service"
+}
+
+@test "BIND_ADDR with a non-loopback address needs the access confirmation without a terminal" {
+	MOCK_IP_ADDRS="enp2s0=192.168.1.156/24" run install_base --set BIND_ADDR=192.168.1.156
+	[ "$status" -eq 2 ]
+	[[ "$output" == *"needs --set ACCESS_CONFIRM=yes"* ]]
+}
+
+@test "BIND_ADDR must be an address of this host: an unknown one stops the preflight with code 3" {
+	MOCK_IP_ADDRS="enp2s0=192.168.1.156/24" run install_base --set BIND_ADDR=10.9.8.7 --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 3 ]
+	[[ "$output" == *"BIND_ADDR=10.9.8.7 is not an address of this host"* ]]
+}
+
+@test "BIND_ADDR refuses junk and 0.0.0.0" {
+	run install_base --set BIND_ADDR=not-an-ip
+	[ "$status" -eq 2 ]
+	run install_base --set BIND_ADDR=300.1.1.1 --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 2 ]
+	run install_base --set BIND_ADDR=0.0.0.0 --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 2 ]
+}
+
+@test "in lan mode BIND_ADDR narrows the bind from 0.0.0.0 to one address" {
+	MOCK_IP_ADDRS="enp2s0=192.168.1.156/24" run install_base --set ACCESS_MODE=lan \
+		--set BIND_ADDR=192.168.1.156 --set LAN_CIDR=192.168.1.0/24 --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 0 ]
+	grep -q '^-w=192.168.1.156:3000$' "$DPISTACK_ROOT/etc/ntopng/ntopng.conf"
+}
+
+@test "with ACCESS_MODE=nginx the services stay on 127.0.0.1 whatever BIND_ADDR says" {
+	run install_base --set ACCESS_MODE=nginx --set BIND_ADDR=192.168.1.156 --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 0 ]
+	grep -q '^-w=127.0.0.1:13000$' "$DPISTACK_ROOT/etc/ntopng/ntopng.conf"
+}

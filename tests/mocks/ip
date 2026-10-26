@@ -20,6 +20,15 @@ if [[ "$1" == "link" && "$2" == "show" && -n "${3:-}" ]]; then
 fi
 
 args=" $* "
+if [[ "$args" == *" addr show scope global "* ]]; then
+	# MOCK_IP_ADDRS: "iface=address/prefix" pairs separated by spaces
+	n=2
+	for pair in ${MOCK_IP_ADDRS:-}; do
+		printf '%s: %s    inet %s brd 0.0.0.0 scope global dynamic %s\\       valid_lft 100sec preferred_lft 100sec\n' "$n" "${pair%%=*}" "${pair#*=}" "${pair%%=*}"
+		n=$((n + 1))
+	done
+	exit 0
+fi
 if [[ "$args" == *" route show default "* ]]; then
 	[[ -n "${MOCK_IP_DEFAULT_IFACE:-}" ]] && echo "default via 192.168.10.1 dev ${MOCK_IP_DEFAULT_IFACE} proto dhcp metric 100"
 	exit 0

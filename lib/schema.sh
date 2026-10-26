@@ -28,7 +28,7 @@ SCHEMA_KEYS=()
 # outright, but installer rejects them with "not supported yet".
 # Shape of every free-text key. These values end up in YAML, nginx and
 # systemd files, in curl and suricata-update arguments, all of them run
-# or read by root, and `dpistack-ctl config-write` lets the panel change
+# or read by root, and `dpistack config-write` lets the panel change
 # them. Anything outside the shape is rejected before it is written
 # anywhere: no quotes, backslashes, `$`, backticks, `;`, braces, pipes
 # (except in BPF) and no leading `-` that a command would read as an option.
@@ -40,6 +40,7 @@ SCHEMA_PATTERN[SURICATA_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
 SCHEMA_PATTERN[NDPI_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
 SCHEMA_PATTERN[NTOPNG_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
 SCHEMA_PATTERN[EVEBOX_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
+SCHEMA_PATTERN[BIND_ADDR]='^(auto|[0-9]{1,3}(\.[0-9]{1,3}){3})$'
 SCHEMA_PATTERN[IFACES]="^${_word}(,${_word})*\$"
 SCHEMA_PATTERN[NTOPNG_IFACES]="^${_word}(,${_word})*\$"
 SCHEMA_PATTERN[BPF_FILTER]='^[]A-Za-z0-9 .,:/()!&|<>=+*%_[-]*$'
@@ -127,7 +128,8 @@ schema_init() {
 	_schema_add 'EVEBOX_PORT|int|5636|1..65535|advanced|access|evebox access|light|no'
 	_schema_add 'EVEBOX_RETENTION_DAYS|int|30|0..36500|advanced|eve|evebox access|light|no'
 
-	_schema_add 'ACCESS_MODE|enum|localhost|localhost,lan,nginx|basic|access|access panel|light|no'
+	_schema_add 'ACCESS_MODE|enum|localhost|localhost,lan,nginx|basic|access|access panel nodeexp grafana|light|no'
+	_schema_add 'BIND_ADDR|free|auto||basic|access|access panel evebox ntopng metrics nodeexp grafana|light|no'
 	_schema_add 'LAN_CIDR|free|auto||advanced|access|access panel|light|no'
 	_schema_add 'PANEL_PORT|int|9800|1..65535|advanced|access|access panel|light|no'
 	_schema_add 'NTOPNG_PORT|int|3000|1..65535|advanced|access|ntopng access|light|no'
@@ -141,11 +143,17 @@ schema_init() {
 	_schema_add 'FIREWALL_MANAGE|enum|no|no,auto|advanced|access|access panel|light|no'
 
 	_schema_add 'METRICS_EXPORT|enum|yes|yes,no|advanced|metrics|metrics panel|light|no'
-	_schema_add 'METRICS_BACKEND|enum|none|none,victoriametrics,prometheus|basic|metrics|metrics|heavy|no'
+	_schema_add 'METRICS_BACKEND|enum|none|none,victoriametrics,prometheus|basic|metrics|metrics grafana|heavy|no'
 	_schema_add 'METRICS_BACKEND_RUNTIME|enum|native|native,docker|advanced|metrics|metrics|heavy|no'
-	_schema_add 'METRICS_BACKEND_PORT|int||1..65535|advanced|metrics|metrics panel|light|no'
+	_schema_add 'METRICS_BACKEND_PORT|int||1..65535|advanced|metrics|metrics panel grafana|light|no'
 	_schema_add 'METRICS_RETENTION|free|30d||advanced|metrics|metrics panel|light|no'
 
+	_schema_add 'NODE_EXPORTER_ENABLE|enum|no|yes,no|basic|metrics|nodeexp metrics|heavy|no'
+	_schema_add 'NODE_EXPORTER_RUNTIME|enum|native|native,docker|advanced|metrics|nodeexp|heavy|no'
+	_schema_add 'NODE_EXPORTER_PORT|int|9100|1..65535|advanced|metrics|nodeexp metrics|light|no'
+	_schema_add 'GRAFANA_ENABLE|enum|no|yes,no|basic|metrics|grafana|heavy|no'
+	_schema_add 'GRAFANA_RUNTIME|enum|native|native,docker|advanced|metrics|grafana|heavy|no'
+	_schema_add 'GRAFANA_PORT|int|3030|1..65535|advanced|metrics|grafana|light|no'
 	_schema_add 'WATCH_ENABLE|enum|yes|yes,no|advanced|watch|watch|light|no'
 	_schema_add 'WATCH_INTERVAL_SEC|int|60|10..3600|advanced|watch|watch|light|no'
 	_schema_add 'WATCH_EVE_STALE_SEC|int|300|10..86400|advanced|watch|watch|light|no'

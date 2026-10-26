@@ -45,7 +45,7 @@ install_base() {
 	sock="$DPISTACK_ROOT/run/suricata-command.socket"
 	grep -q -- "suricatasc -c reopen-log-files $sock 2>/dev/null || true" "$f"
 	# the socket of the rendered suricata.yaml is the one logrotate and
-	# dpistack-ctl reload talk to
+	# dpistack reload talk to
 	grep -qx "  filename: $sock" "$YAML"
 	grep -q 'filemode: 0640' "$YAML"
 }

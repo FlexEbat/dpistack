@@ -225,8 +225,8 @@ run_menu() {
 	[[ "$output" != *$'\033['* ]]
 }
 
-@test "every menu screen header shows the program version, same as dpistack-ctl version" {
-	ver="$("$REPO_DIR/tests/helpers/dpistack-ctl" version)"
+@test "every menu screen header shows the program version, same as dpistack version" {
+	ver="$("$REPO_DIR/tests/helpers/verbs" version)"
 	[[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 
 	run_menu "q\ny\n"

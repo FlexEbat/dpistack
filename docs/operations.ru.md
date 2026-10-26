@@ -17,7 +17,7 @@
 | `dpistack diag` | отчёт для разбора проблем: платформа, версии, конфигурация без секретов, службы, журналы |
 | `dpistack version` | версия набора |
 
-Компоненты: `suricata`, `evebox`, `ntopng`, `redis`, `victoriametrics`, `prometheus`, `panel`, `watch`, `rules`. Компоненты в Docker управляются теми же командами.
+Компоненты: `suricata`, `evebox`, `ntopng`, `redis`, `victoriametrics`, `prometheus`, `node_exporter`, `grafana`, `panel`, `watch`, `rules`. Хранилище, `node_exporter` и `grafana` существуют, только когда выбраны. Компоненты в Docker управляются теми же командами.
 
 ## Настройки
 
@@ -75,6 +75,18 @@ dpistack iface remove eth1       # последний интерфейс уда�
 ## Метрики
 
 См. раздел «Метрики» в [README.ru.md](../README.ru.md): эндпоинт `/metrics`, токен, готовая запись для `scrape_configs`, встроенное хранилище VictoriaMetrics или Prometheus.
+
+## Стек метрик
+
+Каждая часть выбирается отдельно: в быстрой установке, на экране «Настройки» или `dpistack settings set`:
+
+| Часть | Ключ | Что делает |
+| --- | --- | --- |
+| хранилище | `METRICS_BACKEND=victoriametrics\|prometheus` | хранит `METRICS_RETENTION` данных и собирает `/metrics` панели |
+| node_exporter | `NODE_EXPORTER_ENABLE=yes` | метрики хоста на порту 9100; в `scrape.yaml` хранилища добавляется задание `node` |
+| Grafana | `GRAFANA_ENABLE=yes` | дашборды на порту 3030; при наличии хранилища оно настраивается источником данных по умолчанию; первый вход `admin`/`admin` |
+
+`*_RUNTIME` выбирает хост или Docker для каждой части. Все они слушают там, где говорят `BIND_ADDR` и `ACCESS_MODE`; nginx ни одну не проксирует. Бинарники берутся из релизов проектов: node_exporter и хранилища с закреплённым sha256, Grafana с контрольной суммой, которую вендор публикует рядом с архивом. Выключение части останавливает её и оставляет данные.
 
 ## Резервные копии
 

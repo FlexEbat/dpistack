@@ -44,6 +44,7 @@ EVEBOX_ES_URL|Адрес Elasticsearch для режима elasticsearch.
 EVEBOX_PORT|Порт EveBox.
 EVEBOX_RETENTION_DAYS|Сколько дней хранить события в EveBox (0: без ограничения).
 ACCESS_MODE|Кто может открыть панели: localhost, локальная сеть или через nginx.
+BIND_ADDR|Адрес, на котором слушают веб-службы: auto (127.0.0.1, а в режиме lan все адреса) или один IPv4-адрес этого хоста, например 192.168.1.156. Не loopback-адрес открывает панели для LAN_CIDR.
 LAN_CIDR|Сеть, которой разрешён доступ в режиме lan, или auto.
 PANEL_PORT|Порт этой панели.
 NTOPNG_PORT|Порт ntopng.
@@ -60,6 +61,12 @@ METRICS_BACKEND|Хранилище метрик: без него, VictoriaMetric
 METRICS_BACKEND_RUNTIME|Хранилище метрик на хосте или в Docker.
 METRICS_BACKEND_PORT|Порт хранилища метрик.
 METRICS_RETENTION|Срок хранения метрик, например 30d.
+NODE_EXPORTER_ENABLE|Установить node_exporter (процессор, память, диск и сеть хоста); хранилище метрик собирает с него данные.
+NODE_EXPORTER_RUNTIME|Где работает node_exporter: на хосте или в контейнере Docker.
+NODE_EXPORTER_PORT|Порт node_exporter.
+GRAFANA_ENABLE|Установить Grafana для дашбордов; хранилище метрик становится её источником данных по умолчанию.
+GRAFANA_RUNTIME|Где работает Grafana: на хосте или в контейнере Docker.
+GRAFANA_PORT|Порт Grafana. Первый вход admin/admin, затем Grafana просит новый пароль.
 WATCH_ENABLE|Фоновый контроль состояния компонентов.
 WATCH_INTERVAL_SEC|Как часто watchdog проверяет состояние (секунды).
 WATCH_EVE_STALE_SEC|Через сколько секунд молчания eve.json считается зависшим.

@@ -8,7 +8,7 @@
 # Exit codes: 0 ok, 1 error, 2 usage, 3 check failed, 4 component
 # absent, 5 name outside the allowed list.
 
-COMPONENTS=(suricata evebox ntopng redis victoriametrics prometheus panel watch rules)
+COMPONENTS=(suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana panel watch rules)
 LOGS_MAX=1000
 LOGS_DEFAULT=100
 
@@ -50,7 +50,7 @@ Usage: dpistack <command> [arguments]
 Config names: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
                 enable.conf disable.conf modify.conf drop.conf
 
-Components: suricata evebox ntopng redis victoriametrics prometheus panel watch rules
+Components: suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana panel watch rules
 USAGE
 }
 
@@ -83,7 +83,7 @@ unit_loaded() {
 # component_unit <id> - prints the unit that controls the component.
 component_unit() {
 	# docker runtime: no unit, the compose service is addressed as docker:<id>.
-	if [[ "$1" =~ ^(suricata|evebox|ntopng|redis|victoriametrics|prometheus|panel)$ && "$(component_runtime "$1")" == "docker" ]]; then
+	if [[ "$1" =~ ^(suricata|evebox|ntopng|redis|victoriametrics|prometheus|node_exporter|grafana|panel)$ && "$(component_runtime "$1")" == "docker" ]]; then
 		echo "docker:$1"
 		return
 	fi
@@ -101,6 +101,8 @@ component_unit() {
 		;;
 	victoriametrics) echo "dpistack-vm.service" ;;
 	prometheus) echo "prometheus.service" ;;
+	node_exporter) echo "dpistack-node-exporter.service" ;;
+	grafana) echo "dpistack-grafana.service" ;;
 	panel) echo "dpistack-panel.service" ;;
 	watch) echo "dpistack-watch.timer" ;;
 	rules) echo "dpistack-rules.timer" ;;
@@ -113,6 +115,8 @@ component_listed() {
 	victoriametrics | prometheus)
 		[[ "$(conf_get METRICS_BACKEND none)" == "$1" ]]
 		;;
+	node_exporter) [[ "$(conf_get NODE_EXPORTER_ENABLE no)" == "yes" ]] ;;
+	grafana) [[ "$(conf_get GRAFANA_ENABLE no)" == "yes" ]] ;;
 	*) return 0 ;;
 	esac
 }
@@ -123,6 +127,8 @@ component_runtime() {
 	evebox) conf_get EVEBOX_RUNTIME native ;;
 	ntopng | redis) conf_get NTOPNG_RUNTIME native ;;
 	victoriametrics | prometheus) conf_get METRICS_BACKEND_RUNTIME native ;;
+	node_exporter) conf_get NODE_EXPORTER_RUNTIME native ;;
+	grafana) conf_get GRAFANA_RUNTIME native ;;
 	panel) conf_get PANEL_RUNTIME native ;;
 	*) echo native ;;
 	esac
@@ -576,9 +582,11 @@ ctl_cmd_reconfigure() {
 	# -y asks for an explicit ACCESS_CONFIRM when the access mode is not
 	# localhost. An unchanged mode is already confirmed; a changed one
 	# must go through install.sh reconfigure.
-	local applied_access
+	local applied_access applied_bind
 	applied_access=$(state_read_value "applied.ACCESS_MODE")
-	if [[ -n "$applied_access" && "$applied_access" == "$(conf_get ACCESS_MODE localhost)" ]] ||
+	applied_bind=$(state_read_value "applied.BIND_ADDR")
+	if [[ -n "$applied_access" && "$applied_access" == "$(conf_get ACCESS_MODE localhost)" &&
+	"${applied_bind:-auto}" == "$(conf_get BIND_ADDR auto)" ]] ||
 		[[ "${DPISTACK_ACCESS_CONFIRM:-0}" == "1" ]]; then
 		args+=(--set ACCESS_CONFIRM=yes)
 	fi

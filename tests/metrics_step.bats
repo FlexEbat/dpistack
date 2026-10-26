@@ -243,9 +243,9 @@ token_value() { sed -n 's/^METRICS_TOKEN=//p' "$DPISTACK_ROOT/etc/dpistack/secre
 	[ -d "$DPISTACK_ROOT/var/lib/dpistack-metrics/prometheus" ]
 }
 
-@test "criterion 6: a docker backend answers to dpistack-ctl like a unit" {
+@test "criterion 6: a docker backend answers to dpistack like a unit" {
 	install_base --set METRICS_BACKEND=victoriametrics --set METRICS_BACKEND_RUNTIME=docker
-	MOCK_DOCKER_PS=$'victoriametrics running' run "$REPO_DIR/tests/helpers/dpistack-ctl" status --json
+	MOCK_DOCKER_PS=$'victoriametrics running' run "$REPO_DIR/tests/helpers/verbs" status --json
 	[ "$status" -eq 0 ]
 	echo "$output" | jq -e '.components[] | select(.id=="victoriametrics") | .runtime=="docker" and .state=="active"'
 }

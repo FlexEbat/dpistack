@@ -2,9 +2,9 @@
 # "selfinstall" step (tech.md 5.2): copies the installer and its helpers
 # to /usr/local/lib/dpistack/installer/ and puts the persistent commands
 # in /usr/local/sbin: `dpistack` (a symlink to install.sh, so $0 is
-# "dpistack"; it carries the privileged verbs too) and dpistack-watch. The old
-# name dpistack-ctl is a symlink to the same file. After this the stack
-# no longer needs the original clone or archive.
+# "dpistack"; it carries the privileged verbs too) and dpistack-watch. A
+# leftover dpistack-ctl link of an earlier version is removed. After this the
+# stack no longer needs the original clone or archive.
 
 SELFINSTALL_PAYLOAD=(install.sh lib templates bin tests/data)
 SELFINSTALL_HASH_KEY="selfinstall.tree_hash"
@@ -23,7 +23,7 @@ selfinstall_is_target() {
 
 step_selfinstall_check() {
 	selfinstall_is_target && return 0
-	[[ -L "$(path_dpistack_bin)" && -L "$(path_ctl_legacy_bin)" && -x "$(path_watch_bin)" ]] || return 1
+	[[ -L "$(path_dpistack_bin)" && ! -e "$(path_retired_ctl)" && ! -L "$(path_retired_ctl)" && -x "$(path_watch_bin)" ]] || return 1
 	[[ -x "$(path_installer_copy_dir)/install.sh" ]] || return 1
 	[[ "$(state_read_value "$SELFINSTALL_HASH_KEY")" == "$(selfinstall_source_hash)" ]]
 }
@@ -50,7 +50,7 @@ step_selfinstall_apply() {
 
 	run install -D -m 0755 "$dest/bin/dpistack-watch" "$(path_watch_bin)" || return 1
 	run ln -sfn "$dest/install.sh" "$(path_dpistack_bin)" || return 1
-	run ln -sfn "$(path_dpistack_bin)" "$(path_ctl_legacy_bin)" || return 1
+	run rm -f "$(path_retired_ctl)" || return 1
 	state_write_value "$SELFINSTALL_HASH_KEY" "$(selfinstall_source_hash)"
 	return 0
 }

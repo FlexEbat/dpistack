@@ -9,6 +9,8 @@
 | `the command runs as root only` | `dpistack` и `install.sh` запускаются только от root: `sudo dpistack ...` |
 | `port N (KEY) is already busy (held by: ...)` | порт занят другим процессом: выберите свободный порт из подсказки (`--set KEY=порт`, меню или экран «Настройки») либо остановите процесс |
 | `KEY=native: ... set --set KEY=docker` | на этой системе нет пакетов компонента: запускайте его в Docker, см. [platforms.md](platforms.ru.md) |
+| `BIND_ADDR=... is not an address of this host` | такого адреса нет ни на одном интерфейсе: выберите из `ip -4 addr` (меню их перечисляет) или `auto` |
+| Grafana просит пароль | первый вход `admin`/`admin`; Grafana сразу просит новый пароль |
 | `systemd is needed` | система без systemd не поддерживается |
 | `suricata -T rejected the rendered suricata.yaml` | конфигурация не подошла установленной Suricata; файл на диске не изменён. Причину печатает сама Suricata выше в выводе. Проверьте `suricata -V` и ключи, влияющие на конфигурацию |
 | `heavy changes ... need --force` | изменение запускает установку или пересборку: примените с `--force` (или `settings set --apply-heavy`) |
