@@ -88,6 +88,11 @@ _schema_add() {
 
 schema_init() {
 	SCHEMA_KEYS=()
+	_schema_add 'SURICATA_ENABLE|enum|yes|yes,no|basic|components|suricata ndpi rules verify|heavy|no'
+	_schema_add 'RULES_ENABLE|enum|yes|yes,no|basic|components|rules|heavy|no'
+	_schema_add 'EVEBOX_ENABLE|enum|yes|yes,no|basic|components|evebox access|heavy|no'
+	_schema_add 'NTOPNG_ENABLE|enum|yes|yes,no|basic|components|redis ntopng access|heavy|no'
+	_schema_add 'PANEL_ENABLE|enum|yes|yes,no|basic|components|panel access|heavy|no'
 	_schema_add 'SURICATA_RUNTIME|enum|native|native,docker|basic|components|suricata|heavy|no'
 	_schema_add 'EVEBOX_RUNTIME|enum|native|native,docker|basic|components|evebox|heavy|no'
 	_schema_add 'NTOPNG_RUNTIME|enum|native|native,docker|basic|components|ntopng|heavy|no'

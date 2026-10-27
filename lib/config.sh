@@ -178,6 +178,16 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
+	if [[ "${CONF[SURICATA_ENABLE]:-yes}" == "no" ]]; then
+		local dep
+		for dep in NDPI_ENABLE RULES_ENABLE; do
+			if [[ "${CONF[$dep]:-no}" == "yes" ]]; then
+				echo "SURICATA_ENABLE=no with ${dep}=yes: ${dep%_ENABLE} works only together with Suricata; set ${dep}=no"
+				errors=$((errors + 1))
+			fi
+		done
+	fi
+
 	if [[ "${CONF[NGINX_TLS]:-none}" == "existing" && (-z "${CONF[NGINX_CERT]:-}" || -z "${CONF[NGINX_KEY]:-}") ]]; then
 		echo "NGINX_TLS=existing needs NGINX_CERT and NGINX_KEY"
 		errors=$((errors + 1))

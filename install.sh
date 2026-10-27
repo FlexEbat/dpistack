@@ -41,6 +41,32 @@ for _step in "${STEPS_ORDER[@]}"; do
 	source "$LIB_DIR/step_${_step}.sh"
 done
 unset _step
+
+# Components that can be left out (v0.25.0). A step of a component that is
+# switched off reports "no changes" and does nothing; what is already
+# installed stays (removing is `uninstall`). The *_ENABLE keys are in
+# lib/schema.sh, the cross rules in lib/config.sh.
+step_component_enabled() {
+	local yes=yes
+	case "$1" in
+	ndpi | suricata | verify) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" ]] ;;
+	rules) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" && "${CONF[RULES_ENABLE]:-$yes}" == "$yes" ]] ;;
+	redis | ntopng) [[ "${CONF[NTOPNG_ENABLE]:-$yes}" == "$yes" ]] ;;
+	evebox) [[ "${CONF[EVEBOX_ENABLE]:-$yes}" == "$yes" ]] ;;
+	panel) [[ "${CONF[PANEL_ENABLE]:-$yes}" == "$yes" ]] ;;
+	*) return 0 ;;
+	esac
+}
+
+for _step in ndpi suricata rules redis ntopng evebox panel verify; do
+	for _fn in check apply plan; do
+		eval "orig_step_${_step}_${_fn}() $(declare -f "step_${_step}_${_fn}" | tail -n +2)"
+	done
+	eval "step_${_step}_check() { step_component_enabled ${_step} || return 0; orig_step_${_step}_check \"\$@\"; }"
+	eval "step_${_step}_apply() { step_component_enabled ${_step} || return 0; orig_step_${_step}_apply \"\$@\"; }"
+	eval "step_${_step}_plan() { if step_component_enabled ${_step}; then orig_step_${_step}_plan \"\$@\"; else echo \"${_step}: switched off by its *_ENABLE key, skipped\"; fi; }"
+done
+unset _step _fn
 # shellcheck source=lib/ctl.sh
 source "$LIB_DIR/ctl.sh"
 

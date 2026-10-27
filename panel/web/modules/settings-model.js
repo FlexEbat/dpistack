@@ -15,6 +15,11 @@ export const GROUPS = [
 // What each key does, in a sentence. A key without a line shows its name only.
 export const HINTS = {
   SURICATA_RUNTIME: "Where Suricata runs: on the host or in a Docker container.",
+  SURICATA_ENABLE: "Install and run Suricata (the IDS/IPS engine).",
+  RULES_ENABLE: "Install the rules and their automatic update (needs Suricata).",
+  EVEBOX_ENABLE: "Install EveBox, the alert viewer.",
+  NTOPNG_ENABLE: "Install ntopng, the traffic monitor, with its Redis.",
+  PANEL_ENABLE: "Install this control panel.",
   EVEBOX_RUNTIME: "Where EveBox runs: on the host or in a Docker container.",
   NTOPNG_RUNTIME: "Where ntopng runs: on the host or in a Docker container.",
   SURICATA_SOURCE: "Where Suricata comes from: the distribution package, the OISF package or a build from source.",

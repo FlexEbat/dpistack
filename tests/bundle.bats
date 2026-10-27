@@ -178,7 +178,7 @@ strip_times() { sed 's/^[0-9T:-]*Z //'; }
 	export DPISTACK_ROOT
 	local tty_file
 	tty_file="$(mktemp)"
-	printf 'q\ny\n' >"$tty_file"
+	printf 'n\nq\ny\n' >"$tty_file"
 	run bash -c "cat '$BUNDLE' | env DPISTACK_TTY_DEV='$tty_file' bash -s -- install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no"
 	rm -f "$tty_file"
 	[ "$status" -eq 0 ]

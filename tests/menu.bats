@@ -11,6 +11,8 @@
 # consumes one extra input line by itself.
 
 setup() {
+	# The older tests drive the screens with fixed lines; the confirmations have tests/menu_confirm.bats.
+	export DPISTACK_MENU_ASSUME_YES=1
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 	DPISTACK_ROOT="$(mktemp -d)"
 	export DPISTACK_ROOT
@@ -88,7 +90,7 @@ run_menu() {
 @test "criterion 3: an invalid value is rejected with the allowed list, old value kept" {
 	run_menu "3\n1\nbogus-value\n\n0\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"invalid value, allowed: native,docker"* ]]
+	[[ "$output" == *"invalid value, allowed: yes,no"* ]]
 	[ ! -e "$CONF_FILE" ]
 }
 
@@ -279,9 +281,9 @@ run_menu() {
 @test "a number with a leading zero is a decimal number in the menu, not a bad octal one (R142)" {
 	run_menu "3\n01\nbogus-value\n\n0\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"invalid value, allowed: native,docker"* ]]
-	run_menu "3\n09\n0\nq\ny\n"
+	[[ "$output" == *"invalid value, allowed: yes,no"* ]]
+	run_menu "3\n0099\n0\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"unclear choice: 09"* ]]
+	[[ "$output" == *"unclear choice: 0099"* ]]
 	[[ "$output" != *"value too great"* ]]
 }

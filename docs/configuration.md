@@ -24,6 +24,11 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 
 | Key | Values | Default | Change | Description |
 | --- | --- | --- | --- | --- |
+| `SURICATA_ENABLE` | yes \| no | `yes` | heavy | Install and run Suricata (the IDS/IPS engine). |
+| `RULES_ENABLE` | yes \| no | `yes` | heavy | Install the rules and their automatic update (needs Suricata). |
+| `EVEBOX_ENABLE` | yes \| no | `yes` | heavy | Install EveBox, the alert viewer. |
+| `NTOPNG_ENABLE` | yes \| no | `yes` | heavy | Install ntopng, the traffic monitor, with its Redis. |
+| `PANEL_ENABLE` | yes \| no | `yes` | heavy | Install this control panel. |
 | `SURICATA_RUNTIME` | native \| docker | `native` | heavy | Where Suricata runs: on the host or in a Docker container. |
 | `EVEBOX_RUNTIME` | native \| docker | `native` | heavy | Where EveBox runs: on the host or in a Docker container. |
 | `NTOPNG_RUNTIME` | native \| docker | `native` | heavy | Where ntopng runs: on the host or in a Docker container. |
