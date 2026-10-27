@@ -24,6 +24,11 @@
 
 | Ключ | Значения | По умолчанию | Изменение | Описание |
 | --- | --- | --- | --- | --- |
+| `SURICATA_ENABLE` | yes \| no | `yes` | тяжёлое | Установить и запускать Suricata (движок IDS/IPS). |
+| `RULES_ENABLE` | yes \| no | `yes` | тяжёлое | Установить правила и их автообновление (нужна Suricata). |
+| `EVEBOX_ENABLE` | yes \| no | `yes` | тяжёлое | Установить EveBox, просмотр оповещений. |
+| `NTOPNG_ENABLE` | yes \| no | `yes` | тяжёлое | Установить ntopng, монитор трафика, вместе с Redis. |
+| `PANEL_ENABLE` | yes \| no | `yes` | тяжёлое | Установить эту панель управления. |
 | `SURICATA_RUNTIME` | native \| docker | `native` | тяжёлое | Где работает Suricata: на хосте или в контейнере Docker. |
 | `EVEBOX_RUNTIME` | native \| docker | `native` | тяжёлое | Где работает EveBox: на хосте или в контейнере Docker. |
 | `NTOPNG_RUNTIME` | native \| docker | `native` | тяжёлое | Где работает ntopng: на хосте или в контейнере Docker. |

@@ -76,6 +76,34 @@ for _step in "${STEPS_ORDER[@]}"; do
 	source "$LIB_DIR/step_${_step}.sh"
 done
 unset _step
+
+# Components that can be left out (v0.25.0). A step of a component that is
+# switched off reports "no changes" and does nothing; what is already
+# installed stays (removing is `uninstall`). The *_ENABLE keys are in
+# lib/schema.sh, the cross rules in lib/config.sh.
+step_component_enabled() {
+	local yes=yes
+	case "$1" in
+	ndpi | suricata | verify) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" ]] ;;
+	rules) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" && "${CONF[RULES_ENABLE]:-$yes}" == "$yes" ]] ;;
+	redis | ntopng) [[ "${CONF[NTOPNG_ENABLE]:-$yes}" == "$yes" ]] ;;
+	evebox) [[ "${CONF[EVEBOX_ENABLE]:-$yes}" == "$yes" ]] ;;
+	panel) [[ "${CONF[PANEL_ENABLE]:-$yes}" == "$yes" ]] ;;
+	*) return 0 ;;
+	esac
+}
+
+# step_call <check|apply|plan> <step> [args] - runs a step function; the
+# steps of a switched-off component report "no changes" and do nothing.
+step_call() {
+	local fn="$1" name="$2"
+	shift 2
+	if ! step_component_enabled "$name"; then
+		[[ "$fn" == "plan" ]] && echo "${name}: switched off by its *_ENABLE key, skipped"
+		return 0
+	fi
+	"step_${name}_${fn}" "$@"
+}
 # shellcheck source=lib/ctl.sh
 source "$LIB_DIR/ctl.sh"
 
@@ -296,12 +324,12 @@ run_plan() {
 	for name in "${STEPS_ORDER[@]}"; do
 		i=$((i + 1))
 		step_selected "$name" || continue
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			echo "[$i/$total] $name ... no changes"
 		else
 			any_pending=1
 			echo "[$i/$total] $name ... needs applying"
-			"step_${name}_plan" | sed 's/^/    /'
+			step_call plan "$name" | sed 's/^/    /'
 		fi
 	done
 	return "$any_pending"
@@ -359,13 +387,13 @@ run_apply() {
 	for name in "${STEPS_ORDER[@]}"; do
 		i=$((i + 1))
 		step_selected "$name" || continue
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			continue
 		fi
-		if ! "step_${name}_apply"; then
+		if ! step_call apply "$name"; then
 			die 1 "step $name failed, to continue: install.sh install --only $name"
 		fi
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			state_set_step_done "$name"
 			echo "[$i/$total] $name ... done"
 		else
@@ -495,7 +523,7 @@ cmd_reconfigure() {
 	fi
 	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
 		step_selected "$step" || continue
-		if ! "step_${step}_apply"; then
+		if ! step_call apply "$step"; then
 			die 1 "step $step failed during reconfigure"
 		fi
 	done
@@ -664,7 +692,7 @@ cmd_status() {
 	layer_config_common
 	local name
 	for name in "${STEPS_ORDER[@]}"; do
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			echo "$name: ok"
 		else
 			echo "$name: mismatch"
@@ -1371,7 +1399,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.24.0"
+DPISTACK_VERSION="0.25.0"
 
 : "${DRY_RUN:=0}"
 
@@ -1777,6 +1805,16 @@ config_validate() {
 		! -f "$(path_suricata_ndpi_plugin)" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
 		echo "NDPI_ENABLE=yes with SURICATA_SOURCE=${CONF[SURICATA_SOURCE]:-} does not give ndpi.so; use SURICATA_SOURCE=source or build the plugin beforehand"
 		errors=$((errors + 1))
+	fi
+
+	if [[ "${CONF[SURICATA_ENABLE]:-yes}" == "no" ]]; then
+		local dep
+		for dep in NDPI_ENABLE RULES_ENABLE; do
+			if [[ "${CONF[$dep]:-no}" == "yes" ]]; then
+				echo "SURICATA_ENABLE=no with ${dep}=yes: ${dep%_ENABLE} works only together with Suricata; set ${dep}=no"
+				errors=$((errors + 1))
+			fi
+		done
 	fi
 
 	if [[ "${CONF[NGINX_TLS]:-none}" == "existing" && (-z "${CONF[NGINX_CERT]:-}" || -z "${CONF[NGINX_KEY]:-}") ]]; then
@@ -3651,6 +3689,30 @@ menu_die_on_eof() {
 	fi
 }
 
+# menu_confirm <question> [y|n] - a yes/no question before an action (v0.25.0:
+# every action of the menu asks first). `0` and `q` cancel like `n`; Enter
+# takes the default (second argument, `y` unless said). Returns 0 on yes.
+# DPISTACK_MENU_ASSUME_YES=1 answers yes without asking (a test hook: the
+# older menu tests drive the screens with fixed input lines).
+menu_confirm() {
+	local question="$1" default="${2:-y}" answer hint
+	[[ "${DPISTACK_MENU_ASSUME_YES:-0}" == "1" ]] && return 0
+	if [[ "$default" == "y" ]]; then hint="[Y/n, 0 = cancel]"; else hint="[y/N, 0 = cancel]"; fi
+	while true; do
+		menu_read answer "$question $hint "
+		menu_die_on_eof
+		case "${answer,,}" in
+		"")
+			[[ "$default" == "y" ]]
+			return
+			;;
+		y | yes) return 0 ;;
+		n | no | 0 | q | cancel) return 1 ;;
+		*) echo "  answer y, n or 0" >&2 ;;
+		esac
+	done
+}
+
 # menu_read_secret <varname> [prompt] - like menu_read, but suppresses
 # echo on a real tty (a file source like DPISTACK_INPUT has nothing to
 # suppress).
@@ -3778,18 +3840,22 @@ menu_edit_key() {
 		[[ -n "$opts" ]] && echo "  options: $opts" >&2
 		local answer
 		if schema_is_secret "$key"; then
-			menu_read_secret answer "New value (Enter keeps, - resets, ? help): "
+			menu_read_secret answer "New value (Enter or cancel = leave, - resets, ? help): "
 		else
-			menu_read answer "New value (Enter keeps, - resets, ? help): "
+			menu_read answer "New value (Enter or cancel = leave, - resets, ? help): "
 		fi
 		menu_die_on_eof
 		case "$answer" in
-		"") return 0 ;;
+		"" | cancel) return 0 ;;
 		"?")
 			echo "  ${key}: group ${SCHEMA_GROUP[$key]}, type ${SCHEMA_TYPE[$key]}" >&2
 			continue
 			;;
 		"-")
+			menu_confirm "Reset $key to the default (${SCHEMA_DEFAULT[$key]:-<empty>})?" || {
+				echo "  not changed" >&2
+				return 0
+			}
 			config_set_kv "$key" "${SCHEMA_DEFAULT[$key]}"
 			menu_draft_save
 			return 0
@@ -3797,6 +3863,17 @@ menu_edit_key() {
 		*)
 			local err
 			if err=$(schema_validate_one "$key" "$answer"); then
+				if schema_is_secret "$key"; then
+					menu_confirm "Set $key (a secret)?" || {
+						echo "  not changed" >&2
+						return 0
+					}
+				else
+					menu_confirm "Set $key = $answer?" || {
+						echo "  not changed" >&2
+						return 0
+					}
+				fi
 				config_set_kv "$key" "$answer"
 				menu_draft_save
 				MENU_DIRTY=1
@@ -3843,7 +3920,7 @@ menu_section_screen() {
 			printf '  %2d) %-28s = %s %s\n' "$i" "$key" "$shown" "$mark" >&2
 			i=$((i + 1))
 		done
-		echo "  a) $([[ $MENU_SHOW_ADVANCED == 1 ]] && echo "hide" || echo "show") advanced   0) back   ?) help   q) quit" >&2
+		echo "  a) $([[ $MENU_SHOW_ADVANCED == 1 ]] && echo "hide" || echo "show") advanced   0) back (Enter too)   ?) help   q) quit" >&2
 		local problems
 		problems=$(menu_problems_count)
 		if [[ "$problems" -gt 0 ]]; then
@@ -3888,8 +3965,9 @@ menu_quit_confirm() {
 menu_panel_password_screen() {
 	while true; do
 		local p1 p2
-		menu_read_secret p1 "Panel password: "
+		menu_read_secret p1 "Panel password (!cancel = leave without setting): "
 		menu_die_on_eof
+		[[ "$p1" == "!cancel" ]] && return 0
 		if [[ -z "$p1" ]]; then
 			echo "  an empty password is not accepted" >&2
 			continue
@@ -3899,6 +3977,10 @@ menu_panel_password_screen() {
 			echo "  the passwords do not match" >&2
 			continue
 		fi
+		menu_confirm "Use this password for the panel?" || {
+			echo "  password not set" >&2
+			return 0
+		}
 		MENU_PANEL_PASSWORD="$p1"
 		MENU_PANEL_PASSWORD_SET=1
 		MENU_DIRTY=1
@@ -4056,6 +4138,7 @@ menu_quick_install() {
 }
 
 menu_check_system_screen() {
+	menu_confirm "Check the system (nothing is changed)?" || return 0
 	local reasons
 	reasons=$(step_preflight_reasons)
 	echo >&2
@@ -4070,6 +4153,7 @@ menu_check_system_screen() {
 }
 
 menu_plan_screen() {
+	menu_confirm "Show the plan (nothing is changed)?" || return 0
 	echo >&2
 	run_plan >&2
 	local _enter
@@ -4078,19 +4162,22 @@ menu_plan_screen() {
 
 menu_save_to_file_screen() {
 	local path
-	menu_read path "File path: "
+	menu_read path "File path (Enter = cancel): "
 	[[ -z "$path" ]] && return 0
+	menu_confirm "Write the config to $path?" || return 0
 	config_write_conf "$path"
 	echo "  saved to $path" >&2
 }
 
 menu_load_from_file_screen() {
 	local path
-	menu_read path "File path: "
-	[[ -z "$path" || ! -f "$path" ]] && {
+	menu_read path "File path (Enter = cancel): "
+	[[ -z "$path" ]] && return 0
+	[[ -f "$path" ]] || {
 		echo "  file not found" >&2
 		return 0
 	}
+	menu_confirm "Load the values from $path (they become edits)?" || return 0
 	config_load_kv_file "$path"
 	local errs
 	errs=$(config_validate)
@@ -4099,6 +4186,212 @@ menu_load_from_file_screen() {
 		echo "  $errs" >&2
 	fi
 	MENU_DIRTY=1
+	menu_draft_save
+}
+
+# ------------------------------------------------------------------
+# Choosing components (v0.25.0): every part is switched on or off on its
+# own. A switched-off part is skipped by the installer; what is already
+# installed stays (removing is `uninstall`).
+# ------------------------------------------------------------------
+MENU_COMPONENTS=(
+	"SURICATA_ENABLE|Suricata (IDS/IPS engine)"
+	"NDPI_ENABLE|nDPI plugin for Suricata"
+	"RULES_ENABLE|Rules and their update"
+	"EVEBOX_ENABLE|EveBox (alert viewer)"
+	"NTOPNG_ENABLE|ntopng with Redis (traffic monitor)"
+	"PANEL_ENABLE|Control panel"
+	"WATCH_ENABLE|Watchdog"
+	"GRAFANA_ENABLE|Grafana (dashboards)"
+	"NODE_EXPORTER_ENABLE|node_exporter (host metrics)"
+)
+
+menu_toggle_component() {
+	local key="$1" label="$2" cur new extra=""
+	cur="${CONF[$key]:-yes}"
+	if [[ "$cur" == "yes" ]]; then new=no; else new=yes; fi
+	if [[ "$new" == "yes" && ("$key" == "NDPI_ENABLE" || "$key" == "RULES_ENABLE") &&
+		"${CONF[SURICATA_ENABLE]:-yes}" == "no" ]]; then
+		echo "  $label works only together with Suricata: switch Suricata on first" >&2
+		return 0
+	fi
+	if [[ "$key" == "SURICATA_ENABLE" && "$new" == "no" ]]; then
+		extra=" (nDPI and the rules go off with it)"
+	fi
+	menu_confirm "Switch $label $([[ $new == yes ]] && echo on || echo off)?$extra" || {
+		echo "  not changed" >&2
+		return 0
+	}
+	config_set_kv "$key" "$new"
+	if [[ "$key" == "SURICATA_ENABLE" && "$new" == "no" ]]; then
+		config_set_kv NDPI_ENABLE no
+		config_set_kv RULES_ENABLE no
+	fi
+	[[ "$new" == "no" ]] && echo "  note: anything already installed stays; use uninstall to remove it" >&2
+	MENU_DIRTY=1
+	menu_draft_save
+}
+
+menu_components_screen() {
+	while true; do
+		echo >&2
+		menu_bold "Choose components" >&2
+		echo >&2
+		local i=1 row key label
+		for row in "${MENU_COMPONENTS[@]}"; do
+			key="${row%%|*}"
+			label="${row#*|}"
+			printf '  %2d) [%s] %s\n' "$i" "$([[ ${CONF[$key]:-yes} == yes ]] && echo x || echo ' ')" "$label" >&2
+			i=$((i + 1))
+		done
+		printf '  %2d) %-34s %s\n' "$i" "Metrics storage" "${CONF[METRICS_BACKEND]:-none}" >&2
+		echo >&2
+		echo "  Number - switch on/off (asks first)   s) all settings of the components" >&2
+		echo "  0) back (Enter too)   ?) help   q) quit" >&2
+		local choice
+		menu_read choice "> "
+		menu_die_on_eof
+		case "$choice" in
+		"" | 0) return 0 ;;
+		q) menu_quit_confirm && {
+			menu_close_input
+			exit 0
+		} ;;
+		s) menu_section_screen components ;;
+		'?') echo "  Each part is chosen on its own; unchecked parts are skipped by the installer." >&2 ;;
+		*)
+			if [[ "$choice" =~ ^[0-9]+$ ]] && ((10#$choice >= 1 && 10#$choice <= ${#MENU_COMPONENTS[@]})); then
+				row="${MENU_COMPONENTS[$((10#$choice - 1))]}"
+				menu_toggle_component "${row%%|*}" "${row#*|}"
+			elif [[ "$choice" =~ ^[0-9]+$ ]] && ((10#$choice == ${#MENU_COMPONENTS[@]} + 1)); then
+				menu_edit_key METRICS_BACKEND
+			else
+				echo "  unclear choice: $choice" >&2
+			fi
+			;;
+		esac
+	done
+}
+
+# ------------------------------------------------------------------
+# Guided setup (v0.25.0): asks every setting that applies to the chosen
+# components, group by group. Enter keeps the value, - resets to the
+# default, s skips the rest of the group, x leaves the guided setup.
+# ------------------------------------------------------------------
+
+# menu_key_skipped <KEY> - 0 when the key does not apply to the config as it is.
+menu_key_skipped() {
+	local k="$1" y=yes n=no
+	local suri="${CONF[SURICATA_ENABLE]:-yes}"
+	case "$k" in
+	METRICS_TOKEN) return 0 ;;
+	SURICATA_RUNTIME | SURICATA_SOURCE | SURICATA_VERSION | SURICATA_MODE | IFACES | BPF_FILTER | HOME_NET | \
+		EVE_SYSLOG | EVE_REDIS | EVE_ROTATE | EVE_KEEP | EVE_MAX_SIZE_MB | STATS_INTERVAL_SEC | TEST_*)
+		[[ "$suri" == "$n" ]] && return 0
+		;;
+	IPS_METHOD | IPS_NFQ_CHAINS)
+		[[ "$suri" == "$n" || "${CONF[SURICATA_MODE]:-ids}" != "ips" ]] && return 0
+		;;
+	NDPI_ENABLE) [[ "$suri" == "$n" ]] && return 0 ;;
+	NDPI_SOURCE | NDPI_VERSION) [[ "$suri" == "$n" || "${CONF[NDPI_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
+	RULES_ENABLE) [[ "$suri" == "$n" ]] && return 0 ;;
+	RULES_*) [[ "$suri" == "$n" || "${CONF[RULES_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
+	EVEBOX_ENABLE) ;;
+	EVEBOX_ES_URL) [[ "${CONF[EVEBOX_ENABLE]:-yes}" == "$n" || "${CONF[EVEBOX_DB]:-sqlite}" != "elasticsearch" ]] && return 0 ;;
+	EVEBOX_*) [[ "${CONF[EVEBOX_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
+	NTOPNG_ENABLE) ;;
+	NTOPNG_*) [[ "${CONF[NTOPNG_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
+	PANEL_ENABLE) ;;
+	PANEL_* | METRICS_EXPORT) [[ "${CONF[PANEL_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
+	LAN_CIDR) [[ "${CONF[ACCESS_MODE]:-localhost}" != "lan" ]] && return 0 ;;
+	NGINX_MANAGE | NGINX_TLS) [[ "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]] && return 0 ;;
+	NGINX_CERT | NGINX_KEY) [[ "${CONF[ACCESS_MODE]:-localhost}" != "nginx" || "${CONF[NGINX_TLS]:-none}" != "existing" ]] && return 0 ;;
+	METRICS_BACKEND_RUNTIME | METRICS_BACKEND_PORT | METRICS_RETENTION) [[ "${CONF[METRICS_BACKEND]:-none}" == "none" ]] && return 0 ;;
+	NODE_EXPORTER_ENABLE | GRAFANA_ENABLE | WATCH_ENABLE | METRICS_BACKEND) ;;
+	NODE_EXPORTER_*) [[ "${CONF[NODE_EXPORTER_ENABLE]:-no}" == "$n" ]] && return 0 ;;
+	GRAFANA_*) [[ "${CONF[GRAFANA_ENABLE]:-no}" == "$n" ]] && return 0 ;;
+	ALERT_TG_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",tg,"* ]] && return 0 ;;
+	ALERT_MAIL_* | ALERT_SMTP_URL) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",mail,"* ]] && return 0 ;;
+	WATCH_* | ALERT_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
+	esac
+	: "$y"
+	return 1
+}
+
+# menu_wizard_ask <KEY> -> 0 go on, 10 skip the group, 11 leave the wizard.
+menu_wizard_ask() {
+	local key="$1" answer err
+	while true; do
+		local shown="${CONF[$key]:-}"
+		schema_is_secret "$key" && shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
+		echo >&2
+		echo "$key (now: ${shown:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		[[ -n "${SCHEMA_OPTIONS[$key]}" ]] && echo "  options: ${SCHEMA_OPTIONS[$key]}" >&2
+		if schema_is_secret "$key"; then
+			menu_read_secret answer "  value (Enter keeps, - default, s skip group, x leave setup, ? help): "
+		else
+			menu_read answer "  value (Enter keeps, - default, s skip group, x leave setup, ? help): "
+		fi
+		menu_die_on_eof
+		case "$answer" in
+		"") return 0 ;;
+		s) return 10 ;;
+		x) return 11 ;;
+		'?')
+			echo "  group ${SCHEMA_GROUP[$key]}, type ${SCHEMA_TYPE[$key]}, level ${SCHEMA_LEVEL[$key]}" >&2
+			;;
+		-)
+			menu_confirm "Reset $key to the default?" || continue
+			config_set_kv "$key" "${SCHEMA_DEFAULT[$key]}"
+			MENU_DIRTY=1
+			menu_draft_save
+			return 0
+			;;
+		*)
+			if err=$(schema_validate_one "$key" "$answer"); then
+				if schema_is_secret "$key"; then
+					menu_confirm "Set $key (a secret)?" || continue
+				else
+					menu_confirm "Set $key = $answer?" || continue
+				fi
+				config_set_kv "$key" "$answer"
+				MENU_DIRTY=1
+				menu_draft_save
+				return 0
+			fi
+			echo "  $err" >&2
+			;;
+		esac
+	done
+}
+
+menu_wizard() {
+	echo >&2
+	menu_bold "Guided setup" >&2
+	echo >&2
+	echo "  Every setting is asked, group by group. Settings of parts you switched off are skipped." >&2
+	menu_components_screen
+	local g key rc
+	for g in "${MENU_GROUPS[@]}"; do
+		[[ "$g" == "components" ]] && continue
+		echo >&2
+		menu_bold "== ${MENU_GROUP_TITLE[$g]} ==" >&2
+		echo >&2
+		menu_confirm "Go through this group?" || continue
+		for key in "${SCHEMA_KEYS[@]}"; do
+			[[ "${SCHEMA_GROUP[$key]}" == "$g" ]] || continue
+			menu_key_skipped "$key" && continue
+			menu_wizard_ask "$key"
+			rc=$?
+			((rc == 10)) && break
+			if ((rc == 11)); then
+				menu_confirm "Leave the guided setup (answers so far are kept)?" && return 0
+			fi
+		done
+	done
+	if [[ "$MENU_PANEL_PASSWORD_SET" != "1" ]] && menu_confirm "Set the panel password now?"; then
+		menu_panel_password_screen
+	fi
 	menu_draft_save
 }
 
@@ -4117,6 +4410,7 @@ menu_main_screen() {
 		done
 		printf '  %2d) %-30s %s\n' "$i" "Panel password" "$([[ $MENU_PANEL_PASSWORD_SET == 1 ]] && echo "set" || echo "not set")" >&2
 		echo >&2
+		echo "  m) Choose components   w) Guided setup (asks every setting)" >&2
 		echo "  c) Check the system   p) Plan   s) Save to file   l) Load from file" >&2
 		echo "  i) Install             q) Quit" >&2
 		local problems
@@ -4133,6 +4427,8 @@ menu_main_screen() {
 		menu_die_on_eof
 		case "$choice" in
 		1) menu_quick_install ;;
+		m) menu_components_screen ;;
+		w) menu_wizard ;;
 		c) menu_check_system_screen ;;
 		p) menu_plan_screen ;;
 		s) menu_save_to_file_screen ;;
@@ -4230,6 +4526,9 @@ menu_run_install() {
 		for key in "${!CONF[@]}"; do MENU_OLD_CONF[$key]="${CONF[$key]}"; done
 		menu_reconfigure_screen
 	else
+		if [[ "${DPISTACK_MENU_ASSUME_YES:-0}" != "1" ]] && menu_confirm "Run the guided setup first (asks every setting, you can leave at any time)?"; then
+			menu_wizard
+		fi
 		menu_main_screen
 	fi
 
@@ -4303,6 +4602,7 @@ menu_reconfigure_screen() {
 		done
 		printf '  %2d) %-30s %s\n' "$i" "Panel password" "change" >&2
 		echo >&2
+		echo "  m) Choose components   w) Guided setup (asks every setting)" >&2
 		echo "  d) Changes (diff)   a) Apply   r) Discard edits" >&2
 		echo "  s) Save to file   l) Load from file   q) Quit$([[ "$MENU_BACK_ENABLED" == "1" ]] && echo "   b) Back")" >&2
 		local changed=0 key
@@ -4320,6 +4620,8 @@ menu_reconfigure_screen() {
 		menu_read choice "> "
 		menu_die_on_eof
 		case "$choice" in
+		m) menu_components_screen ;;
+		w) menu_wizard ;;
 		d) menu_diff_screen ;;
 		a)
 			preflight_resolve_ports_interactive || true
@@ -4496,7 +4798,7 @@ menu_manage_password() {
 # menu_manage_uninstall - returns 0 only when the stack was removed.
 menu_manage_uninstall() {
 	local word mode
-	menu_read word "Type the word \"remove\" to confirm: "
+	menu_read word "Type the word \"remove\" to confirm (Enter = cancel): "
 	menu_die_on_eof
 	if [[ "$word" != "remove" ]]; then
 		echo "  cancelled" >&2
@@ -4544,7 +4846,7 @@ menu_run_manage() {
 			;;
 		2) menu_manage_ctl status ;;
 		3) menu_manage_logs ;;
-		4) menu_manage_tests ;;
+		4) menu_confirm "Run the check tests?" && menu_manage_tests ;;
 		5)
 			menu_read answer "Upgrade packages? [y/N] "
 			if [[ "$answer" =~ ^[yY] ]]; then
@@ -4557,7 +4859,7 @@ menu_run_manage() {
 				return 0
 			fi
 			;;
-		7) menu_manage_password ;;
+		7) menu_confirm "Change the panel password?" && menu_manage_password ;;
 		q | Q)
 			menu_close_input
 			return 0
@@ -5754,6 +6056,11 @@ _schema_add() {
 
 schema_init() {
 	SCHEMA_KEYS=()
+	_schema_add 'SURICATA_ENABLE|enum|yes|yes,no|basic|components|suricata ndpi rules verify|heavy|no'
+	_schema_add 'RULES_ENABLE|enum|yes|yes,no|basic|components|rules|heavy|no'
+	_schema_add 'EVEBOX_ENABLE|enum|yes|yes,no|basic|components|evebox access|heavy|no'
+	_schema_add 'NTOPNG_ENABLE|enum|yes|yes,no|basic|components|redis ntopng access|heavy|no'
+	_schema_add 'PANEL_ENABLE|enum|yes|yes,no|basic|components|panel access|heavy|no'
 	_schema_add 'SURICATA_RUNTIME|enum|native|native,docker|basic|components|suricata|heavy|no'
 	_schema_add 'EVEBOX_RUNTIME|enum|native|native,docker|basic|components|evebox|heavy|no'
 	_schema_add 'NTOPNG_RUNTIME|enum|native|native,docker|basic|components|ntopng|heavy|no'

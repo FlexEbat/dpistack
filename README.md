@@ -60,7 +60,7 @@ cd dpistack
 sudo ./install.sh install
 ```
 
-On a terminal a menu opens. The quick install asks only what matters: the capture interfaces, how to get Suricata, who may open the panels (and on which address), the optional metrics stack and which panel you want. Everything else keeps a sensible default. Without a terminal, or with `-y`, nothing is asked:
+On a terminal a menu opens and first offers the guided setup, which asks every setting that applies. Press `m` in the menu to choose the parts one by one (Suricata, nDPI, rules, EveBox, ntopng, panel, watchdog, Grafana, node_exporter); every action asks for a confirmation and every screen has an exit. The quick install asks only what matters: the capture interfaces, how to get Suricata, who may open the panels (and on which address), the optional metrics stack and which panel you want. Everything else keeps a sensible default. Without a terminal, or with `-y`, nothing is asked:
 
 ```
 sudo ./install.sh install -y --set IFACES=eth0 --set PANEL_EDITION=lite

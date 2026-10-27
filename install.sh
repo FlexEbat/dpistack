@@ -41,6 +41,34 @@ for _step in "${STEPS_ORDER[@]}"; do
 	source "$LIB_DIR/step_${_step}.sh"
 done
 unset _step
+
+# Components that can be left out (v0.25.0). A step of a component that is
+# switched off reports "no changes" and does nothing; what is already
+# installed stays (removing is `uninstall`). The *_ENABLE keys are in
+# lib/schema.sh, the cross rules in lib/config.sh.
+step_component_enabled() {
+	local yes=yes
+	case "$1" in
+	ndpi | suricata | verify) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" ]] ;;
+	rules) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" && "${CONF[RULES_ENABLE]:-$yes}" == "$yes" ]] ;;
+	redis | ntopng) [[ "${CONF[NTOPNG_ENABLE]:-$yes}" == "$yes" ]] ;;
+	evebox) [[ "${CONF[EVEBOX_ENABLE]:-$yes}" == "$yes" ]] ;;
+	panel) [[ "${CONF[PANEL_ENABLE]:-$yes}" == "$yes" ]] ;;
+	*) return 0 ;;
+	esac
+}
+
+# step_call <check|apply|plan> <step> [args] - runs a step function; the
+# steps of a switched-off component report "no changes" and do nothing.
+step_call() {
+	local fn="$1" name="$2"
+	shift 2
+	if ! step_component_enabled "$name"; then
+		[[ "$fn" == "plan" ]] && echo "${name}: switched off by its *_ENABLE key, skipped"
+		return 0
+	fi
+	"step_${name}_${fn}" "$@"
+}
 # shellcheck source=lib/ctl.sh
 source "$LIB_DIR/ctl.sh"
 
@@ -261,12 +289,12 @@ run_plan() {
 	for name in "${STEPS_ORDER[@]}"; do
 		i=$((i + 1))
 		step_selected "$name" || continue
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			echo "[$i/$total] $name ... no changes"
 		else
 			any_pending=1
 			echo "[$i/$total] $name ... needs applying"
-			"step_${name}_plan" | sed 's/^/    /'
+			step_call plan "$name" | sed 's/^/    /'
 		fi
 	done
 	return "$any_pending"
@@ -324,13 +352,13 @@ run_apply() {
 	for name in "${STEPS_ORDER[@]}"; do
 		i=$((i + 1))
 		step_selected "$name" || continue
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			continue
 		fi
-		if ! "step_${name}_apply"; then
+		if ! step_call apply "$name"; then
 			die 1 "step $name failed, to continue: install.sh install --only $name"
 		fi
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			state_set_step_done "$name"
 			echo "[$i/$total] $name ... done"
 		else
@@ -460,7 +488,7 @@ cmd_reconfigure() {
 	fi
 	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
 		step_selected "$step" || continue
-		if ! "step_${step}_apply"; then
+		if ! step_call apply "$step"; then
 			die 1 "step $step failed during reconfigure"
 		fi
 	done
@@ -629,7 +657,7 @@ cmd_status() {
 	layer_config_common
 	local name
 	for name in "${STEPS_ORDER[@]}"; do
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			echo "$name: ok"
 		else
 			echo "$name: mismatch"

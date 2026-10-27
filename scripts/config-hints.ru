@@ -9,6 +9,11 @@ group:metrics|Метрики
 group:watch|Контроль и оповещения
 group:tests|Проверочные тесты
 SURICATA_RUNTIME|Где работает Suricata: на хосте или в контейнере Docker.
+SURICATA_ENABLE|Установить и запускать Suricata (движок IDS/IPS).
+RULES_ENABLE|Установить правила и их автообновление (нужна Suricata).
+EVEBOX_ENABLE|Установить EveBox, просмотр оповещений.
+NTOPNG_ENABLE|Установить ntopng, монитор трафика, вместе с Redis.
+PANEL_ENABLE|Установить эту панель управления.
 EVEBOX_RUNTIME|Где работает EveBox: на хосте или в контейнере Docker.
 NTOPNG_RUNTIME|Где работает ntopng: на хосте или в контейнере Docker.
 SURICATA_SOURCE|Откуда берётся Suricata: пакет дистрибутива, пакет OISF или сборка из исходников.

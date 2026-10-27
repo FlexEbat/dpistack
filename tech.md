@@ -1,11 +1,12 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v33** (2026-10-25)
-**Program version: v0.24.0** (slices 0-31 are done; section 17 holds the history, section 18 the reviews)
+**Document version: v34** (2026-10-26)
+**Program version: v0.25.0** (slices 0-31 are done; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.25.0: every part is chosen on its own and the menu asks before every action. New keys `SURICATA_ENABLE`, `RULES_ENABLE`, `EVEBOX_ENABLE`, `NTOPNG_ENABLE` (with its Redis) and `PANEL_ENABLE`, next to the existing `NDPI_ENABLE`, `WATCH_ENABLE`, `GRAFANA_ENABLE`, `NODE_EXPORTER_ENABLE` and `METRICS_BACKEND`; a switched-off part is skipped by its steps (`install.sh`, `step_component_enabled`), what is already installed stays. The screen \"Choose components\" (`m`), the guided setup (`w`, offered first on a fresh `install`) that asks every setting of the chosen parts, a confirmation before every menu action, `0`/`cancel` as an exit on every screen. Tests `tests/menu_confirm.bats` (17).
 - v0.24.0: `BIND_ADDR` (listen on one address of this host, chosen from the list of local addresses), optional metrics stack parts chosen separately (a storage, Grafana, node_exporter; steps `nodeexp` and `grafana`), the second command name `dpistack-ctl` is gone (a leftover link of an earlier version is removed on install), README rewritten, `tech.md` restored in full in English, releases and tags.
 - v0.23.0: `PANEL_EDITION=full|lite` replaced `PANEL_MODE=limited|unlimited` (the unit limits `MemoryMax=64M` and `CPUQuota=20%` and the `-max-streams` flag are gone); `full` redesigned (dark matte surfaces, one blue accent, sidebar, entrance animations, particle background), `lite` is the same panel with every feature on a plain, light page; the program is English only; the README and the guides come in English and Russian.
 - v0.1.0 (slices 0-7): the installer skeleton (`install.sh`, the `dpistack.conf` schema, layered config, locking); Suricata (`distro`/`oisf`/`source`, rendering of `suricata.yaml`, logrotate, systemd); nDPI (a package or a build from source); rules (`suricata-update`, a safe update that keeps the previous set, a timer); Redis and ntopng; EveBox (the official repository, `evebox.yaml`, retention); access (`localhost`/`lan`/`nginx`, TLS, `ufw`). The gate (`shfmt` + `shellcheck` + `bats`) is green. `docs/prototype.md` and `docs/real-test-guide.md`.
@@ -41,6 +42,7 @@ Program changelog (what was done per slice of section 17):
 - v0.3.1 (slices 14-15 and the full review): alert channels (`log`, `tg`, `mail`, `panel`), `selfinstall` with the `dpistack` command and the control menu; the fixes of section 18.1: `run` returns the real error code, writing files leaves no truncated result, `state` is protected by a lock, the free keys of `dpistack.conf` are checked against patterns, `*_VERSION` for ntopng and EveBox take effect, CI is pinned by SHA.
 
 Changelog of this document:
+- v34: v0.25.0. The keys `*_ENABLE` of the parts (4.3), the component choice screen, the guided setup and the confirmations (5.0, 5.1), the test hook `DPISTACK_MENU_ASSUME_YES` (11), the decisions of 18.25.
 - v33: v0.24.0. `BIND_ADDR` (4.3, 5), the metrics stack parts `NODE_EXPORTER_*` and `GRAFANA_*` (4.1, 4.3, 5), `dpistack-ctl` removed (4.2, 4.4), the full document restored in English (the Russian text of v31 translated; the contracts of sections 4-12 brought up to date).
 - v32: v0.23.0. `PANEL_EDITION=full|lite` (4.3, 9), the unit limits and `-max-streams` removed, English only program and bilingual guides (13).
 - v31: v0.22.0. The Settings screen and the `settings` verbs (4.5, 4.8, 9), `PANEL_MODE`, `PANEL_RUNTIME=docker`, the package families `zypper`, `pacman`, `generic` (2, 5), the documentation set.
@@ -279,6 +281,11 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 
 | key | default | options / format |
 | --- | --- | --- |
+| `SURICATA_ENABLE` | `yes` | `yes` `no`; `no` skips the steps `suricata`, `ndpi`, `rules` and `verify` (v0.25.0); turning a component off does not remove what is installed, use `uninstall` |
+| `RULES_ENABLE` | `yes` | `yes` `no`; the rules and their update timer, needs `SURICATA_ENABLE=yes` |
+| `EVEBOX_ENABLE` | `yes` | `yes` `no`; the `evebox` step |
+| `NTOPNG_ENABLE` | `yes` | `yes` `no`; the steps `redis` and `ntopng` |
+| `PANEL_ENABLE` | `yes` | `yes` `no`; the `panel` step |
 | `SURICATA_RUNTIME` | `native` | `native` `docker` |
 | `EVEBOX_RUNTIME` | `native` | `native` `docker` |
 | `NTOPNG_RUNTIME` | `native` | `native` `docker` |
@@ -576,6 +583,10 @@ The `selfinstall` step copies `install.sh`, `lib/*.sh` and `templates/*` into `/
 - The menu is opened by the commands `install` and `reconfigure`, and by the binary `dpistack` with no arguments, when there is a terminal and `-y` is not given. The implementation is pure Bash in `lib/menu.sh`: no `dialog`, `whiptail`, ncurses and no cursor sequences. The screen is printed anew after every action, so the menu works over SSH and `tmux` and stays in the history of the terminal.
 - Input is read from stdin, and from `/dev/tty` when run through `curl | bash`. The variable `DPISTACK_INPUT=<file>` replaces the source (this is how the tests work). No terminal, no `DPISTACK_INPUT` and no `-y`: code 2 and a hint about `-y`.
 - Colors are on only on a terminal and without `NO_COLOR` and `--no-color`.
+- **Every action asks first (v0.25.0).** Setting a key, resetting it, switching a part, checking the system, the plan, saving and loading a file, the panel password, tests, upgrade and uninstall all show a question `[Y/n, 0 = cancel]` (`[y/N]` for the risky ones); `n`, `0`, `q` and `cancel` leave the action undone. `-y` asks nothing, as before.
+- **Every screen has an exit (v0.25.0).** `0` or an empty input goes back from a section, a key editor (`cancel` too), the component screen and the file prompts; `!cancel` leaves the panel password prompt; `q` quits from every list screen.
+- **Choose components (`m`).** One screen with a `[x]`/`[ ]` line for Suricata, the nDPI plugin, the rules, EveBox, ntopng with Redis, the panel, the watchdog, Grafana and node_exporter, plus the metrics storage. A number switches a part after a confirmation. Switching Suricata off switches nDPI and the rules off, nDPI and the rules cannot be switched on while Suricata is off. The note says that anything already installed stays (`uninstall` removes it).
+- **Guided setup (`w`).** Asks the components screen first, then every key of every group, advanced keys included, except the keys of a part that is switched off or of a mode that is not chosen (`IPS_*` without `ips`, `NGINX_*` without `nginx`, `ALERT_TG_*` without the `tg` channel and so on; the table is `menu_key_skipped` in `lib/menu.sh`). Per question: Enter keeps, `-` resets, `s` skips the group, `x` leaves (with a confirmation, the answers so far stay), `?` helps; a typed value is confirmed. On a fresh `install` it is offered first (`Run the guided setup first?`), `n` goes to the main menu.
 - Navigation: an item is chosen by a number or a letter; `0` or an empty input goes one level up; `?` shows the help of the screen; `q` quits.
 - The screen of a config section: the keys as a list `N) KEY = value`. Markers: `*` the value differs from the default, `~` (only in "Configure" of an existing install) differs from the applied one, `!` the key has an error. The item `a` turns the display of advanced keys on and off (with `--advanced` they are visible at once).
 - Editing a key: the number of the key, then a question with the hint, the options and the default. A key with fixed options is chosen by a number from the list, the others are typed as text. Enter keeps the value, `-` resets to the default, `?` shows the hint. The value is checked against the schema at once: a wrong one is refused with the list of the allowed ones, the previous one stays.
@@ -640,6 +651,7 @@ The items:
 - **1, Quick install.** A short survey: the interfaces (the list of those found by `ip -o link` without `lo`, the default-route interface is marked, the choice is by numbers separated by commas), the Suricata source (`source` gives nDPI, `oisf` and `distro` install faster but without the nDPI plugin), the access mode, **the listen address** (the IPv4 addresses of this host from `ip -o -4 addr`, for example `192.168.1.156 on enp2s0`, or `0) auto`; asked unless the mode is `nginx`), **the metrics stack** (a storage `none`/`victoriametrics`/`prometheus`, Grafana yes/no and node_exporter yes/no, each on its own), **which panel (`full` or `lite`)**, the panel password. The rest is the default. The install does not start by itself: the menu returns to the main one so the summary can be checked.
 - **2-9, sections.** The screen of a section by the rules of 5.0.
 - **10, Panel password.** Typed twice without echo, an empty password is refused. The hash is written at the apply stage.
+- **m, w.** The component screen and the guided setup of 5.0, also in the reconfigure screen.
 - **c, Check the system.** Preflight (5.5) with no changes to the system, the result as a list.
 - **p, Plan.** The `check` of every step and a table `needs applying / no changes`. It changes nothing.
 - **s, l.** Save the current values into a file and load them from a file. A loaded file is checked against the schema, errors are shown as a list, the loaded values become edits.
@@ -926,7 +938,7 @@ The result of each test is written into `tests-last.json` (4.6). `--json` prints
 
 The tests are derived from the acceptance criteria of a slice, not from the finished code. The criteria are written in section 17 before the code.
 
-- Bash: `bats`. External commands (`apt-get`, `dnf`, `systemctl`, `suricata`, `curl`, `ss`, `docker`, `ip`) are replaced by stubs from `tests/mocks/` through `PATH`. Paths are redirected into `mktemp -d` through `DPISTACK_ROOT`. The other environment variables needed by the tests only: `DPISTACK_INPUT` (the menu input from a file), `DPISTACK_TEST_WAIT` (seconds to wait for an event instead of 20), `DPISTACK_NOW` (the time of the watchdog in epoch seconds), `DPISTACK_VERBS_ONLY=1` (every argument is a verb; the helper `tests/helpers/verbs`), `DPISTACK_BIN` (another program that answers the verbs in the menu and the watchdog), `MOCK_IP_ADDRS` (`iface=address/prefix` pairs the `ip` stub reports for `ip -o -4 addr`).
+- Bash: `bats`. External commands (`apt-get`, `dnf`, `systemctl`, `suricata`, `curl`, `ss`, `docker`, `ip`) are replaced by stubs from `tests/mocks/` through `PATH`. Paths are redirected into `mktemp -d` through `DPISTACK_ROOT`. The other environment variables needed by the tests only: `DPISTACK_INPUT` (the menu input from a file), `DPISTACK_TEST_WAIT` (seconds to wait for an event instead of 20), `DPISTACK_NOW` (the time of the watchdog in epoch seconds), `DPISTACK_MENU_ASSUME_YES=1` (the menu answers yes to its confirmations and does not offer the guided setup; the older menu tests drive the screens with fixed lines, `tests/menu_confirm.bats` runs without it), `DPISTACK_VERBS_ONLY=1` (every argument is a verb; the helper `tests/helpers/verbs`), `DPISTACK_BIN` (another program that answers the verbs in the menu and the watchdog), `MOCK_IP_ADDRS` (`iface=address/prefix` pairs the `ip` stub reports for `ip -o -4 addr`).
 - Go: `go test`, the HTTP handlers through `httptest`, the call of `dpistack` is replaced by the interface `ctl.Runner`. A test of the choice of the stylesheet and script by the edition (`edition_test.go`).
 - The interface: `node --test` for the pure logic (the countdown of the mode screen, polling, the settings model).
 - A forbidden kind of test: "ran a step, checked that 0 came back". A test checks the result: the content of a file, the commands called, a refusal.
@@ -2180,3 +2192,16 @@ Checked in a sandbox: a real Ubuntu 24.04, Suricata 7.0.3 from the package (a re
 | R172 | low | the old second command name `dpistack-ctl` stayed as a link | removed from the code, the tests, the guides and the sudoers rule; the `selfinstall` step deletes a link left by an earlier version (a test) |
 
 Open (v0.24.0): the `full` design was not rendered in a browser (there is none in the sandbox), so the look is unchecked; the Grafana tarball version (12.2.0) and its download from `dl.grafana.com` could not be verified from the sandbox (the host is not reachable there), and the sha256 comes from the vendor file at install time, not from a pin; node_exporter and the docker images of the new components were not run; a real systemd, a real `ip addr` with several addresses and a listen address on a live LAN were not exercised (stubs only).
+
+### 18.25 Choosing parts and asking more (v0.25.0)
+
+The owner asked for four things: every part (nDPI, Suricata and so on) selectable on its own, an exit in every item and sub-item, a confirmation before every action, and `sudo ./install.sh install` asking about everything that can be asked, not only the important keys. "Choose yourself" decisions:
+
+| id | decision |
+| --- | --- |
+| C1 | One `*_ENABLE` key per part (`SURICATA_ENABLE`, `RULES_ENABLE`, `EVEBOX_ENABLE`, `NTOPNG_ENABLE`, `PANEL_ENABLE`), default `yes`, so an existing config and `install -y` behave as before. The steps of a switched-off part are wrapped in `install.sh` (`step_component_enabled`): `check` returns 0, `apply` does nothing, the plan prints `no changes`. No step file was edited. |
+| C2 | Switching a part off does not remove it: removal of installed software stays with `uninstall`, so a mistaken keypress cannot delete data. The menu says so. |
+| C3 | `SURICATA_ENABLE=no` with `NDPI_ENABLE=yes` or `RULES_ENABLE=yes` is a validation error with code 2 (nDPI is a plugin of Suricata, the rules are loaded by it); the menu switches both off by itself. |
+| C4 | The questions of "install" are the guided setup, offered first on a fresh install and available as `w`; "Quick install" stays as the short path. Keys that cannot matter (a part is off, a mode is not chosen) are not asked, so nobody answers questions with no effect. |
+| C5 | Confirmations are in the menu only; `-y`, `--set` and the verbs ask nothing. The test hook `DPISTACK_MENU_ASSUME_YES=1` keeps the older tests, which feed fixed input lines, valid; the new behavior has its own file. |
+| C6 | The first key of the `components` section is now `SURICATA_ENABLE`: two old menu tests that picked key 1 or key 9 by number were updated (the allowed list and a larger key count). |

@@ -4,6 +4,8 @@
 # is tested on what it calls, not on the helper itself.
 
 setup() {
+	# The older tests drive the screens with fixed lines; the confirmations have tests/menu_confirm.bats.
+	export DPISTACK_MENU_ASSUME_YES=1
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 	DPISTACK_ROOT="$(mktemp -d)"
 	export DPISTACK_ROOT
