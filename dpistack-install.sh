@@ -93,15 +93,17 @@ step_component_enabled() {
 	esac
 }
 
-for _step in ndpi suricata rules redis ntopng evebox panel verify; do
-	for _fn in check apply plan; do
-		eval "orig_step_${_step}_${_fn}() $(declare -f "step_${_step}_${_fn}" | tail -n +2)"
-	done
-	eval "step_${_step}_check() { step_component_enabled ${_step} || return 0; orig_step_${_step}_check \"\$@\"; }"
-	eval "step_${_step}_apply() { step_component_enabled ${_step} || return 0; orig_step_${_step}_apply \"\$@\"; }"
-	eval "step_${_step}_plan() { if step_component_enabled ${_step}; then orig_step_${_step}_plan \"\$@\"; else echo \"${_step}: switched off by its *_ENABLE key, skipped\"; fi; }"
-done
-unset _step _fn
+# step_call <check|apply|plan> <step> [args] - runs a step function; the
+# steps of a switched-off component report "no changes" and do nothing.
+step_call() {
+	local fn="$1" name="$2"
+	shift 2
+	if ! step_component_enabled "$name"; then
+		[[ "$fn" == "plan" ]] && echo "${name}: switched off by its *_ENABLE key, skipped"
+		return 0
+	fi
+	"step_${name}_${fn}" "$@"
+}
 # shellcheck source=lib/ctl.sh
 source "$LIB_DIR/ctl.sh"
 
@@ -322,12 +324,12 @@ run_plan() {
 	for name in "${STEPS_ORDER[@]}"; do
 		i=$((i + 1))
 		step_selected "$name" || continue
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			echo "[$i/$total] $name ... no changes"
 		else
 			any_pending=1
 			echo "[$i/$total] $name ... needs applying"
-			"step_${name}_plan" | sed 's/^/    /'
+			step_call plan "$name" | sed 's/^/    /'
 		fi
 	done
 	return "$any_pending"
@@ -385,13 +387,13 @@ run_apply() {
 	for name in "${STEPS_ORDER[@]}"; do
 		i=$((i + 1))
 		step_selected "$name" || continue
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			continue
 		fi
-		if ! "step_${name}_apply"; then
+		if ! step_call apply "$name"; then
 			die 1 "step $name failed, to continue: install.sh install --only $name"
 		fi
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			state_set_step_done "$name"
 			echo "[$i/$total] $name ... done"
 		else
@@ -521,7 +523,7 @@ cmd_reconfigure() {
 	fi
 	for step in "${CONFIG_AFFECTED_STEPS[@]}"; do
 		step_selected "$step" || continue
-		if ! "step_${step}_apply"; then
+		if ! step_call apply "$step"; then
 			die 1 "step $step failed during reconfigure"
 		fi
 	done
@@ -690,7 +692,7 @@ cmd_status() {
 	layer_config_common
 	local name
 	for name in "${STEPS_ORDER[@]}"; do
-		if "step_${name}_check"; then
+		if step_call check "$name"; then
 			echo "$name: ok"
 		else
 			echo "$name: mismatch"
