@@ -153,3 +153,11 @@ load_step() {
 	[[ "$output" == *"rc=1"* ]]
 	[ "$(cat "$DPISTACK_ROOT/etc/suricata/suricata.yaml")" = "old: yes" ]
 }
+
+@test "issue 45: the check of the rendered yaml tests the configuration only (-S /dev/null), the rules step comes later" {
+	# Suricata 8.0.7 exits with 1 under -T when the rule file does not exist yet.
+	MOCK_CALLS_LOG="$BATS_TEST_TMPDIR/calls" run load_step 'CONF[SURICATA_SOURCE]=distro; DRY_RUN=0; OS_FAMILY=apt' '
+		suricata_validate_render "$(suricata_render_yaml)"; echo "rc=$?"'
+	[[ "$output" == *"rc=0"* ]]
+	grep -Eq '^suricata -T -c .*suricata.yaml -l .* -S /dev/null$' "$BATS_TEST_TMPDIR/calls"
+}

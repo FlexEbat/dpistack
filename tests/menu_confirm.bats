@@ -44,7 +44,7 @@ run_menu() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Choose components"* ]]
 	[[ "$output" == *"Suricata (IDS/IPS engine)"* ]]
-	[[ "$output" == *"nDPI plugin for Suricata"* ]]
+	[[ "$output" == *"with the nDPI plugin"* ]]
 	[[ "$output" == *"EveBox (alert viewer)"* ]]
 	[[ "$output" == *"ntopng with Redis"* ]]
 	[[ "$output" == *"Metrics storage"* ]]
@@ -75,7 +75,7 @@ run_menu() {
 	run_menu "n\nm\n1\ny\n0\nq\ny\n" --set NDPI_ENABLE=yes --set SURICATA_SOURCE=source
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"nDPI and the rules go off with it"* ]]
-	[[ "$output" == *"[ ] nDPI plugin for Suricata"* ]]
+	[[ "$output" == *"[ ]    with the nDPI plugin"* ]]
 	[[ "$output" == *"[ ] Rules and their update"* ]]
 }
 
@@ -184,4 +184,36 @@ run_menu() {
 	# a component switch is asked on its own screen, not a second time
 	[[ "$output" != *"SURICATA_ENABLE (now"* ]]
 	[[ "$output" != *"WATCH_ENABLE (now"* ]]
+}
+
+# --fast and the options-first form (v0.25.1)
+
+@test "install.sh --fast opens the quick install at once, without the guided setup question" {
+	f="$(mktemp)"
+	printf '\n\n\n\n\n\n\n\n' >"$f"
+	run env DPISTACK_INPUT="$f" bash "$REPO_DIR/install.sh" --fast --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	rm -f "$f"
+	[[ "$output" == *"Quick install"* ]]
+	[[ "$output" != *"Run the guided setup first"* ]]
+}
+
+@test "install.sh without a command on a terminal opens the install menu with the guided setup question" {
+	f="$(mktemp)"
+	printf 'n\nq\n' >"$f"
+	run env DPISTACK_INPUT="$f" bash "$REPO_DIR/install.sh"
+	rm -f "$f"
+	[[ "$output" == *"Run the guided setup first"* ]]
+}
+
+@test "install.sh without a command and without a terminal prints the usage with the exit code 2" {
+	run env -u DPISTACK_INPUT DPISTACK_TTY_DEV=/nonexistent bash "$REPO_DIR/install.sh" </dev/null
+	[ "$status" -eq 2 ]
+	[[ "$output" == *"Usage: install.sh [command] [options]"* ]]
+	[[ "$output" == *"--fast"* ]]
+}
+
+@test "--help still prints the usage and is not taken for an option of install" {
+	run bash "$REPO_DIR/install.sh" --help
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Usage: install.sh"* ]]
 }

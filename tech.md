@@ -1,11 +1,12 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v34** (2026-10-26)
-**Program version: v0.25.0** (slices 0-31 are done; section 17 holds the history, section 18 the reviews)
+**Document version: v35** (2026-10-28)
+**Program version: v0.25.1** (slices 0-31 are done; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.25.1: `--fast` (the short questionnaire first), an option as the first argument of `install.sh`, the menu wording "Suricata with the nDPI plugin" (nDPI shown as a sub-item of Suricata), `upload-sarif` v4.39.0, the fix of issue 45 (`suricata -T` of the rendered yaml with `-S /dev/null`).
 - v0.25.0: every part is chosen on its own and the menu asks before every action. New keys `SURICATA_ENABLE`, `RULES_ENABLE`, `EVEBOX_ENABLE`, `NTOPNG_ENABLE` (with its Redis) and `PANEL_ENABLE`, next to the existing `NDPI_ENABLE`, `WATCH_ENABLE`, `GRAFANA_ENABLE`, `NODE_EXPORTER_ENABLE` and `METRICS_BACKEND`; a switched-off part is skipped by its steps (`install.sh`, `step_component_enabled`), what is already installed stays. The screen \"Choose components\" (`m`), the guided setup (`w`, offered first on a fresh `install`) that asks every setting of the chosen parts, a confirmation before every menu action, `0`/`cancel` as an exit on every screen. Tests `tests/menu_confirm.bats` (17).
 - v0.24.0: `BIND_ADDR` (listen on one address of this host, chosen from the list of local addresses), optional metrics stack parts chosen separately (a storage, Grafana, node_exporter; steps `nodeexp` and `grafana`), the second command name `dpistack-ctl` is gone (a leftover link of an earlier version is removed on install), README rewritten, `tech.md` restored in full in English, releases and tags.
 - v0.23.0: `PANEL_EDITION=full|lite` replaced `PANEL_MODE=limited|unlimited` (the unit limits `MemoryMax=64M` and `CPUQuota=20%` and the `-max-streams` flag are gone); `full` redesigned (dark matte surfaces, one blue accent, sidebar, entrance animations, particle background), `lite` is the same panel with every feature on a plain, light page; the program is English only; the README and the guides come in English and Russian.
@@ -42,6 +43,7 @@ Program changelog (what was done per slice of section 17):
 - v0.3.1 (slices 14-15 and the full review): alert channels (`log`, `tg`, `mail`, `panel`), `selfinstall` with the `dpistack` command and the control menu; the fixes of section 18.1: `run` returns the real error code, writing files leaves no truncated result, `state` is protected by a lock, the free keys of `dpistack.conf` are checked against patterns, `*_VERSION` for ntopng and EveBox take effect, CI is pinned by SHA.
 
 Changelog of this document:
+- v35: v0.25.1. `install.sh` without a command opens the install menu on a terminal (it did already; the usage is printed only without a terminal), an option may come first (`install.sh --fast`), `--fast` opens the short questionnaire at once, the menu names the pair "Suricata with the nDPI plugin" (decisions D1-D4 of 18.26). The `upload-sarif` action is pinned to v4.39.0, and the check of the rendered `suricata.yaml` no longer fails on a missing rule file (issue 45, D5).
 - v34: v0.25.0. The keys `*_ENABLE` of the parts (4.3), the component choice screen, the guided setup and the confirmations (5.0, 5.1), the test hook `DPISTACK_MENU_ASSUME_YES` (11), the decisions of 18.25.
 - v33: v0.24.0. `BIND_ADDR` (4.3, 5), the metrics stack parts `NODE_EXPORTER_*` and `GRAFANA_*` (4.1, 4.3, 5), `dpistack-ctl` removed (4.2, 4.4), the full document restored in English (the Russian text of v31 translated; the contracts of sections 4-12 brought up to date).
 - v32: v0.23.0. `PANEL_EDITION=full|lite` (4.3, 9), the unit limits and `-max-streams` removed, English only program and bilingual guides (13).
@@ -380,13 +382,14 @@ The free keys (the `free` type) are checked against the patterns of `SCHEMA_PATT
 `install.sh` (run from a clone or an archive, before the install) and `dpistack` (the persistent command, available after the install, section 5.2) take the same syntax:
 
 ```
-install.sh <command> [options]
+install.sh [command] [options]
 dpistack [command] [options]
 
 commands: install | reconfigure | upgrade | uninstall | status | diag | test | logs
 options:  --config FILE          the path to dpistack.conf (default /etc/dpistack/dpistack.conf)
           --set KEY=VALUE        override a key, may be repeated
           --non-interactive, -y  no questions; missing values take their defaults
+          --fast                 install: the short questionnaire (5.1) instead of the guided setup
           --advanced             ask every key, not only the basic level
           --dry-run              show the plan, change nothing
           --only STEP[,STEP]     run only the given steps
@@ -630,7 +633,7 @@ Install. Config: /etc/dpistack/dpistack.conf (not created)
 
   1) Quick install
   2) Capture and mode              IDS, enp2s0
-  3) Components and sources        Suricata: source, nDPI: yes
+  3) Components and sources        Suricata: source, with the nDPI plugin: yes
   4) EVE and storage               6 types, rotation daily
   5) Rules                         ET Open, weekly
   6) Access                        localhost
@@ -720,7 +723,7 @@ dpistack 0.24  |  Configuring an existing installation
 Config: /etc/dpistack/dpistack.conf  |  components: 6 of 6 active  |  health: ok
 
   1) Capture and mode              IDS, enp2s0, enp3s0       ~
-  2) Components and sources        Suricata: source, nDPI: yes
+  2) Components and sources        Suricata: source, with the nDPI plugin: yes
   3) EVE and storage               6 types, rotation daily
   4) Rules                         ET Open, weekly
   5) Access                        localhost
@@ -2208,3 +2211,13 @@ The owner asked for four things: every part (nDPI, Suricata and so on) selectabl
 | C8 | A part that is off leaves no trace in the rest of the system: `access` (nginx server blocks, self-signed certificates, SELinux ports, firewall rules) covers only the parts that are on (`access_services`), the preflight does not check their ports, `status`/`health` do not list them (`component_listed`) unless the unit is installed anyway, so the watchdog and the panel stay green. |
 | C9 | `METRICS_BACKEND` other than `none` needs `PANEL_ENABLE=yes` (the backend scrapes the panel): validation error with code 2, the scrape file keeps its single panel job. |
 | C6 | The first key of the `components` section is now `SURICATA_ENABLE`: two old menu tests that picked key 1 or key 9 by number were updated (the allowed list and a larger key count). |
+
+### 18.26 Starting the installer and naming Suricata with nDPI (v0.25.1)
+
+| id | decision |
+| --- | --- |
+| D1 | `sudo ./install.sh` with no command already opened the install menu on a terminal (the usage is printed only when there is no terminal, so that nothing is installed by accident). It stays; the `install` command stays for scripts and `curl \| bash -s -- install -y`. |
+| D2 | An option may be the first argument: `install.sh --fast` means `install.sh install --fast`; `-h` and `--help` are still the help. |
+| D3 | `--fast` is the short questionnaire (`menu_quick_install`: interfaces, Suricata source, access, metrics, panel) instead of the guided setup that asks every setting. Three ways in: the guided setup (default), `--fast`, `-y` (no questions). `--advanced` stays: it controls which keys the section screens list. |
+| D5 | Issue 45 (the weekly check of the pinned Suricata failed): the build was fine, but `suricata -T` of Suricata 8.0.7 exits with 1 when the rule file does not exist yet, and `suricata_validate_render` ran without `-S /dev/null` while the rules step comes after the suricata step. A fresh install would have failed the same way, not only the CI check. Reproduced by building 8.0.7 with the installer, fixed by `-S /dev/null` (only the configuration is tested, the same as the last line of `scripts/suricata-build-check.sh`), test `issue 45` in `tests/suricata_step.bats` (it fails without the fix). |
+| D4 | nDPI is a plugin of Suricata, so the menu shows it as a sub-item "with the nDPI plugin" of Suricata, the summary says "Suricata: source, with the nDPI plugin: yes". The keys `SURICATA_ENABLE` and `NDPI_ENABLE` and the step names `suricata` and `ndpi` are unchanged: a config, a script or the build check keeps working. nDPI cannot be on while Suricata is off (18.25 C3). |

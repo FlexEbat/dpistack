@@ -99,6 +99,7 @@ unset DPISTACK_VERBS_ONLY
 
 NON_INTERACTIVE=0
 ADVANCED=0
+FAST=0
 DRY_RUN=0
 CONFIG_FILE=""
 SET_ARGS=()
@@ -112,7 +113,9 @@ COMMAND=""
 usage() {
 	echo "dpistack v${DPISTACK_VERSION}"
 	cat <<'EOF'
-Usage: install.sh <command> [options]
+Usage: install.sh [command] [options]
+       install.sh             (no command, on a terminal) opens the install menu
+       install.sh --fast      the short questions first (interfaces, Suricata source, access, metrics, panel)
 
 setup:      install | reconfigure | upgrade | uninstall | diag
 control:    status [--json] | start|stop|restart <id> | reload suricata | logs <id> | test | health |
@@ -124,6 +127,7 @@ options:
   --config FILE          path to dpistack.conf (default /etc/dpistack/dpistack.conf)
   --set KEY=VALUE        override a key, may be repeated
   --non-interactive, -y  no questions; missing values take their defaults
+  --fast                 install: the short questionnaire instead of the guided setup that asks every setting
   --advanced             ask every key, not only the basic level
   --dry-run              show the plan, change nothing
   --only STEP[,STEP]     run only the given steps
@@ -172,6 +176,10 @@ parse_args() {
 			;;
 		--advanced)
 			ADVANCED=1
+			shift
+			;;
+		--fast)
+			FAST=1
 			shift
 			;;
 		--dry-run)
@@ -274,6 +282,7 @@ maybe_run_install_menu() {
 		die 2 "no terminal for the menu, use -y or DPISTACK_INPUT"
 	fi
 	MENU_SHOW_ADVANCED=$([[ "$ADVANCED" == "1" ]] && echo 1 || echo 0)
+	MENU_FAST="$FAST"
 	menu_run_install
 }
 
@@ -840,6 +849,10 @@ main() {
 		fi
 		set -- install
 	fi
+	# An option first (`install.sh --fast`): the command is install.
+	if [[ "${1:-}" == -* && "${1:-}" != "-h" && "${1:-}" != "--help" ]]; then
+		set -- install "$@"
+	fi
 	parse_args "$@"
 	case "$COMMAND" in
 	install)
@@ -1383,7 +1396,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.25.0"
+DPISTACK_VERSION="0.25.1"
 
 : "${DRY_RUN:=0}"
 
@@ -3639,6 +3652,7 @@ declare -A MENU_GROUP_TITLE=(
 )
 
 MENU_SHOW_ADVANCED=0
+MENU_FAST=0 # --fast: the quick install questions first, no guided setup
 MENU_DIRTY=0
 declare -A MENU_OLD_CONF # snapshot for reconfigure's "~" marker and diff
 MENU_PANEL_PASSWORD=""   # plaintext, held only in memory until hashed
@@ -3831,7 +3845,7 @@ menu_group_summary() {
 	# One short line per group for the main screen's right column.
 	case "$1" in
 	capture) echo "${CONF[SURICATA_MODE]^^}, ${CONF[IFACES]:-?}" ;;
-	components) echo "Suricata: ${CONF[SURICATA_SOURCE]}, nDPI: $([[ ${CONF[NDPI_ENABLE]} == yes ]] && echo yes || echo no)" ;;
+	components) echo "Suricata: ${CONF[SURICATA_SOURCE]}, with the nDPI plugin: $([[ ${CONF[NDPI_ENABLE]} == yes ]] && echo yes || echo no)" ;;
 	eve)
 		local n
 		n=$(tr ',' '\n' <<<"${CONF[EVE_TYPES]}" | grep -c .)
@@ -4214,7 +4228,7 @@ menu_load_from_file_screen() {
 # ------------------------------------------------------------------
 MENU_COMPONENTS=(
 	"SURICATA_ENABLE|Suricata (IDS/IPS engine)"
-	"NDPI_ENABLE|nDPI plugin for Suricata"
+	"NDPI_ENABLE|   with the nDPI plugin"
 	"RULES_ENABLE|Rules and their update"
 	"EVEBOX_ENABLE|EveBox (alert viewer)"
 	"NTOPNG_ENABLE|ntopng with Redis (traffic monitor)"
@@ -4226,11 +4240,12 @@ MENU_COMPONENTS=(
 
 menu_toggle_component() {
 	local key="$1" label="$2" cur new extra=""
+	label="${label#"${label%%[![:space:]]*}"}"
 	cur="${CONF[$key]:-yes}"
 	if [[ "$cur" == "yes" ]]; then new=no; else new=yes; fi
 	if [[ "$new" == "yes" && ("$key" == "NDPI_ENABLE" || "$key" == "RULES_ENABLE") &&
 		"${CONF[SURICATA_ENABLE]:-yes}" == "no" ]]; then
-		echo "  $label works only together with Suricata: switch Suricata on first" >&2
+		echo "  $label works only together with Suricata (Suricata with the nDPI plugin): switch Suricata on first" >&2
 		return 0
 	fi
 	if [[ "$key" == "SURICATA_ENABLE" && "$new" == "no" ]]; then
@@ -4554,7 +4569,9 @@ menu_run_install() {
 		for key in "${!CONF[@]}"; do MENU_OLD_CONF[$key]="${CONF[$key]}"; done
 		menu_reconfigure_screen
 	else
-		if [[ "${DPISTACK_MENU_ASSUME_YES:-0}" != "1" ]] && menu_confirm "Run the guided setup first (asks every setting, you can leave at any time)?"; then
+		if [[ "${MENU_FAST:-0}" == "1" ]]; then
+			menu_quick_install
+		elif [[ "${DPISTACK_MENU_ASSUME_YES:-0}" != "1" ]] && menu_confirm "Run the guided setup first (asks every setting, you can leave at any time)?"; then
 			menu_wizard
 		fi
 		menu_main_screen
@@ -9060,7 +9077,10 @@ suricata_validate_render() {
 	tmp="$tmp_dir/suricata.yaml"
 	printf '%s\n' "$content" >"$tmp"
 	local out rc
-	out=$(suricata -T -c "$tmp" -l "$tmp_dir" 2>&1)
+	# -S /dev/null: only the configuration is tested, not the ruleset. Without
+	# it Suricata 8.0.7 exits with 1 when the rule file is not there yet, and
+	# on a fresh install the rules step comes after this one.
+	out=$(suricata -T -c "$tmp" -l "$tmp_dir" -S /dev/null 2>&1)
 	rc=$?
 	rm -rf "$tmp_dir"
 	[[ "$rc" -ne 0 ]] && echo "$out" >&2

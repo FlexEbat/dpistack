@@ -16,6 +16,7 @@ declare -A MENU_GROUP_TITLE=(
 )
 
 MENU_SHOW_ADVANCED=0
+MENU_FAST=0 # --fast: the quick install questions first, no guided setup
 MENU_DIRTY=0
 declare -A MENU_OLD_CONF # snapshot for reconfigure's "~" marker and diff
 MENU_PANEL_PASSWORD=""   # plaintext, held only in memory until hashed
@@ -208,7 +209,7 @@ menu_group_summary() {
 	# One short line per group for the main screen's right column.
 	case "$1" in
 	capture) echo "${CONF[SURICATA_MODE]^^}, ${CONF[IFACES]:-?}" ;;
-	components) echo "Suricata: ${CONF[SURICATA_SOURCE]}, nDPI: $([[ ${CONF[NDPI_ENABLE]} == yes ]] && echo yes || echo no)" ;;
+	components) echo "Suricata: ${CONF[SURICATA_SOURCE]}, with the nDPI plugin: $([[ ${CONF[NDPI_ENABLE]} == yes ]] && echo yes || echo no)" ;;
 	eve)
 		local n
 		n=$(tr ',' '\n' <<<"${CONF[EVE_TYPES]}" | grep -c .)
@@ -591,7 +592,7 @@ menu_load_from_file_screen() {
 # ------------------------------------------------------------------
 MENU_COMPONENTS=(
 	"SURICATA_ENABLE|Suricata (IDS/IPS engine)"
-	"NDPI_ENABLE|nDPI plugin for Suricata"
+	"NDPI_ENABLE|   with the nDPI plugin"
 	"RULES_ENABLE|Rules and their update"
 	"EVEBOX_ENABLE|EveBox (alert viewer)"
 	"NTOPNG_ENABLE|ntopng with Redis (traffic monitor)"
@@ -603,11 +604,12 @@ MENU_COMPONENTS=(
 
 menu_toggle_component() {
 	local key="$1" label="$2" cur new extra=""
+	label="${label#"${label%%[![:space:]]*}"}"
 	cur="${CONF[$key]:-yes}"
 	if [[ "$cur" == "yes" ]]; then new=no; else new=yes; fi
 	if [[ "$new" == "yes" && ("$key" == "NDPI_ENABLE" || "$key" == "RULES_ENABLE") &&
 		"${CONF[SURICATA_ENABLE]:-yes}" == "no" ]]; then
-		echo "  $label works only together with Suricata: switch Suricata on first" >&2
+		echo "  $label works only together with Suricata (Suricata with the nDPI plugin): switch Suricata on first" >&2
 		return 0
 	fi
 	if [[ "$key" == "SURICATA_ENABLE" && "$new" == "no" ]]; then
@@ -931,7 +933,9 @@ menu_run_install() {
 		for key in "${!CONF[@]}"; do MENU_OLD_CONF[$key]="${CONF[$key]}"; done
 		menu_reconfigure_screen
 	else
-		if [[ "${DPISTACK_MENU_ASSUME_YES:-0}" != "1" ]] && menu_confirm "Run the guided setup first (asks every setting, you can leave at any time)?"; then
+		if [[ "${MENU_FAST:-0}" == "1" ]]; then
+			menu_quick_install
+		elif [[ "${DPISTACK_MENU_ASSUME_YES:-0}" != "1" ]] && menu_confirm "Run the guided setup first (asks every setting, you can leave at any time)?"; then
 			menu_wizard
 		fi
 		menu_main_screen
