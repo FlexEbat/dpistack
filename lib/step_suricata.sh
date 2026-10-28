@@ -176,7 +176,10 @@ suricata_validate_render() {
 	tmp="$tmp_dir/suricata.yaml"
 	printf '%s\n' "$content" >"$tmp"
 	local out rc
-	out=$(suricata -T -c "$tmp" -l "$tmp_dir" 2>&1)
+	# -S /dev/null: only the configuration is tested, not the ruleset. Without
+	# it Suricata 8.0.7 exits with 1 when the rule file is not there yet, and
+	# on a fresh install the rules step comes after this one.
+	out=$(suricata -T -c "$tmp" -l "$tmp_dir" -S /dev/null 2>&1)
 	rc=$?
 	rm -rf "$tmp_dir"
 	[[ "$rc" -ne 0 ]] && echo "$out" >&2

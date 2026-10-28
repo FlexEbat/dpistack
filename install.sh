@@ -64,6 +64,7 @@ unset DPISTACK_VERBS_ONLY
 
 NON_INTERACTIVE=0
 ADVANCED=0
+FAST=0
 DRY_RUN=0
 CONFIG_FILE=""
 SET_ARGS=()
@@ -77,7 +78,9 @@ COMMAND=""
 usage() {
 	echo "dpistack v${DPISTACK_VERSION}"
 	cat <<'EOF'
-Usage: install.sh <command> [options]
+Usage: install.sh [command] [options]
+       install.sh             (no command, on a terminal) opens the install menu
+       install.sh --fast      the short questions first (interfaces, Suricata source, access, metrics, panel)
 
 setup:      install | reconfigure | upgrade | uninstall | diag
 control:    status [--json] | start|stop|restart <id> | reload suricata | logs <id> | test | health |
@@ -89,6 +92,7 @@ options:
   --config FILE          path to dpistack.conf (default /etc/dpistack/dpistack.conf)
   --set KEY=VALUE        override a key, may be repeated
   --non-interactive, -y  no questions; missing values take their defaults
+  --fast                 install: the short questionnaire instead of the guided setup that asks every setting
   --advanced             ask every key, not only the basic level
   --dry-run              show the plan, change nothing
   --only STEP[,STEP]     run only the given steps
@@ -137,6 +141,10 @@ parse_args() {
 			;;
 		--advanced)
 			ADVANCED=1
+			shift
+			;;
+		--fast)
+			FAST=1
 			shift
 			;;
 		--dry-run)
@@ -239,6 +247,7 @@ maybe_run_install_menu() {
 		die 2 "no terminal for the menu, use -y or DPISTACK_INPUT"
 	fi
 	MENU_SHOW_ADVANCED=$([[ "$ADVANCED" == "1" ]] && echo 1 || echo 0)
+	MENU_FAST="$FAST"
 	menu_run_install
 }
 
@@ -804,6 +813,10 @@ main() {
 			exit 0
 		fi
 		set -- install
+	fi
+	# An option first (`install.sh --fast`): the command is install.
+	if [[ "${1:-}" == -* && "${1:-}" != "-h" && "${1:-}" != "--help" ]]; then
+		set -- install "$@"
 	fi
 	parse_args "$@"
 	case "$COMMAND" in
