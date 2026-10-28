@@ -38,6 +38,17 @@ state_set_step_done() {
 	state_write_value "step.${step}.ts" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
+# state_install_finished - 0 when an install ran to its end on this host.
+# The marker is written at the end of cmd_install; an install of an older
+# version has no marker, so a done Suricata or verify step counts too. A
+# config that exists next to a failed preflight is NOT an installation.
+state_install_finished() {
+	[[ "$(state_read_value install.finished)" == "yes" ]] && return 0
+	[[ "$(state_read_value step.verify.status)" == "done" ||
+	"$(state_read_value step.suricata.status)" == "done" ||
+	"$(state_read_value step.panel.status)" == "done" ]]
+}
+
 # Render-hash tracking for idempotency and the "manually edited file"
 # guard (tech.md 5.4). Added back in slice 2 once step_suricata.sh
 # actually renders something; slice 1 removed these as dead code

@@ -193,6 +193,17 @@ menu_mark_for_key() {
 	printf '%s' "$mark"
 }
 
+# menu_reconcile_conflicts - keys that cannot be on together are settled at
+# the moment they are set, not only at the preflight: the Suricata image of
+# the docker runtime has no nDPI plugin, so choosing that runtime switches
+# the plugin off and says so (decision D6 of 18.27).
+menu_reconcile_conflicts() {
+	if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" && "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
+		config_set_kv NDPI_ENABLE no
+		echo "  note: the nDPI plugin is not in the Suricata docker image, so \"with the nDPI plugin\" is switched off (use the native runtime to have it)" >&2
+	fi
+}
+
 menu_problems() { config_validate; }
 
 menu_problems_count() {
@@ -271,6 +282,7 @@ menu_edit_key() {
 					}
 				fi
 				config_set_kv "$key" "$answer"
+				menu_reconcile_conflicts
 				menu_draft_save
 				MENU_DIRTY=1
 				return 0
@@ -612,6 +624,10 @@ menu_toggle_component() {
 		echo "  $label works only together with Suricata (Suricata with the nDPI plugin): switch Suricata on first" >&2
 		return 0
 	fi
+	if [[ "$key" == "NDPI_ENABLE" && "$new" == "yes" && "${CONF[SURICATA_RUNTIME]:-native}" == "docker" ]]; then
+		echo "  the nDPI plugin is not in the Suricata docker image: set SURICATA_RUNTIME=native first" >&2
+		return 0
+	fi
 	if [[ "$key" == "SURICATA_ENABLE" && "$new" == "no" ]]; then
 		extra=" (nDPI and the rules go off with it)"
 	fi
@@ -762,6 +778,7 @@ menu_wizard_ask() {
 					menu_confirm "Set $key = $answer?" || continue
 				fi
 				config_set_kv "$key" "$answer"
+				menu_reconcile_conflicts
 				MENU_DIRTY=1
 				menu_draft_save
 				return 0
@@ -875,11 +892,18 @@ menu_main_screen() {
 }
 
 menu_found_install_screen() {
+	local finished=1 apply_label="Apply the current config again"
+	state_install_finished || finished=0
+	((finished)) || apply_label="Install with the saved config"
 	while true; do
 		echo >&2
-		menu_bold "dpistack v${DPISTACK_VERSION} | Installation found" >&2
+		if ((finished)); then
+			menu_bold "dpistack v${DPISTACK_VERSION} | Installation found" >&2
+		else
+			menu_bold "dpistack v${DPISTACK_VERSION} | Saved config found, the install did not finish" >&2
+		fi
 		echo >&2
-		echo "  1) Configure   2) Apply the current config again   3) Control menu   4) Quit" >&2
+		echo "  1) Configure   2) ${apply_label}   3) Control menu   4) Quit" >&2
 		local choice
 		menu_read choice "> "
 		menu_die_on_eof

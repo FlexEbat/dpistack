@@ -318,6 +318,21 @@ ensure_preflight_tools() {
 	esac
 }
 
+# install_command_early - the selfinstall step does not depend on any
+# component, so it runs before the preflight and a failed preflight no
+# longer leaves a host without the `dpistack` command. A failure here is a
+# warning: the install itself can still go on from the clone.
+install_command_early() {
+	[[ "$DRY_RUN" == "1" || "${EUID:-$(id -u)}" -ne 0 ]] && return 0
+	step_selected selfinstall || return 0
+	step_selfinstall_check && return 0
+	if step_selfinstall_apply; then
+		echo "the command dpistack is installed in $(path_sbin_dir)" >&2
+	else
+		echo "warning: could not install the dpistack command, the install goes on from this directory" >&2
+	fi
+}
+
 # prepare_packages - the package index and the base tools come first, so
 # every later step finds its packages. A component whose package does not
 # exist here falls back to a source build, and the changed source is saved
@@ -390,7 +405,14 @@ cmd_install() {
 
 	ensure_preflight_tools
 
+	# The persistent command comes first: when the preflight below stops the
+	# install, `sudo dpistack` still exists and the saved answers are still
+	# there, so the next run is `sudo dpistack install` after the fix.
+	install_command_early
+
 	if ! step_preflight_check; then
+		echo "preflight failed, nothing was installed. Your answers are saved in $(path_conf)." >&2
+		echo "Fix the problems above (or change the setting named in the message), then run: sudo dpistack install" >&2
 		exit 3
 	fi
 
@@ -410,6 +432,7 @@ cmd_install() {
 	fi
 	verify_final_report
 	panel_report_metrics
+	state_write_value install.finished yes
 	echo "installation finished"
 	return 0
 }

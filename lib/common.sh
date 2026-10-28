@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.25.1"
+DPISTACK_VERSION="0.25.2"
 
 : "${DRY_RUN:=0}"
 
@@ -56,16 +56,31 @@ lock_acquire() {
 	# instance must exit 1 immediately (5.1, tested by tests/lock.bats).
 	# The OS releases the flock on process exit, so there is no
 	# matching lock_release: nothing else would ever call it.
+	#
+	# DPISTACK_LOCK_HELD is a plain (not exported) variable: a subshell of
+	# the process that holds the lock inherits it, another process never
+	# does. The control menu runs `cmd_reconfigure` in a subshell of the
+	# install process; without this the second flock (a new open file
+	# description) refused the process that already owned the lock.
+	[[ "${DPISTACK_LOCK_HELD:-0}" == "1" ]] && return 0
 	local lock_file
 	lock_file=$(path_lock_file)
-	mkdir -p "$(dirname "$lock_file")" 2>/dev/null || true
 	# {fd} picks a free descriptor; no eval, so odd characters in the
 	# path cannot become code.
+	mkdir -p "$(dirname "$lock_file")" 2>/dev/null || true
 	local fd
-	exec {fd}>"$lock_file"
+	exec {fd}>>"$lock_file"
 	if ! flock -n "$fd"; then
-		die 1 "another dpistack instance is running (lock: $lock_file)"
+		local holder
+		holder=$(head -n1 "$lock_file" 2>/dev/null)
+		if [[ "$holder" =~ ^[0-9]+$ ]] && kill -0 "$holder" 2>/dev/null; then
+			die 1 "another dpistack instance is running (pid $holder, lock: $lock_file); close it or wait for it to finish"
+		fi
+		die 1 "another dpistack instance is running (lock: $lock_file); close it or wait for it to finish"
 	fi
+	DPISTACK_LOCK_HELD=1
+	# The pid is only a hint for the message above; the flock decides.
+	echo "$$" >"$lock_file" 2>/dev/null || true
 }
 
 # SELinux (slice 26). "Active" means Enforcing or Permissive: labels are

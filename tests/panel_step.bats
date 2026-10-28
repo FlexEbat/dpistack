@@ -276,10 +276,30 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 }
 
 @test "a Go older than panel/go.mod and no ready binary stop preflight with code 3" {
-	MOCK_GO_VERSION=go1.20.1 run install_base
+	MOCK_DOCKER_INFO_EXIT=1 MOCK_GO_VERSION=go1.20.1 run install_base
 	[ "$status" -eq 3 ]
 	[[ "$output" == *"Go 1.20.1 is older than the required"* ]]
 	[[ "$output" == *"ready binary"* ]]
+	# the failed preflight still leaves the persistent command and the saved answers
+	[ -L "$DPISTACK_ROOT/usr/local/sbin/dpistack" ]
+	[ -f "$DPISTACK_ROOT/etc/dpistack/dpistack.conf" ]
+	[[ "$output" == *"sudo dpistack install"* ]]
+}
+
+@test "a Go older than panel/go.mod is no reason to stop when Docker can build the panel" {
+	MOCK_GO_VERSION=go1.24.4 run install_base
+	[ "$status" -eq 0 ]
+	grep -q "^docker run --rm .*golang:1.26 go build" "$MOCK_CALLS_LOG"
+	run grep -q "^go build" "$MOCK_CALLS_LOG"
+	[ "$status" -ne 0 ]
+	[ -x "$DPISTACK_ROOT/usr/local/bin/dpistack-panel" ]
+}
+
+@test "a failing build in the Go container stops the install and installs no panel" {
+	MOCK_DOCKER_RUN_FAIL=1 MOCK_GO_VERSION=go1.24.4 run install_base
+	[ "$status" -ne 0 ]
+	[ ! -e "$DPISTACK_ROOT/usr/local/bin/dpistack-panel" ]
+	[[ "$output" == *"build in the container golang:1.26 failed"* ]]
 }
 
 @test "a failing build stops the install and leaves no unit behind" {
