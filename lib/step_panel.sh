@@ -147,6 +147,59 @@ panel_bin_current() {
 	[[ "$(state_read_value "$PANEL_SRC_HASH_KEY")" == "$src" ]]
 }
 
+# panel_go_required - the Go version panel/go.mod asks for (empty without sources).
+panel_go_required() {
+	awk '/^go /{print $2; exit}' "$ORIGIN_DIR/panel/go.mod" 2>/dev/null
+}
+
+# panel_host_go_ok - 0 when the host has a Go that is not older than go.mod asks.
+panel_host_go_ok() {
+	command -v go >/dev/null 2>&1 || return 1
+	local need have
+	need=$(panel_go_required)
+	have=$(go version 2>/dev/null | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p')
+	[[ -n "$have" ]] || return 1
+	[[ -z "$need" ]] && return 0
+	[[ "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" == "$need" ]]
+}
+
+# panel_go_image - the Go image that builds the panel in a container when the
+# host has no suitable Go (golang:1.26 for go 1.26.0). DPISTACK_GO_IMAGE
+# overrides it.
+panel_go_image() {
+	local need
+	need=$(panel_go_required)
+	echo "${DPISTACK_GO_IMAGE:-golang:${need%.*}}"
+}
+
+# panel_can_build_in_container - Docker is there and its daemon answers, so
+# Go on the host is not needed.
+panel_can_build_in_container() {
+	command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
+
+# panel_build_in_container <out-file> - the same go build, inside the Go
+# image: the sources are mounted read-only, the caches and the result live in
+# one scratch directory (the installer runs as root, so is the container).
+panel_build_in_container() {
+	local out="$1" dir
+	dir=$(mktemp -d) || return 1
+	if ! run docker run --rm -v "$ORIGIN_DIR/panel:/src:ro" -v "$dir:/out" -w /src \
+		-e CGO_ENABLED=0 -e GOCACHE=/out/gocache -e GOMODCACHE=/out/gomod -e GOFLAGS=-buildvcs=false \
+		"$(panel_go_image)" go build -trimpath -ldflags "-s -w" -o /out/dpistack-panel ./cmd/panel; then
+		rm -rf "$dir"
+		return 1
+	fi
+	if [[ "${DRY_RUN:-0}" != "1" ]]; then
+		install -m 0755 "$dir/dpistack-panel" "$out" || {
+			rm -rf "$dir"
+			return 1
+		}
+	fi
+	rm -rf "$dir"
+	return 0
+}
+
 panel_bin_install() {
 	local bin tmp
 	bin=$(path_panel_bin)
@@ -155,10 +208,24 @@ panel_bin_install() {
 		return 0
 	fi
 	tmp=$(mktemp) || return 1
-	if ! (cd "$ORIGIN_DIR/panel" &&
-		run env CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$tmp" ./cmd/panel); then
+	if panel_host_go_ok; then
+		if ! (cd "$ORIGIN_DIR/panel" &&
+			run env CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$tmp" ./cmd/panel); then
+			rm -f "$tmp"
+			log "ERROR" "panel: the build failed (see the Go output above; a ready binary: PANEL_SOURCE=prebuilt)"
+			return 1
+		fi
+	elif panel_can_build_in_container; then
+		# The host Go is missing or too old: build in the Go image.
+		log "INFO" "panel: no suitable Go on the host, building in the container $(panel_go_image)"
+		if ! panel_build_in_container "$tmp"; then
+			rm -f "$tmp"
+			log "ERROR" "panel: the build in the container $(panel_go_image) failed (see the output above; a ready binary: PANEL_SOURCE=prebuilt)"
+			return 1
+		fi
+	else
 		rm -f "$tmp"
-		log "ERROR" "panel: the build failed (Go not older than the version in panel/go.mod is needed; a ready binary: PANEL_SOURCE=prebuilt)"
+		log "ERROR" "panel: no Go $(panel_go_required) on the host and no Docker to build in (install either, or use a ready binary: PANEL_SOURCE=prebuilt)"
 		return 1
 	fi
 	run install -D -m 0755 "$tmp" "$bin" || {

@@ -167,15 +167,16 @@ preflight_panel_reasons() {
 		reasons+=("cannot get the panel: next to install.sh there is neither a ready binary ($(basename "$(panel_prebuilt_path)")), nor a panel/ directory with the sources")
 		return 0
 	fi
-	local need have
-	need=$(awk '/^go /{print $2; exit}' "$ORIGIN_DIR/panel/go.mod" 2>/dev/null)
+	local need
+	need=$(panel_go_required)
+	# A Go that is not on the host is no reason to stop when Docker can build
+	# the panel in a Go image (step_panel.sh, panel_build_in_container).
+	panel_host_go_ok && return 0
+	panel_can_build_in_container && return 0
 	if ! command -v go >/dev/null 2>&1; then
-		reasons+=("cannot get the panel: there is no Go (Go ${need:-newer} is needed) and no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
-		return 0
-	fi
-	have=$(go version 2>/dev/null | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p')
-	if [[ -n "$need" && -n "$have" && "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" != "$need" ]]; then
-		reasons+=("cannot get the panel: Go $have is older than the required $need and there is no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
+		reasons+=("cannot get the panel: there is no Go (Go ${need:-newer} is needed), no Docker to build it in a container, and no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
+	else
+		reasons+=("cannot get the panel: Go $(go version | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p') is older than the required $need, there is no Docker to build it in a container and no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
 	fi
 }
 

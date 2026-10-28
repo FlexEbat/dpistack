@@ -263,3 +263,25 @@ STUB
 	[ ! -e "$SBIN/dpistack-ctl" ]
 	[ ! -L "$SBIN/dpistack-ctl" ]
 }
+
+@test "the control menu opened from the install menu can Configure: the installer does not lock itself out" {
+	run install_base
+	[ "$status" -eq 0 ]
+	dp_input 3 1 b q
+	DPISTACK_INPUT="$INPUT" run bash "$REPO_DIR/install.sh" install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Configuring an existing installation"* ]]
+	[[ "$output" != *"another dpistack instance is running"* ]]
+	[[ "$output" != *"configuration finished with code"* ]]
+}
+
+@test "a saved config without a finished install is called that, not an installation" {
+	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
+	cp "$REPO_DIR/dpistack.conf.example" "$CONF"
+	dp_input 4
+	DPISTACK_INPUT="$INPUT" run bash "$REPO_DIR/install.sh" install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Saved config found, the install did not finish"* ]]
+	[[ "$output" == *"Install with the saved config"* ]]
+	[[ "$output" != *"Installation found"* ]]
+}

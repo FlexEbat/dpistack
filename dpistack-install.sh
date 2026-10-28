@@ -353,6 +353,21 @@ ensure_preflight_tools() {
 	esac
 }
 
+# install_command_early - the selfinstall step does not depend on any
+# component, so it runs before the preflight and a failed preflight no
+# longer leaves a host without the `dpistack` command. A failure here is a
+# warning: the install itself can still go on from the clone.
+install_command_early() {
+	[[ "$DRY_RUN" == "1" || "${EUID:-$(id -u)}" -ne 0 ]] && return 0
+	step_selected selfinstall || return 0
+	step_selfinstall_check && return 0
+	if step_selfinstall_apply; then
+		echo "the command dpistack is installed in $(path_sbin_dir)" >&2
+	else
+		echo "warning: could not install the dpistack command, the install goes on from this directory" >&2
+	fi
+}
+
 # prepare_packages - the package index and the base tools come first, so
 # every later step finds its packages. A component whose package does not
 # exist here falls back to a source build, and the changed source is saved
@@ -425,7 +440,14 @@ cmd_install() {
 
 	ensure_preflight_tools
 
+	# The persistent command comes first: when the preflight below stops the
+	# install, `sudo dpistack` still exists and the saved answers are still
+	# there, so the next run is `sudo dpistack install` after the fix.
+	install_command_early
+
 	if ! step_preflight_check; then
+		echo "preflight failed, nothing was installed. Your answers are saved in $(path_conf)." >&2
+		echo "Fix the problems above (or change the setting named in the message), then run: sudo dpistack install" >&2
 		exit 3
 	fi
 
@@ -445,6 +467,7 @@ cmd_install() {
 	fi
 	verify_final_report
 	panel_report_metrics
+	state_write_value install.finished yes
 	echo "installation finished"
 	return 0
 }
@@ -1396,7 +1419,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.25.1"
+DPISTACK_VERSION="0.25.2"
 
 : "${DRY_RUN:=0}"
 
@@ -1447,16 +1470,31 @@ lock_acquire() {
 	# instance must exit 1 immediately (5.1, tested by tests/lock.bats).
 	# The OS releases the flock on process exit, so there is no
 	# matching lock_release: nothing else would ever call it.
+	#
+	# DPISTACK_LOCK_HELD is a plain (not exported) variable: a subshell of
+	# the process that holds the lock inherits it, another process never
+	# does. The control menu runs `cmd_reconfigure` in a subshell of the
+	# install process; without this the second flock (a new open file
+	# description) refused the process that already owned the lock.
+	[[ "${DPISTACK_LOCK_HELD:-0}" == "1" ]] && return 0
 	local lock_file
 	lock_file=$(path_lock_file)
-	mkdir -p "$(dirname "$lock_file")" 2>/dev/null || true
 	# {fd} picks a free descriptor; no eval, so odd characters in the
 	# path cannot become code.
+	mkdir -p "$(dirname "$lock_file")" 2>/dev/null || true
 	local fd
-	exec {fd}>"$lock_file"
+	exec {fd}>>"$lock_file"
 	if ! flock -n "$fd"; then
-		die 1 "another dpistack instance is running (lock: $lock_file)"
+		local holder
+		holder=$(head -n1 "$lock_file" 2>/dev/null)
+		if [[ "$holder" =~ ^[0-9]+$ ]] && kill -0 "$holder" 2>/dev/null; then
+			die 1 "another dpistack instance is running (pid $holder, lock: $lock_file); close it or wait for it to finish"
+		fi
+		die 1 "another dpistack instance is running (lock: $lock_file); close it or wait for it to finish"
 	fi
+	DPISTACK_LOCK_HELD=1
+	# The pid is only a hint for the message above; the flock decides.
+	echo "$$" >"$lock_file" 2>/dev/null || true
 }
 
 # SELinux (slice 26). "Active" means Enforcing or Permissive: labels are
@@ -3829,6 +3867,17 @@ menu_mark_for_key() {
 	printf '%s' "$mark"
 }
 
+# menu_reconcile_conflicts - keys that cannot be on together are settled at
+# the moment they are set, not only at the preflight: the Suricata image of
+# the docker runtime has no nDPI plugin, so choosing that runtime switches
+# the plugin off and says so (decision D6 of 18.27).
+menu_reconcile_conflicts() {
+	if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" && "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
+		config_set_kv NDPI_ENABLE no
+		echo "  note: the nDPI plugin is not in the Suricata docker image, so \"with the nDPI plugin\" is switched off (use the native runtime to have it)" >&2
+	fi
+}
+
 menu_problems() { config_validate; }
 
 menu_problems_count() {
@@ -3907,6 +3956,7 @@ menu_edit_key() {
 					}
 				fi
 				config_set_kv "$key" "$answer"
+				menu_reconcile_conflicts
 				menu_draft_save
 				MENU_DIRTY=1
 				return 0
@@ -4248,6 +4298,10 @@ menu_toggle_component() {
 		echo "  $label works only together with Suricata (Suricata with the nDPI plugin): switch Suricata on first" >&2
 		return 0
 	fi
+	if [[ "$key" == "NDPI_ENABLE" && "$new" == "yes" && "${CONF[SURICATA_RUNTIME]:-native}" == "docker" ]]; then
+		echo "  the nDPI plugin is not in the Suricata docker image: set SURICATA_RUNTIME=native first" >&2
+		return 0
+	fi
 	if [[ "$key" == "SURICATA_ENABLE" && "$new" == "no" ]]; then
 		extra=" (nDPI and the rules go off with it)"
 	fi
@@ -4398,6 +4452,7 @@ menu_wizard_ask() {
 					menu_confirm "Set $key = $answer?" || continue
 				fi
 				config_set_kv "$key" "$answer"
+				menu_reconcile_conflicts
 				MENU_DIRTY=1
 				menu_draft_save
 				return 0
@@ -4511,11 +4566,18 @@ menu_main_screen() {
 }
 
 menu_found_install_screen() {
+	local finished=1 apply_label="Apply the current config again"
+	state_install_finished || finished=0
+	((finished)) || apply_label="Install with the saved config"
 	while true; do
 		echo >&2
-		menu_bold "dpistack v${DPISTACK_VERSION} | Installation found" >&2
+		if ((finished)); then
+			menu_bold "dpistack v${DPISTACK_VERSION} | Installation found" >&2
+		else
+			menu_bold "dpistack v${DPISTACK_VERSION} | Saved config found, the install did not finish" >&2
+		fi
 		echo >&2
-		echo "  1) Configure   2) Apply the current config again   3) Control menu   4) Quit" >&2
+		echo "  1) Configure   2) ${apply_label}   3) Control menu   4) Quit" >&2
 		local choice
 		menu_read choice "> "
 		menu_die_on_eof
@@ -6322,6 +6384,17 @@ state_set_step_done() {
 	state_write_value "step.${step}.ts" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
+# state_install_finished - 0 when an install ran to its end on this host.
+# The marker is written at the end of cmd_install; an install of an older
+# version has no marker, so a done Suricata or verify step counts too. A
+# config that exists next to a failed preflight is NOT an installation.
+state_install_finished() {
+	[[ "$(state_read_value install.finished)" == "yes" ]] && return 0
+	[[ "$(state_read_value step.verify.status)" == "done" ||
+	"$(state_read_value step.suricata.status)" == "done" ||
+	"$(state_read_value step.panel.status)" == "done" ]]
+}
+
 # Render-hash tracking for idempotency and the "manually edited file"
 # guard (tech.md 5.4). Added back in slice 2 once step_suricata.sh
 # actually renders something; slice 1 removed these as dead code
@@ -8030,6 +8103,59 @@ panel_bin_current() {
 	[[ "$(state_read_value "$PANEL_SRC_HASH_KEY")" == "$src" ]]
 }
 
+# panel_go_required - the Go version panel/go.mod asks for (empty without sources).
+panel_go_required() {
+	awk '/^go /{print $2; exit}' "$ORIGIN_DIR/panel/go.mod" 2>/dev/null
+}
+
+# panel_host_go_ok - 0 when the host has a Go that is not older than go.mod asks.
+panel_host_go_ok() {
+	command -v go >/dev/null 2>&1 || return 1
+	local need have
+	need=$(panel_go_required)
+	have=$(go version 2>/dev/null | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p')
+	[[ -n "$have" ]] || return 1
+	[[ -z "$need" ]] && return 0
+	[[ "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" == "$need" ]]
+}
+
+# panel_go_image - the Go image that builds the panel in a container when the
+# host has no suitable Go (golang:1.26 for go 1.26.0). DPISTACK_GO_IMAGE
+# overrides it.
+panel_go_image() {
+	local need
+	need=$(panel_go_required)
+	echo "${DPISTACK_GO_IMAGE:-golang:${need%.*}}"
+}
+
+# panel_can_build_in_container - Docker is there and its daemon answers, so
+# Go on the host is not needed.
+panel_can_build_in_container() {
+	command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
+
+# panel_build_in_container <out-file> - the same go build, inside the Go
+# image: the sources are mounted read-only, the caches and the result live in
+# one scratch directory (the installer runs as root, so is the container).
+panel_build_in_container() {
+	local out="$1" dir
+	dir=$(mktemp -d) || return 1
+	if ! run docker run --rm -v "$ORIGIN_DIR/panel:/src:ro" -v "$dir:/out" -w /src \
+		-e CGO_ENABLED=0 -e GOCACHE=/out/gocache -e GOMODCACHE=/out/gomod -e GOFLAGS=-buildvcs=false \
+		"$(panel_go_image)" go build -trimpath -ldflags "-s -w" -o /out/dpistack-panel ./cmd/panel; then
+		rm -rf "$dir"
+		return 1
+	fi
+	if [[ "${DRY_RUN:-0}" != "1" ]]; then
+		install -m 0755 "$dir/dpistack-panel" "$out" || {
+			rm -rf "$dir"
+			return 1
+		}
+	fi
+	rm -rf "$dir"
+	return 0
+}
+
 panel_bin_install() {
 	local bin tmp
 	bin=$(path_panel_bin)
@@ -8038,10 +8164,24 @@ panel_bin_install() {
 		return 0
 	fi
 	tmp=$(mktemp) || return 1
-	if ! (cd "$ORIGIN_DIR/panel" &&
-		run env CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$tmp" ./cmd/panel); then
+	if panel_host_go_ok; then
+		if ! (cd "$ORIGIN_DIR/panel" &&
+			run env CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$tmp" ./cmd/panel); then
+			rm -f "$tmp"
+			log "ERROR" "panel: the build failed (see the Go output above; a ready binary: PANEL_SOURCE=prebuilt)"
+			return 1
+		fi
+	elif panel_can_build_in_container; then
+		# The host Go is missing or too old: build in the Go image.
+		log "INFO" "panel: no suitable Go on the host, building in the container $(panel_go_image)"
+		if ! panel_build_in_container "$tmp"; then
+			rm -f "$tmp"
+			log "ERROR" "panel: the build in the container $(panel_go_image) failed (see the output above; a ready binary: PANEL_SOURCE=prebuilt)"
+			return 1
+		fi
+	else
 		rm -f "$tmp"
-		log "ERROR" "panel: the build failed (Go not older than the version in panel/go.mod is needed; a ready binary: PANEL_SOURCE=prebuilt)"
+		log "ERROR" "panel: no Go $(panel_go_required) on the host and no Docker to build in (install either, or use a ready binary: PANEL_SOURCE=prebuilt)"
 		return 1
 	fi
 	run install -D -m 0755 "$tmp" "$bin" || {
@@ -8378,15 +8518,16 @@ preflight_panel_reasons() {
 		reasons+=("cannot get the panel: next to install.sh there is neither a ready binary ($(basename "$(panel_prebuilt_path)")), nor a panel/ directory with the sources")
 		return 0
 	fi
-	local need have
-	need=$(awk '/^go /{print $2; exit}' "$ORIGIN_DIR/panel/go.mod" 2>/dev/null)
+	local need
+	need=$(panel_go_required)
+	# A Go that is not on the host is no reason to stop when Docker can build
+	# the panel in a Go image (step_panel.sh, panel_build_in_container).
+	panel_host_go_ok && return 0
+	panel_can_build_in_container && return 0
 	if ! command -v go >/dev/null 2>&1; then
-		reasons+=("cannot get the panel: there is no Go (Go ${need:-newer} is needed) and no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
-		return 0
-	fi
-	have=$(go version 2>/dev/null | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p')
-	if [[ -n "$need" && -n "$have" && "$(printf '%s\n%s\n' "$need" "$have" | sort -V | head -1)" != "$need" ]]; then
-		reasons+=("cannot get the panel: Go $have is older than the required $need and there is no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
+		reasons+=("cannot get the panel: there is no Go (Go ${need:-newer} is needed), no Docker to build it in a container, and no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
+	else
+		reasons+=("cannot get the panel: Go $(go version | sed -n 's/^go version go\([0-9][0-9.]*\).*/\1/p') is older than the required $need, there is no Docker to build it in a container and no ready binary next to install.sh ($(basename "$(panel_prebuilt_path)"))")
 	fi
 }
 

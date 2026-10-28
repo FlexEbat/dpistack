@@ -217,3 +217,12 @@ run_menu() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Usage: install.sh"* ]]
 }
+
+@test "choosing the docker runtime for Suricata switches the nDPI plugin off at once and says so" {
+	f="$(mktemp)"
+	# guided setup: yes; components screen: back; capture group: no; components group: yes, runtime docker, confirmed
+	printf '%b' 'y\n0\nn\ny\ndocker\ny\n' >"$f"
+	run env DPISTACK_INPUT="$f" bash "$REPO_DIR/install.sh" install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=yes
+	rm -f "$f"
+	[[ "$output" == *"not in the Suricata docker image"* ]]
+}
