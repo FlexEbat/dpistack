@@ -713,6 +713,16 @@ menu_key_skipped() {
 	return 1
 }
 
+# menu_key_is_component <KEY> - 0 for a switch of the component screen; the
+# guided setup has asked these there already.
+menu_key_is_component() {
+	local row
+	for row in "${MENU_COMPONENTS[@]}"; do
+		[[ "${row%%|*}" == "$1" ]] && return 0
+	done
+	return 1
+}
+
 # menu_wizard_ask <KEY> -> 0 go on, 10 skip the group, 11 leave the wizard.
 menu_wizard_ask() {
 	local key="$1" answer err
@@ -768,13 +778,13 @@ menu_wizard() {
 	menu_components_screen
 	local g key rc
 	for g in "${MENU_GROUPS[@]}"; do
-		[[ "$g" == "components" ]] && continue
 		echo >&2
 		menu_bold "== ${MENU_GROUP_TITLE[$g]} ==" >&2
 		echo >&2
 		menu_confirm "Go through this group?" || continue
 		for key in "${SCHEMA_KEYS[@]}"; do
 			[[ "${SCHEMA_GROUP[$key]}" == "$g" ]] || continue
+			menu_key_is_component "$key" && continue
 			menu_key_skipped "$key" && continue
 			menu_wizard_ask "$key"
 			rc=$?

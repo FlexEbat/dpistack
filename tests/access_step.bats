@@ -255,3 +255,45 @@ load_preflight() {
 	[ "$status" -eq 0 ]
 	grep -q '^-w=127.0.0.1:13000$' "$DPISTACK_ROOT/etc/ntopng/ntopng.conf"
 }
+
+# v0.25.0: a part that is switched off leaves no trace in nginx, the firewall
+# and the port check.
+
+@test "components off: nginx proxies only the parts that are switched on" {
+	run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=yes --set ACCESS_CONFIRM=yes \
+		--set NTOPNG_ENABLE=no --set EVEBOX_ENABLE=no
+	[ "$status" -eq 0 ]
+	grep -q 'listen 9800' "$NGINX_CONFD"
+	run grep -q 'listen 3000' "$NGINX_CONFD"
+	[ "$status" -eq 1 ]
+	run grep -q 'listen 5636' "$NGINX_CONFD"
+	[ "$status" -eq 1 ]
+}
+
+@test "components off: the firewall opens only the ports of the parts that are on" {
+	run install_base --set ACCESS_MODE=lan --set ACCESS_CONFIRM=yes --set FIREWALL_MANAGE=auto \
+		--set NTOPNG_ENABLE=no --set PANEL_ENABLE=no
+	[ "$status" -eq 0 ]
+	grep -q 'ufw allow from .* to any port 5636 proto tcp' "$MOCK_CALLS_LOG"
+	run grep -q 'ufw allow .* port 3000' "$MOCK_CALLS_LOG"
+	[ "$status" -eq 1 ]
+	run grep -q 'ufw allow .* port 9800' "$MOCK_CALLS_LOG"
+	[ "$status" -eq 1 ]
+}
+
+@test "components off: the busy port of a part that is off is not a conflict" {
+	MOCK_SS_LISTEN="3000" run install_base --set NTOPNG_ENABLE=no
+	[ "$status" -eq 0 ]
+}
+
+@test "components off (contrast): the busy port of a part that is on stops the install" {
+	MOCK_SS_LISTEN="3000" run install_base
+	[ "$status" -eq 3 ]
+	[[ "$output" == *"port 3000"* ]]
+}
+
+@test "components off: a metrics backend without the panel is refused with a clear text" {
+	run install_base --dry-run --set PANEL_ENABLE=no --set METRICS_BACKEND=victoriametrics
+	[ "$status" -eq 2 ]
+	[[ "$output" == *"scrapes the panel"* ]]
+}

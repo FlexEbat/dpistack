@@ -109,8 +109,22 @@ component_unit() {
 	esac
 }
 
-# component_listed <id> - backend components exist only when selected.
+# component_listed <id> - backend components exist only when selected; a
+# part that is switched off (*_ENABLE=no) is left out of status and health
+# unless it is installed anyway (switching off does not remove it).
 component_listed() {
+	local key=""
+	case "$1" in
+	suricata) key=SURICATA_ENABLE ;;
+	rules) key=RULES_ENABLE ;;
+	evebox) key=EVEBOX_ENABLE ;;
+	ntopng | redis) key=NTOPNG_ENABLE ;;
+	panel) key=PANEL_ENABLE ;;
+	esac
+	if [[ -n "$key" && "$(conf_get "$key" yes)" == "no" ]]; then
+		unit_loaded "$(component_unit "$1")"
+		return
+	fi
 	case "$1" in
 	victoriametrics | prometheus)
 		[[ "$(conf_get METRICS_BACKEND none)" == "$1" ]]

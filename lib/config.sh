@@ -178,6 +178,10 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
+	if [[ "${CONF[METRICS_BACKEND]:-none}" != "none" && "${CONF[PANEL_ENABLE]:-yes}" == "no" ]]; then
+		echo "METRICS_BACKEND=${CONF[METRICS_BACKEND]} scrapes the panel: set PANEL_ENABLE=yes or METRICS_BACKEND=none"
+		errors=$((errors + 1))
+	fi
 	if [[ "${CONF[SURICATA_ENABLE]:-yes}" == "no" ]]; then
 		local dep
 		for dep in NDPI_ENABLE RULES_ENABLE; do
