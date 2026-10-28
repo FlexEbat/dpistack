@@ -124,16 +124,32 @@ access_ensure_selfsigned_cert() {
 		-keyout "$key" -out "$cert" -subj "/CN=dpistack-${name}" || return 1
 }
 
+# access_services - the web services that are switched on, one per line
+# (ntopng, evebox, panel); nginx, certificates, SELinux ports and firewall
+# rules cover only these (v0.25.0: a part can be left out).
+access_services() {
+	local name
+	for name in ntopng evebox panel; do
+		step_component_enabled "$name" && echo "$name"
+	done
+	return 0
+}
+
+# access_service_port <ntopng|evebox|panel> - the public port of the service.
+access_service_port() {
+	case "$1" in
+	ntopng) echo "${CONF[NTOPNG_PORT]:-3000}" ;;
+	evebox) echo "${CONF[EVEBOX_PORT]:-5636}" ;;
+	panel) echo "${CONF[PANEL_PORT]:-9800}" ;;
+	esac
+}
+
 access_render_nginx_full() {
 	local cidr
 	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
 	local name port
-	for name in ntopng evebox panel; do
-		case "$name" in
-		ntopng) port="${CONF[NTOPNG_PORT]:-3000}" ;;
-		evebox) port="${CONF[EVEBOX_PORT]:-5636}" ;;
-		panel) port="${CONF[PANEL_PORT]:-9800}" ;;
-		esac
+	for name in $(access_services); do
+		port=$(access_service_port "$name")
 		access_render_nginx_service "$name" "$port" "$(access_backend_port "$port")" "$cidr"
 		echo
 	done
@@ -161,8 +177,9 @@ access_selinux_notice() {
 access_selinux_ports() {
 	[[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] || return 0
 	local port
-	for port in "${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}"; do
-		selinux_port http_port_t "$port"
+	local name
+	for name in $(access_services); do
+		selinux_port http_port_t "$(access_service_port "$name")"
 	done
 }
 
@@ -226,6 +243,14 @@ access_allow_port() {
 	return 0
 }
 
+# access_service_ports - the public ports of the services that are switched on.
+access_service_ports() {
+	local name
+	for name in $(access_services); do
+		access_service_port "$name"
+	done
+}
+
 # access_fw_wanted - "cidr,port" for every port that should be open now.
 access_fw_wanted() {
 	[[ "${CONF[FIREWALL_MANAGE]:-no}" == "auto" ]] || return 0
@@ -234,10 +259,10 @@ access_fw_wanted() {
 	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
 	case "$(access_policy)" in
 	nginx)
-		ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
+		mapfile -t ports < <(access_service_ports)
 		;;
 	lan)
-		ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
+		mapfile -t ports < <(access_service_ports)
 		# The metrics backend binds 0.0.0.0 in lan mode (and nginx does not
 		# proxy it), so its own port is opened for LAN_CIDR too.
 		[[ "${CONF[METRICS_BACKEND]:-none}" != "none" ]] && ports+=("$(metrics_port "${CONF[METRICS_BACKEND]}")")
@@ -344,7 +369,7 @@ step_access_apply() {
 	if [[ "$mode" == "nginx" ]]; then
 		if [[ "${CONF[NGINX_TLS]:-none}" == "selfsigned" ]]; then
 			local name
-			for name in ntopng evebox panel; do
+			for name in $(access_services); do
 				access_ensure_selfsigned_cert "$name" || return 1
 			done
 		fi

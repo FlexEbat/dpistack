@@ -42,22 +42,6 @@ for _step in "${STEPS_ORDER[@]}"; do
 done
 unset _step
 
-# Components that can be left out (v0.25.0). A step of a component that is
-# switched off reports "no changes" and does nothing; what is already
-# installed stays (removing is `uninstall`). The *_ENABLE keys are in
-# lib/schema.sh, the cross rules in lib/config.sh.
-step_component_enabled() {
-	local yes=yes
-	case "$1" in
-	ndpi | suricata | verify) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" ]] ;;
-	rules) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" && "${CONF[RULES_ENABLE]:-$yes}" == "$yes" ]] ;;
-	redis | ntopng) [[ "${CONF[NTOPNG_ENABLE]:-$yes}" == "$yes" ]] ;;
-	evebox) [[ "${CONF[EVEBOX_ENABLE]:-$yes}" == "$yes" ]] ;;
-	panel) [[ "${CONF[PANEL_ENABLE]:-$yes}" == "$yes" ]] ;;
-	*) return 0 ;;
-	esac
-}
-
 # step_call <check|apply|plan> <step> [args] - runs a step function; the
 # steps of a switched-off component report "no changes" and do nothing.
 step_call() {

@@ -174,3 +174,28 @@ teardown() {
 	run "$CTL" frobnicate
 	[ "$status" -eq 2 ]
 }
+
+# v0.25.0: a part that is switched off is not reported as missing or failed.
+
+@test "components off: a part that is switched off and not installed is not listed" {
+	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
+	printf 'METRICS_BACKEND=none\nEVEBOX_ENABLE=no\nNTOPNG_ENABLE=no\nPANEL_ENABLE=no\nRULES_ENABLE=no\n' \
+		>"$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+	FAKE_UNITS="suricata.service"
+	export FAKE_UNITS
+
+	run "$CTL" status --json
+	[ "$status" -eq 0 ]
+	[ "$(echo "$output" | jq -r '[.components[] | select(.id=="evebox" or .id=="ntopng" or .id=="redis" or .id=="panel" or .id=="rules")] | length')" = "0" ]
+	[ "$(echo "$output" | jq -r '.components[] | select(.id=="suricata") | .state')" = "active" ]
+}
+
+@test "components off: a part that is switched off but still installed stays in the status" {
+	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
+	printf 'METRICS_BACKEND=none\nEVEBOX_ENABLE=no\nNTOPNG_ENABLE=no\n' >"$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+
+	run "$CTL" status --json
+	[ "$status" -eq 0 ]
+	[ "$(echo "$output" | jq -r '.components[] | select(.id=="evebox") | .state')" = "active" ]
+	[ "$(echo "$output" | jq -r '.components[] | select(.id=="ntopng") | .state')" = "active" ]
+}

@@ -82,6 +82,7 @@ preflight_port_conflicts() {
 	for pair in "${PREFLIGHT_PORT_KEYS[@]}"; do
 		port_key="${pair%%:*}"
 		owner_step="${pair#*:}"
+		step_component_enabled "$owner_step" || continue
 		public="${CONF[$port_key]:-}"
 		[[ -z "$public" ]] && continue
 		if [[ "$port_key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then

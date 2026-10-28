@@ -231,3 +231,19 @@ conf_get() {
 git_ref_commit() {
 	git -C "$1" rev-parse --verify -q "${2}^{commit}" 2>/dev/null
 }
+
+# Components that can be left out (v0.25.0). A step of a component that is
+# switched off reports "no changes" and does nothing; what is already
+# installed stays (removing is `uninstall`). The *_ENABLE keys are in
+# lib/schema.sh, the cross rules in lib/config.sh.
+step_component_enabled() {
+	local yes=yes
+	case "$1" in
+	ndpi | suricata | verify) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" ]] ;;
+	rules) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" && "${CONF[RULES_ENABLE]:-$yes}" == "$yes" ]] ;;
+	redis | ntopng) [[ "${CONF[NTOPNG_ENABLE]:-$yes}" == "$yes" ]] ;;
+	evebox) [[ "${CONF[EVEBOX_ENABLE]:-$yes}" == "$yes" ]] ;;
+	panel) [[ "${CONF[PANEL_ENABLE]:-$yes}" == "$yes" ]] ;;
+	*) return 0 ;;
+	esac
+}

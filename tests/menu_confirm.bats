@@ -113,7 +113,7 @@ run_menu() {
 
 @test "the guided setup asks the settings of the chosen parts and skips the others" {
 	# components screen: leave at once; then every group is declined except capture
-	run_menu "y\n0\nn\nn\nn\nn\nn\nn\nn\nn\nq\n" --set EVEBOX_ENABLE=no
+	run_menu "y\n0\nn\nn\nn\nn\nn\nn\nn\nn\nn\nq\n" --set EVEBOX_ENABLE=no
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Guided setup"* ]]
 	[[ "$output" == *"Go through this group?"* ]]
@@ -127,7 +127,7 @@ run_menu() {
 }
 
 @test "the guided setup skips the keys of a part that is switched off" {
-	run_menu "y\n0\nn\ny\n\n\n\n\n\n\n\n\nn\ny\ns\nn\nn\nn\nn\nq\n" --set EVEBOX_ENABLE=no
+	run_menu "y\n0\nn\nn\ny\n\n\n\n\n\n\n\n\nn\ny\ns\nn\nn\nn\nn\nq\n" --set EVEBOX_ENABLE=no
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"EVE_KEEP (now"* ]]
 	[[ "$output" != *"EVEBOX_PORT (now"* ]]
@@ -159,4 +159,29 @@ run_menu() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"[4/15] suricata ... no changes"* ]]
 	[[ "$output" == *"[15/15] verify ... no changes"* ]]
+}
+
+@test "the guided setup reaches every key of the components group and the rest, nothing is left out" {
+	# Enter answers every question and every "go through this group" with the
+	# default; the components screen is left with 0; the input then ends.
+	local f
+	f="$(mktemp)"
+	{
+		printf '\n0\n'
+		for _ in $(seq 1 400); do printf '\n'; done
+	} >"$f"
+	run env DPISTACK_INPUT="$f" bash "$REPO_DIR/install.sh" install
+	rm -f "$f"
+	local k
+	for k in SURICATA_RUNTIME SURICATA_SOURCE SURICATA_VERSION SURICATA_MODE IFACES NDPI_SOURCE NDPI_VERSION \
+		NTOPNG_RUNTIME NTOPNG_VERSION EVEBOX_RUNTIME EVEBOX_VERSION PIN_VERSIONS PANEL_RUNTIME PANEL_SOURCE \
+		PANEL_EDITION RULES_GROUPS EVE_KEEP ACCESS_MODE METRICS_BACKEND WATCH_INTERVAL_SEC; do
+		[[ "$output" == *"$k (now"* ]] || {
+			echo "not asked: $k" >&2
+			return 1
+		}
+	done
+	# a component switch is asked on its own screen, not a second time
+	[[ "$output" != *"SURICATA_ENABLE (now"* ]]
+	[[ "$output" != *"WATCH_ENABLE (now"* ]]
 }

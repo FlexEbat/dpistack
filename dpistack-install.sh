@@ -77,22 +77,6 @@ for _step in "${STEPS_ORDER[@]}"; do
 done
 unset _step
 
-# Components that can be left out (v0.25.0). A step of a component that is
-# switched off reports "no changes" and does nothing; what is already
-# installed stays (removing is `uninstall`). The *_ENABLE keys are in
-# lib/schema.sh, the cross rules in lib/config.sh.
-step_component_enabled() {
-	local yes=yes
-	case "$1" in
-	ndpi | suricata | verify) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" ]] ;;
-	rules) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" && "${CONF[RULES_ENABLE]:-$yes}" == "$yes" ]] ;;
-	redis | ntopng) [[ "${CONF[NTOPNG_ENABLE]:-$yes}" == "$yes" ]] ;;
-	evebox) [[ "${CONF[EVEBOX_ENABLE]:-$yes}" == "$yes" ]] ;;
-	panel) [[ "${CONF[PANEL_ENABLE]:-$yes}" == "$yes" ]] ;;
-	*) return 0 ;;
-	esac
-}
-
 # step_call <check|apply|plan> <step> [args] - runs a step function; the
 # steps of a switched-off component report "no changes" and do nothing.
 step_call() {
@@ -1625,6 +1609,22 @@ conf_get() {
 git_ref_commit() {
 	git -C "$1" rev-parse --verify -q "${2}^{commit}" 2>/dev/null
 }
+
+# Components that can be left out (v0.25.0). A step of a component that is
+# switched off reports "no changes" and does nothing; what is already
+# installed stays (removing is `uninstall`). The *_ENABLE keys are in
+# lib/schema.sh, the cross rules in lib/config.sh.
+step_component_enabled() {
+	local yes=yes
+	case "$1" in
+	ndpi | suricata | verify) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" ]] ;;
+	rules) [[ "${CONF[SURICATA_ENABLE]:-$yes}" == "$yes" && "${CONF[RULES_ENABLE]:-$yes}" == "$yes" ]] ;;
+	redis | ntopng) [[ "${CONF[NTOPNG_ENABLE]:-$yes}" == "$yes" ]] ;;
+	evebox) [[ "${CONF[EVEBOX_ENABLE]:-$yes}" == "$yes" ]] ;;
+	panel) [[ "${CONF[PANEL_ENABLE]:-$yes}" == "$yes" ]] ;;
+	*) return 0 ;;
+	esac
+}
 DPISTACK_BUNDLE_END
 put lib/config.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
@@ -1807,6 +1807,10 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
+	if [[ "${CONF[METRICS_BACKEND]:-none}" != "none" && "${CONF[PANEL_ENABLE]:-yes}" == "no" ]]; then
+		echo "METRICS_BACKEND=${CONF[METRICS_BACKEND]} scrapes the panel: set PANEL_ENABLE=yes or METRICS_BACKEND=none"
+		errors=$((errors + 1))
+	fi
 	if [[ "${CONF[SURICATA_ENABLE]:-yes}" == "no" ]]; then
 		local dep
 		for dep in NDPI_ENABLE RULES_ENABLE; do
@@ -2128,8 +2132,22 @@ component_unit() {
 	esac
 }
 
-# component_listed <id> - backend components exist only when selected.
+# component_listed <id> - backend components exist only when selected; a
+# part that is switched off (*_ENABLE=no) is left out of status and health
+# unless it is installed anyway (switching off does not remove it).
 component_listed() {
+	local key=""
+	case "$1" in
+	suricata) key=SURICATA_ENABLE ;;
+	rules) key=RULES_ENABLE ;;
+	evebox) key=EVEBOX_ENABLE ;;
+	ntopng | redis) key=NTOPNG_ENABLE ;;
+	panel) key=PANEL_ENABLE ;;
+	esac
+	if [[ -n "$key" && "$(conf_get "$key" yes)" == "no" ]]; then
+		unit_loaded "$(component_unit "$1")"
+		return
+	fi
 	case "$1" in
 	victoriametrics | prometheus)
 		[[ "$(conf_get METRICS_BACKEND none)" == "$1" ]]
@@ -4318,6 +4336,16 @@ menu_key_skipped() {
 	return 1
 }
 
+# menu_key_is_component <KEY> - 0 for a switch of the component screen; the
+# guided setup has asked these there already.
+menu_key_is_component() {
+	local row
+	for row in "${MENU_COMPONENTS[@]}"; do
+		[[ "${row%%|*}" == "$1" ]] && return 0
+	done
+	return 1
+}
+
 # menu_wizard_ask <KEY> -> 0 go on, 10 skip the group, 11 leave the wizard.
 menu_wizard_ask() {
 	local key="$1" answer err
@@ -4373,13 +4401,13 @@ menu_wizard() {
 	menu_components_screen
 	local g key rc
 	for g in "${MENU_GROUPS[@]}"; do
-		[[ "$g" == "components" ]] && continue
 		echo >&2
 		menu_bold "== ${MENU_GROUP_TITLE[$g]} ==" >&2
 		echo >&2
 		menu_confirm "Go through this group?" || continue
 		for key in "${SCHEMA_KEYS[@]}"; do
 			[[ "${SCHEMA_GROUP[$key]}" == "$g" ]] || continue
+			menu_key_is_component "$key" && continue
 			menu_key_skipped "$key" && continue
 			menu_wizard_ask "$key"
 			rc=$?
@@ -6424,16 +6452,32 @@ access_ensure_selfsigned_cert() {
 		-keyout "$key" -out "$cert" -subj "/CN=dpistack-${name}" || return 1
 }
 
+# access_services - the web services that are switched on, one per line
+# (ntopng, evebox, panel); nginx, certificates, SELinux ports and firewall
+# rules cover only these (v0.25.0: a part can be left out).
+access_services() {
+	local name
+	for name in ntopng evebox panel; do
+		step_component_enabled "$name" && echo "$name"
+	done
+	return 0
+}
+
+# access_service_port <ntopng|evebox|panel> - the public port of the service.
+access_service_port() {
+	case "$1" in
+	ntopng) echo "${CONF[NTOPNG_PORT]:-3000}" ;;
+	evebox) echo "${CONF[EVEBOX_PORT]:-5636}" ;;
+	panel) echo "${CONF[PANEL_PORT]:-9800}" ;;
+	esac
+}
+
 access_render_nginx_full() {
 	local cidr
 	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
 	local name port
-	for name in ntopng evebox panel; do
-		case "$name" in
-		ntopng) port="${CONF[NTOPNG_PORT]:-3000}" ;;
-		evebox) port="${CONF[EVEBOX_PORT]:-5636}" ;;
-		panel) port="${CONF[PANEL_PORT]:-9800}" ;;
-		esac
+	for name in $(access_services); do
+		port=$(access_service_port "$name")
 		access_render_nginx_service "$name" "$port" "$(access_backend_port "$port")" "$cidr"
 		echo
 	done
@@ -6461,8 +6505,9 @@ access_selinux_notice() {
 access_selinux_ports() {
 	[[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] || return 0
 	local port
-	for port in "${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}"; do
-		selinux_port http_port_t "$port"
+	local name
+	for name in $(access_services); do
+		selinux_port http_port_t "$(access_service_port "$name")"
 	done
 }
 
@@ -6526,6 +6571,14 @@ access_allow_port() {
 	return 0
 }
 
+# access_service_ports - the public ports of the services that are switched on.
+access_service_ports() {
+	local name
+	for name in $(access_services); do
+		access_service_port "$name"
+	done
+}
+
 # access_fw_wanted - "cidr,port" for every port that should be open now.
 access_fw_wanted() {
 	[[ "${CONF[FIREWALL_MANAGE]:-no}" == "auto" ]] || return 0
@@ -6534,10 +6587,10 @@ access_fw_wanted() {
 	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
 	case "$(access_policy)" in
 	nginx)
-		ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
+		mapfile -t ports < <(access_service_ports)
 		;;
 	lan)
-		ports=("${CONF[NTOPNG_PORT]:-3000}" "${CONF[EVEBOX_PORT]:-5636}" "${CONF[PANEL_PORT]:-9800}")
+		mapfile -t ports < <(access_service_ports)
 		# The metrics backend binds 0.0.0.0 in lan mode (and nginx does not
 		# proxy it), so its own port is opened for LAN_CIDR too.
 		[[ "${CONF[METRICS_BACKEND]:-none}" != "none" ]] && ports+=("$(metrics_port "${CONF[METRICS_BACKEND]}")")
@@ -6644,7 +6697,7 @@ step_access_apply() {
 	if [[ "$mode" == "nginx" ]]; then
 		if [[ "${CONF[NGINX_TLS]:-none}" == "selfsigned" ]]; then
 			local name
-			for name in ntopng evebox panel; do
+			for name in $(access_services); do
 				access_ensure_selfsigned_cert "$name" || return 1
 			done
 		fi
@@ -8223,6 +8276,7 @@ preflight_port_conflicts() {
 	for pair in "${PREFLIGHT_PORT_KEYS[@]}"; do
 		port_key="${pair%%:*}"
 		owner_step="${pair#*:}"
+		step_component_enabled "$owner_step" || continue
 		public="${CONF[$port_key]:-}"
 		[[ -z "$public" ]] && continue
 		if [[ "$port_key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
