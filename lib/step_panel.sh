@@ -179,14 +179,13 @@ panel_can_build_in_container() {
 }
 
 # panel_build_in_container <out-file> - the same go build, inside the Go
-# image: the sources are mounted read-only, the caches live in /tmp of the
-# container, the result lands in a scratch directory.
+# image: the sources are mounted read-only, the caches and the result live in
+# one scratch directory (the installer runs as root, so is the container).
 panel_build_in_container() {
 	local out="$1" dir
 	dir=$(mktemp -d) || return 1
-	chmod 0777 "$dir"
 	if ! run docker run --rm -v "$ORIGIN_DIR/panel:/src:ro" -v "$dir:/out" -w /src \
-		-e CGO_ENABLED=0 -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomod -e GOFLAGS=-buildvcs=false \
+		-e CGO_ENABLED=0 -e GOCACHE=/out/gocache -e GOMODCACHE=/out/gomod -e GOFLAGS=-buildvcs=false \
 		"$(panel_go_image)" go build -trimpath -ldflags "-s -w" -o /out/dpistack-panel ./cmd/panel; then
 		rm -rf "$dir"
 		return 1
