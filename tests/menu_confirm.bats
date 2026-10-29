@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
-# v0.25.0: components chosen one by one, a confirmation before every action
-# of the menu, an exit on every screen, the guided setup that asks everything.
+# v0.25.0: components chosen one by one, an exit on every screen, the guided
+# setup that asks everything. v0.26.1: a question only where something is lost
+# or hard to undo (18.29); edits are a draft until Apply, so they are not asked.
 # These tests do NOT set DPISTACK_MENU_ASSUME_YES: the questions are real.
 
 setup() {
@@ -51,28 +52,21 @@ run_menu() {
 	[[ "$output" == *"0) back"* ]]
 }
 
-@test "switching a component off asks first and then switches it" {
-	run_menu "n\nm\n4\ny\n0\nq\ny\n"
+@test "switching a component off takes effect at once as a draft edit, without a question" {
+	run_menu "n\nm\n4\n0\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Switch EveBox (alert viewer) off?"* ]]
+	[[ "$output" != *"Switch EveBox (alert viewer) off?"* ]]
 	[[ "$output" == *"[ ] EveBox (alert viewer)"* ]]
 }
 
-@test "declining the confirmation leaves the component as it was" {
-	run_menu "n\nm\n4\nn\n0\nq\n"
+@test "leaving with unapplied edits is still asked, and n keeps the menu open" {
+	run_menu "n\nm\n4\n0\nq\nn\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"not changed"* ]]
-	[[ "$output" != *"[ ] EveBox (alert viewer)"* ]]
-}
-
-@test "0 cancels a confirmation as well" {
-	run_menu "n\nm\n4\n0\n0\nq\n"
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"not changed"* ]]
+	[[ "$output" == *"unapplied"* || "$output" == *"Discard"* || "$output" == *"leave"* ]]
 }
 
 @test "switching Suricata off takes nDPI and the rules with it" {
-	run_menu "n\nm\n1\ny\n0\nq\ny\n" --set NDPI_ENABLE=yes --set SURICATA_SOURCE=source
+	run_menu "n\nm\n1\n0\nq\ny\n" --set NDPI_ENABLE=yes --set SURICATA_SOURCE=source
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"nDPI and the rules go off with it"* ]]
 	[[ "$output" == *"[ ]    with the nDPI plugin"* ]]
@@ -80,16 +74,15 @@ run_menu() {
 }
 
 @test "nDPI cannot be switched on while Suricata is off" {
-	run_menu "n\nm\n1\ny\n2\n0\nq\ny\n"
+	run_menu "n\nm\n1\n2\n0\nq\ny\n"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"works only together with Suricata"* ]]
 }
 
-@test "editing a key asks for a confirmation and a declined one keeps the value" {
-	run_menu "n\n3\n1\nno\nn\n0\nq\n"
+@test "editing a key takes effect at once as a draft; the value was typed, so nothing is asked again" {
+	run_menu "n\n3\n1\nno\n0\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Set SURICATA_ENABLE = no?"* ]]
-	[[ "$output" == *"not changed"* ]]
+	[[ "$output" != *"Set SURICATA_ENABLE = no?"* ]]
 }
 
 @test "the key editor can be left with the word cancel" {
@@ -98,11 +91,21 @@ run_menu() {
 	[[ "$output" == *"Enter or cancel = leave"* ]]
 }
 
-@test "check, plan, save and load ask before they act" {
-	run_menu "n\nc\nn\np\nn\ns\n\nl\n\nq\n"
+@test "check and plan run at once, they only read; save asks only before overwriting" {
+	run_menu "n\nc\n\np\n\nq\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Check the system (nothing is changed)?"* ]]
-	[[ "$output" == *"Show the plan (nothing is changed)?"* ]]
+	[[ "$output" != *"Check the system (nothing is changed)?"* ]]
+	[[ "$output" != *"Show the plan (nothing is changed)?"* ]]
+	[[ "$output" == *"preflight"* || "$output" == *"Plan"* || "$output" == *"plan"* ]]
+	local target="$BATS_TEST_TMPDIR/out.conf"
+	echo old >"$target"
+	run_menu "n\ns\n$target\nn\nq\n"
+	[[ "$output" == *"exists. Overwrite it?"* ]]
+	[ "$(cat "$target")" = "old" ]
+	rm -f "$target"
+	run_menu "n\ns\n$target\nq\n"
+	[[ "$output" != *"Overwrite it?"* ]]
+	[ -f "$target" ]
 }
 
 @test "the panel password screen can be left" {
@@ -111,23 +114,31 @@ run_menu() {
 	[[ "$output" == *"!cancel = leave without setting"* ]]
 }
 
-@test "the guided setup asks the settings of the chosen parts and skips the others" {
-	# components screen: leave at once; then every group is declined except capture
-	run_menu "y\n0\nn\nn\nn\nn\nn\nn\nn\nn\nn\nq\n" --set EVEBOX_ENABLE=no
+@test "a password typed twice is taken without a third question" {
+	run_menu "n\n10\nsecret-pass-123\nsecret-pass-123\nq\ny\n"
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"Guided setup"* ]]
-	[[ "$output" == *"Go through this group?"* ]]
+	[[ "$output" != *"Use this password for the panel?"* ]]
+	[[ "$output" == *"Panel password"*"set"* ]]
 }
 
-@test "the guided setup asks the advanced keys too, and leaves on x" {
-	run_menu "y\n0\ny\n\n\n\nx\ny\nq\n"
+@test "the guided setup goes through every group without asking, s skips a group" {
+	# components screen: leave at once; s skips each of the 8 groups; no password
+	run_menu "y\n0\ns\ns\ns\ns\ns\ns\ns\ns\nn\nq\n" --set EVEBOX_ENABLE=no
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Guided setup"* ]]
+	[[ "$output" == *"== Capture and mode =="* ]]
+	[[ "$output" != *"Go through this group?"* ]]
+}
+
+@test "the guided setup asks the advanced keys too, and x leaves it without a question" {
+	run_menu "y\n0\n\n\n\nx\nq\n"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"SURICATA_MODE"* ]]
-	[[ "$output" == *"Leave the guided setup"* ]]
+	[[ "$output" != *"Leave the guided setup"* ]]
 }
 
 @test "the guided setup skips the keys of a part that is switched off" {
-	run_menu "y\n0\nn\nn\ny\n\n\n\n\n\n\n\n\nn\ny\ns\nn\nn\nn\nn\nq\n" --set EVEBOX_ENABLE=no
+	run_menu "y\n0\ns\ns\n\n\n\n\n\n\n\n\ns\ns\ns\ns\ns\nn\nq\n" --set EVEBOX_ENABLE=no
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"EVE_KEEP (now"* ]]
 	[[ "$output" != *"EVEBOX_PORT (now"* ]]
@@ -220,8 +231,8 @@ run_menu() {
 
 @test "choosing the docker runtime for Suricata switches the nDPI plugin off at once and says so" {
 	f="$(mktemp)"
-	# guided setup: yes; components screen: back; capture group: no; components group: yes, runtime docker, confirmed
-	printf '%b' 'y\n0\nn\ny\ndocker\ny\n' >"$f"
+	# guided setup: yes; components screen: back; capture group: skipped; components group: runtime docker
+	printf '%b' 'y\n0\ns\ndocker\n' >"$f"
 	run env DPISTACK_INPUT="$f" bash "$REPO_DIR/install.sh" install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=yes
 	rm -f "$f"
 	[[ "$output" == *"not in the Suricata docker image"* ]]

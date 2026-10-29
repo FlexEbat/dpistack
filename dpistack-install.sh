@@ -1479,7 +1479,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.26.0"
+DPISTACK_VERSION="0.26.1"
 
 : "${DRY_RUN:=0}"
 
@@ -4130,10 +4130,6 @@ menu_edit_key() {
 			continue
 			;;
 		"-")
-			menu_confirm "Reset $key to the default (${SCHEMA_DEFAULT[$key]:-<empty>})?" || {
-				echo "  not changed" >&2
-				return 0
-			}
 			config_set_kv "$key" "${SCHEMA_DEFAULT[$key]}"
 			menu_draft_save
 			return 0
@@ -4141,17 +4137,6 @@ menu_edit_key() {
 		*)
 			local err
 			if err=$(schema_validate_one "$key" "$answer"); then
-				if schema_is_secret "$key"; then
-					menu_confirm "Set $key (a secret)?" || {
-						echo "  not changed" >&2
-						return 0
-					}
-				else
-					menu_confirm "Set $key = $answer?" || {
-						echo "  not changed" >&2
-						return 0
-					}
-				fi
 				config_set_kv "$key" "$answer"
 				menu_reconcile_conflicts
 				menu_draft_save
@@ -4256,10 +4241,6 @@ menu_panel_password_screen() {
 			echo "  the passwords do not match" >&2
 			continue
 		fi
-		menu_confirm "Use this password for the panel?" || {
-			echo "  password not set" >&2
-			return 0
-		}
 		MENU_PANEL_PASSWORD="$p1"
 		MENU_PANEL_PASSWORD_SET=1
 		MENU_DIRTY=1
@@ -4417,7 +4398,6 @@ menu_quick_install() {
 }
 
 menu_check_system_screen() {
-	menu_confirm "Check the system (nothing is changed)?" || return 0
 	local reasons
 	reasons=$(step_preflight_reasons)
 	echo >&2
@@ -4432,7 +4412,6 @@ menu_check_system_screen() {
 }
 
 menu_plan_screen() {
-	menu_confirm "Show the plan (nothing is changed)?" || return 0
 	echo >&2
 	run_plan >&2
 	local _enter
@@ -4443,7 +4422,10 @@ menu_save_to_file_screen() {
 	local path
 	menu_read path "File path (Enter = cancel): "
 	[[ -z "$path" ]] && return 0
-	menu_confirm "Write the config to $path?" || return 0
+	# Only an existing file is at risk: ask before overwriting it.
+	if [[ -e "$path" ]]; then
+		menu_confirm "$path exists. Overwrite it?" n || return 0
+	fi
 	config_write_conf "$path"
 	echo "  saved to $path" >&2
 }
@@ -4456,7 +4438,6 @@ menu_load_from_file_screen() {
 		echo "  file not found" >&2
 		return 0
 	}
-	menu_confirm "Load the values from $path (they become edits)?" || return 0
 	config_load_kv_file "$path"
 	local errs
 	errs=$(config_validate)
@@ -4502,10 +4483,7 @@ menu_toggle_component() {
 	if [[ "$key" == "SURICATA_ENABLE" && "$new" == "no" ]]; then
 		extra=" (nDPI and the rules go off with it)"
 	fi
-	menu_confirm "Switch $label $([[ $new == yes ]] && echo on || echo off)?$extra" || {
-		echo "  not changed" >&2
-		return 0
-	}
+	[[ -n "$extra" ]] && echo "  note:$extra" >&2
 	config_set_kv "$key" "$new"
 	if [[ "$key" == "SURICATA_ENABLE" && "$new" == "no" ]]; then
 		config_set_kv NDPI_ENABLE no
@@ -4635,7 +4613,6 @@ menu_wizard_ask() {
 			echo "  group ${SCHEMA_GROUP[$key]}, type ${SCHEMA_TYPE[$key]}, level ${SCHEMA_LEVEL[$key]}" >&2
 			;;
 		-)
-			menu_confirm "Reset $key to the default?" || continue
 			config_set_kv "$key" "${SCHEMA_DEFAULT[$key]}"
 			MENU_DIRTY=1
 			menu_draft_save
@@ -4643,11 +4620,6 @@ menu_wizard_ask() {
 			;;
 		*)
 			if err=$(schema_validate_one "$key" "$answer"); then
-				if schema_is_secret "$key"; then
-					menu_confirm "Set $key (a secret)?" || continue
-				else
-					menu_confirm "Set $key = $answer?" || continue
-				fi
 				config_set_kv "$key" "$answer"
 				menu_reconcile_conflicts
 				MENU_DIRTY=1
@@ -4671,7 +4643,6 @@ menu_wizard() {
 		echo >&2
 		menu_bold "== ${MENU_GROUP_TITLE[$g]} ==" >&2
 		echo >&2
-		menu_confirm "Go through this group?" || continue
 		for key in "${SCHEMA_KEYS[@]}"; do
 			[[ "${SCHEMA_GROUP[$key]}" == "$g" ]] || continue
 			menu_key_is_component "$key" && continue
@@ -4679,9 +4650,8 @@ menu_wizard() {
 			menu_wizard_ask "$key"
 			rc=$?
 			((rc == 10)) && break
-			if ((rc == 11)); then
-				menu_confirm "Leave the guided setup (answers so far are kept)?" && return 0
-			fi
+			# x: the answers so far are kept, so there is nothing to confirm
+			((rc == 11)) && return 0
 		done
 	done
 	if [[ "$MENU_PANEL_PASSWORD_SET" != "1" ]] && menu_confirm "Set the panel password now?"; then
@@ -5156,7 +5126,7 @@ menu_run_manage() {
 			;;
 		2) menu_manage_ctl status ;;
 		3) menu_manage_logs ;;
-		4) menu_confirm "Run the check tests?" && menu_manage_tests ;;
+		4) menu_manage_tests ;;
 		5)
 			menu_read answer "Upgrade packages? [y/N] "
 			if [[ "$answer" =~ ^[yY] ]]; then
@@ -5169,7 +5139,7 @@ menu_run_manage() {
 				return 0
 			fi
 			;;
-		7) menu_confirm "Change the panel password?" && menu_manage_password ;;
+		7) menu_manage_password ;;
 		q | Q)
 			menu_close_input
 			return 0

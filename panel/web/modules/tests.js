@@ -84,7 +84,6 @@ export function start(api, els, onError) {
   }
 
   async function run(which) {
-    if (!confirm("Run the test? The HTTPS test makes a network request and may take up to a minute.")) return;
     els.error.textContent = "";
     setBusy(true);
     els.note.textContent = "The test is running, please wait…";
