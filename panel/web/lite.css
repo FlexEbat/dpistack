@@ -186,3 +186,11 @@ tbody tr:hover td { background: var(--card-2); }
 .ok-line { margin: 0.3rem 0; color: var(--ok); font-weight: 600; }
 #settings-result { margin-bottom: 0.8rem; }
 @media (max-width: 52rem) { .setting { grid-template-columns: minmax(0, 1fr); } }
+
+/* version in the corner; a plain highlight when an update exists */
+.corner { display: flex; align-items: center; gap: 0.6rem; }
+.version { padding: 0.2rem 0.6rem; font-size: 0.8rem; }
+.version.has-update { font-weight: 700; border: 2px solid currentColor; }
+#update-dialog { max-width: 28rem; padding: 1.2rem; }
+#update-log:empty { display: none; }
+#update-log { max-height: 8rem; overflow: auto; font-size: 0.75rem; white-space: pre-wrap; }

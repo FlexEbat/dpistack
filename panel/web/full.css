@@ -195,3 +195,13 @@ tbody tr:hover td { background: rgba(255, 255, 255, 0.03); }
   header { padding: 1.4rem 0 1.1rem; }
   .setting { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ---- version in the corner; it glows when an update exists ---- */
+.corner { display: flex; align-items: center; gap: 0.6rem; }
+.version { padding: 0.3rem 0.7rem; font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--muted); border-radius: 999px; }
+.version.has-update { color: var(--accent-2); border-color: var(--accent); box-shadow: 0 0 0 0 var(--glow); animation: update-glow 2s ease-in-out infinite; }
+@keyframes update-glow { 50% { box-shadow: 0 0 14px 3px var(--glow); } }
+#update-dialog { max-width: 28rem; border: 1px solid var(--line-2); border-radius: 12px; padding: 1.4rem; color: inherit; background: var(--bg); }
+#update-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+#update-log:empty { display: none; }
+#update-log { max-height: 8rem; overflow: auto; font-size: 0.75rem; white-space: pre-wrap; }

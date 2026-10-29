@@ -120,7 +120,7 @@ run_menu() {
 	[ "$status" -eq 0 ]
 	before_sum=$(sha256sum "$CONF_FILE" | cut -d' ' -f1)
 
-	run_menu "4\n"
+	run_menu "5\n"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Installation found"* ]]
 	after_sum=$(sha256sum "$CONF_FILE" | cut -d' ' -f1)
@@ -246,7 +246,7 @@ run_menu() {
 	[[ "$output" == *"dpistack v$ver | Configuring an existing installation"* ]]
 
 	f="$(mktemp)"
-	printf '4\n' >"$f"
+	printf '5\n' >"$f"
 	run env DPISTACK_INPUT="$f" bash "$REPO_DIR/install.sh" install \
 		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	rm -f "$f"

@@ -23,6 +23,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/eve"
 	"github.com/FlexEbat/dpistack/panel/internal/export"
 	"github.com/FlexEbat/dpistack/panel/internal/metrics"
+	"github.com/FlexEbat/dpistack/panel/internal/update"
 	"github.com/FlexEbat/dpistack/panel/web"
 )
 
@@ -41,6 +42,8 @@ func run(args []string) error {
 	authFile := fs.String("auth-file", "/etc/dpistack/panel.auth", "argon2id hash of the panel password")
 	healthFile := fs.String("health-file", "/var/lib/dpistack/health.json", "watchdog report")
 	ctlPath := fs.String("ctl", "/usr/local/sbin/dpistack", "dpistack path")
+	version := fs.String("version", "", "the dpistack version shown in the corner of the panel")
+	updateURL := fs.String("update-url", "", "the latest-release document to check for an update (default: the project's GitHub release); \"off\" switches the check off")
 	eveFile := fs.String("eve-file", "", "eve.json to show on the Events screen; empty turns the viewer off (EVE_FILE=no)")
 	metricsFile := fs.String("metrics-file", "", "metrics.json: the graph history is restored from it and saved to it; empty keeps it in memory only")
 	tokenFile := fs.String("metrics-token-file", "", "file with the bearer token of GET /metrics; empty switches /metrics off (METRICS_EXPORT=no)")
@@ -108,7 +111,13 @@ func run(args []string) error {
 		})
 	}
 
+	var checker *update.Checker
+	if *version != "" && *updateURL != "off" {
+		checker = &update.Checker{Current: *version, URL: *updateURL}
+	}
 	handler := api.New(api.Config{
+		Version:     *version,
+		Update:      checker,
 		Policy:      policy,
 		AuthFile:    *authFile,
 		HealthFile:  *healthFile,

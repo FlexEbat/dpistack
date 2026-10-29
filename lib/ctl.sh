@@ -796,6 +796,15 @@ settings_check() {
 	out=$(config_validate_staged dpistack.conf "$staged")
 	rc=$?
 	errors="[]"
+	if ((rc == 0)); then
+		# The one conflict of two keys that the preflight would stop on only
+		# at the end of a long apply: say it now, in the panel's own words.
+		settings_load_staged "$staged"
+		if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" && "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
+			rc=3
+			out="NDPI_ENABLE: the nDPI plugin is not in the Suricata docker image; set NDPI_ENABLE=no in the same change, or keep SURICATA_RUNTIME=native"
+		fi
+	fi
 	if ((rc != 0)); then
 		errors=$(printf '%s\n' "$out" | settings_lines_json 50)
 	fi
@@ -943,6 +952,133 @@ cmd_settings() {
 	secret) settings_secret "$@" ;;
 	job) settings_job ;;
 	*) fail 2 "settings: list [--json] | check KEY=VALUE... | set [--apply|--apply-heavy] [--confirm-access] KEY=VALUE... | secret KEY | job" ;;
+	esac
+}
+
+# ------------------------------------------------------------ self-update
+#
+# `dpistack self-update [--check] | run | job`: the update of dpistack itself.
+# Only a release of the project's own repository is ever installed: the tag
+# comes from its "latest release" document, has to be newer than the running
+# version, the archive is the one GitHub builds for that tag over https and
+# must carry that same version in lib/common.sh. `run` starts the update as
+# the transient unit below (the panel restarts in the middle of it), `job`
+# shows that unit, `apply` is what the unit runs.
+
+SELFUPDATE_UNIT="dpistack-selfupdate"
+SELFUPDATE_API="https://api.github.com/repos/FlexEbat/dpistack/releases/latest"
+SELFUPDATE_ARCHIVE="https://github.com/FlexEbat/dpistack/archive/refs/tags"
+
+# selfupdate_url <default> <override-variable> - the override exists for the
+# tests only: it is honoured only when DPISTACK_ROOT is set (a sandbox).
+selfupdate_url() {
+	local default="$1" override="${2:-}"
+	if [[ -n "${DPISTACK_ROOT:-}" && -n "$override" ]]; then
+		echo "$override"
+	else
+		echo "$default"
+	fi
+}
+
+# selfupdate_latest_tag - prints v1.2.3 of the latest release or fails.
+selfupdate_latest_tag() {
+	local url doc tag
+	url=$(selfupdate_url "$SELFUPDATE_API" "${DPISTACK_UPDATE_API:-}")
+	doc=$(curl -fsS --max-time 20 -H 'Accept: application/vnd.github+json' "$url") ||
+		fail 1 "could not reach the release server"
+	tag=$(printf '%s' "$doc" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+	[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 1 "the latest release has no usable version tag"
+	echo "$tag"
+}
+
+# selfupdate_is_newer <tag> - 0 when the tag is a higher version than the running one.
+selfupdate_is_newer() {
+	local v="${1#v}"
+	[[ "$v" != "$DPISTACK_VERSION" ]] &&
+		[[ "$(printf '%s\n%s\n' "$v" "$DPISTACK_VERSION" | sort -V | tail -n1)" == "$v" ]]
+}
+
+selfupdate_check() {
+	local tag newer=false json=0
+	[[ "${1:-}" == "--json" ]] && json=1
+	tag=$(selfupdate_latest_tag) || exit 1
+	selfupdate_is_newer "$tag" && newer=true
+	if ((json)); then
+		printf '{"version":"%s","latest":"%s","update_available":%s}\n' "$DPISTACK_VERSION" "${tag#v}" "$newer"
+	elif [[ "$newer" == true ]]; then
+		echo "dpistack $DPISTACK_VERSION is running, ${tag#v} is available: sudo dpistack self-update"
+	else
+		echo "dpistack $DPISTACK_VERSION is the latest version"
+	fi
+}
+
+selfupdate_run() {
+	local tag
+	tag=$(selfupdate_latest_tag) || exit 1
+	selfupdate_is_newer "$tag" || fail 3 "there is no newer release than $DPISTACK_VERSION"
+	case "$(systemctl is-active "$SELFUPDATE_UNIT.service" 2>/dev/null)" in
+	active | activating) fail 3 "an update is already running" ;;
+	esac
+	systemctl reset-failed "$SELFUPDATE_UNIT.service" >/dev/null 2>&1 || true
+	systemd-run --quiet --unit="$SELFUPDATE_UNIT" --description="dpistack: updating to ${tag#v}" \
+		--collect "$SCRIPT_DIR/install.sh" self-update apply >/dev/null ||
+		fail 1 "could not start the update"
+	echo "update to ${tag#v} started: $SELFUPDATE_UNIT"
+}
+
+selfupdate_job() {
+	local state result lines
+	state=$(systemctl is-active "$SELFUPDATE_UNIT.service" 2>/dev/null || true)
+	[[ -n "$state" ]] || state=unknown
+	result=$(systemctl show -p Result --value "$SELFUPDATE_UNIT.service" 2>/dev/null || true)
+	lines=$(journalctl -u "$SELFUPDATE_UNIT.service" -n 200 --no-pager -o cat 2>/dev/null | settings_lines_json 200)
+	printf '{"state":"%s","result":"%s","log":%s}\n' "$(json_escape "$state")" "$(json_escape "${result:-}")" "$lines"
+}
+
+# selfupdate_apply - download, check, then run the NEW installer on the saved
+# config: it renews the persistent command, the panel and its unit, and
+# restarts what changed. The config is never rewritten with defaults.
+selfupdate_apply() {
+	local tag url tmp src
+	tag=$(selfupdate_latest_tag) || exit 1
+	if ! selfupdate_is_newer "$tag"; then
+		echo "dpistack $DPISTACK_VERSION is the latest version, nothing to do"
+		return 0
+	fi
+	url=$(selfupdate_url "$SELFUPDATE_ARCHIVE/${tag}.tar.gz" "${DPISTACK_UPDATE_ARCHIVE:-}")
+	tmp=$(mktemp -d) || fail 1 "no temporary directory"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$tmp'" EXIT
+	echo "downloading $tag"
+	curl -fsSL --max-time 300 -o "$tmp/src.tar.gz" "$url" || fail 1 "could not download $tag"
+	# Nothing outside the target directory, whatever the archive says.
+	if tar -tzf "$tmp/src.tar.gz" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+		fail 1 "the archive has an unsafe path, nothing was installed"
+	fi
+	src="$tmp/src"
+	mkdir -p "$src"
+	tar -xzf "$tmp/src.tar.gz" -C "$src" --strip-components=1 --no-same-owner ||
+		fail 1 "could not unpack the archive"
+	[[ -f "$src/install.sh" && -f "$src/lib/common.sh" ]] || fail 1 "the archive is not a dpistack release"
+	grep -q "^DPISTACK_VERSION=\"${tag#v}\"" "$src/lib/common.sh" ||
+		fail 1 "the archive does not carry the version ${tag#v}, nothing was installed"
+	echo "installing ${tag#v} on the saved config"
+	(cd "$src" && bash ./install.sh install -y)
+}
+
+cmd_self_update() {
+	local sub="${1:-}"
+	[[ $# -ge 1 ]] && shift
+	case "$sub" in
+	"" | --check) selfupdate_check ;;
+	--json | check) selfupdate_check --json ;;
+	run) selfupdate_run ;;
+	job) selfupdate_job ;;
+	apply)
+		restricted_caller && fail 2 "self-update apply: not for the panel, use run"
+		selfupdate_apply
+		;;
+	*) fail 2 "self-update: [--check] | check | run | job | apply" ;;
 	esac
 }
 
@@ -1435,6 +1571,7 @@ ctl_main() {
 	config-write) cmd_config_write "$@" ;;
 	config-revert) cmd_config_revert "$@" ;;
 	settings) cmd_settings "$@" ;;
+	self-update) cmd_self_update "$@" ;;
 	reconfigure) ctl_cmd_reconfigure "$@" ;;
 	rules-update) cmd_rules_update "$@" ;;
 	rules-sources) cmd_rules_sources "$@" ;;

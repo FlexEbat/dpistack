@@ -590,6 +590,51 @@ cmd_upgrade() {
 # touches packages (5.7's exemption for pre-existing packages is hard
 # to honour precisely without real install-provenance tracking, so the
 # conservative reading - never remove packages at all - was chosen).
+# uninstall_rm_tree <path> - rm -rf of one directory dpistack made. Refuses
+# an empty path or "/" so that a wrong variable can never reach the host.
+uninstall_rm_tree() {
+	local d="$1"
+	[[ -n "$d" && "$d" != "/" && "$d" != "${DPISTACK_ROOT}/" ]] || return 0
+	rm -rf -- "$d"
+}
+
+# uninstall_docker_stack <purge> - the containers of the docker runtime are
+# dpistack's own: the compose project is taken down (containers of other
+# projects are not in it), the compose file goes, and the panel images
+# dpistack built go. With purge the pulled images go too, but `docker image
+# rm` refuses an image that another container still uses, so those stay.
+uninstall_docker_stack() {
+	local purge="$1" svc img
+	command -v docker >/dev/null 2>&1 || return 0
+	if [[ -f "$(path_compose_yaml)" ]]; then
+		docker_compose_argv
+		run "${DOCKER_COMPOSE_ARGV[@]}" down --remove-orphans || echo "warning: docker compose down failed, the containers may need a manual removal" >&2
+	fi
+	while read -r img; do
+		if [[ -n "$img" ]]; then run docker image rm "$img" >/dev/null 2>&1 || true; fi
+	done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep '^dpistack-panel:' || true)
+	if [[ "$purge" == "1" ]]; then
+		for svc in suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana; do
+			img=$(docker_image "$svc" 2>/dev/null) || continue
+			if [[ -n "$img" ]]; then run docker image rm "$img" >/dev/null 2>&1 || true; fi
+		done
+	fi
+	rm -f "$(path_compose_yaml)"
+	rmdir "$(dirname "$(path_compose_yaml)")" 2>/dev/null || true
+}
+
+# uninstall_built_from_source - Suricata and nDPI built by dpistack leave
+# files in /usr/local; the build tree knows exactly which ones, so the build
+# system's own uninstall target removes them and nothing else.
+uninstall_built_from_source() {
+	local d
+	for d in "$(path_suricata_src_dir)" "$(path_ndpi_src_dir)"; do
+		if [[ -f "$d/Makefile" ]]; then run make -C "$d" uninstall >/dev/null 2>&1 || true; fi
+		uninstall_rm_tree "$d"
+	done
+	rm -f "$(path_suricata_ndpi_plugin)"
+}
+
 cmd_uninstall() {
 	lock_acquire
 	os_detect
@@ -680,24 +725,37 @@ cmd_uninstall() {
 		if id "$PANEL_USER" >/dev/null 2>&1; then
 			run userdel "$PANEL_USER" || true
 		fi
-		echo "uninstall --purge: configs and component data removed (packages untouched)"
+		# dpistack's own data and additions of the stack (never the packages)
+		uninstall_rm_tree "$(path_evebox_data_dir)"
+		uninstall_rm_tree "$(path_grafana_data_dir)"
+		rm -f "$(path_evebox_apt_list)" "$(path_evebox_keyring)" "$(path_ntop_repo_file)"
+		uninstall_built_from_source
+		echo "uninstall --purge: configs and component data removed (packages, Docker itself and anything dpistack did not create are untouched)"
 	fi
+
+	# dpistack's own small files, with or without --purge
+	rm -f "$(path_metrics_token)" "$(path_grafana_ini)"
+	uninstall_rm_tree "$(path_grafana_prov_dir)"
 
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
 	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_sudoers)"
 	run systemctl disable --now "$PANEL_SERVICE" 2>/dev/null || true
-	# a panel that runs as a container goes with the program
-	runtime_release_docker panel || true
+	# every container of the docker runtime, not only the panel
+	uninstall_docker_stack "$PURGE"
 	rm -f "$(path_panel_service_unit)" "$(path_panel_bin)"
 	run systemctl daemon-reload
 
 	rm -f "$(path_conf)" "$(path_conf_draft)" "$(path_secrets)" "$(path_panel_auth)"
 	rmdir "$(dirname "$(path_conf)")" 2>/dev/null || true
+	rmdir "${DPISTACK_ROOT}/opt/dpistack" "$(path_log_dir)" 2>/dev/null || true
 	rm -rf "$(path_state_dir)"
 
 	# Last, because `dpistack uninstall` runs from the copy it removes.
 	rm -f "$(path_dpistack_bin)" "$(path_retired_ctl)" "$(path_watch_bin)"
 	rm -rf "$(path_installer_copy_dir)"
+
+	# The install log goes last: every step above still writes to it.
+	[[ "$PURGE" == "1" ]] && uninstall_rm_tree "$(path_log_dir)"
 
 	echo "done"
 	return 0
@@ -812,11 +870,13 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health version)
+	mode-confirm mode-rollback fw panel-passwd test health version self-update)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen
-# panel session cannot run install, uninstall or upgrade.
+# panel session cannot run install, uninstall or upgrade. The one exception is
+# `self-update run|job` (the Update button): it installs only a newer release
+# of the project itself, never anything the caller names.
 restricted_caller() {
 	[[ -n "${SUDO_USER:-}" && "$SUDO_USER" == "$PANEL_USER" ]] ||
 		[[ "${DPISTACK_CALLER:-}" == "panel" ]]
@@ -1419,7 +1479,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.25.2"
+DPISTACK_VERSION="0.26.0"
 
 : "${DRY_RUN:=0}"
 
@@ -2870,6 +2930,15 @@ settings_check() {
 	out=$(config_validate_staged dpistack.conf "$staged")
 	rc=$?
 	errors="[]"
+	if ((rc == 0)); then
+		# The one conflict of two keys that the preflight would stop on only
+		# at the end of a long apply: say it now, in the panel's own words.
+		settings_load_staged "$staged"
+		if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" && "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
+			rc=3
+			out="NDPI_ENABLE: the nDPI plugin is not in the Suricata docker image; set NDPI_ENABLE=no in the same change, or keep SURICATA_RUNTIME=native"
+		fi
+	fi
 	if ((rc != 0)); then
 		errors=$(printf '%s\n' "$out" | settings_lines_json 50)
 	fi
@@ -3017,6 +3086,133 @@ cmd_settings() {
 	secret) settings_secret "$@" ;;
 	job) settings_job ;;
 	*) fail 2 "settings: list [--json] | check KEY=VALUE... | set [--apply|--apply-heavy] [--confirm-access] KEY=VALUE... | secret KEY | job" ;;
+	esac
+}
+
+# ------------------------------------------------------------ self-update
+#
+# `dpistack self-update [--check] | run | job`: the update of dpistack itself.
+# Only a release of the project's own repository is ever installed: the tag
+# comes from its "latest release" document, has to be newer than the running
+# version, the archive is the one GitHub builds for that tag over https and
+# must carry that same version in lib/common.sh. `run` starts the update as
+# the transient unit below (the panel restarts in the middle of it), `job`
+# shows that unit, `apply` is what the unit runs.
+
+SELFUPDATE_UNIT="dpistack-selfupdate"
+SELFUPDATE_API="https://api.github.com/repos/FlexEbat/dpistack/releases/latest"
+SELFUPDATE_ARCHIVE="https://github.com/FlexEbat/dpistack/archive/refs/tags"
+
+# selfupdate_url <default> <override-variable> - the override exists for the
+# tests only: it is honoured only when DPISTACK_ROOT is set (a sandbox).
+selfupdate_url() {
+	local default="$1" override="${2:-}"
+	if [[ -n "${DPISTACK_ROOT:-}" && -n "$override" ]]; then
+		echo "$override"
+	else
+		echo "$default"
+	fi
+}
+
+# selfupdate_latest_tag - prints v1.2.3 of the latest release or fails.
+selfupdate_latest_tag() {
+	local url doc tag
+	url=$(selfupdate_url "$SELFUPDATE_API" "${DPISTACK_UPDATE_API:-}")
+	doc=$(curl -fsS --max-time 20 -H 'Accept: application/vnd.github+json' "$url") ||
+		fail 1 "could not reach the release server"
+	tag=$(printf '%s' "$doc" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+	[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 1 "the latest release has no usable version tag"
+	echo "$tag"
+}
+
+# selfupdate_is_newer <tag> - 0 when the tag is a higher version than the running one.
+selfupdate_is_newer() {
+	local v="${1#v}"
+	[[ "$v" != "$DPISTACK_VERSION" ]] &&
+		[[ "$(printf '%s\n%s\n' "$v" "$DPISTACK_VERSION" | sort -V | tail -n1)" == "$v" ]]
+}
+
+selfupdate_check() {
+	local tag newer=false json=0
+	[[ "${1:-}" == "--json" ]] && json=1
+	tag=$(selfupdate_latest_tag) || exit 1
+	selfupdate_is_newer "$tag" && newer=true
+	if ((json)); then
+		printf '{"version":"%s","latest":"%s","update_available":%s}\n' "$DPISTACK_VERSION" "${tag#v}" "$newer"
+	elif [[ "$newer" == true ]]; then
+		echo "dpistack $DPISTACK_VERSION is running, ${tag#v} is available: sudo dpistack self-update"
+	else
+		echo "dpistack $DPISTACK_VERSION is the latest version"
+	fi
+}
+
+selfupdate_run() {
+	local tag
+	tag=$(selfupdate_latest_tag) || exit 1
+	selfupdate_is_newer "$tag" || fail 3 "there is no newer release than $DPISTACK_VERSION"
+	case "$(systemctl is-active "$SELFUPDATE_UNIT.service" 2>/dev/null)" in
+	active | activating) fail 3 "an update is already running" ;;
+	esac
+	systemctl reset-failed "$SELFUPDATE_UNIT.service" >/dev/null 2>&1 || true
+	systemd-run --quiet --unit="$SELFUPDATE_UNIT" --description="dpistack: updating to ${tag#v}" \
+		--collect "$SCRIPT_DIR/install.sh" self-update apply >/dev/null ||
+		fail 1 "could not start the update"
+	echo "update to ${tag#v} started: $SELFUPDATE_UNIT"
+}
+
+selfupdate_job() {
+	local state result lines
+	state=$(systemctl is-active "$SELFUPDATE_UNIT.service" 2>/dev/null || true)
+	[[ -n "$state" ]] || state=unknown
+	result=$(systemctl show -p Result --value "$SELFUPDATE_UNIT.service" 2>/dev/null || true)
+	lines=$(journalctl -u "$SELFUPDATE_UNIT.service" -n 200 --no-pager -o cat 2>/dev/null | settings_lines_json 200)
+	printf '{"state":"%s","result":"%s","log":%s}\n' "$(json_escape "$state")" "$(json_escape "${result:-}")" "$lines"
+}
+
+# selfupdate_apply - download, check, then run the NEW installer on the saved
+# config: it renews the persistent command, the panel and its unit, and
+# restarts what changed. The config is never rewritten with defaults.
+selfupdate_apply() {
+	local tag url tmp src
+	tag=$(selfupdate_latest_tag) || exit 1
+	if ! selfupdate_is_newer "$tag"; then
+		echo "dpistack $DPISTACK_VERSION is the latest version, nothing to do"
+		return 0
+	fi
+	url=$(selfupdate_url "$SELFUPDATE_ARCHIVE/${tag}.tar.gz" "${DPISTACK_UPDATE_ARCHIVE:-}")
+	tmp=$(mktemp -d) || fail 1 "no temporary directory"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$tmp'" EXIT
+	echo "downloading $tag"
+	curl -fsSL --max-time 300 -o "$tmp/src.tar.gz" "$url" || fail 1 "could not download $tag"
+	# Nothing outside the target directory, whatever the archive says.
+	if tar -tzf "$tmp/src.tar.gz" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+		fail 1 "the archive has an unsafe path, nothing was installed"
+	fi
+	src="$tmp/src"
+	mkdir -p "$src"
+	tar -xzf "$tmp/src.tar.gz" -C "$src" --strip-components=1 --no-same-owner ||
+		fail 1 "could not unpack the archive"
+	[[ -f "$src/install.sh" && -f "$src/lib/common.sh" ]] || fail 1 "the archive is not a dpistack release"
+	grep -q "^DPISTACK_VERSION=\"${tag#v}\"" "$src/lib/common.sh" ||
+		fail 1 "the archive does not carry the version ${tag#v}, nothing was installed"
+	echo "installing ${tag#v} on the saved config"
+	(cd "$src" && bash ./install.sh install -y)
+}
+
+cmd_self_update() {
+	local sub="${1:-}"
+	[[ $# -ge 1 ]] && shift
+	case "$sub" in
+	"" | --check) selfupdate_check ;;
+	--json | check) selfupdate_check --json ;;
+	run) selfupdate_run ;;
+	job) selfupdate_job ;;
+	apply)
+		restricted_caller && fail 2 "self-update apply: not for the panel, use run"
+		selfupdate_apply
+		;;
+	*) fail 2 "self-update: [--check] | check | run | job | apply" ;;
 	esac
 }
 
@@ -3509,6 +3705,7 @@ ctl_main() {
 	config-write) cmd_config_write "$@" ;;
 	config-revert) cmd_config_revert "$@" ;;
 	settings) cmd_settings "$@" ;;
+	self-update) cmd_self_update "$@" ;;
 	reconfigure) ctl_cmd_reconfigure "$@" ;;
 	rules-update) cmd_rules_update "$@" ;;
 	rules-sources) cmd_rules_sources "$@" ;;
@@ -4577,7 +4774,7 @@ menu_found_install_screen() {
 			menu_bold "dpistack v${DPISTACK_VERSION} | Saved config found, the install did not finish" >&2
 		fi
 		echo >&2
-		echo "  1) Configure   2) ${apply_label}   3) Control menu   4) Quit" >&2
+		echo "  1) Configure   2) ${apply_label}   3) Control menu   4) Uninstall   5) Quit" >&2
 		local choice
 		menu_read choice "> "
 		menu_die_on_eof
@@ -4585,7 +4782,8 @@ menu_found_install_screen() {
 		1) return 10 ;; # caller switches to the reconfigure menu
 		2) return 11 ;; # idempotent re-apply, no questions
 		3) return 12 ;; # caller opens the management menu
-		4 | q)
+		4) return 13 ;; # caller asks and removes
+		5 | q)
 			menu_close_input
 			exit 0
 			;;
@@ -4611,6 +4809,11 @@ menu_run_install() {
 		fi
 		if [[ "$rc" == "12" ]]; then
 			menu_run_manage
+			exit 0
+		fi
+		if [[ "$rc" == "13" ]]; then
+			menu_manage_uninstall || true
+			menu_close_input
 			exit 0
 		fi
 		# rc=10 (configure) falls through to the reconfigure menu below.
@@ -8054,6 +8257,7 @@ panel_args() {
 	args="-addr ${host}:${port} -access ${mode}"
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
 	args+=" -auth-file $(path_panel_auth) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json)"
+	args+=" -version ${DPISTACK_VERSION}"
 	panel_is_lite && args+=" -lite"
 	# Without the flag the panel shows that viewing events is off.
 	[[ "${CONF[EVE_FILE]:-yes}" == "yes" ]] && args+=" -eve-file $(path_suricata_eve_json)"

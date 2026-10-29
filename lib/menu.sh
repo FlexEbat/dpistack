@@ -903,7 +903,7 @@ menu_found_install_screen() {
 			menu_bold "dpistack v${DPISTACK_VERSION} | Saved config found, the install did not finish" >&2
 		fi
 		echo >&2
-		echo "  1) Configure   2) ${apply_label}   3) Control menu   4) Quit" >&2
+		echo "  1) Configure   2) ${apply_label}   3) Control menu   4) Uninstall   5) Quit" >&2
 		local choice
 		menu_read choice "> "
 		menu_die_on_eof
@@ -911,7 +911,8 @@ menu_found_install_screen() {
 		1) return 10 ;; # caller switches to the reconfigure menu
 		2) return 11 ;; # idempotent re-apply, no questions
 		3) return 12 ;; # caller opens the management menu
-		4 | q)
+		4) return 13 ;; # caller asks and removes
+		5 | q)
 			menu_close_input
 			exit 0
 			;;
@@ -937,6 +938,11 @@ menu_run_install() {
 		fi
 		if [[ "$rc" == "12" ]]; then
 			menu_run_manage
+			exit 0
+		fi
+		if [[ "$rc" == "13" ]]; then
+			menu_manage_uninstall || true
+			menu_close_input
 			exit 0
 		fi
 		# rc=10 (configure) falls through to the reconfigure menu below.

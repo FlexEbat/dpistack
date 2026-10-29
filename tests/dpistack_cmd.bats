@@ -278,7 +278,7 @@ STUB
 @test "a saved config without a finished install is called that, not an installation" {
 	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
 	cp "$REPO_DIR/dpistack.conf.example" "$CONF"
-	dp_input 4
+	dp_input 5
 	DPISTACK_INPUT="$INPUT" run bash "$REPO_DIR/install.sh" install --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Saved config found, the install did not finish"* ]]

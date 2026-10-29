@@ -89,3 +89,58 @@ install_base() {
 	[ "$output" = "0" ]
 	rm -f "$MOCK_CALLS_LOG"
 }
+
+@test "uninstall --purge takes the docker project down, removes dpistack's own leftovers and nothing foreign" {
+	run install_base --set EVEBOX_RUNTIME=docker
+	[ "$status" -eq 0 ]
+	mkdir -p "$DPISTACK_ROOT/opt/dpistack/compose" "$DPISTACK_ROOT/etc/dpistack/grafana-provisioning" \
+		"$DPISTACK_ROOT/var/log/dpistack" "$DPISTACK_ROOT/var/lib/evebox" "$DPISTACK_ROOT/usr/local/src/dpistack-ndpi"
+	echo x >"$DPISTACK_ROOT/opt/dpistack/compose/compose.yaml"
+	echo x >"$DPISTACK_ROOT/etc/dpistack/grafana.ini"
+	echo x >"$DPISTACK_ROOT/etc/dpistack/metrics.token"
+	echo keep >"$DPISTACK_ROOT/etc/other.conf"
+	mkdir -p "$DPISTACK_ROOT/opt/foreign"
+	echo keep >"$DPISTACK_ROOT/opt/foreign/file"
+	export MOCK_CALLS_LOG="$BATS_TEST_TMPDIR/calls.log"
+	export MOCK_DOCKER_IMAGES=$'dpistack-panel:abc123def456\nnginx:latest\n'
+	run bash "$REPO_DIR/install.sh" uninstall --purge
+	[ "$status" -eq 0 ]
+	grep -q "^docker compose -p .* down --remove-orphans" "$MOCK_CALLS_LOG"
+	grep -q "^docker image rm dpistack-panel:abc123def456" "$MOCK_CALLS_LOG"
+	# no blanket cleanup, no foreign image
+	run grep -E "prune|image rm nginx|system |volume rm|network rm|^docker rm " "$MOCK_CALLS_LOG"
+	[ "$status" -ne 0 ]
+	[ ! -e "$DPISTACK_ROOT/opt/dpistack" ]
+	[ ! -e "$DPISTACK_ROOT/etc/dpistack" ]
+	[ ! -e "$DPISTACK_ROOT/var/log/dpistack" ]
+	[ ! -e "$DPISTACK_ROOT/var/lib/evebox" ]
+	[ ! -e "$DPISTACK_ROOT/usr/local/src/dpistack-ndpi" ]
+	[ -f "$DPISTACK_ROOT/etc/other.conf" ]
+	[ -f "$DPISTACK_ROOT/opt/foreign/file" ]
+}
+
+@test "a plain uninstall keeps the data directories and the logs" {
+	run install_base
+	[ "$status" -eq 0 ]
+	mkdir -p "$DPISTACK_ROOT/var/lib/evebox" "$DPISTACK_ROOT/var/log/dpistack"
+	run bash "$REPO_DIR/install.sh" uninstall
+	[ "$status" -eq 0 ]
+	[ -d "$DPISTACK_ROOT/var/lib/evebox" ]
+	[ -d "$DPISTACK_ROOT/var/log/dpistack" ]
+}
+
+@test "the installation menu offers Uninstall and removes only after the word remove" {
+	run install_base
+	[ "$status" -eq 0 ]
+	f="$BATS_TEST_TMPDIR/in"
+	printf '4\nremove\n2\n' >"$f"
+	DPISTACK_INPUT="$f" run bash "$REPO_DIR/install.sh" install
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"4) Uninstall"* ]]
+	[ ! -e "$CONF_FILE" ]
+	printf '4\nnope\n' >"$f"
+	run install_base
+	DPISTACK_INPUT="$f" run bash "$REPO_DIR/install.sh" install
+	[[ "$output" == *"cancelled"* ]]
+	[ -f "$CONF_FILE" ]
+}

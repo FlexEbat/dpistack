@@ -149,3 +149,12 @@ teardown() {
 	run bash -c "printf '%s\n' 'BPF_FILTER=a;rm -rf /' | '$CTL' settings check"
 	[ "$status" -eq 3 ]
 }
+
+@test "settings check: the docker runtime of Suricata with the nDPI plugin is refused at the check, not at the end of the apply" {
+	run "$CTL" settings check SURICATA_RUNTIME=docker NDPI_ENABLE=yes
+	[ "$status" -eq 3 ]
+	echo "$output" | jq -e '.ok==false and (.errors[0] | test("not in the Suricata docker image"))' >/dev/null
+	run "$CTL" settings check SURICATA_RUNTIME=docker NDPI_ENABLE=no
+	[ "$status" -eq 0 ]
+	echo "$output" | jq -e '.ok' >/dev/null
+}
