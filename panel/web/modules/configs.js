@@ -68,6 +68,7 @@ export function start(api, els, onError) {
   };
 
   els.apply.onclick = async () => {
+    if (!confirm(`Save ${els.name.value} and apply? The component will be reloaded.`)) return;
     if (await run(send("?apply=1"), "Saved and applied.")) loaded = els.editor.value;
   };
 

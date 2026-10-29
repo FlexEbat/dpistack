@@ -107,7 +107,7 @@ export function start(api, els, onError) {
     if (ok) post("/api/mode", { mode: "ips", acknowledged: true });
   };
   els.ids.onclick = () => {
-    post("/api/mode", { mode: "ids" });
+    if (confirm("Go back to IDS mode? Suricata will be restarted.")) post("/api/mode", { mode: "ids" });
   };
   els.confirm.onclick = () => post("/api/mode/confirm");
 

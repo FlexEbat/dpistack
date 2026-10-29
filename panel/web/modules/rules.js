@@ -246,6 +246,7 @@ export function start(api, els, onError) {
   }
 
   async function update() {
+    if (!confirm("Update the rules now? Downloading and checking can take a few minutes.")) return;
     note("");
     setBusy(true);
     els.last.textContent = "Updating rules…";

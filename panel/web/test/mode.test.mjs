@@ -193,7 +193,7 @@ test("Confirm IPS posts to /api/mode/confirm and the countdown ends", async () =
   assert.doesNotMatch(els.message.textContent, /in \d+ s/);
 });
 
-test("IDS button posts ids at once (the safe direction needs no question) without acknowledged", async () => {
+test("IDS button asks for confirmation too and posts ids without acknowledged", async () => {
   responses = [{ mode: "ips", method: "nfq", pending: false, remaining_sec: 0 }, { ok: true, output: "", mode: ids }];
   const els = makeEls();
   stop = start(api, els, () => {});
@@ -201,7 +201,7 @@ test("IDS button posts ids at once (the safe direction needs no question) withou
   assert.equal(els.ids.disabled, false);
   els.ids.onclick();
   await settle();
-  assert.equal(confirmTexts.length, 0);
+  assert.match(confirmTexts[0], /Go back to IDS mode/);
   assert.deepEqual(calls.find((c) => c.method === "POST").body, { mode: "ids" });
 });
 

@@ -6,7 +6,7 @@
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
-- v0.26.1: the confirmations were re-examined (18.29): about twenty questions that guarded nothing are gone from the menu and the panel (a value that was just typed, read-only screens, edits of a draft, starting a component, saving a config and applying a file with its own Restore, the safe return to IDS, a rules update, a test run); the ones that guard a loss, an interruption or a security change stay.
+- v0.26.1: the confirmations were re-examined (18.29): about a dozen questions that guarded nothing are gone from the installer menu (a value that was just typed, read-only screens, edits of a draft, loading a file, entering and leaving a group of the guided setup); the ones that guard a loss, an overwrite, an interruption or a security change stay. The panel is not touched: the owner works with it only during installation or through the CLI, so its confirmations stay as they were (decision of the owner, 18.29).
 - v0.26.0: a complete uninstall (the whole docker project, the images it built, every file dpistack made; "Uninstall" in the first menu of an existing installation too), the panel shows its version in the corner and glows when a newer release exists (a click asks, then `dpistack self-update` installs it), the settings check refuses nDPI with the docker runtime in the panel as well (section 18.28).
 - v0.25.2: the first real install on Debian 13 (section 18.27): the control menu no longer locks the installer out (`Configure` in it said "another dpistack instance is running"), the `dpistack` command is installed before the preflight, a config left by a failed preflight is called "Saved config found, the install did not finish" and not an installation, the panel is built in a Go container when the host Go is missing or older than `panel/go.mod` asks (Docker is enough), the nDPI plugin is switched off at once when the docker runtime of Suricata is chosen, the preflight failure names the next command.
 - v0.25.1: `--fast` (the short questionnaire first), an option as the first argument of `install.sh`, the menu wording "Suricata with the nDPI plugin" (nDPI shown as a sub-item of Suricata), `upload-sarif` v4.39.0, the fix of issue 45 (`suricata -T` of the rendered yaml with `-S /dev/null`).
@@ -2270,6 +2270,8 @@ Not checked in a sandbox: the real GitHub release document and archive, a real u
 
 The owner asked in v0.25.0 for a confirmation before every action and now asked to re-examine them, since some are unnecessary: in a real run one setting cost two prompts (the value, then \"Set X = Y?\"), the guided setup asked \"Go through this group?\" eight times, and a read-only check asked \"nothing is changed, continue?\".
 
+**Scope (the owner's correction).** Only the installer's menu and the control menu were reviewed. The panel's own confirmations (stop and restart, Save and apply, IPS and back to IDS, rules update, test run, reload, and the rest) are unchanged.
+
 **Rule (decision, \"choose yourself\").** A question is asked only when the action (a) loses work that cannot be recovered, (b) interrupts a running service or traffic, (c) changes who can reach the host or what runs as root, or (d) removes or overwrites something that was there before. It is never asked when the person has just stated the intent (typed the value, pressed the button named for the action), when the action only reads, or when the change is a draft that is shown and confirmed once at Apply. One confirmation per commit, not one per keystroke.
 
 | place | before | now |
@@ -2282,8 +2284,6 @@ The owner asked in v0.25.0 for a confirmation before every action and now asked 
 | menu: save the config to a file | asked | asked only when the file exists (`[y/N]`, overwrite) |
 | guided setup: each group, and leaving with `x` | asked | not asked: `s` skips a group, `x` keeps the answers so far |
 | control menu: run the check tests, change the panel password | asked | not asked: the item was chosen by number |
-| panel: start a component | asked | not asked; stop and restart (an interruption) stay |
-| panel: Save and apply a config, update rules now, run a test, reload rules, back to IDS | asked | not asked: each has its own undo, is harmless, or is the safe direction |
-| **kept** | | install/apply summary, `q` with edits, `r` discard, uninstall (`remove`), upgrade, the first-screen question, continue the draft; the panel: stop/restart, switching to IPS (with the countdown and the rollback), restoring a saved config and opening another file with unsaved edits, removing a secret or a rules source, a change that opens access beyond this machine, a heavy settings change, the Update dialog |
+| **kept** | | install/apply summary, `q` with edits, `r` discard, uninstall (`remove`), upgrade, the first-screen question, continue the draft; the panel's confirmations, all unchanged |
 
-The test hook `DPISTACK_MENU_ASSUME_YES` is unchanged. Tests: `tests/menu_confirm.bats` (the new behavior, 23 tests), `panel/web/test/mode.test.mjs`.
+The test hook `DPISTACK_MENU_ASSUME_YES` is unchanged. Tests: `tests/menu_confirm.bats` (the new behavior, 23 tests).

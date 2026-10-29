@@ -18,8 +18,7 @@ function el(tag, className, text) {
 // need a second, separate confirmation that the server demands (409 with
 // confirm_required).
 async function act(api, id, action) {
-  // Starting is harmless; stopping and restarting interrupt the service.
-  if (action !== "start" && !confirm(`${VERB_ASK[action]} component "${id}"?`)) return null;
+  if (!confirm(`${VERB_ASK[action]} component "${id}"?`)) return null;
   const path = `/api/components/${encodeURIComponent(id)}/${action}`;
   try {
     const res = await api(path, { method: "POST" });
@@ -33,6 +32,7 @@ async function act(api, id, action) {
 }
 
 async function reload(api) {
+  if (!confirm("Reload Suricata rules without stopping it?")) return null;
   const res = await api("/api/suricata/reload", { method: "POST" });
   return res.output || "Rules reloaded";
 }
