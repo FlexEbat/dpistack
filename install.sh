@@ -555,6 +555,51 @@ cmd_upgrade() {
 # touches packages (5.7's exemption for pre-existing packages is hard
 # to honour precisely without real install-provenance tracking, so the
 # conservative reading - never remove packages at all - was chosen).
+# uninstall_rm_tree <path> - rm -rf of one directory dpistack made. Refuses
+# an empty path or "/" so that a wrong variable can never reach the host.
+uninstall_rm_tree() {
+	local d="$1"
+	[[ -n "$d" && "$d" != "/" && "$d" != "${DPISTACK_ROOT}/" ]] || return 0
+	rm -rf -- "$d"
+}
+
+# uninstall_docker_stack <purge> - the containers of the docker runtime are
+# dpistack's own: the compose project is taken down (containers of other
+# projects are not in it), the compose file goes, and the panel images
+# dpistack built go. With purge the pulled images go too, but `docker image
+# rm` refuses an image that another container still uses, so those stay.
+uninstall_docker_stack() {
+	local purge="$1" svc img
+	command -v docker >/dev/null 2>&1 || return 0
+	if [[ -f "$(path_compose_yaml)" ]]; then
+		docker_compose_argv
+		run "${DOCKER_COMPOSE_ARGV[@]}" down --remove-orphans || echo "warning: docker compose down failed, the containers may need a manual removal" >&2
+	fi
+	while read -r img; do
+		if [[ -n "$img" ]]; then run docker image rm "$img" >/dev/null 2>&1 || true; fi
+	done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep '^dpistack-panel:' || true)
+	if [[ "$purge" == "1" ]]; then
+		for svc in suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana; do
+			img=$(docker_image "$svc" 2>/dev/null) || continue
+			if [[ -n "$img" ]]; then run docker image rm "$img" >/dev/null 2>&1 || true; fi
+		done
+	fi
+	rm -f "$(path_compose_yaml)"
+	rmdir "$(dirname "$(path_compose_yaml)")" 2>/dev/null || true
+}
+
+# uninstall_built_from_source - Suricata and nDPI built by dpistack leave
+# files in /usr/local; the build tree knows exactly which ones, so the build
+# system's own uninstall target removes them and nothing else.
+uninstall_built_from_source() {
+	local d
+	for d in "$(path_suricata_src_dir)" "$(path_ndpi_src_dir)"; do
+		if [[ -f "$d/Makefile" ]]; then run make -C "$d" uninstall >/dev/null 2>&1 || true; fi
+		uninstall_rm_tree "$d"
+	done
+	rm -f "$(path_suricata_ndpi_plugin)"
+}
+
 cmd_uninstall() {
 	lock_acquire
 	os_detect
@@ -645,24 +690,37 @@ cmd_uninstall() {
 		if id "$PANEL_USER" >/dev/null 2>&1; then
 			run userdel "$PANEL_USER" || true
 		fi
-		echo "uninstall --purge: configs and component data removed (packages untouched)"
+		# dpistack's own data and additions of the stack (never the packages)
+		uninstall_rm_tree "$(path_evebox_data_dir)"
+		uninstall_rm_tree "$(path_grafana_data_dir)"
+		rm -f "$(path_evebox_apt_list)" "$(path_evebox_keyring)" "$(path_ntop_repo_file)"
+		uninstall_built_from_source
+		echo "uninstall --purge: configs and component data removed (packages, Docker itself and anything dpistack did not create are untouched)"
 	fi
+
+	# dpistack's own small files, with or without --purge
+	rm -f "$(path_metrics_token)" "$(path_grafana_ini)"
+	uninstall_rm_tree "$(path_grafana_prov_dir)"
 
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
 	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_sudoers)"
 	run systemctl disable --now "$PANEL_SERVICE" 2>/dev/null || true
-	# a panel that runs as a container goes with the program
-	runtime_release_docker panel || true
+	# every container of the docker runtime, not only the panel
+	uninstall_docker_stack "$PURGE"
 	rm -f "$(path_panel_service_unit)" "$(path_panel_bin)"
 	run systemctl daemon-reload
 
 	rm -f "$(path_conf)" "$(path_conf_draft)" "$(path_secrets)" "$(path_panel_auth)"
 	rmdir "$(dirname "$(path_conf)")" 2>/dev/null || true
+	rmdir "${DPISTACK_ROOT}/opt/dpistack" "$(path_log_dir)" 2>/dev/null || true
 	rm -rf "$(path_state_dir)"
 
 	# Last, because `dpistack uninstall` runs from the copy it removes.
 	rm -f "$(path_dpistack_bin)" "$(path_retired_ctl)" "$(path_watch_bin)"
 	rm -rf "$(path_installer_copy_dir)"
+
+	# The install log goes last: every step above still writes to it.
+	[[ "$PURGE" == "1" ]] && uninstall_rm_tree "$(path_log_dir)"
 
 	echo "done"
 	return 0
@@ -777,11 +835,13 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health version)
+	mode-confirm mode-rollback fw panel-passwd test health version self-update)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen
-# panel session cannot run install, uninstall or upgrade.
+# panel session cannot run install, uninstall or upgrade. The one exception is
+# `self-update run|job` (the Update button): it installs only a newer release
+# of the project itself, never anything the caller names.
 restricted_caller() {
 	[[ -n "${SUDO_USER:-}" && "$SUDO_USER" == "$PANEL_USER" ]] ||
 		[[ "${DPISTACK_CALLER:-}" == "panel" ]]

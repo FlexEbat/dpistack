@@ -10,6 +10,7 @@ import { start as startAlerts } from "./modules/alerts.js";
 import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
 import { start as startSettings } from "./modules/settings.js";
+import { start as startVersion } from "./modules/version.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -203,11 +204,26 @@ function showView(name) {
   stopView = SCREENS[name]();
 }
 
+let stopVersion = null;
+
 function showOverview() {
   showView("overview");
+  // The corner: the version, and the update when there is one.
+  stopVersion?.();
+  stopVersion = startVersion(api, {
+    badge: $("version-badge"),
+    dialog: $("update-dialog"),
+    text: $("update-text"),
+    status: $("update-status"),
+    log: $("update-log"),
+    yes: $("update-yes"),
+    no: $("update-no"),
+  });
 }
 
 function showLogin() {
+  stopVersion?.();
+  stopVersion = null;
   stopView?.();
   stopView = null;
   show("login");

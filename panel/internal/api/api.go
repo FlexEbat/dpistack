@@ -23,6 +23,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/export"
 	"github.com/FlexEbat/dpistack/panel/internal/health"
 	"github.com/FlexEbat/dpistack/panel/internal/metrics"
+	"github.com/FlexEbat/dpistack/panel/internal/update"
 )
 
 const (
@@ -54,6 +55,10 @@ type Config struct {
 	// Lite is PANEL_EDITION=lite: the same API and screens, served with the
 	// plain stylesheet and without the background effects.
 	Lite bool
+	// Version is the version of dpistack that started this panel ("0.25.2").
+	Version string
+	// Update asks GitHub for a newer release; nil switches the check off.
+	Update *update.Checker
 }
 
 type server struct {
@@ -83,6 +88,9 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/login", s.login)
 	mux.HandleFunc("POST /api/logout", s.authed(s.logout))
 	mux.HandleFunc("GET /api/status", s.authed(s.status))
+	mux.HandleFunc("GET /api/version", s.authed(s.versionGet))
+	mux.HandleFunc("POST /api/update", s.authed(s.updateStart))
+	mux.HandleFunc("GET /api/update/job", s.authed(s.updateJob))
 	mux.HandleFunc("POST /api/components/{id}/{action}", s.authed(s.control))
 	mux.HandleFunc("POST /api/suricata/reload", s.authed(s.reloadSuricata))
 	mux.HandleFunc("GET /api/config", s.authed(s.configList))

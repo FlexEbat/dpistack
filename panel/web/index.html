@@ -25,7 +25,10 @@
       <h1 id="page-title">Overview</h1>
       <p id="page-sub" class="muted">dpistack control panel</p>
     </div>
-    <button id="logout" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5V3h4M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></button>
+    <div class="corner">
+      <button id="version-badge" class="version" type="button" hidden></button>
+      <button id="logout" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5V3h4M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></button>
+    </div>
   </header>
   <nav id="nav" aria-label="Sections">
     <div class="brand"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 7l4.5 2.5v5L12 17l-4.5-2.5v-5z"/></svg><div><strong>dpistack</strong><small>traffic inspection</small></div></div>
@@ -177,5 +180,15 @@
     <section id="al-list"></section>
   </div>
 </main>
+<dialog id="update-dialog" aria-labelledby="update-title">
+  <h2 id="update-title">Update dpistack</h2>
+  <p id="update-text"></p>
+  <p id="update-status" class="muted" aria-live="polite"></p>
+  <pre id="update-log" class="muted"></pre>
+  <div class="toolbar">
+    <button id="update-yes" type="button">Update</button>
+    <button id="update-no" type="button">Not now</button>
+  </div>
+</dialog>
 </body>
 </html>
