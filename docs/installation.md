@@ -80,3 +80,14 @@ sudo dpistack uninstall --purge    # and configs, component data, users
 ```
 
 System packages are not removed. The `DPISTACK` chain and the rules dpistack added are removed; other people's rules are not touched.
+
+The docker runtime is removed too: the dpistack compose project is taken down (containers of other projects are not in it), the images dpistack built go, and with `--purge` the pulled images of the stack as well (an image that another container uses stays). Docker itself, other containers, volumes and networks are never touched. The menu offers it as `4) Uninstall` on the first screen and as item 6 of the control menu; both ask for the word `remove`.
+
+## Update dpistack itself
+
+```
+sudo dpistack self-update --check   # is a newer release published?
+sudo dpistack self-update           # shows the same; the panel starts the update, see below
+```
+
+The panel shows its version in the top right corner. When a newer release exists the version glows; a click opens a question, and **Update** installs that release on your saved config (your settings are kept; the panel restarts for a moment and the page reloads). Only a release of the project newer than the running one is ever installed. To switch the check off, start the panel with `-update-url off`.
