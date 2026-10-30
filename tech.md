@@ -1,11 +1,12 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v38** (2026-10-29)
-**Program version: v0.26.1** (slices 0-31 are done; section 17 holds the history, section 18 the reviews)
+**Document version: v39** (2026-10-30)
+**Program version: v0.26.2** (slices 0-31 are done; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.26.2: fixes from the first install report on Debian 13 (18.30): the unversioned `rustc` of the apt repositories counts as a usable Rust (nDPI is no longer switched off there), the first Suricata start has a rules file, the BitTorrent replay matches the sample pcap whatever the host `HOME_NET` is.
 - v0.26.1: the confirmations were re-examined (18.29): about a dozen questions that guarded nothing are gone from the installer menu (a value that was just typed, read-only screens, edits of a draft, loading a file, entering and leaving a group of the guided setup); the ones that guard a loss, an overwrite, an interruption or a security change stay. The panel is not touched: the owner works with it only during installation or through the CLI, so its confirmations stay as they were (decision of the owner, 18.29).
 - v0.26.0: a complete uninstall (the whole docker project, the images it built, every file dpistack made; "Uninstall" in the first menu of an existing installation too), the panel shows its version in the corner and glows when a newer release exists (a click asks, then `dpistack self-update` installs it), the settings check refuses nDPI with the docker runtime in the panel as well (section 18.28).
 - v0.25.2: the first real install on Debian 13 (section 18.27): the control menu no longer locks the installer out (`Configure` in it said "another dpistack instance is running"), the `dpistack` command is installed before the preflight, a config left by a failed preflight is called "Saved config found, the install did not finish" and not an installation, the panel is built in a Go container when the host Go is missing or older than `panel/go.mod` asks (Docker is enough), the nDPI plugin is switched off at once when the docker runtime of Suricata is chosen, the preflight failure names the next command.
@@ -46,6 +47,7 @@ Program changelog (what was done per slice of section 17):
 - v0.3.1 (slices 14-15 and the full review): alert channels (`log`, `tg`, `mail`, `panel`), `selfinstall` with the `dpistack` command and the control menu; the fixes of section 18.1: `run` returns the real error code, writing files leaves no truncated result, `state` is protected by a lock, the free keys of `dpistack.conf` are checked against patterns, `*_VERSION` for ntopng and EveBox take effect, CI is pinned by SHA.
 
 Changelog of this document:
+- v39: v0.26.2. Section 18.30.
 - v38: v0.26.1. The policy of confirmations (5.0 and 18.29) replaces "every action asks first".
 - v37: v0.26.0. The uninstall list (5.7), the `self-update` verb and `GET /api/version`, `POST /api/update`, `GET /api/update/job` (4.5, 9), the corner badge, 18.28.
 - v36: v0.25.2. The lock inside one process, the `selfinstall` step before the preflight (5.1 items 4 and 6), `install.finished` in `state`, the panel built in a Go container (9, 2), the nDPI/docker rule in the menu, the decisions of 18.27.
@@ -2287,3 +2289,17 @@ The owner asked in v0.25.0 for a confirmation before every action and now asked 
 | **kept** | | install/apply summary, `q` with edits, `r` discard, uninstall (`remove`), upgrade, the first-screen question, continue the draft; the panel's confirmations, all unchanged |
 
 The test hook `DPISTACK_MENU_ASSUME_YES` is unchanged. Tests: `tests/menu_confirm.bats` (the new behavior, 23 tests).
+
+### 18.30 The install report on Debian 13 (v0.26.2)
+
+The owner sent a report of an install on Debian 13 (x86_64, 2 CPUs, v0.26.1). Three defects were confirmed in the code and are fixed, each with a test.
+
+| id | finding and decision |
+| --- | --- |
+| D17 | **nDPI silently off on Debian 13.** `pkg_rust_obtainable` counted only an installed Rust or versioned `rustc-1.N` packages; Debian 13 has neither on a fresh host but offers `rustc` 1.85 as the ordinary package. The source build was dropped for the distribution Suricata and `NDPI_ENABLE` went to `no`. Decision: for apt the candidate of `rustc` (`apt-cache policy`, an epoch is allowed) counts when it is at least 1.75, and `pkg_select_rust` installs `rustc cargo` then (the default package is preferred to a `rustc-1.N`). Tests: `families.bats`, `hardening.bats`. |
+| D18 | **Suricata started before any rules existed.** The Debian package ships no `suricata.rules`, `suricata.yaml` lists it, so the service exited and systemd stopped retrying; the `rules` step comes after the `suricata` step and needs the installed Suricata, so the order stays. Decision: before `enable --now` the step creates a placeholder rules file (a comment line) when there is none; a real file is never touched; `step_rules_check` treats the placeholder as "no rules yet", so `suricata-update` always replaces it. The mock `systemctl` can now fail a start while a file is missing (`MOCK_SYSTEMCTL_NEED_FILE`). Tests: `suricata_step.bats`, `rules_step.bats`. |
+| D19 | **The BitTorrent self-test could not pass without nDPI.** The sample pcap is a flow between two private hosts; the ET P2P rules are `$HOME_NET -> $EXTERNAL_NET`, so with the default (or the real) `HOME_NET` they cannot match. Decision (the production ruleset stays under test, no private fallback rule): the offline replay config sets `HOME_NET` and `EXTERNAL_NET` to `any`. Checked with a real Suricata 7.0.3: the same rule gives 0 alerts with the default networks and 2 with `any`. Test: `test_cmd.bats`. |
+
+Not done, open for the next slice: the HTTPS self-test with empty `tls` events (the report's hypothesis about a post-quantum ClientHello is not confirmed; it needs the real host and the curl check from the report), a busy `NTOPNG_PORT` that only warns, the non-interactive saved-config option 2 (`ACCESS_CONFIRM`), the installed copy of `dpistack` that has no `panel/` for a re-run, and a wait for the dpkg lock (a flag on every `apt-get` call changes the commands the tests match, so it needs its own change).
+
+Not checked in a sandbox: the real Debian 13 package candidates and the ET P2P ruleset replay (the sandbox cannot reach the rules server).

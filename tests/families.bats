@@ -206,6 +206,15 @@ rust_case() {
 	[[ "$output" == *"rc=1 source=source ndpi=yes"* ]]
 }
 
+@test "Debian 13: the unversioned rustc 1.85 keeps the source build and nDPI" {
+	MOCK_APT_RUSTC_DEFAULT="1.85.0+dfsg3-1" run rust_case ''
+	[[ "$output" == *"rc=1 source=source ndpi=yes"* ]]
+	MOCK_APT_RUSTC_DEFAULT="1:1.85.0+dfsg3-1" run rust_case ''
+	[[ "$output" == *"rc=1 source=source ndpi=yes"* ]]
+	MOCK_APT_RUSTC_DEFAULT="1.63.0+dfsg1-2" run rust_case ''
+	[[ "$output" == *"rc=0 source=distro ndpi=no"* ]]
+}
+
 @test "no Rust and no suricata package: nothing to fall back to" {
 	MOCK_APT_MISSING="suricata" run rust_case ''
 	[[ "$output" == *"rc=1 source=source ndpi=yes"* ]]

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Mock for bats tests (tech.md 11): every package has a candidate unless
 # it is listed in MOCK_APT_MISSING; versioned rustc packages come from
-# MOCK_APT_RUSTC (default none newer than the system one).
+# MOCK_APT_RUSTC (default none newer than the system one); the candidate of
+# the unversioned rustc comes from MOCK_APT_RUSTC_DEFAULT (e.g. 1.85.0+dfsg3-1).
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
 fi
@@ -10,6 +11,8 @@ policy)
 	pkg="$2"
 	if [[ " ${MOCK_APT_MISSING:-} " == *" $pkg "* ]]; then
 		printf '%s:\n  Installed: (none)\n  Candidate: (none)\n' "$pkg"
+	elif [[ "$pkg" == "rustc" && -n "${MOCK_APT_RUSTC_DEFAULT:-}" ]]; then
+		printf '%s:\n  Installed: (none)\n  Candidate: %s\n' "$pkg" "$MOCK_APT_RUSTC_DEFAULT"
 	else
 		printf '%s:\n  Installed: (none)\n  Candidate: 1.0-1\n' "$pkg"
 	fi

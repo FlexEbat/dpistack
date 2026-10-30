@@ -413,6 +413,16 @@ inst() {
 	grep -q 'apt-get install -y rustc-1.83 cargo-1.83' "$CALLS"
 }
 
+@test "the source build installs the unversioned rustc and cargo when the default is new enough" {
+	ubuntu_root
+	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" MOCK_APT_RUSTC_DEFAULT="1.85.0+dfsg3-1" bash -c "
+		source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'
+		source '$REPO_DIR/lib/os.sh'; os_detect >/dev/null 2>&1
+		pkg_select_rust"
+	[ "$status" -eq 0 ]
+	grep -q 'apt-get install -y rustc cargo' "$CALLS"
+}
+
 @test "no newer rustc package: a warning, nothing installed, the build is left to configure" {
 	ubuntu_root
 	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" bash -c "

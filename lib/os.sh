@@ -334,6 +334,22 @@ pkg_rust_versioned_minor() {
 		awk -v m="$SURICATA_RUST_MIN_MINOR" '$1 >= m' | sort -n | head -n 1
 }
 
+# pkg_rust_default_minor - N of the 1.N version of the unversioned
+# `rustc` package the apt repositories would install (Debian 13 has
+# 1.85 there, no rustc-1.N packages); empty when there is none.
+pkg_rust_default_minor() {
+	apt-cache policy rustc 2>/dev/null |
+		sed -n 's/^ *Candidate: \([0-9][0-9]*:\)\{0,1\}1\.\([0-9][0-9]*\)\..*/\2/p' | head -n 1
+}
+
+# pkg_rust_default_ok - the unversioned rustc/cargo of the apt
+# repositories is new enough for Suricata.
+pkg_rust_default_ok() {
+	local minor
+	minor=$(pkg_rust_default_minor)
+	((${minor:-0} >= SURICATA_RUST_MIN_MINOR))
+}
+
 # pkg_rust_obtainable - a Rust new enough for Suricata from git is
 # installed or can be installed from the repositories.
 pkg_rust_obtainable() {
@@ -341,7 +357,7 @@ pkg_rust_obtainable() {
 	have=$(rustc --version 2>/dev/null | sed -n 's/^rustc 1\.\([0-9][0-9]*\)\..*/\1/p')
 	((${have:-0} >= SURICATA_RUST_MIN_MINOR)) && return 0
 	case "$OS_FAMILY" in
-	apt) [[ -n "$(pkg_rust_versioned_minor)" ]] ;;
+	apt) pkg_rust_default_ok || [[ -n "$(pkg_rust_versioned_minor)" ]] ;;
 	dnf)
 		have=$(dnf -q repoquery --latest-limit=1 --qf '%{version}' rust 2>/dev/null |
 			sed -n 's/^1\.\([0-9][0-9]*\)\..*/\1/p' | head -n 1)
@@ -356,6 +372,12 @@ pkg_select_rust() {
 	local have wanted
 	have=$(rustc --version 2>/dev/null | sed -n 's/^rustc 1\.\([0-9][0-9]*\)\..*/\1/p')
 	((${have:-0} >= SURICATA_RUST_MIN_MINOR)) && return 0
+	# The default packages first: where they are new enough (Debian 13)
+	# the build uses the ordinary `rustc` and `cargo`.
+	if [[ "$OS_FAMILY" == "apt" ]] && pkg_rust_default_ok; then
+		pkg_install rustc cargo || return 1
+		return 0
+	fi
 	wanted=$(pkg_rust_versioned_minor)
 	if [[ -z "$wanted" ]]; then
 		echo "suricata: rustc 1.${have:-?} is older than 1.${SURICATA_RUST_MIN_MINOR}, there are no newer rustc-1.N packages in the repositories; the build may fail at configure (then use SURICATA_SOURCE=oisf or distro)" >&2

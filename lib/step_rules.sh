@@ -119,6 +119,8 @@ rules_suricata_version() {
 
 step_rules_check() {
 	[[ -f "$(path_suricata_ruleset)" ]] || return 1
+	# The suricata step leaves a placeholder so the first start works.
+	! grep -q '^# dpistack placeholder' "$(path_suricata_ruleset)" 2>/dev/null || return 1
 
 	local expected_enable_hash actual_enable_hash
 	expected_enable_hash=$(rules_render_enable_conf | state_hash_content)
