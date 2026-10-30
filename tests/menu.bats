@@ -287,3 +287,38 @@ run_menu() {
 	[[ "$output" == *"unclear choice: 0099"* ]]
 	[[ "$output" != *"value too great"* ]]
 }
+
+@test "saved config, option 2: a network access is confirmed in the menu, not by a failure (report, Debian 13)" {
+	run bash "$REPO_DIR/install.sh" install -y \
+		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	[ "$status" -eq 0 ]
+	sed -i '/^ACCESS_MODE=/d' "$CONF_FILE"
+	echo "ACCESS_MODE=lan" >>"$CONF_FILE"
+	export DPISTACK_MENU_ASSUME_YES=0
+
+	run_menu "2\nn\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"reachable from more than this machine"* ]]
+	[[ "$output" == *"not confirmed, nothing was changed"* ]]
+
+	run_menu "2\ny\n"
+	[[ "$output" == *"reachable from more than this machine"* ]]
+	[[ "$output" != *"needs --set ACCESS_CONFIRM=yes"* ]]
+}
+
+@test "the same applied network access is not asked again (option 2)" {
+	run bash "$REPO_DIR/install.sh" install -y \
+		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	[ "$status" -eq 0 ]
+	export DPISTACK_MENU_ASSUME_YES=0
+	run_menu "2\n"
+	[[ "$output" != *"reachable from more than this machine"* ]]
+}
+
+@test "a busy port kept with q does not start the install: the menu says so and stays (report, NTOPNG_PORT)" {
+	export DPISTACK_MENU_ASSUME_YES=0
+	MOCK_SS_LISTEN=3000 run_menu "n\n10\nmypassword123\nmypassword123\ni\nq\nq\ny\n" --set ACCESS_CONFIRM=yes
+	[[ "$output" == *"port 3000 (NTOPNG_PORT) is already busy"* ]]
+	[[ "$output" == *"the install was not started: a port is still busy"* ]]
+	[ ! -e "$CONF_FILE" ]
+}

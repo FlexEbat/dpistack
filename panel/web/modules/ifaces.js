@@ -26,7 +26,7 @@ export function start(api, els, onError, onChanged) {
 
   function render(names) {
     if (names.length === 0) {
-      els.list.replaceChildren(el("p", "muted", "No interfaces."));
+      els.list.replaceChildren(el("p", "muted empty", "No interfaces."));
       return;
     }
     const t = el("table");

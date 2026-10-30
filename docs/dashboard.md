@@ -4,7 +4,7 @@ English | [Русский](dashboard.ru.md)
 
 The web panel shows the state of the stack and lets you control it without the command line. The default address is `http://127.0.0.1:9800` (see "Access" in [deployment.md](deployment.md)). Signing in with a password is required; the password is stored as an argon2id hash, and you can change it with `dpistack panel-passwd` or in the control menu.
 
-The interface is responsive: on a wide screen the navigation is on the left, on a narrow one on top. The page loads no external fonts, scripts or images and works on a network without internet access.
+The interface is responsive: on a wide screen the navigation is on the left, on a narrow one it is a floating bar with a menu that opens over the whole screen. The page loads no external fonts, scripts or images (the Geist fonts and the Phosphor icons come from the panel itself) and works on a network without internet access.
 
 ## Editions
 
@@ -12,7 +12,7 @@ The interface is responsive: on a wide screen the navigation is on the left, on 
 
 | Edition | Look | When to choose it |
 | --- | --- | --- |
-| `full` (default) | a dark console: matte surfaces, one cool-blue accent, a sidebar, staggered entrance animations and a quiet particle background (it stops when the tab is hidden and respects `prefers-reduced-motion`) | a workstation or any host where the browser has room to spare |
+| `full` (default) | a dark console: flat surfaces, one cool-blue accent, the Geist font, a sidebar, blocks that rise into view once and a quiet particle background (it stops when the tab is hidden and respects `prefers-reduced-motion`) | a workstation or any host where the browser has room to spare |
 | `lite` | a plain, light page: system fonts, no background canvas, no animations, a small stylesheet | a small host, an old browser or a slow remote link |
 
 The server sends the stylesheet and the background script of the chosen edition, so a lite page never downloads the full one.

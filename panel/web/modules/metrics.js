@@ -81,7 +81,7 @@ function card(def, series) {
   c.append(el("h3", "", def.title));
   if (!series || !series.available) {
     // Unavailable is said in words: a zero line would claim the opposite.
-    c.append(el("p", "muted", `No data: ${(series && series.reason) || "series unavailable"}.`));
+    c.append(el("p", "muted empty", `No data: ${(series && series.reason) || "series unavailable"}.`));
     return c;
   }
   const scale = def.scale || 1;

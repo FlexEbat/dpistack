@@ -108,7 +108,7 @@ export function start(api, els, onError) {
 
   function renderGroups(groups) {
     if (groups.length === 0) {
-      els.groups.replaceChildren(el("p", "muted", "No groups enabled by hand."));
+      els.groups.replaceChildren(el("p", "muted empty", "No groups enabled by hand."));
       return;
     }
     const t = el("table");
@@ -129,7 +129,7 @@ export function start(api, els, onError) {
 
   function renderDisabled(sids) {
     if (sids.length === 0) {
-      els.disabled.replaceChildren(el("p", "muted", "No disabled rules."));
+      els.disabled.replaceChildren(el("p", "muted empty", "No disabled rules."));
       return;
     }
     const t = el("table");

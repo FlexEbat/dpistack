@@ -74,11 +74,34 @@ os_detect() {
 	fi
 }
 
+# apt_lock_wait_on / apt_lock_wait_off - apt-get waits up to 5 minutes for
+# the dpkg lock (unattended-upgrades, a package manager of the owner)
+# instead of failing at once with "Could not get lock". It goes through
+# APT_CONFIG, so the apt-get command lines stay the same; an APT_CONFIG
+# the owner already set is left alone.
+APT_LOCK_CONF=""
+apt_lock_wait_on() {
+	[[ "${DRY_RUN:-0}" == "1" || -n "${APT_CONFIG:-}" ]] && return 0
+	APT_LOCK_CONF=$(mktemp "${TMPDIR:-/tmp}/dpistack-apt.XXXXXX") || return 0
+	printf 'DPkg::Lock::Timeout "300";\n' >"$APT_LOCK_CONF"
+	export APT_CONFIG="$APT_LOCK_CONF"
+}
+apt_lock_wait_off() {
+	[[ -n "$APT_LOCK_CONF" ]] || return 0
+	rm -f "$APT_LOCK_CONF"
+	unset APT_CONFIG
+	APT_LOCK_CONF=""
+}
+
 pkg_install() {
 	# pkg_install <package...>
 	case "$OS_FAMILY" in
 	apt)
+		apt_lock_wait_on
 		run apt-get install -y "$@"
+		local rc=$?
+		apt_lock_wait_off
+		return "$rc"
 		;;
 	dnf)
 		run dnf install -y "$@"
@@ -125,7 +148,11 @@ pkg_repo_add() {
 	case "$OS_FAMILY:$name" in
 	apt:oisf)
 		run add-apt-repository -y ppa:oisf/suricata-stable
+		apt_lock_wait_on
 		run apt-get update
+		local rc=$?
+		apt_lock_wait_off
+		return "$rc"
 		;;
 	dnf:oisf)
 		pkg_install dnf-plugins-core || return 1

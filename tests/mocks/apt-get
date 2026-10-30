@@ -4,4 +4,11 @@
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
 fi
+# MOCK_APT_CONF_LOG=<file>: what APT_CONFIG points to while apt-get runs.
+if [[ -n "${MOCK_APT_CONF_LOG:-}" ]]; then
+	{
+		echo "APT_CONFIG=${APT_CONFIG:-}"
+		[[ -n "${APT_CONFIG:-}" ]] && cat "$APT_CONFIG"
+	} >>"$MOCK_APT_CONF_LOG"
+fi
 exit "${MOCK_EXIT:-0}"
