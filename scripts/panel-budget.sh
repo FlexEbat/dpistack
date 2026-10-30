@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Resource budget of the panel (tech.md 9): static files at most 150 KB
-# before compression, the binary at most 15 MB, resident memory of an idle
-# panel at most 25 MB. Builds the panel, so it needs Go.
+# Resource budget of the panel (tech.md 9, 9.1): the static files the panel
+# serves (page, stylesheets, scripts) at most 150 KB before compression, the
+# fonts (woff2, already compressed) at most 64 KB apart, the binary at most
+# 15 MB, resident memory of an idle panel at most 25 MB. The tests under
+# panel/web/test are not embedded and not served, so they do not count.
+# Builds the panel, so it needs Go.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 MAX_STATIC_KB=150
+MAX_FONTS_KB=64
 MAX_BINARY_MB=15
 MAX_RSS_MB=25
 
@@ -32,8 +36,10 @@ check() {
 	fi
 }
 
-static_bytes=$(find panel/web -type f ! -name '*.go' -print0 | xargs -0 cat | wc -c)
+static_bytes=$(find panel/web -type f ! -name '*.go' ! -path 'panel/web/test/*' ! -path 'panel/web/fonts/*' -print0 | xargs -0 cat | wc -c)
 check "static files" $(((static_bytes + 1023) / 1024)) "$MAX_STATIC_KB" KB
+font_bytes=$(find panel/web/fonts -type f -name '*.woff2' -print0 | xargs -0 cat | wc -c)
+check "fonts" $(((font_bytes + 1023) / 1024)) "$MAX_FONTS_KB" KB
 
 (cd panel && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$work/panel" ./cmd/panel)
 binary_bytes=$(stat -c %s "$work/panel")
