@@ -4,4 +4,10 @@
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
 fi
+# MOCK_SYSTEMCTL_NEED_FILE=<path>: starting a unit fails while the file is
+# missing, like Suricata without suricata.rules on Debian.
+if [[ -n "${MOCK_SYSTEMCTL_NEED_FILE:-}" && "$*" == *"enable --now"* && ! -e "$MOCK_SYSTEMCTL_NEED_FILE" ]]; then
+	echo "mock systemctl: $MOCK_SYSTEMCTL_NEED_FILE is missing, the unit exits at once" >&2
+	exit 1
+fi
 exit "${MOCK_EXIT:-0}"

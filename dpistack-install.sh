@@ -1479,7 +1479,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.26.1"
+DPISTACK_VERSION="0.26.2"
 
 : "${DRY_RUN:=0}"
 
@@ -5486,6 +5486,22 @@ pkg_rust_versioned_minor() {
 		awk -v m="$SURICATA_RUST_MIN_MINOR" '$1 >= m' | sort -n | head -n 1
 }
 
+# pkg_rust_default_minor - N of the 1.N version of the unversioned
+# `rustc` package the apt repositories would install (Debian 13 has
+# 1.85 there, no rustc-1.N packages); empty when there is none.
+pkg_rust_default_minor() {
+	apt-cache policy rustc 2>/dev/null |
+		sed -n 's/^ *Candidate: \([0-9][0-9]*:\)\{0,1\}1\.\([0-9][0-9]*\)\..*/\2/p' | head -n 1
+}
+
+# pkg_rust_default_ok - the unversioned rustc/cargo of the apt
+# repositories is new enough for Suricata.
+pkg_rust_default_ok() {
+	local minor
+	minor=$(pkg_rust_default_minor)
+	((${minor:-0} >= SURICATA_RUST_MIN_MINOR))
+}
+
 # pkg_rust_obtainable - a Rust new enough for Suricata from git is
 # installed or can be installed from the repositories.
 pkg_rust_obtainable() {
@@ -5493,7 +5509,7 @@ pkg_rust_obtainable() {
 	have=$(rustc --version 2>/dev/null | sed -n 's/^rustc 1\.\([0-9][0-9]*\)\..*/\1/p')
 	((${have:-0} >= SURICATA_RUST_MIN_MINOR)) && return 0
 	case "$OS_FAMILY" in
-	apt) [[ -n "$(pkg_rust_versioned_minor)" ]] ;;
+	apt) pkg_rust_default_ok || [[ -n "$(pkg_rust_versioned_minor)" ]] ;;
 	dnf)
 		have=$(dnf -q repoquery --latest-limit=1 --qf '%{version}' rust 2>/dev/null |
 			sed -n 's/^1\.\([0-9][0-9]*\)\..*/\1/p' | head -n 1)
@@ -5508,6 +5524,12 @@ pkg_select_rust() {
 	local have wanted
 	have=$(rustc --version 2>/dev/null | sed -n 's/^rustc 1\.\([0-9][0-9]*\)\..*/\1/p')
 	((${have:-0} >= SURICATA_RUST_MIN_MINOR)) && return 0
+	# The default packages first: where they are new enough (Debian 13)
+	# the build uses the ordinary `rustc` and `cargo`.
+	if [[ "$OS_FAMILY" == "apt" ]] && pkg_rust_default_ok; then
+		pkg_install rustc cargo || return 1
+		return 0
+	fi
 	wanted=$(pkg_rust_versioned_minor)
 	if [[ -z "$wanted" ]]; then
 		echo "suricata: rustc 1.${have:-?} is older than 1.${SURICATA_RUST_MIN_MINOR}, there are no newer rustc-1.N packages in the repositories; the build may fail at configure (then use SURICATA_SOURCE=oisf or distro)" >&2
@@ -9057,6 +9079,8 @@ rules_suricata_version() {
 
 step_rules_check() {
 	[[ -f "$(path_suricata_ruleset)" ]] || return 1
+	# The suricata step leaves a placeholder so the first start works.
+	! grep -q '^# dpistack placeholder' "$(path_suricata_ruleset)" 2>/dev/null || return 1
 
 	local expected_enable_hash actual_enable_hash
 	expected_enable_hash=$(rules_render_enable_conf | state_hash_content)
@@ -9221,6 +9245,7 @@ put lib/step_suricata.sh 644 <<'DPISTACK_BUNDLE_END'
 
 SURICATA_PACKAGE="suricata"
 SURICATA_UNIT="suricata.service"
+SURICATA_RULES_PLACEHOLDER="# dpistack placeholder: the rules step replaces this file (suricata-update)"
 
 suricata_home_net_value() {
 	local v="${CONF[HOME_NET]:-}"
@@ -9692,6 +9717,25 @@ suricata_log_access() {
 	return 0
 }
 
+# suricata_ensure_ruleset - the first start needs a rules file: the
+# Debian package ships none and suricata.yaml lists it, so Suricata
+# exited at once and systemd gave up ("Start request repeated too
+# quickly"). The `rules` step comes after this one and needs the
+# installed Suricata, so a placeholder stands in until suricata-update
+# replaces it (step_rules_check treats the placeholder as "no rules yet").
+suricata_ensure_ruleset() {
+	local rules
+	rules=$(path_suricata_ruleset)
+	[[ -e "$rules" ]] && return 0
+	run mkdir -p "$(dirname "$rules")" || return 1
+	if [[ "${DRY_RUN:-0}" == "1" ]]; then
+		printf '+ create the placeholder %s\n' "$rules"
+		return 0
+	fi
+	printf '%s\n' "$SURICATA_RULES_PLACEHOLDER" >"$rules" || return 1
+	chmod 0644 "$rules"
+}
+
 step_suricata_apply() {
 	if docker_wanted suricata; then
 		runtime_release_native "$SURICATA_UNIT" || return 1
@@ -9756,6 +9800,7 @@ step_suricata_apply() {
 	suricata_mode_files_apply || return 1
 	suricata_log_access || return 1
 
+	suricata_ensure_ruleset || return 1
 	run systemctl enable --now "$SURICATA_UNIT" || return 1
 	# A changed unit, drop-in or yaml (IDS <-> IPS) is read only after a restart.
 	if ((was_configured)); then
@@ -10470,6 +10515,15 @@ put templates/suricata-test.yaml.tpl 644 <<'DPISTACK_BUNDLE_END'
 # Offline config for `dpistack test bittorrent` (tech.md 10).
 # Same ruleset and plugins as production. Events go only to the -l
 # directory, so the main eve.json is never touched.
+# The sample pcap is a flow between two private hosts. With the real
+# HOME_NET the ET rules (`$HOME_NET -> $EXTERNAL_NET`) cannot match it,
+# so the replay treats every address as both: the test checks the
+# ruleset, not the network layout of the host.
+vars:
+  address-groups:
+    HOME_NET: "any"
+    EXTERNAL_NET: "any"
+
 default-rule-path: @@RULE_DIR@@
 rule-files:
 @@RULE_FILES@@

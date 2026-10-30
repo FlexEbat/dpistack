@@ -239,3 +239,9 @@ enable_p2p() {
 	[ ! -e "$LAST" ]
 	[[ "$output" != *"WARNING"* ]]
 }
+
+@test "the offline BitTorrent replay config treats every address as HOME_NET and EXTERNAL_NET" {
+	run grep -A3 'address-groups' "$REPO_DIR/templates/suricata-test.yaml.tpl"
+	[[ "$output" == *'HOME_NET: "any"'* ]]
+	[[ "$output" == *'EXTERNAL_NET: "any"'* ]]
+}

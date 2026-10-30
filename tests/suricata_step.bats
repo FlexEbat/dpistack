@@ -161,3 +161,25 @@ load_step() {
 	[[ "$output" == *"rc=0"* ]]
 	grep -Eq '^suricata -T -c .*suricata.yaml -l .* -S /dev/null$' "$BATS_TEST_TMPDIR/calls"
 }
+
+@test "Debian 13: the first start finds a rules file (a placeholder), the rules step replaces it" {
+	MOCK_IP_EXISTING_IFACES="eth0"
+	export MOCK_IP_EXISTING_IFACES
+	ruleset="$DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules"
+	MOCK_SYSTEMCTL_NEED_FILE="$ruleset" run bash "$REPO_DIR/install.sh" install -y \
+		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set IFACES=eth0 --only preflight,suricata
+	[ "$status" -eq 0 ]
+	grep -q '^# dpistack placeholder' "$ruleset"
+}
+
+@test "a ruleset that is already there is not replaced by the placeholder" {
+	MOCK_IP_EXISTING_IFACES="eth0"
+	export MOCK_IP_EXISTING_IFACES
+	ruleset="$DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules"
+	mkdir -p "$(dirname "$ruleset")"
+	echo "# real rules" >"$ruleset"
+	run bash "$REPO_DIR/install.sh" install -y \
+		--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set IFACES=eth0 --only preflight,suricata
+	[ "$status" -eq 0 ]
+	[ "$(cat "$ruleset")" = "# real rules" ]
+}

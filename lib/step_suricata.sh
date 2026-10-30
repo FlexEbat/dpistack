@@ -5,6 +5,7 @@
 
 SURICATA_PACKAGE="suricata"
 SURICATA_UNIT="suricata.service"
+SURICATA_RULES_PLACEHOLDER="# dpistack placeholder: the rules step replaces this file (suricata-update)"
 
 suricata_home_net_value() {
 	local v="${CONF[HOME_NET]:-}"
@@ -476,6 +477,25 @@ suricata_log_access() {
 	return 0
 }
 
+# suricata_ensure_ruleset - the first start needs a rules file: the
+# Debian package ships none and suricata.yaml lists it, so Suricata
+# exited at once and systemd gave up ("Start request repeated too
+# quickly"). The `rules` step comes after this one and needs the
+# installed Suricata, so a placeholder stands in until suricata-update
+# replaces it (step_rules_check treats the placeholder as "no rules yet").
+suricata_ensure_ruleset() {
+	local rules
+	rules=$(path_suricata_ruleset)
+	[[ -e "$rules" ]] && return 0
+	run mkdir -p "$(dirname "$rules")" || return 1
+	if [[ "${DRY_RUN:-0}" == "1" ]]; then
+		printf '+ create the placeholder %s\n' "$rules"
+		return 0
+	fi
+	printf '%s\n' "$SURICATA_RULES_PLACEHOLDER" >"$rules" || return 1
+	chmod 0644 "$rules"
+}
+
 step_suricata_apply() {
 	if docker_wanted suricata; then
 		runtime_release_native "$SURICATA_UNIT" || return 1
@@ -540,6 +560,7 @@ step_suricata_apply() {
 	suricata_mode_files_apply || return 1
 	suricata_log_access || return 1
 
+	suricata_ensure_ruleset || return 1
 	run systemctl enable --now "$SURICATA_UNIT" || return 1
 	# A changed unit, drop-in or yaml (IDS <-> IPS) is read only after a restart.
 	if ((was_configured)); then

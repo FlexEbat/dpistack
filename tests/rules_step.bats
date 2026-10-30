@@ -79,3 +79,10 @@ install_base() {
 	grep -q '^ExecStart=/bin/sh -c ' "$svc"
 	grep -Eq '^ExecStartPost=-.*dpistack reload suricata$' "$svc"
 }
+
+@test "the placeholder ruleset of the suricata step does not count as done rules" {
+	mkdir -p "$(dirname "$RULESET")"
+	echo "# dpistack placeholder: the rules step replaces this file (suricata-update)" >"$RULESET"
+	run bash -c "source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'; source '$REPO_DIR/lib/config.sh'; source '$REPO_DIR/lib/step_rules.sh'; step_rules_check"
+	[ "$status" -ne 0 ]
+}
