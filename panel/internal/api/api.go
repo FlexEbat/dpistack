@@ -143,7 +143,14 @@ func static(next http.Handler) http.Handler {
 			writeError(w, http.StatusMethodNotAllowed, "method not supported")
 			return
 		}
-		w.Header().Set("Cache-Control", "no-cache")
+		if strings.HasSuffix(r.URL.Path, ".woff2") {
+			// The mime table of the host may lack woff2, and the fonts only
+			// change with a new version of the panel.
+			w.Header().Set("Content-Type", "font/woff2")
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

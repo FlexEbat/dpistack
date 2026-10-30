@@ -56,7 +56,7 @@ export function start(api, els, onError) {
 
   function show(results, note) {
     els.note.textContent = note || "";
-    els.result.replaceChildren(results.length ? rows(results) : el("p", "muted", "No tests have run yet."));
+    els.result.replaceChildren(results.length ? rows(results) : el("p", "muted empty", "No tests have run yet."));
   }
 
   async function loadLast() {

@@ -456,3 +456,30 @@ inst() {
 	MOCK_EXIT=100 run inst upgrade
 	[ "$status" -eq 1 ]
 }
+
+@test "apt waits for the dpkg lock through APT_CONFIG, and the temporary file is removed (report, dpkg lock)" {
+	ubuntu_root
+	log="$(mktemp)"
+	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_APT_CONF_LOG="$log" bash -c "
+		source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'
+		source '$REPO_DIR/lib/os.sh'; os_detect >/dev/null 2>&1
+		pkg_install curl
+		echo \"after: APT_CONFIG=\${APT_CONFIG:-}\""
+	[ "$status" -eq 0 ]
+	grep -q '^DPkg::Lock::Timeout "300";$' "$log"
+	conf=$(sed -n 's/^APT_CONFIG=//p' "$log" | head -n 1)
+	[ -n "$conf" ] && [ ! -e "$conf" ]
+	[[ "$output" == *"after: APT_CONFIG="* && "$output" != *"after: APT_CONFIG=/"* ]]
+	rm -f "$log"
+}
+
+@test "an APT_CONFIG the owner already set is left alone" {
+	ubuntu_root
+	log="$(mktemp)"
+	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_APT_CONF_LOG="$log" APT_CONFIG=/etc/mine.conf bash -c "
+		source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'
+		source '$REPO_DIR/lib/os.sh'; os_detect >/dev/null 2>&1
+		pkg_install curl"
+	grep -q '^APT_CONFIG=/etc/mine.conf$' "$log"
+	rm -f "$log"
+}

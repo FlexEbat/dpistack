@@ -11,6 +11,7 @@ import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
 import { start as startSettings } from "./modules/settings.js";
 import { start as startVersion } from "./modules/version.js";
+import { menu, revealOnce, skipLink } from "./modules/chrome.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -197,7 +198,7 @@ function showView(name) {
   show("overview"); // the signed-in page
   stopView?.();
   for (const v of VIEWS) $("view-" + v).hidden = v !== name;
-  for (const b of document.querySelectorAll("#nav button")) {
+  for (const b of document.querySelectorAll("#nav button[data-view]")) {
     if (b.dataset.view === name) b.setAttribute("aria-current", "page");
     else b.removeAttribute("aria-current");
   }
@@ -259,9 +260,15 @@ $("login-form").addEventListener("submit", async (event) => {
   }
 });
 
-for (const b of document.querySelectorAll("#nav button")) {
-  b.addEventListener("click", () => showView(b.dataset.view));
+const navMenu = menu();
+for (const b of document.querySelectorAll("#nav button[data-view]")) {
+  b.addEventListener("click", () => {
+    showView(b.dataset.view);
+    navMenu.close();
+  });
 }
+skipLink();
+revealOnce(document);
 
 $("logout").addEventListener("click", async () => {
   await api("/api/logout", { method: "POST" }).catch(() => {});

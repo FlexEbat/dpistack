@@ -54,7 +54,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `EVE_REDIS` | string | empty | light | Send events to Redis (an address like host:port/list). (advanced) |
 | `EVE_ROTATE` | daily \| weekly \| size | `daily` | light | How to rotate eve.json: daily, weekly or by size. (advanced) |
 | `EVE_KEEP` | integer 0..3650 | `14` | light | How many rotated files to keep. (advanced) |
-| `EVE_MAX_SIZE_MB` | integer 1..1000000 | empty | light | File size in MB that triggers rotation (the by-size mode). (advanced) |
+| `EVE_MAX_SIZE_MB` | integer 1..1000000 | empty | light | File size in MB that triggers rotation (the size mode). (advanced) |
 | `STATS_INTERVAL_SEC` | integer 5..300 | `30` | light | How often Suricata writes statistics (seconds). (advanced) |
 | `EVEBOX_DB` | sqlite \| elasticsearch | `sqlite` | heavy | Where EveBox stores events. (advanced) |
 | `EVEBOX_ES_URL` | string | empty | light | Elasticsearch address for the elasticsearch mode. (advanced) |
@@ -64,7 +64,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 
 | Key | Values | Default | Change | Description |
 | --- | --- | --- | --- | --- |
-| `RULES_SOURCES` | string | `et/open` | light | suricata-update rule sources, space separated. (advanced) |
+| `RULES_SOURCES` | string | `et/open` | light | Rule sources for the rules updater, space separated. (advanced) |
 | `RULES_URLS` | string | empty | light | Your own rule set addresses, space separated. (advanced) |
 | `RULES_GROUPS` | string | `emerging-p2p,emerging-policy` | light | Enabled rule groups, comma separated. (advanced) |
 | `RULES_UPDATE` | on \| off | `on` | light | Update the rules on a schedule. (advanced) |
@@ -76,12 +76,12 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | --- | --- | --- | --- | --- |
 | `EVEBOX_PORT` | integer 1..65535 | `5636` | light | EveBox port. (advanced) |
 | `ACCESS_MODE` | localhost \| lan \| nginx | `localhost` | light | Who can open the panels: localhost, the local network or through nginx. |
-| `BIND_ADDR` | string | `auto` | light | Address the web services listen on: auto (127.0.0.1, or every address in lan mode) or one IPv4 address of this host, for example 192.168.1.156. A non-loopback address opens the panels to LAN_CIDR. |
+| `BIND_ADDR` | string | `auto` | light | Address the web services listen on: auto (127.0.0.1, or every address in lan mode) or one IPv4 address of this host, for example 192.168.1.156. An address that is not loopback opens the panels to LAN_CIDR. |
 | `LAN_CIDR` | string | `auto` | light | The network allowed in lan mode, or auto. (advanced) |
 | `PANEL_PORT` | integer 1..65535 | `9800` | light | Port of this panel. (advanced) |
 | `NTOPNG_PORT` | integer 1..65535 | `3000` | light | ntopng port. (advanced) |
 | `NGINX_MANAGE` | yes \| snippet | `snippet` | light | How to manage nginx: replace the configuration or only drop in a fragment. (advanced) |
-| `NGINX_TLS` | none \| selfsigned \| existing | `none` | light | TLS on nginx: none, self-signed or your own certificate. (advanced) |
+| `NGINX_TLS` | none \| selfsigned \| existing | `none` | light | TLS on nginx: none, self signed or your own certificate. (advanced) |
 | `NGINX_CERT` | string | empty | light | Path to the certificate for the existing mode. (advanced) |
 | `NGINX_KEY` | string | empty | light | Path to the key for the existing mode. (advanced) |
 | `FIREWALL_MANAGE` | no \| auto | `no` | light | Open the needed ports in the firewall by itself. (advanced) |

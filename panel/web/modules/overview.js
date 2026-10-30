@@ -68,7 +68,7 @@ export function render(status, areas) {
           ["Check", "Status", "Details", "Since"],
           checks.map((c) => [c.id, badge(c.status), c.detail || c.value || "", fmtTime(c.since)]),
         )
-      : el("p", "muted", "No checks yet."),
+      : el("p", "muted empty", "No checks yet."),
   );
 }
 

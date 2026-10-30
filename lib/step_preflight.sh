@@ -164,7 +164,7 @@ preflight_panel_reasons() {
 		return 0
 	fi
 	if [[ ! -d "$ORIGIN_DIR/panel" ]]; then
-		reasons+=("cannot get the panel: next to install.sh there is neither a ready binary ($(basename "$(panel_prebuilt_path)")), nor a panel/ directory with the sources")
+		reasons+=("cannot get the panel: next to install.sh there is neither a ready binary ($(basename "$(panel_prebuilt_path)")), nor a panel/ directory with the sources (run install.sh from the cloned repository, or set DPISTACK_ORIGIN_DIR to it)")
 		return 0
 	fi
 	local need

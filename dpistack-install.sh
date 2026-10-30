@@ -1479,7 +1479,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.26.2"
+DPISTACK_VERSION="0.27.0"
 
 : "${DRY_RUN:=0}"
 
@@ -4711,8 +4711,12 @@ menu_main_screen() {
 				echo "  installation is unavailable without a panel password" >&2
 				continue
 			fi
-			# A busy port is a warning with a choice here, not a stop later.
-			preflight_resolve_ports_interactive || true
+			# A busy port is a warning with a choice here. Keeping it means
+			# the preflight would stop on it, so the menu does not start.
+			if ! preflight_resolve_ports_interactive; then
+				echo "  the install was not started: a port is still busy. Pick another port in the settings or stop the program that holds it" >&2
+				continue
+			fi
 			return 0
 			;;
 		*)
@@ -4762,6 +4766,28 @@ menu_found_install_screen() {
 	done
 }
 
+# menu_saved_access_confirm - "apply the saved config" runs without
+# questions, but a config that opens the panels to the network needs the
+# owner's explicit yes (the validation asks for ACCESS_CONFIRM=yes). The
+# menu asks once, unless the same access was already applied and confirmed.
+menu_saved_access_confirm() {
+	local mode bind need=0
+	mode="${CONF[ACCESS_MODE]:-localhost}"
+	bind="${CONF[BIND_ADDR]:-auto}"
+	[[ "$mode" != "localhost" ]] && need=1
+	[[ "$mode" != "nginx" && "$bind" != "auto" && "$bind" != 127.* ]] && need=1
+	((need)) || return 0
+	if [[ "$(state_read_value "applied.ACCESS_MODE")" == "$mode" &&
+	"$(state_read_value "applied.BIND_ADDR")" == "$bind" ]]; then
+		# shellcheck disable=SC2034 # read by lib/config.sh
+		ACCESS_CONFIRM=yes
+		return 0
+	fi
+	menu_confirm "The panels will be reachable from more than this machine (ACCESS_MODE=$mode). Continue?" n || return 1
+	# shellcheck disable=SC2034 # read by lib/config.sh
+	ACCESS_CONFIRM=yes
+}
+
 # menu_run_install - entry point for `install.sh install` without -y.
 # Returns 0 once the user chose "Install"; the caller continues
 # into the normal validate/summary/preflight/apply pipeline (5.1 item
@@ -4773,7 +4799,12 @@ menu_run_install() {
 		menu_found_install_screen
 		local rc=$?
 		if [[ "$rc" == "11" ]]; then
-			NON_INTERACTIVE=1 # "apply current config again" asks nothing
+			if ! menu_saved_access_confirm; then
+				echo "  not confirmed, nothing was changed" >&2
+				menu_close_input
+				exit 0
+			fi
+			NON_INTERACTIVE=1 # "apply current config again" asks nothing else
 			menu_close_input
 			return 0
 		fi
@@ -5226,11 +5257,34 @@ os_detect() {
 	fi
 }
 
+# apt_lock_wait_on / apt_lock_wait_off - apt-get waits up to 5 minutes for
+# the dpkg lock (unattended-upgrades, a package manager of the owner)
+# instead of failing at once with "Could not get lock". It goes through
+# APT_CONFIG, so the apt-get command lines stay the same; an APT_CONFIG
+# the owner already set is left alone.
+APT_LOCK_CONF=""
+apt_lock_wait_on() {
+	[[ "${DRY_RUN:-0}" == "1" || -n "${APT_CONFIG:-}" ]] && return 0
+	APT_LOCK_CONF=$(mktemp "${TMPDIR:-/tmp}/dpistack-apt.XXXXXX") || return 0
+	printf 'DPkg::Lock::Timeout "300";\n' >"$APT_LOCK_CONF"
+	export APT_CONFIG="$APT_LOCK_CONF"
+}
+apt_lock_wait_off() {
+	[[ -n "$APT_LOCK_CONF" ]] || return 0
+	rm -f "$APT_LOCK_CONF"
+	unset APT_CONFIG
+	APT_LOCK_CONF=""
+}
+
 pkg_install() {
 	# pkg_install <package...>
 	case "$OS_FAMILY" in
 	apt)
+		apt_lock_wait_on
 		run apt-get install -y "$@"
+		local rc=$?
+		apt_lock_wait_off
+		return "$rc"
 		;;
 	dnf)
 		run dnf install -y "$@"
@@ -5277,7 +5331,11 @@ pkg_repo_add() {
 	case "$OS_FAMILY:$name" in
 	apt:oisf)
 		run add-apt-repository -y ppa:oisf/suricata-stable
+		apt_lock_wait_on
 		run apt-get update
+		local rc=$?
+		apt_lock_wait_off
+		return "$rc"
 		;;
 	dnf:oisf)
 		pkg_install dnf-plugins-core || return 1
@@ -8711,7 +8769,7 @@ preflight_panel_reasons() {
 		return 0
 	fi
 	if [[ ! -d "$ORIGIN_DIR/panel" ]]; then
-		reasons+=("cannot get the panel: next to install.sh there is neither a ready binary ($(basename "$(panel_prebuilt_path)")), nor a panel/ directory with the sources")
+		reasons+=("cannot get the panel: next to install.sh there is neither a ready binary ($(basename "$(panel_prebuilt_path)")), nor a panel/ directory with the sources (run install.sh from the cloned repository, or set DPISTACK_ORIGIN_DIR to it)")
 		return 0
 	fi
 	local need

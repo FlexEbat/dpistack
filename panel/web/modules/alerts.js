@@ -68,9 +68,9 @@ export function start(api, els, onError) {
       els.error.textContent = "";
       fillChecks(res.checks);
       if (!res.file_present) {
-        els.list.replaceChildren(el("p", "muted", "No alert history yet: no check has changed its status."));
+        els.list.replaceChildren(el("p", "muted empty", "No alert history yet: no check has changed its status."));
       } else if (res.alerts.length === 0) {
-        els.list.replaceChildren(el("p", "muted", "No alerts for this check."));
+        els.list.replaceChildren(el("p", "muted empty", "No alerts for this check."));
       } else {
         els.list.replaceChildren(table(res.alerts));
       }
