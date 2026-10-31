@@ -167,6 +167,7 @@ README и руководства есть на английском и русс�
 | --- | --- |
 | [docs/installation.ru.md](docs/installation.ru.md) | установка, обновление, удаление, занятые порты |
 | [docs/configuration.ru.md](docs/configuration.ru.md) | справочник всех параметров `dpistack.conf` |
+| [docs/runtimes.ru.md](docs/runtimes.ru.md) | Docker или нативно: что где может работать и как части находят друг друга |
 | [docs/dashboard.ru.md](docs/dashboard.ru.md) | панель: экраны, редакции, настройки, безопасность |
 | [docs/deployment.ru.md](docs/deployment.ru.md) | runtime, панель в Docker, доступ и адрес прослушивания |
 | [docs/platforms.ru.md](docs/platforms.ru.md) | поддерживаемые дистрибутивы |

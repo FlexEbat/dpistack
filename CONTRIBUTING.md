@@ -25,7 +25,7 @@ Installing from a clone to check by hand is done on a separate machine or a snap
 bash scripts/gate.sh
 ```
 
-The gate runs `shfmt`, `shellcheck`, the security checks (`scripts/security.sh`), the single file (`scripts/bundle.sh --check`), the config example and the reference of settings, `bats tests`, `gofmt`, `go vet`, `go test`, the interface tests (`node --test`) and the resource budget of the panel. The same checks run in CI on Ubuntu 22.04 and 24.04, plus `actionlint`, `trivy` and `gitleaks`.
+The gate runs `shfmt`, `shellcheck`, the security checks (`scripts/security.sh`), the single file (`scripts/bundle.sh --check`), the config example and the reference of settings, `bats tests`, `gofmt`, `go vet`, `go test`, the interface tests (`node --test`). The same checks run in CI on Ubuntu 22.04 and 24.04, plus `actionlint`, `trivy` and `gitleaks`.
 
 If `install.sh`, `lib/`, `templates/` or `bin/` changed, rebuild the single file: `bash scripts/bundle.sh`. If the settings schema changed, update the config example, the hints of the Settings screen, the table in tech.md and the reference (`bash scripts/gen-config-doc.sh`).
 

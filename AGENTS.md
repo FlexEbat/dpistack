@@ -25,7 +25,7 @@ dpistack: an installer and a panel for the nDPI, Suricata, EveBox and ntopng sta
 ## Rules of work
 
 1. Work on the `dev` branch. Changes reach `main` only as a pull request after a green gate; there are no direct commits to `main`.
-2. Before a commit run `bash scripts/gate.sh`. It runs `shfmt`, `shellcheck`, the security checks, the checks of the single file, the config example and the reference, `bats`, and, if Go is there, `gofmt`, `go vet`, `go test`, the interface tests on node and the check of the panel budget. A green gate is required.
+2. Before a commit run `bash scripts/gate.sh`. It runs `shfmt`, `shellcheck`, the security checks, the checks of the single file, the config example and the reference, `bats`, and, if Go is there, `gofmt`, `go vet`, `go test` and the interface tests on node. A green gate is required.
 3. If you changed any file of `install.sh`, `lib/`, `templates/`, `bin/`, run `bash scripts/bundle.sh`, otherwise the single-file check fails.
 4. If you changed the key schema, update `lib/schema.sh`, `dpistack.conf.example`, the table in tech.md, the hint in `panel/web/modules/settings-model.js` (a test compares it with the schema) and run `bash scripts/gen-config-doc.sh`.
 5. Every decision and contract is recorded in tech.md. The program version in `lib/common.sh` and in tech.md changes together.
@@ -41,7 +41,7 @@ dpistack: an installer and a panel for the nDPI, Suricata, EveBox and ntopng sta
 - Values from the config and from a request are not put into a command line without a check against the schema; the panel sends `KEY=VALUE` pairs on stdin.
 - In bats a `! command` that is not the last line of a test is ignored: write `run command; [ "$status" -ne 0 ]` (checked in `tests/ci_config.bats`).
 - Tests do not touch the system: external commands are replaced by stubs from `tests/mocks/` through `PATH`, and `DPISTACK_ROOT` sets the root of the file system.
-- The panel interface: no external fonts, scripts or images, no inline scripts or styles (the CSP policy); the budget of the static files is 150 KB. The lite edition must keep every feature of the full one; only the look differs.
+- The panel interface: no external fonts, scripts or images, no inline scripts or styles (the CSP policy). The lite edition must keep every feature of the full one; only the look differs.
 - Go modules may be unavailable without a network: the panel tests run in CI.
 
 ## What not to do

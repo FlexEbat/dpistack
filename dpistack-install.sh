@@ -870,7 +870,7 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health version self-update)
+	mode-confirm mode-rollback fw panel-passwd test health runtime version self-update)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen
@@ -1479,7 +1479,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.27.0"
+DPISTACK_VERSION="0.28.0"
 
 : "${DRY_RUN:=0}"
 
@@ -2179,6 +2179,7 @@ Usage: dpistack <command> [arguments]
   panel-passwd                       panel password from stdin
   test bittorrent|https|all [--json] check tests (section 10)
   health [--json]                    one watchdog run
+  runtime [--json]                   what can run in docker, the runtime of every part, the links between them
   version                            bundle version
 
 Config names: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
@@ -3682,6 +3683,136 @@ cmd_panel_passwd() {
 	echo "panel password updated"
 }
 
+# --- runtime: what can run in Docker, and the links between parts (4.10) ---
+
+# RUNTIME_MATRIX rows: id|docker (yes|no|follows:<id>)|why. The same table is
+# in tech.md 4.10 and docs/runtimes.md; tests/runtime_matrix.bats compares the
+# ids with COMPONENTS and the docker keys with the schema.
+RUNTIME_MATRIX=(
+	"suricata|yes|image jasonish/suricata; no nDPI plugin in the image and no IPS (mode ips needs a native Suricata)"
+	"ndpi|no|the plugin is built into a native Suricata, there is no image for it"
+	"rules|follows:suricata|suricata-update runs on the host or inside the Suricata container, whichever Suricata runs in"
+	"evebox|yes|image jasonish/evebox"
+	"redis|follows:ntopng|the store behind ntopng, always in the same runtime as ntopng"
+	"ntopng|yes|image ntop/ntopng"
+	"victoriametrics|yes|image victoriametrics/victoria-metrics, only when it is the selected backend"
+	"prometheus|yes|image prom/prometheus, only when it is the selected backend"
+	"node_exporter|yes|image prom/node-exporter"
+	"grafana|yes|image grafana/grafana-oss"
+	"panel|yes|an image built on the host from the panel binary; it runs privileged with pid host and reaches dpistack through nsenter"
+	"watch|no|a systemd timer that calls the dpistack of the host"
+	"nginx|no|a package of the host, used only with ACCESS_MODE=nginx"
+	"firewall|no|rules of the host kernel (iptables, nft, ufw, firewalld), they also guard the containers that use the host network"
+	"installer|no|install.sh and the dpistack command are scripts of the host"
+)
+
+# runtime_tcp <host> <port> - something accepts a connection.
+runtime_tcp() {
+	# shellcheck disable=SC2016  # $1 and $2 belong to the inner shell
+	timeout 2 bash -c ': </dev/tcp/$1/$2' _ "$1" "$2" 2>/dev/null
+}
+
+# runtime_state <id> - the state word of a component, absent when it is not
+# listed.
+runtime_state() {
+	component_listed "$1" || {
+		echo absent
+		return
+	}
+	component_state "$(component_unit "$1")"
+}
+
+# runtime_link <from> <to> <what> <endpoint> <kind> - one link as JSON. ok is
+# true or false when both ends run, null when one of them does not (nothing to
+# check yet).
+runtime_link() {
+	local from="$1" to="$2" what="$3" endpoint="$4" kind="$5" ok=null
+	local sf st
+	sf=$(runtime_state "$from")
+	st=$(runtime_state "$to")
+	if [[ "$sf" == active && "$st" == active ]]; then
+		case "$kind" in
+		tcp)
+			if runtime_tcp "${endpoint%:*}" "${endpoint##*:}"; then ok=true; else ok=false; fi
+			;;
+		file)
+			if [[ -r "$endpoint" ]]; then ok=true; else ok=false; fi
+			;;
+		esac
+	fi
+	printf '{"from":"%s","to":"%s","what":"%s","endpoint":"%s","ok":%s}' \
+		"$from" "$to" "$what" "$(json_escape "$endpoint")" "$ok"
+}
+
+runtime_links() {
+	local first=1
+	emit() {
+		((first)) || printf ','
+		first=0
+		runtime_link "$@"
+	}
+	local host backend
+	host=$(conf_get BIND_ADDR 127.0.0.1)
+	[[ -z "$host" || "$host" == "0.0.0.0" ]] && host=127.0.0.1
+	printf '['
+	emit suricata evebox "eve.json" "$(path_suricata_eve_json)" file
+	[[ "$(conf_get EVE_FILE yes)" == "yes" ]] && emit suricata panel "eve.json" "$(path_suricata_eve_json)" file
+	emit redis ntopng "redis" "127.0.0.1:6379" tcp
+	backend=$(conf_get METRICS_BACKEND none)
+	if [[ "$backend" != none ]]; then
+		local bport pport
+		bport=$(conf_get METRICS_BACKEND_PORT "")
+		[[ -n "$bport" ]] || { [[ "$backend" == victoriametrics ]] && bport=8428 || bport=9090; }
+		pport=$(conf_get PANEL_PORT 9800)
+		[[ "$(conf_get ACCESS_MODE localhost)" == nginx ]] && pport=$((pport + 10000))
+		emit panel "$backend" "metrics scrape" "$host:$pport" tcp
+		emit node_exporter "$backend" "metrics scrape" "$host:$(conf_get NODE_EXPORTER_PORT 9100)" tcp
+		emit "$backend" grafana "data source" "$host:$bport" tcp
+	fi
+	printf ']'
+}
+
+cmd_runtime() {
+	local json=0
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "runtime: unknown argument" ;;
+	esac
+	[[ $# -le 1 ]] || fail 2 "runtime: extra arguments"
+
+	local row id docker why current first=1 mixed natives=0 dockers=0
+	local out=""
+	for row in "${RUNTIME_MATRIX[@]}"; do
+		IFS='|' read -r id docker why <<<"$row"
+		current=native
+		if in_list "$id" "${COMPONENTS[@]}" && [[ "$id" != watch && "$id" != rules ]]; then
+			component_listed "$id" || continue
+			current=$(component_runtime "$id")
+		elif [[ "$id" == rules ]]; then
+			current=$(component_runtime suricata)
+		fi
+		if [[ "$id" =~ ^(suricata|evebox|ntopng|redis|victoriametrics|prometheus|node_exporter|grafana|panel)$ ]]; then
+			[[ "$current" == docker ]] && dockers=$((dockers + 1)) || natives=$((natives + 1))
+		fi
+		if ((json)); then
+			((first)) || out+=","
+			first=0
+			out+=$(printf '{"id":"%s","docker":"%s","runtime":"%s","why":"%s"}' "$id" "$docker" "$current" "$(json_escape "$why")")
+		else
+			out+=$(printf '%-16s docker=%-16s now=%-7s %s' "$id" "$docker" "$current" "$why")$'\n'
+		fi
+	done
+	((dockers > 0 && natives > 0)) && mixed=true || mixed=false
+	if ((json)); then
+		printf '{"components":[%s],"mixed":%s,"links":%s}\n' "$out" "$mixed" "$(runtime_links)"
+	else
+		printf '%s' "$out"
+		echo "mixed: $mixed (containers use the host network, so every part reaches the others on the host addresses)"
+		runtime_links | jq -r '.[] | "link \(.from) -> \(.to) (\(.what), \(.endpoint)): \(.ok // "not checked")"'
+	fi
+}
+
 ctl_main() {
 	if [[ $# -eq 0 ]]; then
 		ctl_usage
@@ -3720,6 +3851,7 @@ ctl_main() {
 	panel-passwd) cmd_panel_passwd "$@" ;;
 	test) cmd_test "$@" ;;
 	health) cmd_health "$@" ;;
+	runtime) cmd_runtime "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
 	*)
 		ctl_usage >&2

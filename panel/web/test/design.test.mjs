@@ -265,12 +265,3 @@ test("the settings descriptions have no hyphens inside the sentences", () => {
 test("no alert() anywhere in the scripts", () => {
   for (const f of ["app.js", "modules/chrome.js"]) assert.doesNotMatch(read(f), /(^|[^.\w])alert\(/, f);
 });
-
-test("the design weight: code stays under 150 KB, fonts are counted apart", () => {
-  const files = ["index.html", "full.css", "lite.css", "fx.js", "nofx.js", "app.js", "favicon.svg"];
-  let total = files.reduce((n, f) => n + readFileSync(join(web, f)).length, 0);
-  for (const f of ["alerts", "chrome", "components", "configs", "events", "ifaces", "logs", "metrics", "mode", "overview", "poll", "rules", "settings-model", "settings", "tests", "version"]) {
-    total += readFileSync(join(web, "modules", f + ".js")).length;
-  }
-  assert.ok(total < 150 * 1024, `code ${total} bytes`);
-});

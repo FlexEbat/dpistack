@@ -167,6 +167,7 @@ The README and the guides come in English and Russian (`*.ru.md`).
 | --- | --- |
 | [docs/installation.md](docs/installation.md) | install, upgrade, uninstall, busy ports |
 | [docs/configuration.md](docs/configuration.md) | reference of every `dpistack.conf` setting |
+| [docs/runtimes.md](docs/runtimes.md) | Docker or native: what can run where and how the parts find each other |
 | [docs/dashboard.md](docs/dashboard.md) | the panel: screens, editions, settings, security |
 | [docs/deployment.md](docs/deployment.md) | runtimes, the panel in Docker, access and the listen address |
 | [docs/platforms.md](docs/platforms.md) | supported distributions |
@@ -181,6 +182,6 @@ The README and the guides come in English and Russian (`*.ru.md`).
 bash scripts/gate.sh
 ```
 
-The gate runs `shfmt`, `shellcheck`, the security checks, `bats` and, if Go is there, `gofmt`, `go vet`, `go test`, the interface tests and the check of the panel's resource budget. The `dev` branch is for work, `main` for the tested state; releases are tags `vX.Y.Z` on `main`. See [CONTRIBUTING.md](CONTRIBUTING.md).
+The gate runs `shfmt`, `shellcheck`, the security checks, `bats` and, if Go is there, `gofmt`, `go vet`, `go test` and the interface tests. The `dev` branch is for work, `main` for the tested state; releases are tags `vX.Y.Z` on `main`. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 License: [MIT](LICENSE).

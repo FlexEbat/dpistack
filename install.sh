@@ -835,7 +835,7 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health version self-update)
+	mode-confirm mode-rollback fw panel-passwd test health runtime version self-update)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen

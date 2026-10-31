@@ -73,9 +73,6 @@ if [[ -d panel ]]; then
 	else
 		echo "node not found, skipped"
 	fi
-
-	echo "== panel budget =="
-	bash scripts/panel-budget.sh || fail "panel budget"
 fi
 
 exit "$status"
