@@ -42,6 +42,7 @@ const (
 type Config struct {
 	Policy      *auth.Policy
 	AuthFile    string
+	UsersFile   string // users.json (slice 34); AuthFile is the fallback of the old one-password panel
 	HealthFile  string
 	Ctl         *ctl.Runner
 	Eve         *eve.Reader // nil: viewing events is off (EVE_FILE=no)
@@ -64,6 +65,7 @@ type Config struct {
 type server struct {
 	cfg      Config
 	sessions *auth.Sessions
+	users    *auth.Users
 	limiter  *auth.Limiter
 	streams  atomic.Int32 // open log streams, capped at maxStreams (logs.go)
 	rules    rulesState   // the last rules update started from this panel
@@ -82,47 +84,54 @@ func New(cfg Config) http.Handler {
 	s := &server{
 		cfg:      cfg,
 		sessions: auth.NewSessions(sessionTTL, cfg.Now),
+		users:    &auth.Users{File: cfg.UsersFile, Legacy: cfg.AuthFile},
 		limiter:  auth.NewLimiter(loginMax, loginWindow, cfg.Now),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/login", s.login)
 	mux.HandleFunc("POST /api/logout", s.authed(s.logout))
-	mux.HandleFunc("GET /api/status", s.authed(s.status))
-	mux.HandleFunc("GET /api/version", s.authed(s.versionGet))
-	mux.HandleFunc("POST /api/update", s.authed(s.updateStart))
-	mux.HandleFunc("GET /api/update/job", s.authed(s.updateJob))
-	mux.HandleFunc("POST /api/components/{id}/{action}", s.authed(s.control))
-	mux.HandleFunc("POST /api/suricata/reload", s.authed(s.reloadSuricata))
-	mux.HandleFunc("GET /api/config", s.authed(s.configList))
-	mux.HandleFunc("GET /api/config/{name}", s.authed(s.configGet))
-	mux.HandleFunc("PUT /api/config/{name}", s.authed(s.configPut))
-	mux.HandleFunc("POST /api/config/{name}/check", s.authed(s.configCheck))
-	mux.HandleFunc("POST /api/config/{name}/revert", s.authed(s.configRevert))
-	mux.HandleFunc("GET /api/rules/sources", s.authed(s.rulesSources))
-	mux.HandleFunc("POST /api/rules/sources", s.authed(s.rulesSourceChange))
-	mux.HandleFunc("POST /api/rules/update", s.authed(s.rulesUpdate))
-	mux.HandleFunc("GET /api/rules/search", s.authed(s.rulesSearch))
-	mux.HandleFunc("POST /api/rules/groups/{group}/{action}", s.authed(s.rulesGroup))
-	mux.HandleFunc("POST /api/rules/sid/{sid}/{action}", s.authed(s.rulesSID))
+	mux.HandleFunc("GET /api/me", s.authed(s.me))
+	mux.HandleFunc("POST /api/me/password", s.authed(s.mePassword))
+	mux.HandleFunc("GET /api/users", s.need(auth.PermUsersManage, s.usersList))
+	mux.HandleFunc("POST /api/users", s.need(auth.PermUsersManage, s.usersCreate))
+	mux.HandleFunc("PUT /api/users/{name}", s.need(auth.PermUsersManage, s.usersChange))
+	mux.HandleFunc("DELETE /api/users/{name}", s.need(auth.PermUsersManage, s.usersDelete))
+	mux.HandleFunc("GET /api/status", s.need(auth.PermView, s.status))
+	mux.HandleFunc("GET /api/version", s.need(auth.PermView, s.versionGet))
+	mux.HandleFunc("POST /api/update", s.need(auth.PermUpdateManage, s.updateStart))
+	mux.HandleFunc("GET /api/update/job", s.need(auth.PermView, s.updateJob))
+	mux.HandleFunc("POST /api/components/{id}/{action}", s.need(auth.PermComponentsCtl, s.control))
+	mux.HandleFunc("POST /api/suricata/reload", s.need(auth.PermComponentsCtl, s.reloadSuricata))
+	mux.HandleFunc("GET /api/config", s.need(auth.PermConfigsEdit, s.configList))
+	mux.HandleFunc("GET /api/config/{name}", s.need(auth.PermConfigsEdit, s.configGet))
+	mux.HandleFunc("PUT /api/config/{name}", s.need(auth.PermConfigsEdit, s.configPut))
+	mux.HandleFunc("POST /api/config/{name}/check", s.need(auth.PermConfigsEdit, s.configCheck))
+	mux.HandleFunc("POST /api/config/{name}/revert", s.need(auth.PermConfigsEdit, s.configRevert))
+	mux.HandleFunc("GET /api/rules/sources", s.need(auth.PermView, s.rulesSources))
+	mux.HandleFunc("POST /api/rules/sources", s.need(auth.PermRulesEdit, s.rulesSourceChange))
+	mux.HandleFunc("POST /api/rules/update", s.need(auth.PermRulesEdit, s.rulesUpdate))
+	mux.HandleFunc("GET /api/rules/search", s.need(auth.PermView, s.rulesSearch))
+	mux.HandleFunc("POST /api/rules/groups/{group}/{action}", s.need(auth.PermRulesEdit, s.rulesGroup))
+	mux.HandleFunc("POST /api/rules/sid/{sid}/{action}", s.need(auth.PermRulesEdit, s.rulesSID))
 	mux.HandleFunc("GET /metrics", s.metricsExport)
-	mux.HandleFunc("GET /api/metrics", s.authed(s.metricsSeries))
-	mux.HandleFunc("POST /api/tests/{which}", s.authed(s.testsRun))
-	mux.HandleFunc("GET /api/tests/last", s.authed(s.testsLast))
-	mux.HandleFunc("GET /api/alerts", s.authed(s.alertsList))
-	mux.HandleFunc("GET /api/iface", s.authed(s.ifaceList))
-	mux.HandleFunc("POST /api/iface/{action}", s.authed(s.ifaceChange))
-	mux.HandleFunc("GET /api/settings", s.authed(s.settingsList))
-	mux.HandleFunc("POST /api/settings/check", s.authed(s.settingsCheck))
-	mux.HandleFunc("POST /api/settings/apply", s.authed(s.settingsApply))
-	mux.HandleFunc("PUT /api/settings/secret/{key}", s.authed(s.settingsSecret))
-	mux.HandleFunc("GET /api/settings/job", s.authed(s.settingsJob))
-	mux.HandleFunc("GET /api/mode", s.authed(s.modeGet))
-	mux.HandleFunc("POST /api/mode", s.authed(s.modeSet))
-	mux.HandleFunc("POST /api/mode/confirm", s.authed(s.modeConfirm))
-	mux.HandleFunc("GET /api/eve", s.authed(s.eveList))
-	mux.HandleFunc("GET /api/eve/stream", s.authed(s.eveStream))
-	mux.HandleFunc("GET /api/logs/{id}", s.authed(s.logs))
-	mux.HandleFunc("GET /api/logs/{id}/stream", s.authed(s.logStream))
+	mux.HandleFunc("GET /api/metrics", s.need(auth.PermView, s.metricsSeries))
+	mux.HandleFunc("POST /api/tests/{which}", s.need(auth.PermTestsRun, s.testsRun))
+	mux.HandleFunc("GET /api/tests/last", s.need(auth.PermView, s.testsLast))
+	mux.HandleFunc("GET /api/alerts", s.need(auth.PermView, s.alertsList))
+	mux.HandleFunc("GET /api/iface", s.need(auth.PermView, s.ifaceList))
+	mux.HandleFunc("POST /api/iface/{action}", s.need(auth.PermSettingsEdit, s.ifaceChange))
+	mux.HandleFunc("GET /api/settings", s.need(auth.PermView, s.settingsList))
+	mux.HandleFunc("POST /api/settings/check", s.need(auth.PermSettingsEdit, s.settingsCheck))
+	mux.HandleFunc("POST /api/settings/apply", s.need(auth.PermSettingsEdit, s.settingsApply))
+	mux.HandleFunc("PUT /api/settings/secret/{key}", s.need(auth.PermSettingsEdit, s.settingsSecret))
+	mux.HandleFunc("GET /api/settings/job", s.need(auth.PermView, s.settingsJob))
+	mux.HandleFunc("GET /api/mode", s.need(auth.PermView, s.modeGet))
+	mux.HandleFunc("POST /api/mode", s.need(auth.PermIPSManage, s.modeSet))
+	mux.HandleFunc("POST /api/mode/confirm", s.need(auth.PermIPSManage, s.modeConfirm))
+	mux.HandleFunc("GET /api/eve", s.need(auth.PermView, s.eveList))
+	mux.HandleFunc("GET /api/eve/stream", s.need(auth.PermView, s.eveStream))
+	mux.HandleFunc("GET /api/logs/{id}", s.need(auth.PermView, s.logs))
+	mux.HandleFunc("GET /api/logs/{id}/stream", s.need(auth.PermView, s.logStream))
 	// Every other /api path answers 401 without a session, so the API
 	// does not reveal which paths exist.
 	mux.HandleFunc("/api/", s.authed(func(w http.ResponseWriter, _ *http.Request) {
@@ -205,14 +214,29 @@ func (s *server) guard(next http.Handler) http.Handler {
 func (s *server) authed(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var csrf string
+		var user auth.User
 		ok := false
 		if c, err := r.Cookie(sessionCookie); err == nil {
 			csrf, ok = s.sessions.Get(c.Value)
+			if ok {
+				// The account is read on every request: a user who was
+				// disabled, removed or given another role by `dpistack
+				// users` is cut off at once.
+				name, _ := s.sessions.Who(c.Value)
+				found := false
+				var err error
+				user, found, err = s.users.Find(name)
+				if err != nil || !found {
+					s.sessions.Delete(c.Value)
+					ok = false
+				}
+			}
 		}
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "sign-in required")
 			return
 		}
+		r = r.WithContext(context.WithValue(r.Context(), principalKey{}, principal{user: user}))
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
@@ -241,6 +265,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
+		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody)).Decode(&body); err != nil {
@@ -248,9 +273,12 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	good, err := auth.VerifyFile(s.cfg.AuthFile, body.Password)
+	if body.Username == "" {
+		body.Username = auth.DefaultLoginUsername
+	}
+	user, good, err := s.users.Login(body.Username, body.Password)
 	switch {
-	case errors.Is(err, auth.ErrNoPassword):
+	case errors.Is(err, auth.ErrNoUsers):
 		writeError(w, http.StatusInternalServerError, "the panel password is not set: set it with the \"Panel password\" item of the dpistack command")
 		return
 	case errors.Is(err, auth.ErrHashTooHeavy):
@@ -261,13 +289,13 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not check the password: the password file is damaged or unreadable")
 		return
 	case !good:
-		log.Printf("login: wrong password from %s", o.client)
-		writeError(w, http.StatusUnauthorized, "wrong password")
+		log.Printf("login: wrong user name or password from %s", o.client)
+		writeError(w, http.StatusUnauthorized, "wrong user name or password")
 		return
 	}
 
 	s.limiter.Reset(o.client)
-	id, csrf := s.sessions.Create()
+	id, csrf := s.sessions.CreateFor(user.Name)
 	secure := r.TLS != nil || (o.peer.IsLoopback() && r.Header.Get("X-Forwarded-Proto") == "https")
 	setCookie(w, sessionCookie, id, true, secure)
 	setCookie(w, csrfCookie, csrf, false, secure)

@@ -97,7 +97,7 @@ panel_args() {
 	fi
 	args="-addr ${host}:${port} -access ${mode}"
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
-	args+=" -auth-file $(path_panel_auth) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json)"
+	args+=" -auth-file $(path_panel_auth) -users-file $(path_users) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json)"
 	args+=" -version ${DPISTACK_VERSION}"
 	panel_is_lite && args+=" -lite"
 	# Without the flag the panel shows that viewing events is off.
@@ -285,6 +285,13 @@ step_panel_apply() {
 	# panel.auth is written before this step, when the group is missing.
 	if [[ -f "$(path_panel_auth)" ]]; then
 		run chown root:dpistack "$(path_panel_auth)" || return 1
+	fi
+	# An upgrade from the one-password panel: users.json is made from panel.auth.
+	if [[ "${DRY_RUN:-0}" != "1" ]] && declare -F users_ensure >/dev/null; then
+		users_ensure || return 1
+	fi
+	if [[ -f "$(path_users)" ]]; then
+		run chown root:dpistack "$(path_users)" || return 1
 	fi
 
 	# The panel keeps its graph history in metrics.json and may write nothing

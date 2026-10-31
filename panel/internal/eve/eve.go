@@ -225,7 +225,7 @@ func (r *Reader) add(line []byte) {
 	rg := r.rings[head.Type]
 	if rg == nil {
 		if len(r.rings) == MaxTypes {
-			return // the 5000-event budget is spent on the first types seen
+			return // the ring slots are taken by the first types seen
 		}
 		rg = &ring{}
 		r.rings[head.Type] = rg

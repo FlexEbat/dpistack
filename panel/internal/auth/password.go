@@ -27,8 +27,8 @@ var (
 	ErrNoPassword = errors.New("panel password is not set")
 	// ErrHashFormat means panel.auth does not hold an argon2id PHC string.
 	ErrHashFormat = errors.New("panel.auth is not a supported argon2id hash")
-	// ErrHashTooHeavy means the hash asks for more memory than the panel may use.
-	ErrHashTooHeavy = errors.New("panel.auth hash needs more memory than the panel budget allows")
+	// ErrHashTooHeavy means the hash asks for more memory than the panel accepts.
+	ErrHashTooHeavy = errors.New("panel.auth hash asks for more memory than the panel accepts (32 MiB)")
 )
 
 // hashSlot lets one verification run at a time, so parallel logins cannot

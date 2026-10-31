@@ -340,3 +340,41 @@ func cutUTF8(s string, n int) string {
 	}
 	return s[:n]
 }
+
+// UsersAdd runs `users add <name> <role> [--perms a,b]`; the password goes
+// through stdin, never through an argument.
+func (r *Runner) UsersAdd(ctx context.Context, name, role string, perms []string, password string) (string, error) {
+	args := []string{"users", "add", name, role}
+	if role == "custom" {
+		args = append(args, "--perms", strings.Join(perms, ","))
+	}
+	out, err := r.runWith(ctx, maxOutput, writeTimeout, []byte(password+"\n"), args...)
+	return strings.TrimSpace(string(out)), err
+}
+
+// UsersPasswd runs `users passwd <name>` with the password on stdin.
+func (r *Runner) UsersPasswd(ctx context.Context, name, password string) (string, error) {
+	out, err := r.runWith(ctx, maxOutput, writeTimeout, []byte(password+"\n"), "users", "passwd", name)
+	return strings.TrimSpace(string(out)), err
+}
+
+// UsersRole runs `users role <name> <role> [--perms a,b]`.
+func (r *Runner) UsersRole(ctx context.Context, name, role string, perms []string) (string, error) {
+	args := []string{"users", "role", name, role}
+	if role == "custom" {
+		args = append(args, "--perms", strings.Join(perms, ","))
+	}
+	out, err := r.runWith(ctx, maxOutput, callTimeout, nil, args...)
+	return strings.TrimSpace(string(out)), err
+}
+
+// UsersState runs `users disable|enable|remove <name>`.
+func (r *Runner) UsersState(ctx context.Context, action, name string) (string, error) {
+	switch action {
+	case "disable", "enable", "remove":
+	default:
+		return "", fmt.Errorf("ctl: users action %q is not allowed", action)
+	}
+	out, err := r.runWith(ctx, maxOutput, callTimeout, nil, "users", action, name)
+	return strings.TrimSpace(string(out)), err
+}

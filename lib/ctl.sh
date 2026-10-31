@@ -45,6 +45,8 @@ Usage: dpistack <command> [arguments]
   panel-passwd                       panel password from stdin
   test bittorrent|https|all [--json] check tests (section 10)
   health [--json]                    one watchdog run
+  users list|add|passwd|role|disable|enable|remove  users of the panel (passwords on stdin)
+  runtime [--json]                   what can run in docker, the runtime of every part, the links between them
   version                            bundle version
 
 Config names: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
@@ -1548,6 +1550,329 @@ cmd_panel_passwd() {
 	echo "panel password updated"
 }
 
+# --- runtime: what can run in Docker, and the links between parts (4.10) ---
+
+# RUNTIME_MATRIX rows: id|docker (yes|no|follows:<id>)|why. The same table is
+# in tech.md 4.10 and docs/runtimes.md; tests/runtime_matrix.bats compares the
+# ids with COMPONENTS and the docker keys with the schema.
+RUNTIME_MATRIX=(
+	"suricata|yes|image jasonish/suricata; no nDPI plugin in the image and no IPS (mode ips needs a native Suricata)"
+	"ndpi|no|the plugin is built into a native Suricata, there is no image for it"
+	"rules|follows:suricata|suricata-update runs on the host or inside the Suricata container, whichever Suricata runs in"
+	"evebox|yes|image jasonish/evebox"
+	"redis|follows:ntopng|the store behind ntopng, always in the same runtime as ntopng"
+	"ntopng|yes|image ntop/ntopng"
+	"victoriametrics|yes|image victoriametrics/victoria-metrics, only when it is the selected backend"
+	"prometheus|yes|image prom/prometheus, only when it is the selected backend"
+	"node_exporter|yes|image prom/node-exporter"
+	"grafana|yes|image grafana/grafana-oss"
+	"panel|yes|an image built on the host from the panel binary; it runs privileged with pid host and reaches dpistack through nsenter"
+	"watch|no|a systemd timer that calls the dpistack of the host"
+	"nginx|no|a package of the host, used only with ACCESS_MODE=nginx"
+	"firewall|no|rules of the host kernel (iptables, nft, ufw, firewalld), they also guard the containers that use the host network"
+	"installer|no|install.sh and the dpistack command are scripts of the host"
+)
+
+# runtime_tcp <host> <port> - something accepts a connection.
+runtime_tcp() {
+	# shellcheck disable=SC2016  # $1 and $2 belong to the inner shell
+	timeout 2 bash -c ': </dev/tcp/$1/$2' _ "$1" "$2" 2>/dev/null
+}
+
+# runtime_state <id> - the state word of a component, absent when it is not
+# listed.
+runtime_state() {
+	component_listed "$1" || {
+		echo absent
+		return
+	}
+	component_state "$(component_unit "$1")"
+}
+
+# runtime_link <from> <to> <what> <endpoint> <kind> - one link as JSON. ok is
+# true or false when both ends run, null when one of them does not (nothing to
+# check yet).
+runtime_link() {
+	local from="$1" to="$2" what="$3" endpoint="$4" kind="$5" ok=null
+	local sf st
+	sf=$(runtime_state "$from")
+	st=$(runtime_state "$to")
+	if [[ "$sf" == active && "$st" == active ]]; then
+		case "$kind" in
+		tcp)
+			if runtime_tcp "${endpoint%:*}" "${endpoint##*:}"; then ok=true; else ok=false; fi
+			;;
+		file)
+			if [[ -r "$endpoint" ]]; then ok=true; else ok=false; fi
+			;;
+		esac
+	fi
+	printf '{"from":"%s","to":"%s","what":"%s","endpoint":"%s","ok":%s}' \
+		"$from" "$to" "$what" "$(json_escape "$endpoint")" "$ok"
+}
+
+runtime_links() {
+	local first=1
+	emit() {
+		((first)) || printf ','
+		first=0
+		runtime_link "$@"
+	}
+	local host backend
+	host=$(conf_get BIND_ADDR 127.0.0.1)
+	[[ -z "$host" || "$host" == "0.0.0.0" ]] && host=127.0.0.1
+	printf '['
+	emit suricata evebox "eve.json" "$(path_suricata_eve_json)" file
+	[[ "$(conf_get EVE_FILE yes)" == "yes" ]] && emit suricata panel "eve.json" "$(path_suricata_eve_json)" file
+	emit redis ntopng "redis" "127.0.0.1:6379" tcp
+	backend=$(conf_get METRICS_BACKEND none)
+	if [[ "$backend" != none ]]; then
+		local bport pport
+		bport=$(conf_get METRICS_BACKEND_PORT "")
+		[[ -n "$bport" ]] || { [[ "$backend" == victoriametrics ]] && bport=8428 || bport=9090; }
+		pport=$(conf_get PANEL_PORT 9800)
+		[[ "$(conf_get ACCESS_MODE localhost)" == nginx ]] && pport=$((pport + 10000))
+		emit panel "$backend" "metrics scrape" "$host:$pport" tcp
+		emit node_exporter "$backend" "metrics scrape" "$host:$(conf_get NODE_EXPORTER_PORT 9100)" tcp
+		emit "$backend" grafana "data source" "$host:$bport" tcp
+	fi
+	printf ']'
+}
+
+cmd_runtime() {
+	local json=0
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "runtime: unknown argument" ;;
+	esac
+	[[ $# -le 1 ]] || fail 2 "runtime: extra arguments"
+
+	local row id docker why current first=1 mixed natives=0 dockers=0
+	local out=""
+	for row in "${RUNTIME_MATRIX[@]}"; do
+		IFS='|' read -r id docker why <<<"$row"
+		current=native
+		if in_list "$id" "${COMPONENTS[@]}" && [[ "$id" != watch && "$id" != rules ]]; then
+			component_listed "$id" || continue
+			current=$(component_runtime "$id")
+		elif [[ "$id" == rules ]]; then
+			current=$(component_runtime suricata)
+		fi
+		if [[ "$id" =~ ^(suricata|evebox|ntopng|redis|victoriametrics|prometheus|node_exporter|grafana|panel)$ ]]; then
+			[[ "$current" == docker ]] && dockers=$((dockers + 1)) || natives=$((natives + 1))
+		fi
+		if ((json)); then
+			((first)) || out+=","
+			first=0
+			out+=$(printf '{"id":"%s","docker":"%s","runtime":"%s","why":"%s"}' "$id" "$docker" "$current" "$(json_escape "$why")")
+		else
+			out+=$(printf '%-16s docker=%-16s now=%-7s %s' "$id" "$docker" "$current" "$why")$'\n'
+		fi
+	done
+	((dockers > 0 && natives > 0)) && mixed=true || mixed=false
+	if ((json)); then
+		printf '{"components":[%s],"mixed":%s,"links":%s}\n' "$out" "$mixed" "$(runtime_links)"
+	else
+		printf '%s' "$out"
+		echo "mixed: $mixed (containers use the host network, so every part reaches the others on the host addresses)"
+		runtime_links | jq -r '.[] | "link \(.from) -> \(.to) (\(.what), \(.endpoint)): \(.ok // "not checked")"'
+	fi
+}
+
+# --- users, roles and permissions (4.5, 4.8; slice 34) ---
+
+USERS_PERMS=(view events.ack tests.run components.control rules.edit settings.edit configs.edit ips.manage backup.manage update.manage audit.view users.manage)
+USERS_ROLES=(viewer analyst operator admin custom)
+
+# users_presets - the permissions of every role as one JSON object. The panel
+# keeps the same table in panel/internal/auth/users.go; tests/users.bats and
+# the Go tests compare the two.
+users_presets() {
+	local all
+	all=$(printf '%s\n' "${USERS_PERMS[@]}" | jq -R . | jq -sc .)
+	jq -nc --argjson all "$all" '{
+		viewer: ["view"],
+		analyst: ["view","events.ack","tests.run","audit.view"],
+		operator: ["view","events.ack","tests.run","audit.view","components.control","rules.edit"],
+		admin: $all}'
+}
+
+# users_store - writes users.json from stdin: 0640, root:dpistack.
+users_store() {
+	atomic_write "$(path_users)" 0640 || return 1
+	if getent group dpistack >/dev/null 2>&1; then
+		chown root:dpistack "$(path_users)" || return 1
+	fi
+}
+
+# users_ensure - an upgrade from the one-password panel: users.json is made
+# from panel.auth, the only user is admin.
+users_ensure() {
+	[[ -f "$(path_users)" ]] && return 0
+	local hash=""
+	[[ -r "$(path_panel_auth)" ]] && hash=$(head -n 1 "$(path_panel_auth)")
+	[[ -n "$hash" ]] || return 0
+	jq -n --arg h "$hash" --arg t "$(date -u +%FT%TZ)" \
+		'{users:[{name:"admin",role:"admin",hash:$h,created:$t,disabled:false}]}' | users_store
+}
+
+users_load() {
+	users_ensure || return 1
+	if [[ -f "$(path_users)" ]]; then cat "$(path_users)"; else echo '{"users":[]}'; fi
+}
+
+# users_set_admin_hash <phc> - panel-passwd and the installer: the admin of
+# users.json gets the hash, and is made when it is not there.
+users_set_admin_hash() {
+	local hash="$1" cur
+	cur=$(users_load) || return 1
+	jq --arg h "$hash" --arg t "$(date -u +%FT%TZ)" '
+		if any(.users[]; .name=="admin") then .users |= map(if .name=="admin" then .hash=$h else . end)
+		else .users += [{name:"admin",role:"admin",hash:$h,created:$t,disabled:false}] end' <<<"$cur" | users_store
+}
+
+users_check_name() {
+	[[ "$1" =~ ^[a-z][a-z0-9_.-]{1,31}$ ]] || fail 2 "users: a name is 2 to 32 characters: a letter first, then letters, digits, . _ -"
+}
+
+users_check_role() {
+	in_list "$1" "${USERS_ROLES[@]}" || fail 2 "users: the role is one of: ${USERS_ROLES[*]}"
+}
+
+# users_perms_json <comma list> - validated permissions as a JSON array.
+users_perms_json() {
+	local list="$1" p
+	[[ -n "$list" ]] || fail 2 "users: --perms needs at least one permission"
+	local -a items
+	IFS=',' read -r -a items <<<"$list"
+	for p in "${items[@]}"; do
+		in_list "$p" "${USERS_PERMS[@]}" || fail 2 "users: unknown permission: $p (known: ${USERS_PERMS[*]})"
+	done
+	printf '%s\n' "${items[@]}" | jq -R . | jq -sc 'unique'
+}
+
+# users_commit <json> - refuses a result that leaves nobody able to manage
+# users, then writes it.
+users_commit() {
+	local json="$1" left
+	left=$(jq --argjson pre "$(users_presets)" '[.users[] | select(.disabled != true)
+		| (if .role=="custom" then (.perms // []) else $pre[.role] end) | select(index("users.manage"))] | length' <<<"$json")
+	((left >= 1)) || fail 3 "users: the last user who may manage users cannot be removed, disabled or demoted"
+	users_store <<<"$json" || fail 1 "users: could not write users.json"
+}
+
+users_read_password() {
+	local pw=""
+	IFS= read -r pw || true
+	[[ ${#pw} -ge 8 ]] || fail 2 "users: the password (stdin) must have at least 8 characters"
+	[[ "$pw" != *$'\r'* ]] || fail 2 "users: bad password"
+	printf '%s' "$pw"
+}
+
+users_hash_of() {
+	command -v argon2 >/dev/null 2>&1 || fail 1 "the argon2 package is not installed"
+	panel_hash "$1" || fail 1 "users: could not hash the password"
+}
+
+users_exists() {
+	jq -e --arg n "$2" 'any(.users[]; .name==$n)' <<<"$1" >/dev/null
+}
+
+cmd_users() {
+	local sub="${1:-}"
+	[[ $# -gt 0 ]] && shift
+	local cur
+	case "$sub" in
+	list)
+		local json=0
+		case "${1:-}" in
+		"") ;;
+		--json) json=1 ;;
+		*) fail 2 "users list: unknown argument" ;;
+		esac
+		cur=$(users_load) || fail 1 "users: could not read users.json"
+		if ((json)); then
+			jq -c --argjson pre "$(users_presets)" '{users:[.users[] | {name,role,disabled:(.disabled==true),created,
+				perms:(if .role=="custom" then (.perms // []) else $pre[.role] end)}]}' <<<"$cur"
+		else
+			jq -r --argjson pre "$(users_presets)" '.users[] | "\(.name)\t\(.role)\t\(if .disabled==true then "disabled" else "enabled" end)\t\((if .role=="custom" then (.perms // []) else $pre[.role] end) | join(","))"' <<<"$cur"
+		fi
+		;;
+	add)
+		local name="${1:-}" role="${2:-}" perms="[]"
+		[[ $# -ge 2 ]] || fail 2 "users add <name> <role> [--perms a,b]: the password is read from stdin"
+		shift 2
+		users_check_name "$name"
+		users_check_role "$role"
+		if [[ "${1:-}" == "--perms" ]]; then
+			[[ "$role" == custom ]] || fail 2 "users: --perms goes with the role custom"
+			perms=$(users_perms_json "${2:-}") || exit $?
+			shift 2
+		elif [[ "$role" == custom ]]; then
+			fail 2 "users: the role custom needs --perms"
+		fi
+		[[ $# -eq 0 ]] || fail 2 "users add: extra arguments"
+		cur=$(users_load) || fail 1 "users: could not read users.json"
+		users_exists "$cur" "$name" && fail 3 "users: $name exists"
+		local pw hash
+		pw=$(users_read_password) || exit $?
+		hash=$(users_hash_of "$pw") || exit $?
+		users_commit "$(jq --arg n "$name" --arg r "$role" --argjson p "$perms" --arg h "$hash" --arg t "$(date -u +%FT%TZ)" \
+			'.users += [({name:$n,role:$r,hash:$h,created:$t,disabled:false} + (if $r=="custom" then {perms:$p} else {} end))]' <<<"$cur")"
+		echo "user $name added"
+		;;
+	passwd)
+		local name="${1:-}"
+		[[ $# -eq 1 ]] || fail 2 "users passwd <name>: the password is read from stdin"
+		users_check_name "$name"
+		cur=$(users_load) || fail 1 "users: could not read users.json"
+		users_exists "$cur" "$name" || fail 4 "users: no user $name"
+		local pw hash
+		pw=$(users_read_password) || exit $?
+		hash=$(users_hash_of "$pw") || exit $?
+		users_commit "$(jq --arg n "$name" --arg h "$hash" '.users |= map(if .name==$n then .hash=$h else . end)' <<<"$cur")"
+		# panel.auth is the password of admin for the old paths that read it.
+		[[ "$name" == admin ]] && { printf '%s\n' "$hash" | atomic_write "$(path_panel_auth)" 0640 || true; }
+		echo "password of $name updated"
+		;;
+	role)
+		local name="${1:-}" role="${2:-}" perms="[]"
+		[[ $# -ge 2 ]] || fail 2 "users role <name> <role> [--perms a,b]"
+		shift 2
+		users_check_name "$name"
+		users_check_role "$role"
+		if [[ "${1:-}" == "--perms" ]]; then
+			[[ "$role" == custom ]] || fail 2 "users: --perms goes with the role custom"
+			perms=$(users_perms_json "${2:-}") || exit $?
+			shift 2
+		elif [[ "$role" == custom ]]; then
+			fail 2 "users: the role custom needs --perms"
+		fi
+		[[ $# -eq 0 ]] || fail 2 "users role: extra arguments"
+		cur=$(users_load) || fail 1 "users: could not read users.json"
+		users_exists "$cur" "$name" || fail 4 "users: no user $name"
+		users_commit "$(jq --arg n "$name" --arg r "$role" --argjson p "$perms" \
+			'.users |= map(if .name==$n then (.role=$r | (if $r=="custom" then .perms=$p else del(.perms) end)) else . end)' <<<"$cur")"
+		echo "role of $name is $role"
+		;;
+	disable | enable | remove)
+		local name="${1:-}"
+		[[ $# -eq 1 ]] || fail 2 "users $sub <name>"
+		users_check_name "$name"
+		cur=$(users_load) || fail 1 "users: could not read users.json"
+		users_exists "$cur" "$name" || fail 4 "users: no user $name"
+		case "$sub" in
+		disable) users_commit "$(jq --arg n "$name" '.users |= map(if .name==$n then .disabled=true else . end)' <<<"$cur")" ;;
+		enable) users_commit "$(jq --arg n "$name" '.users |= map(if .name==$n then .disabled=false else . end)' <<<"$cur")" ;;
+		remove) users_commit "$(jq --arg n "$name" '.users |= map(select(.name != $n))' <<<"$cur")" ;;
+		esac
+		echo "user $name: $sub done"
+		;;
+	*) fail 2 "users: list | add | passwd | role | disable | enable | remove" ;;
+	esac
+}
+
 ctl_main() {
 	if [[ $# -eq 0 ]]; then
 		ctl_usage
@@ -1586,6 +1911,8 @@ ctl_main() {
 	panel-passwd) cmd_panel_passwd "$@" ;;
 	test) cmd_test "$@" ;;
 	health) cmd_health "$@" ;;
+	runtime) cmd_runtime "$@" ;;
+	users) cmd_users "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
 	*)
 		ctl_usage >&2

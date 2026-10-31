@@ -1,11 +1,13 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v40** (2026-10-30)
-**Program version: v0.27.0** (slices 0-31 are done; section 17 holds the history, section 18 the reviews)
+**Document version: v42** (2026-10-31)
+**Program version: v0.29.0** (slices 0-34 are done, 35-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.29.0: slice 34. Users, roles (viewer, analyst, operator, admin, custom) and permissions: `dpistack users ...`, `users.json`, login with a user name, a permission on every route of the panel, `/api/me`, `/api/users`, the Account screen.
+- v0.28.0: slices 32 and 33. The resource budget of the panel is gone (the script, the gate stage, the weight test, the lines in the documents). `dpistack runtime [--json]` and section 4.10: what can run in Docker, the runtime of every part, the links between the parts and a check of each; `docs/runtimes.md`. Slices 34-45 (users and roles, audit, backup, the new screens) are written in section 17.
 - v0.27.0: the panel design follows the landing page design skill (9.1, 18.31): Geist and Geist Mono served by the panel, Phosphor icons, the Tailwind type scale, the fixed spacing table, flat backgrounds, one motion curve, a floating bar and a full height menu on narrow screens, scroll reveals, skeletons; the remaining items of the Debian 13 report: a kept busy port stops the menu, the saved config asks for the network access confirmation, apt waits for the dpkg lock, a hint for a re-run from the installed copy.
 - v0.26.2: fixes from the first install report on Debian 13 (18.30): the unversioned `rustc` of the apt repositories counts as a usable Rust (nDPI is no longer switched off there), the first Suricata start has a rules file, the BitTorrent replay matches the sample pcap whatever the host `HOME_NET` is.
 - v0.26.1: the confirmations were re-examined (18.29): about a dozen questions that guarded nothing are gone from the installer menu (a value that was just typed, read-only screens, edits of a draft, loading a file, entering and leaving a group of the guided setup); the ones that guard a loss, an overwrite, an interruption or a security change stay. The panel is not touched: the owner works with it only during installation or through the CLI, so its confirmations stay as they were (decision of the owner, 18.29).
@@ -447,7 +449,9 @@ The only place of the privileged actions of the panel and the watchdog. It works
 | `mode-rollback`, `fw apply\|remove\|restore` | internal: the rollback by the timer and the `DPISTACK` chain (`dpistack-fw.service` calls `restore` at boot) |
 | `test bittorrent\|https\|all [--json]` | section 10 |
 | `health [--json]` | one run of the watchdog |
-| `panel-passwd` | reads the password from stdin, writes an argon2id hash into `panel.auth` |
+| `runtime [--json]` | what can run in Docker, the runtime of every part, the links between them (4.10) |
+| `panel-passwd` | reads the password from stdin, writes an argon2id hash into `panel.auth` and into the user `admin` of `users.json` |
+| `users list [--json]`, `users add <name> <role> [--perms a,b]`, `users passwd <name>`, `users role <name> <role> [--perms a,b]`, `users disable\|enable\|remove <name>` | users of the panel in `/etc/dpistack/users.json` (slice 34); passwords on stdin, 8 characters at least; exit 3 when the change would leave nobody able to manage users, 4 for an unknown user; open to the panel |
 | `version` | the version of the bundle |
 
 Arguments: letters, digits and `. _ : = / @ + , -` and a space are allowed (`rules-search` takes a phrase); everything else, including `; | & $ ( ) < > \` quotes and a line break, gives code `5` before any action. A URL with `?`, `&`, `%` therefore does not pass `rules-sources add-url`.
@@ -529,7 +533,10 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 
 | method and path | what it does |
 | --- | --- |
-| `POST /api/login`, `POST /api/logout` | the session is in a `HttpOnly; SameSite=Strict` cookie |
+| `POST /api/login`, `POST /api/logout` | the session is in a `HttpOnly; SameSite=Strict` cookie; the login body is `{username?, password}`, no name means `admin`; a wrong name, a disabled user and a wrong password give the same answer |
+| `GET /api/me`, `POST /api/me/password` | who is signed in with the permissions; a user changes their own password with the current one (their sessions end) |
+| `GET\|POST /api/users`, `PUT\|DELETE /api/users/{name}` | permission `users.manage`; the list never holds a hash; nobody can remove or disable their own account |
+| permissions | every other route needs one (table in `panel/internal/api/users_test.go`, checked for every role); reading `/api/config*` needs `configs.edit`; a missing permission is 403 `{"error":"forbidden","permission":...}` |
 | `GET /api/status` | the components (`ctl status`) + `health.json` |
 | `GET /api/version` | the running version and, from the latest GitHub release of the project (checked at most every 6 hours, a failed check again after 15 minutes), `latest`, `update_available`, `release_url`, `check_error`. The version comes from the panel flag `-version`, which `panel_args` fills, so an update that changes the unit restarts the panel with the new number |
 | `POST /api/update` | the Update button after the confirmation dialog: refused with 409 unless a newer release exists, otherwise `ctl self-update run` (202) |
@@ -587,6 +594,31 @@ The Prometheus text exposition format 0.0.4, `Content-Type: text/plain; version=
 The metrics `eve` and `suricata_*` are not printed with `EVE_FILE=no` or without `stats` in `EVE_TYPES`.
 
 ---
+
+### 4.10 Runtimes: what can run in Docker and how the parts find each other (v41)
+
+Every part that has an image can run as a container (`<PART>_RUNTIME=docker`) or natively, in any combination. Containers use `network_mode: host`, so a native part and a container reach each other on the same host addresses (`127.0.0.1` or the bind address of `ACCESS_MODE`); there is no second set of addresses to keep in step. Files are shared by bind mounts of the same host paths (`/var/log/suricata`, `/var/run/suricata`, the rules and the config directories).
+
+| Part | Docker | Why / how |
+|---|---|---|
+| `suricata` | yes | image `jasonish/suricata`; no nDPI plugin in the image, no IPS (`mode ips` needs a native Suricata) |
+| `ndpi` | no | a plugin built into a native Suricata |
+| `rules` | follows `suricata` | `suricata-update` runs on the host or inside the Suricata container |
+| `evebox` | yes | image `jasonish/evebox` |
+| `ntopng` | yes | image `ntop/ntopng` |
+| `redis` | follows `ntopng` | the store of ntopng, always in the same runtime as ntopng |
+| `victoriametrics`, `prometheus` | yes | only the selected backend |
+| `node_exporter`, `grafana` | yes | images `prom/node-exporter`, `grafana/grafana-oss` |
+| `panel` | yes | an image built on the host; privileged, `pid: host`, reaches `dpistack` through `nsenter` |
+| `watch` | no | a systemd timer that calls the `dpistack` of the host |
+| `nginx` | no | a host package, only with `ACCESS_MODE=nginx` |
+| `firewall` | no | rules of the host kernel; they guard host-network containers too |
+| `installer` | no | `install.sh` and `dpistack` are host scripts |
+
+The links between the parts and what is checked on each: `suricata` to `evebox` and to `panel` (the file `eve.json` is readable), `redis` to `ntopng` (`127.0.0.1:6379` accepts a connection), `panel` and `node_exporter` to the metrics backend (the scrape target accepts a connection; with nginx the panel is on `PANEL_PORT+10000`), the metrics backend to `grafana` (the data source accepts a connection).
+
+`dpistack runtime [--json]` (read only, open to the panel) prints the table above with the runtime of every part now, the flag `mixed` (some parts are containers and some are native) and the list of links `{from, to, what, endpoint, ok}`; `ok` is `true` or `false` when both ends run and `null` when one does not. A refusal of an impossible combination stays where it is (the config check, `preflight` and `mode ips`: nDPI with a Suricata container, IPS with a Suricata container) and names the reason.
+
 
 ## 5. The installer: rules and scenarios
 
@@ -884,7 +916,7 @@ A failure of one channel is written to the journal and does not stop the others.
 
 ## 9. The panel
 
-**Resources (the budget):** RSS at idle no more than 25 MB, the binary no more than 15 MB, the static files no more than 150 KB, zero CPU with no open tabs and no `/metrics` requests. The unit: `ProtectHome=yes`, `PrivateTmp=yes`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. **There is no `MemoryMax` and no `CPUQuota`** (since v0.23.0, a decision of 2026-10-24: the lite edition is the way to a lighter panel; the earlier `PANEL_MODE=limited` had `MemoryMax=64M` and `CPUQuota=20%`). `NoNewPrivileges` and `ProtectSystem` are not set: `sudo` inherits the restrictions of the unit and `dpistack` could not write to `/etc`. The protection is built on the lists in `dpistack`.
+**Resources:** the panel has no resource budget and no size limits (v0.28.0: the check `scripts/panel-budget.sh`, its stage in the gate and the weight test were removed; the panel takes the memory and the CPU it needs). It still does no polling and no work with no open tabs and no `/metrics` requests, apart from the collector tick of the metrics ring (30 seconds). The unit: `ProtectHome=yes`, `PrivateTmp=yes`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. **There is no `MemoryMax` and no `CPUQuota`** (since v0.23.0, a decision of 2026-10-24: the lite edition is the way to a lighter panel; the earlier `PANEL_MODE=limited` had `MemoryMax=64M` and `CPUQuota=20%`). `NoNewPrivileges` and `ProtectSystem` are not set: `sudo` inherits the restrictions of the unit and `dpistack` could not write to `/etc`. The protection is built on the lists in `dpistack`.
 
 **Editions (v0.23.0).** `PANEL_EDITION=full|lite` replaced `PANEL_MODE=limited|unlimited`. Both editions have the same screens, the same API (section 4.8) and the same features. The server picks the files: the page always asks for `app.css` and `fx.js`; the `full` edition answers with `full.css` and `fx.js`, `lite` answers with `lite.css` and an empty `nofx.js`, so a lite page never downloads the full design. The number of open log streams is fixed at 4 in both.
 - **full:** a dark console: flat near-black surfaces from a fixed list, hairline borders, one cool-blue accent used sparingly, a left sidebar with the brand mark and Phosphor icons (the active item is a filled pill), capsule controls, rises into view once on scroll, and a quiet background of drifting points joined by faint lines drawn on a canvas (`fx.js`: dim, at most 70 points and a 2x pixel ratio, paused while the tab is hidden, one still frame under `prefers-reduced-motion`). The fonts are Geist and Geist Mono, served by the panel itself (9.1). On narrow screens the sidebar becomes a floating bar with a menu that opens as a full height panel.
@@ -911,7 +943,7 @@ The owner supplied the landing page design skill (`SKILL.md`, part B, the visual
 | States: hover, active `scale(0.98)`, a visible focus ring, skeleton loaders (no spinners), composed empty states, inline errors, no `alert()` | A 2 px accent focus ring; skeleton blocks in the first state of the lists; empty lists are cards (`.muted.empty`); errors stay inline. `confirm()` is kept for the confirmations of 5.0 and 18.29 (the owner's decision; they are not alerts) |
 | Ship: skip link, description, favicon, semantic HTML, a current item in the navigation | A "Skip to content" button that moves the focus to the title, `<meta name="description">`, `favicon.svg`, `aria-current="page"` on the active item. Not applicable to a panel behind a login: privacy and terms links, cookie consent, `og:image`. A branded 404 would need a Go handler and is left for a later slice |
 
-Decisions (the owner says "choose yourself"): the fonts are bundled into the binary (OFL 1.1 allows it), so the page stays offline and under `default-src 'self'`; the weight budget of 150 KB counts the code and the page, the fonts are counted apart (57 KB, already compressed); Phosphor icons are copied into the markup instead of adding a runtime dependency (the panel has no npm at runtime).
+Decisions (the owner says "choose yourself"): the fonts are bundled into the binary (OFL 1.1 allows it), so the page stays offline and under `default-src 'self'`; the fonts are bundled as woff2; Phosphor icons are copied into the markup instead of adding a runtime dependency (the panel has no npm at runtime).
 
 **Installing the panel (slice 17, "choose yourself" decisions):** the `panel` step installs the binary `/usr/local/bin/dpistack-panel` and the unit `dpistack-panel.service`, then `enable --now`; when the binary or the unit changes, `restart` after that. `PANEL_SOURCE=auto` (the default) takes a ready binary if it lies next to `install.sh`: `dpistack-panel-linux-amd64` or `dpistack-panel-linux-arm64` by `uname -m` (this is how the release archive puts it), else a plain `dpistack-panel`; if there is no ready one, it builds from `panel/`, as in a clone of the repository. `build` always builds, `prebuilt` takes only a ready one. The build: `go build` (`CGO_ENABLED=0`, `-trimpath -ldflags "-s -w"`) from `panel/`, the hash of the sources is remembered in `state` (`panel.src_hash`), while the sources did not change there is no rebuild. `preflight` stops the install with code 3 if the binary cannot be obtained: no ready file with `prebuilt`, and with `auto` and `build` neither a ready file, nor Go of the needed version (the minimum is in `panel/go.mod`) on the host, nor a Docker whose daemon answers `docker info` (the panel is then built in `golang:<major.minor>` with the sources mounted read-only, same flags as the host build; `DPISTACK_GO_IMAGE` overrides the image), nor the `panel/` directory. An already installed and current binary does not need these checks, so a repeated run on a host without Go passes. The flags of the unit are built by the installer: the access policy is `lan` if `ACCESS_MODE=lan` or if `BIND_ADDR` is a non-loopback address with `localhost`, the address is `access_effective_bind_host:PANEL_PORT` (`BIND_ADDR`, else `127.0.0.1`, or `0.0.0.0` in `lan`), with the policy `lan` also `-lan-cidr` with the already resolved `LAN_CIDR` (if it cannot be determined, `127.0.0.1/32` with a warning, as in the `access` step: the panel is closed for all except the host itself until `LAN_CIDR` is set by hand); with `nginx` the address is `127.0.0.1:PANEL_PORT+10000` (nginx holds the outer `PANEL_PORT`) and `-lan-cidr`; with the `lite` edition also `-lite`. `uninstall` stops the unit and removes it together with the binary. The generated password is printed in the final report once next to `METRICS_TOKEN`; it is not in `install.log`, `dpistack.conf`, `secrets.conf` and `state`, only the hash is on disk.
 
@@ -944,7 +976,7 @@ Decisions (the owner says "choose yourself"): the fonts are bundled into the bin
 - The `status` polling is no more often than once in 10 seconds and only while the tab is visible. SSE is opened only on the logs and events screens and is closed when you leave the screen.
 - Authentication: one administrator, argon2id, a limit of sign-in attempts (5 per 5 minutes per IP), a session of 12 hours. The sign-in cannot be turned off.
 
-**The interface:** a single page, a hash router. The screens: Overview, Components, Settings, Configs, Rules, Logs, Events, Metrics, Tests, Alerts. The `full` edition is dark; `lite` follows `prefers-color-scheme`; adaptive layout. The charts are drawn by an own function on inline SVG. The weight of the page, the stylesheets and the scripts is no more than 150 KB before compression (the fonts, 57 KB of woff2 that is already compressed, have their own limit of 64 KB; the tests under `panel/web/test` are not served and do not count; `scripts/panel-budget.sh` checks both), served with gzip. The config editor is a plain `<textarea>` with a monospace font, the buttons "Check", "Save", "Save and apply", "Roll back". Dangerous actions (stopping a component, switching to IPS) ask for a confirmation. No external fonts, scripts or images (the fonts and the icons are inside the binary) and no inline scripts or styles (the CSP policy); `textContent` instead of `innerHTML`.
+**The interface:** a single page, a hash router. The screens: Overview, Components, Settings, Configs, Rules, Logs, Events, Metrics, Tests, Alerts. The `full` edition is dark; `lite` follows `prefers-color-scheme`; adaptive layout. The charts are drawn by an own function on inline SVG. The static files are served with gzip. The config editor is a plain `<textarea>` with a monospace font, the buttons "Check", "Save", "Save and apply", "Roll back". Dangerous actions (stopping a component, switching to IPS) ask for a confirmation. No external fonts, scripts or images (the fonts and the icons are inside the binary) and no inline scripts or styles (the CSP policy); `textContent` instead of `innerHTML`.
 
 ---
 
@@ -1016,7 +1048,6 @@ gofmt -l panel        (empty output)
 go vet ./...          (in panel/)
 go test ./...         (in panel/)
 node --test panel/web/test/*.test.mjs
-scripts/panel-budget.sh  (static files, the binary and the RSS of the panel at idle: no more than 150 KB, 15 MB, 25 MB)
 ```
 
 `gate.sh` red means the slice is not closed. Fixes for the gate are made in the same session.
@@ -1538,14 +1569,14 @@ There is no code. On a clean test machine (Ubuntu LTS) the whole bundle is broug
 
 **Files:** `lib/step_panel.sh`, `templates/dpistack-panel.service.tpl`, `panel/web/` (the Overview screen).
 
-**What it does:** building or installing the binary by `PANEL_SOURCE`, the unit, setting the password (5.1), the Overview screen, the binding by `ACCESS_MODE`, the check of the resource budget.
+**What it does:** building or installing the binary by `PANEL_SOURCE`, the unit, setting the password (5.1), the Overview screen, the binding by `ACCESS_MODE` (v0.28.0: the resource budget check was removed).
 
 **Acceptance criteria:**
 
 1. `install.sh` installs and starts the panel, signing in with the given or the generated password works, the generated password is shown in the report once and is stored nowhere in plain form.
 2. Overview shows the state of the components and the overall `overall` from `health.json`.
-3. The RSS of the panel at idle is no more than 25 MB, the static files no more than 150 KB (checked by a script in the gate).
-4. The unit has `MemoryMax` and `CPUQuota` and has no `NoNewPrivileges` and `ProtectSystem` (v0.23.0: the unit has no `MemoryMax` and `CPUQuota` any more, see section 9; the budget check stays in the gate).
+3. (Removed in v0.28.0.) The panel had a limit on the RSS at idle and on the size of the static files; there is none now.
+4. The unit has `MemoryMax` and `CPUQuota` and has no `NoNewPrivileges` and `ProtectSystem` (v0.23.0: the unit has no `MemoryMax` and `CPUQuota` any more, see section 9; v0.28.0: the budget check is gone as well).
 5. `PANEL_SOURCE=prebuilt` without a ready binary gives code 3 at `preflight`.
 6. A repeated run: no changes.
 
@@ -1813,6 +1844,91 @@ There is no code. On a clean test machine (Ubuntu LTS) the whole bundle is broug
 
 ---
 
+## The request of 2026-10-31 (`todo.md`): slices 32-45 (v41)
+
+The owner sent a list of changes for the panel (`todo.md`). Decisions are made here ("choose yourself"); the order puts what other slices stand on first (identity before the audit, the shell before the screens). A slice is done only when it has acceptance criteria that tests check and the gate is green; the status line of each slice says what is done.
+
+**General rules for all of these slices.** (1) Nothing is shown that the program cannot really do: the IPS page does not say "dry run" unless a drop is really tested (slice 42 calls what it does a "rule test"). (2) Every change of the system goes through a verb of section 4.5; the panel never writes outside `/var/lib/dpistack`. (3) Every action that changes something is written to the audit log (slice 35) with the user, the time, the address and the result. (4) The permission of the user is checked in the panel for every route (slice 34), the verbs trust the panel. (5) There are no resource budgets for the panel. (6) New screens follow the design of 9.1 and work in both themes.
+
+### Slice 32: no panel budget (v0.28.0)
+
+**What it does:** removes the resource budget of the panel: `scripts/panel-budget.sh`, its stage in `scripts/gate.sh`, the weight test of the design, the lines in README, CONTRIBUTING and AGENTS and in section 9.
+
+**Acceptance criteria:** (1) `grep -ri budget` finds nothing in code, scripts, tests and the documents outside the history of section 17 and 18. (2) The gate has no budget stage. (3) The panel unit has no limits (already true since v0.23.0).
+
+**Status:** done in v0.28.0.
+
+### Slice 33: runtimes, the matrix and the links (v0.28.0)
+
+**What it does:** section 4.10 and the verb `dpistack runtime [--json]`; `docs/runtimes.md` (en, ru) with the matrix and one example per combination.
+
+**Acceptance criteria:** (1) the verb lists every part with `docker` (`yes`, `no`, `follows:<id>`), the runtime now and the reason. (2) `mixed` is true only when containers and native parts are both present. (3) A link is `true` or `false` only when both ends run, and `false` when the real file or port is not there. (4) The verb is open to the panel and refuses unknown arguments.
+
+**Tests:** `tests/runtime_matrix.bats`.
+
+**Status:** done in v0.28.0.
+
+### Slice 34: users, roles and permissions (v0.29.0)
+
+**What it does:** more than one user of the panel. Users live in `/etc/dpistack/users.json` (0640, `root:dpistack`): `{"users":[{"name","role","perms"?,"hash","created","disabled"}]}`. The first user is `admin`, made from the old `panel.auth` on upgrade or at install (the file `panel.auth` stays as the source of the migration only). Names: `^[a-z][a-z0-9_.-]{1,31}$`. Permissions: `view`, `events.ack`, `tests.run`, `components.control`, `rules.edit`, `settings.edit`, `configs.edit`, `ips.manage`, `backup.manage`, `update.manage`, `audit.view`, `users.manage`. Roles are presets: `viewer` (`view`), `analyst` (`view`, `events.ack`, `tests.run`, `audit.view`), `operator` (analyst plus `components.control`, `rules.edit`), `admin` (all). A user may carry an explicit `perms` list instead of a role (`custom`), so the permissions are configurable per user. Verbs: `users list [--json]`, `users add <name> <role> [--perms a,b]` (the password on stdin), `users passwd <name>` (stdin), `users role <name> <role> [--perms a,b]`, `users disable|enable|remove <name>`; the last enabled admin cannot be removed, disabled or demoted; `panel-passwd` is `users passwd admin`. Login takes `username` (default `admin`). `GET /api/me` returns `{user, role, perms}`. Every route has a permission; a missing one gives 403 `{"error":"forbidden"}`. `GET|POST /api/users`, `PUT|DELETE /api/users/{name}` need `users.manage`. A change of a role or a password ends the sessions of that user, and an account is read again on every request, so a disabled or removed user is cut off at once. The UI of this slice: an Account screen (own password; with `users.manage` also the list, add, role, disable, remove) and the menu entry Configs hidden without `configs.edit`; a refused action shows the missing permission. Hiding every single button by permission is part of slice 37 (the shell).
+
+**Acceptance criteria:** (1) migration from `panel.auth` gives the user `admin` with the same password. (2) `viewer` can read and cannot POST anything (403 on every mutating route); `operator` cannot change settings or users. (3) The last admin is protected. (4) A role change ends the sessions of that user. (5) A wrong user name and a wrong password give the same answer and the same delay. (6) Passwords never appear in arguments, logs or the audit log.
+
+**Tests:** `tests/users.bats`, `panel/internal/auth/users_test.go`, `panel/internal/api/permissions_test.go` (a table: every route against every role).
+
+**Status:** done in v0.29.0 (the panel falls back to `panel.auth` when `users.json` is absent, so an upgrade needs no step).
+
+### Slice 35: the audit log and login history (v0.30.0)
+
+**What it does:** `/var/lib/dpistack/audit.jsonl` (append only, written by the panel, rotated at 10 MB, 5 files): `{ts, user, ip, action, target, result, detail}` for logins (success and failure), logouts, every mutating API call, and every privileged verb run by hand (`dpistack` writes the same file as root through `audit` verb). The screen: filters by user, action, result and time, export CSV/JSON. Secrets are never written.
+
+**Acceptance criteria:** (1) a failed login, a settings change, a rule change and a user change are each one line with the right user. (2) No line holds a password, token or hash. (3) The permission `audit.view` is needed to read.
+
+### Slice 36: backup and restore (v0.31.0)
+
+**What it does:** `dpistack backup create [--out FILE]`, `backup list`, `backup verify FILE`, `backup restore FILE [--dry-run]`: one tar.gz of the configs (`dpistack.conf`, `suricata.yaml`, local rules, `users.json`, exceptions, panel state) without logs and secrets of third parties; a manifest with sha256 of every file and the program version. Restore checks the manifest, runs `suricata -T` on the restored configuration, keeps the previous files and rolls back on a failure. The panel: Backups under System (create, download, verify, restore with a diff).
+
+**Acceptance criteria:** (1) create, verify and restore give the same files. (2) A changed byte fails `verify`. (3) A restore that fails `suricata -T` leaves the old files. (4) The permission `backup.manage`.
+
+### Slice 37: the shell of the panel (v0.32.0)
+
+**What it does:** the sidebar in groups (Monitoring: Overview, Traffic, Events, Alerts; Protection: Rules, IPS, Exceptions; System: Components, Interfaces and topology, Health, Backups, Updates; Admin: Settings, Users, Audit, Security), a top bar (host, state, mode, alert bell, user menu, theme), a collapsible sidebar, routes by hash, and the permission-aware hiding of sections.
+
+### Slice 38: Overview v2, System health and topology (v0.33.0)
+
+**What it does:** Overview with four state cards, the traffic graph, events by severity, components with version and last check, recent events, warnings (packet drops, a stale rules update, a missing capture); `GET /api/system` (CPU, memory, disk, load, interfaces with speed and counters, docker and systemd state); the interface page with the capture flag and a simple topology (host, interfaces, Suricata, outputs).
+
+### Slice 39: Traffic Explorer (v0.34.0)
+
+**What it does:** devices (by IP and MAC when seen), applications (nDPI `app_proto`/`ndpi` fields), domains (DNS, TLS SNI), connections (flow events), per-device detail, filters and a link to ntopng. The data comes only from EVE events and the counters the panel already reads; where the data is not there (no flow events, no nDPI) the page says exactly that.
+
+### Slice 40: the Events workspace and exceptions (v0.35.0)
+
+**What it does:** filters (IP, SID, category, protocol, severity, domain, time), grouping, related events by `flow_id`, a detail panel, the history of one SID, export JSON/CSV, and "create an exception" from an event: a threshold or suppress entry with an expiry and the narrowest scope (SID plus source or destination), stored in the exceptions file that the rules step renders.
+
+### Slice 41: Rules v2 (v0.36.0)
+
+**What it does:** counts per source (total, enabled, disabled), the date and the history of updates, SID descriptions, search by category, provider and text, a custom rules editor (`local.rules`) with validation by `suricata -T` on a temporary copy, a SID conflict check and a change history.
+
+### Slice 42: the IPS page (v0.37.0)
+
+**What it does:** mode and method, NFQ state, packets processed and dropped, the number of drop rules, the latest blocking events, the rollback state, and readiness checks (the iptables or nft chain, the queue, the confirmation timer). The "rule test" replays a controlled pcap through Suricata offline with the chosen rules and reports which rules would drop; it never touches live traffic.
+
+### Slice 43: the Alert Center (v0.38.0)
+
+**What it does:** alerts of the watchdog and of Suricata with states: new, acknowledged, snoozed until, resolved; history and filters. State lives in `/var/lib/dpistack/alerts-state.json`.
+
+### Slice 44: Settings v2 (v0.39.0)
+
+**What it does:** categories, the standard and advanced levels, three columns, search, a diff of the staged change before it is applied, profiles (named sets of keys saved and applied), and for every key the default, the allowed values, the dependencies and what is restarted.
+
+### Slice 45: security of the panel (v0.40.0)
+
+**What it does:** the list of own sessions with a revoke button, API tokens (read only or by role), rotation of the session secret, login history, and a security check (access mode, TLS, default ports, users without a recent login, rule file permissions) shown as a list with a fix hint.
+
+
+---
+
 ## 18. Review after every slice
 
 A separate session, after a slice is ready and the gate is green. The task of the session is to look for problems, not to praise what was written.
@@ -1961,7 +2077,7 @@ Known limits:
 | R44 | medium | `x/crypto` v0.33.0 was pinned because of the Go 1.22 minimum, but it is not the latest version | the minimum raised to Go 1.26, `x/crypto` v0.58.0, `x/sys` v0.49.0; `actions/setup-go` (pinned by SHA) added to `gate`, because Go on the runners may be older |
 | R45 | low | a review of all 27 test files (300 bats tests and the Go tests of the panel): three tests checked nothing (`security.sh` on the repository itself, the first line of usage, the version format of `ctl version`), one looked for the URL `ntop.org` in the text of the sources although the same addresses are already checked through behavior, one panel test could not fail, and the Suricata choice test would break at every shift of the pin (it compared the literal `suricata-8.0.7`) | four tests removed, `ctl version` is compared with `lib/common.sh`, the Suricata choice test checks the format of the reference and the pair "pin and COPR series" with no literal. There are no tests with no checks and with `\|\| true` instead of a check |
 
-Slice 17 closed the budget of RSS and the size of the static files (a script in the gate) and the unit; gzip compression of the static files stays for the moment it becomes noticeable in size (9 KB now). `govulncheck` (12.2) is added as a separate step in `security.yml`, because it needs access to `vuln.go.dev`.
+Slice 17 closed the unit (its budget check was removed in v0.28.0); gzip compression of the static files stays for the moment it becomes noticeable in size (9 KB now). `govulncheck` (12.2) is added as a separate step in `security.yml`, because it needs access to `vuln.go.dev`.
 
 ### 18.7 Slice 17: installing the panel (v14)
 
@@ -2032,7 +2148,7 @@ Open: event types beyond ten are not stored (the panel does not show them; the f
 | R70 | medium | a point taken in the same second as the request stuck into the last bucket of the grid together with the previous one and got a double weight (found by the recovery test: the grid after a restart did not match the old one) | the grid covers `(now-period, now]`, a point at the end goes into its own bucket, nothing extra is glued |
 | R71 | medium | the cumulative Suricata counters after a restart would give a negative rate | a reset skips the interval and redefines the base, a test on five cases (drops alone included) |
 | R72 | high | the panel cannot write `metrics.json`: the state directory belongs to root, and giving it write access means letting it replace `health.json` and `state` | the installer creates one file for the panel user, nothing else is handed over (a bats test checks that the owner of the other files does not change); an in-place write |
-| R73 | low | the budget "zero CPU with no tabs" and a ring for a day are incompatible literally | the decision is recorded above: one tick per 30 seconds, no polls |
+| R73 | low | "zero CPU with no tabs" and a ring for a day are incompatible literally | the decision is recorded above: one tick per 30 seconds, no polls |
 | R74 | low | an unreadable RSS would be drawn as zero | an unknown value is `null`, a test |
 | R75 | low | an unavailable series looked like a flat line near zero | `available: false` with a reason in the answer, words instead of a chart on the screen (jsdom) |
 

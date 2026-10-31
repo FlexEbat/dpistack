@@ -89,6 +89,8 @@ button:active:not(:disabled) { transform: scale(0.98); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 button[type="submit"], button.primary, .toolbar button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-75); margin-bottom: var(--s-100); }
+.perms { display: flex; flex-wrap: wrap; gap: var(--s-50) var(--s-75); flex-basis: 100%; }
+.perm { display: inline-flex; align-items: center; gap: var(--s-50); font-size: var(--text-sm); color: var(--muted); }
 .toolbar input[type="number"] { width: 6rem; }
 .toolbar input.wide { flex: 1 1 16rem; min-width: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: var(--s-50); }

@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.27.0"
+DPISTACK_VERSION="0.29.0"
 
 : "${DRY_RUN:=0}"
 
@@ -209,12 +209,10 @@ backup() {
 	cp -p "$src" "$dest"
 }
 
-# panel_auth_write <plaintext> - writes an argon2id hash (PHC string,
-# the format golang.org/x/crypto/argon2 users parse) into panel.auth.
-# The password goes to argon2 on stdin, never as an argument.
-# 0640 root:dpistack (4.2); before the panel step creates the user the
-# group is missing, and step_panel_apply fixes the group afterwards.
-panel_auth_write() {
+# panel_hash <plaintext> - prints an argon2id hash (PHC string, the format
+# golang.org/x/crypto/argon2 users parse); the password comes from the
+# argument of a function, never from a command line of a program.
+panel_hash() {
 	local plaintext="$1"
 	command -v argon2 >/dev/null 2>&1 || return 2
 	local salt hash
@@ -222,9 +220,20 @@ panel_auth_write() {
 	hash=$(printf '%s' "$plaintext" | argon2 "$salt" -id -t 3 -m 14 -p 4 -l 32 -e) || return 1
 	# shellcheck disable=SC2016 # literal PHC prefix, not an expansion
 	[[ "$hash" == '$argon2id$'* ]] || return 1
+	printf '%s\n' "$hash"
+}
+
+# panel_auth_write <plaintext> - writes the hash into panel.auth and into the
+# user admin of users.json (4.5, slice 34), so both stay the same.
+panel_auth_write() {
+	local plaintext="$1" hash
+	hash=$(panel_hash "$plaintext") || return $?
 	printf '%s\n' "$hash" | atomic_write "$(path_panel_auth)" 0640 || return 1
 	if getent group dpistack >/dev/null 2>&1; then
 		chown root:dpistack "$(path_panel_auth)" || return 1
+	fi
+	if declare -F users_set_admin_hash >/dev/null; then
+		users_set_admin_hash "$hash" || return 1
 	fi
 	return 0
 }
