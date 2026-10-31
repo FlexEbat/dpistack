@@ -354,6 +354,19 @@ prepare_packages() {
 	fi
 }
 
+# report_dead_parts - after the install: every selected part that is not
+# running, with the reason; the installation is not called finished cleanly.
+report_dead_parts() {
+	local id dead=()
+	for id in suricata evebox ntopng redis panel victoriametrics prometheus node_exporter grafana; do
+		diagnose_unit "$id" && dead+=("$id")
+	done
+	if ((${#dead[@]})); then
+		echo "WARNING: not running after the install: ${dead[*]} (the reasons are above; after the fix: dpistack restart <part>, then dpistack test all)" >&2
+	fi
+	return 0
+}
+
 run_apply() {
 	local total=${#STEPS_ORDER[@]}
 	local i=0
@@ -374,6 +387,7 @@ run_apply() {
 			# apply (5.4: a manually edited file is left alone with a
 			# notice, not overwritten) - that isn't a failed apply.
 			echo "[$i/$total] $name ... partly applied, see the notes above"
+			[[ "$DRY_RUN" == "1" ]] || diagnose_unit "$name" || true
 		fi
 	done
 }
@@ -431,6 +445,7 @@ cmd_install() {
 		selinux_relabel_installed
 	fi
 	verify_final_report
+	report_dead_parts
 	panel_report_metrics
 	state_write_value install.finished yes
 	echo "installation finished"
@@ -835,7 +850,7 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health runtime users version self-update)
+	mode-confirm mode-rollback fw panel-passwd test health runtime users diagnose version self-update)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen

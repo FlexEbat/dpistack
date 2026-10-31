@@ -142,5 +142,5 @@ seed_admin() {
 @test "an unknown subcommand gives 2 and the verb is open to the panel" {
 	run "$CTL" users frobnicate
 	[ "$status" -eq 2 ]
-	grep -q 'runtime users version' "$REPO_DIR/install.sh"
+	grep -q 'runtime users' "$REPO_DIR/install.sh"
 }

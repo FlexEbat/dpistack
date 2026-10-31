@@ -46,6 +46,7 @@ Usage: dpistack <command> [arguments]
   test bittorrent|https|all [--json] check tests (section 10)
   health [--json]                    one watchdog run
   users list|add|passwd|role|disable|enable|remove  users of the panel (passwords on stdin)
+  diagnose [<part>]                  the parts that do not run: state, exit status, last log lines
   runtime [--json]                   what can run in docker, the runtime of every part, the links between them
   version                            bundle version
 
@@ -1873,6 +1874,36 @@ cmd_users() {
 	esac
 }
 
+# diagnose_unit <id> - a part that should run and does not: its state, the exit
+# status of systemd and the last lines of its log go into the install output, so
+# the reason is not hidden behind "partly applied" (v0.29.1: the installer used
+# to say only that, and then "installation finished", with Suricata dead).
+diagnose_unit() {
+	local id="$1" unit state
+	component_listed "$id" || return 1
+	unit=$(component_unit "$id")
+	[[ "$unit" == docker:* ]] && return 1
+	state=$(component_state "$unit")
+	[[ "$state" == active || "$state" == absent ]] && return 1
+	echo "  $id: $unit is $state"
+	systemctl show "$unit" -p Result -p ExecMainStatus 2>/dev/null | sed 's/^/    /'
+	journalctl -u "$unit" -n 25 --no-pager 2>&1 | sed 's/^/    /'
+	return 0
+}
+
+# diagnose [<id>] - the parts that should run and do not, with the reason.
+cmd_diagnose() {
+	local id found=0
+	local -a ids=("$@")
+	((${#ids[@]})) || ids=(suricata evebox ntopng redis panel victoriametrics prometheus node_exporter grafana)
+	for id in "${ids[@]}"; do
+		in_list "$id" "${COMPONENTS[@]}" || fail 2 "diagnose: unknown part: $id"
+		diagnose_unit "$id" && found=1
+	done
+	((found)) || echo "every selected part is running"
+	return 0
+}
+
 ctl_main() {
 	if [[ $# -eq 0 ]]; then
 		ctl_usage
@@ -1911,6 +1942,7 @@ ctl_main() {
 	panel-passwd) cmd_panel_passwd "$@" ;;
 	test) cmd_test "$@" ;;
 	health) cmd_health "$@" ;;
+	diagnose) cmd_diagnose "$@" ;;
 	runtime) cmd_runtime "$@" ;;
 	users) cmd_users "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
