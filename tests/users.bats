@@ -11,6 +11,11 @@ setup() {
 	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
 	USERS="$DPISTACK_ROOT/etc/dpistack/users.json"
 	PW="correct horse battery"
+	# CI has no argon2 package: the mock gives a hash per password.
+	PATH="$REPO_DIR/tests/mocks:$PATH"
+	export PATH
+	MOCK_CALLS_LOG="$DPISTACK_ROOT/calls.log"
+	export MOCK_CALLS_LOG
 }
 
 teardown() {
@@ -32,6 +37,7 @@ seed_admin() {
 
 @test "an old panel.auth becomes the user admin with the same hash on the first users call" {
 	hash=$(printf '%s' "$PW" | argon2 saltsaltsalt -id -t 3 -m 14 -p 4 -l 32 -e)
+	[ -n "$hash" ]
 	printf '%s\n' "$hash" >"$DPISTACK_ROOT/etc/dpistack/panel.auth"
 	run "$CTL" users list --json
 	[ "$status" -eq 0 ]

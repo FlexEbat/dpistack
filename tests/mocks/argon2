@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Mock argon2(1): consumes the password on stdin, prints a fixed PHC
-# string. Only the arguments are logged; the password never is.
+# Mock argon2(1): consumes the password on stdin and prints a PHC string whose
+# hash part is the sha256 of the password, so the same password gives the same
+# hash and another password another one (tests of `users` compare hashes). Only
+# the arguments are logged; the password never is.
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 	printf '%s %s\n' "$(basename "$0")" "$*" >>"$MOCK_CALLS_LOG"
 fi
-cat >/dev/null
-echo '$argon2id$v=19$m=16384,t=3,p=4$c2FsdHNhbHRzYWx0$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhc2g'
+digest=$(sha256sum | cut -c1-43)
+# shellcheck disable=SC2016 # a literal PHC prefix
+printf '$argon2id$v=19$m=16384,t=3,p=4$c2FsdHNhbHRzYWx0$%s\n' "$digest"
