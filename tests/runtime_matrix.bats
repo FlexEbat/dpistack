@@ -87,5 +87,5 @@ s=socket.socket();s.bind(('127.0.0.1',$port));s.listen(5);time.sleep(8)" &
 @test "the verb refuses an unknown argument and is open to the panel" {
 	run "$CTL" runtime --bogus
 	[ "$status" -eq 2 ]
-	grep -q 'health runtime version' "$REPO_DIR/install.sh"
+	grep -q 'health runtime' "$REPO_DIR/install.sh"
 }

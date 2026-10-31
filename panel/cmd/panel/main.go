@@ -39,7 +39,8 @@ func run(args []string) error {
 	addr := fs.String("addr", "127.0.0.1:9800", "listen address")
 	access := fs.String("access", "localhost", "ACCESS_MODE: localhost, lan or nginx")
 	lanCIDR := fs.String("lan-cidr", "", "LAN_CIDR resolved to an address/length; required for lan")
-	authFile := fs.String("auth-file", "/etc/dpistack/panel.auth", "argon2id hash of the panel password")
+	authFile := fs.String("auth-file", "/etc/dpistack/panel.auth", "argon2id hash of the panel password (the old one-password panel; used when users.json is absent)")
+	usersFile := fs.String("users-file", "/etc/dpistack/users.json", "users, roles and password hashes")
 	healthFile := fs.String("health-file", "/var/lib/dpistack/health.json", "watchdog report")
 	ctlPath := fs.String("ctl", "/usr/local/sbin/dpistack", "dpistack path")
 	version := fs.String("version", "", "the dpistack version shown in the corner of the panel")
@@ -120,6 +121,7 @@ func run(args []string) error {
 		Update:      checker,
 		Policy:      policy,
 		AuthFile:    *authFile,
+		UsersFile:   *usersFile,
 		HealthFile:  *healthFile,
 		Lite:        *lite,
 		Ctl:         &ctl.Runner{Path: *ctlPath, Sudo: *useSudo, Prefix: splitPrefix(*ctlPrefix)},

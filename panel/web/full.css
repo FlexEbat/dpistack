@@ -111,6 +111,8 @@ button[type="submit"], button.primary, .toolbar button[aria-pressed="true"] { ba
 button[type="submit"]:hover:not(:disabled), button.primary:hover:not(:disabled), .toolbar button[aria-pressed="true"]:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
 #logout { color: var(--soft); }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-75); margin-bottom: var(--s-200); }
+.perms { display: flex; flex-wrap: wrap; gap: var(--s-50) var(--s-75); flex-basis: 100%; }
+.perm { display: inline-flex; align-items: center; gap: var(--s-50); font-size: var(--text-sm); color: var(--muted); }
 .toolbar input[type="number"] { width: 6.5rem; }
 .toolbar input.wide { flex: 1 1 16rem; min-width: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: var(--s-50); }

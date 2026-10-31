@@ -10,6 +10,7 @@ import { start as startAlerts } from "./modules/alerts.js";
 import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
 import { start as startSettings } from "./modules/settings.js";
+import * as account from "./modules/account.js";
 import { start as startVersion } from "./modules/version.js";
 import { menu, revealOnce, skipLink } from "./modules/chrome.js";
 
@@ -31,6 +32,7 @@ async function api(path, options = {}) {
     const err = new Error(body.error || "Error " + res.status);
     err.status = res.status;
     err.body = body; // a refusal carries the checker's words in body.output
+    if (res.status === 403) err.message = account.refusal(body) || err.message;
     throw err;
   }
   return body;
@@ -41,7 +43,8 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts"];
+const VIEWS = ["overview", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts", "account"];
+let me = { name: "", role: "", perms: ["view"] };
 let stopView = null;
 
 // Every screen starts when shown and returns a stop function, so a hidden
@@ -170,6 +173,27 @@ const SCREENS = {
       { error: $("alerts-error"), check: $("al-check"), limit: $("al-limit"), refresh: $("al-refresh"), list: $("al-list") },
       showLogin,
     ),
+  account: () =>
+    account.start(
+      api,
+      {
+        error: $("account-error"),
+        message: $("account-message"),
+        who: $("account-who"),
+        passwordForm: $("account-password"),
+        current: $("account-current"),
+        next: $("account-next"),
+        manage: $("account-manage"),
+        list: $("account-list"),
+        add: $("account-add"),
+        newName: $("account-new-name"),
+        newRole: $("account-new-role"),
+        newPerms: $("account-new-perms"),
+        newPassword: $("account-new-password"),
+      },
+      showLogin,
+      me,
+    ),
   metrics: () =>
     startMetrics(
       api,
@@ -207,7 +231,12 @@ function showView(name) {
 
 let stopVersion = null;
 
-function showOverview() {
+async function showOverview() {
+  // Who is signed in decides which entries of the menu are shown.
+  me = await api("/api/me").catch(() => me);
+  for (const b of document.querySelectorAll("#nav button[data-view]")) {
+    b.hidden = !account.visibleViews([b.dataset.view], me.perms).length;
+  }
   showView("overview");
   // The corner: the version, and the update when there is one.
   stopVersion?.();
@@ -228,6 +257,7 @@ function showLogin() {
   stopView?.();
   stopView = null;
   show("login");
+  $("password").value = "";
   $("password").focus();
 }
 
@@ -251,7 +281,7 @@ $("login-form").addEventListener("submit", async (event) => {
     await api("/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: $("password").value }),
+      body: JSON.stringify({ username: $("username").value.trim(), password: $("password").value }),
     });
     $("password").value = "";
     await boot();

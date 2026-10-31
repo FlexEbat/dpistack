@@ -8,11 +8,12 @@ import (
 	"time"
 )
 
-// maxSessions bounds memory: the panel has one administrator.
+// maxSessions bounds memory.
 const maxSessions = 64
 
 type session struct {
 	csrf    string
+	user    string
 	expires time.Time
 }
 
@@ -38,8 +39,13 @@ func randomToken() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// Create starts a session and returns its id and its CSRF token.
+// Create starts a session of the user admin (the one-password panel).
 func (s *Sessions) Create() (id, csrf string) {
+	return s.CreateFor("admin")
+}
+
+// CreateFor starts a session of a user and returns its id and its CSRF token.
+func (s *Sessions) CreateFor(user string) (id, csrf string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
@@ -58,7 +64,7 @@ func (s *Sessions) Create() (id, csrf string) {
 		delete(s.m, oldest)
 	}
 	id, csrf = randomToken(), randomToken()
-	s.m[id] = session{csrf: csrf, expires: now.Add(s.ttl)}
+	s.m[id] = session{csrf: csrf, user: user, expires: now.Add(s.ttl)}
 	return id, csrf
 }
 
@@ -75,6 +81,28 @@ func (s *Sessions) Get(id string) (csrf string, ok bool) {
 		return "", false
 	}
 	return v.csrf, true
+}
+
+// Who returns the user of a live session.
+func (s *Sessions) Who(id string) (user string, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, found := s.m[id]
+	if !found || !s.now().Before(v.expires) {
+		return "", false
+	}
+	return v.user, true
+}
+
+// DeleteUser ends every session of a user (a changed role or password).
+func (s *Sessions) DeleteUser(user string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, v := range s.m {
+		if v.user == user {
+			delete(s.m, k)
+		}
+	}
 }
 
 // Delete ends a session.

@@ -10,6 +10,7 @@ path_conf() { echo "$(path_etc)/dpistack.conf"; }
 path_conf_draft() { echo "$(path_etc)/dpistack.conf.draft"; }
 path_secrets() { echo "$(path_etc)/secrets.conf"; }
 path_panel_auth() { echo "$(path_etc)/panel.auth"; }
+path_users() { echo "$(path_etc)/users.json"; }
 path_metrics_token() { echo "$(path_etc)/metrics.token"; }
 
 path_sys_class_net() { echo "${DPISTACK_ROOT}/sys/class/net"; }

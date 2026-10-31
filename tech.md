@@ -1,11 +1,12 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v41** (2026-10-31)
-**Program version: v0.28.0** (slices 0-33 are done, 34-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
+**Document version: v42** (2026-10-31)
+**Program version: v0.29.0** (slices 0-34 are done, 35-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.29.0: slice 34. Users, roles (viewer, analyst, operator, admin, custom) and permissions: `dpistack users ...`, `users.json`, login with a user name, a permission on every route of the panel, `/api/me`, `/api/users`, the Account screen.
 - v0.28.0: slices 32 and 33. The resource budget of the panel is gone (the script, the gate stage, the weight test, the lines in the documents). `dpistack runtime [--json]` and section 4.10: what can run in Docker, the runtime of every part, the links between the parts and a check of each; `docs/runtimes.md`. Slices 34-45 (users and roles, audit, backup, the new screens) are written in section 17.
 - v0.27.0: the panel design follows the landing page design skill (9.1, 18.31): Geist and Geist Mono served by the panel, Phosphor icons, the Tailwind type scale, the fixed spacing table, flat backgrounds, one motion curve, a floating bar and a full height menu on narrow screens, scroll reveals, skeletons; the remaining items of the Debian 13 report: a kept busy port stops the menu, the saved config asks for the network access confirmation, apt waits for the dpkg lock, a hint for a re-run from the installed copy.
 - v0.26.2: fixes from the first install report on Debian 13 (18.30): the unversioned `rustc` of the apt repositories counts as a usable Rust (nDPI is no longer switched off there), the first Suricata start has a rules file, the BitTorrent replay matches the sample pcap whatever the host `HOME_NET` is.
@@ -449,7 +450,8 @@ The only place of the privileged actions of the panel and the watchdog. It works
 | `test bittorrent\|https\|all [--json]` | section 10 |
 | `health [--json]` | one run of the watchdog |
 | `runtime [--json]` | what can run in Docker, the runtime of every part, the links between them (4.10) |
-| `panel-passwd` | reads the password from stdin, writes an argon2id hash into `panel.auth` |
+| `panel-passwd` | reads the password from stdin, writes an argon2id hash into `panel.auth` and into the user `admin` of `users.json` |
+| `users list [--json]`, `users add <name> <role> [--perms a,b]`, `users passwd <name>`, `users role <name> <role> [--perms a,b]`, `users disable\|enable\|remove <name>` | users of the panel in `/etc/dpistack/users.json` (slice 34); passwords on stdin, 8 characters at least; exit 3 when the change would leave nobody able to manage users, 4 for an unknown user; open to the panel |
 | `version` | the version of the bundle |
 
 Arguments: letters, digits and `. _ : = / @ + , -` and a space are allowed (`rules-search` takes a phrase); everything else, including `; | & $ ( ) < > \` quotes and a line break, gives code `5` before any action. A URL with `?`, `&`, `%` therefore does not pass `rules-sources add-url`.
@@ -531,7 +533,10 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 
 | method and path | what it does |
 | --- | --- |
-| `POST /api/login`, `POST /api/logout` | the session is in a `HttpOnly; SameSite=Strict` cookie |
+| `POST /api/login`, `POST /api/logout` | the session is in a `HttpOnly; SameSite=Strict` cookie; the login body is `{username?, password}`, no name means `admin`; a wrong name, a disabled user and a wrong password give the same answer |
+| `GET /api/me`, `POST /api/me/password` | who is signed in with the permissions; a user changes their own password with the current one (their sessions end) |
+| `GET\|POST /api/users`, `PUT\|DELETE /api/users/{name}` | permission `users.manage`; the list never holds a hash; nobody can remove or disable their own account |
+| permissions | every other route needs one (table in `panel/internal/api/users_test.go`, checked for every role); reading `/api/config*` needs `configs.edit`; a missing permission is 403 `{"error":"forbidden","permission":...}` |
 | `GET /api/status` | the components (`ctl status`) + `health.json` |
 | `GET /api/version` | the running version and, from the latest GitHub release of the project (checked at most every 6 hours, a failed check again after 15 minutes), `latest`, `update_available`, `release_url`, `check_error`. The version comes from the panel flag `-version`, which `panel_args` fills, so an update that changes the unit restarts the panel with the new number |
 | `POST /api/update` | the Update button after the confirmation dialog: refused with 409 unless a newer release exists, otherwise `ctl self-update run` (202) |
@@ -1865,11 +1870,13 @@ The owner sent a list of changes for the panel (`todo.md`). Decisions are made h
 
 ### Slice 34: users, roles and permissions (v0.29.0)
 
-**What it does:** more than one user of the panel. Users live in `/etc/dpistack/users.json` (0640, `root:dpistack`): `{"users":[{"name","role","perms"?,"hash","created","disabled"}]}`. The first user is `admin`, made from the old `panel.auth` on upgrade or at install (the file `panel.auth` stays as the source of the migration only). Names: `^[a-z][a-z0-9_.-]{1,31}$`. Permissions: `view`, `events.ack`, `tests.run`, `components.control`, `rules.edit`, `settings.edit`, `configs.edit`, `ips.manage`, `backup.manage`, `update.manage`, `audit.view`, `users.manage`. Roles are presets: `viewer` (`view`), `analyst` (`view`, `events.ack`, `tests.run`, `audit.view`), `operator` (analyst plus `components.control`, `rules.edit`), `admin` (all). A user may carry an explicit `perms` list instead of a role (`custom`), so the permissions are configurable per user. Verbs: `users list [--json]`, `users add <name> <role> [--perms a,b]` (the password on stdin), `users passwd <name>` (stdin), `users role <name> <role> [--perms a,b]`, `users disable|enable|remove <name>`; the last enabled admin cannot be removed, disabled or demoted; `panel-passwd` is `users passwd admin`. Login takes `username` (default `admin`). `GET /api/me` returns `{user, role, perms}`. Every route has a permission; a missing one gives 403 `{"error":"forbidden"}`. `GET|POST /api/users`, `PUT|DELETE /api/users/{name}` need `users.manage`. A change of a role or a password ends the sessions of that user. The UI: a Users screen under Security, and the buttons the user may not use are hidden.
+**What it does:** more than one user of the panel. Users live in `/etc/dpistack/users.json` (0640, `root:dpistack`): `{"users":[{"name","role","perms"?,"hash","created","disabled"}]}`. The first user is `admin`, made from the old `panel.auth` on upgrade or at install (the file `panel.auth` stays as the source of the migration only). Names: `^[a-z][a-z0-9_.-]{1,31}$`. Permissions: `view`, `events.ack`, `tests.run`, `components.control`, `rules.edit`, `settings.edit`, `configs.edit`, `ips.manage`, `backup.manage`, `update.manage`, `audit.view`, `users.manage`. Roles are presets: `viewer` (`view`), `analyst` (`view`, `events.ack`, `tests.run`, `audit.view`), `operator` (analyst plus `components.control`, `rules.edit`), `admin` (all). A user may carry an explicit `perms` list instead of a role (`custom`), so the permissions are configurable per user. Verbs: `users list [--json]`, `users add <name> <role> [--perms a,b]` (the password on stdin), `users passwd <name>` (stdin), `users role <name> <role> [--perms a,b]`, `users disable|enable|remove <name>`; the last enabled admin cannot be removed, disabled or demoted; `panel-passwd` is `users passwd admin`. Login takes `username` (default `admin`). `GET /api/me` returns `{user, role, perms}`. Every route has a permission; a missing one gives 403 `{"error":"forbidden"}`. `GET|POST /api/users`, `PUT|DELETE /api/users/{name}` need `users.manage`. A change of a role or a password ends the sessions of that user, and an account is read again on every request, so a disabled or removed user is cut off at once. The UI of this slice: an Account screen (own password; with `users.manage` also the list, add, role, disable, remove) and the menu entry Configs hidden without `configs.edit`; a refused action shows the missing permission. Hiding every single button by permission is part of slice 37 (the shell).
 
 **Acceptance criteria:** (1) migration from `panel.auth` gives the user `admin` with the same password. (2) `viewer` can read and cannot POST anything (403 on every mutating route); `operator` cannot change settings or users. (3) The last admin is protected. (4) A role change ends the sessions of that user. (5) A wrong user name and a wrong password give the same answer and the same delay. (6) Passwords never appear in arguments, logs or the audit log.
 
 **Tests:** `tests/users.bats`, `panel/internal/auth/users_test.go`, `panel/internal/api/permissions_test.go` (a table: every route against every role).
+
+**Status:** done in v0.29.0 (the panel falls back to `panel.auth` when `users.json` is absent, so an upgrade needs no step).
 
 ### Slice 35: the audit log and login history (v0.30.0)
 

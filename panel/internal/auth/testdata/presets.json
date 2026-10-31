@@ -1,0 +1,49 @@
+{
+ "perms": [
+  "view",
+  "events.ack",
+  "tests.run",
+  "components.control",
+  "rules.edit",
+  "settings.edit",
+  "configs.edit",
+  "ips.manage",
+  "backup.manage",
+  "update.manage",
+  "audit.view",
+  "users.manage"
+ ],
+ "roles": {
+  "viewer": [
+   "view"
+  ],
+  "analyst": [
+   "view",
+   "events.ack",
+   "tests.run",
+   "audit.view"
+  ],
+  "operator": [
+   "view",
+   "events.ack",
+   "tests.run",
+   "audit.view",
+   "components.control",
+   "rules.edit"
+  ],
+  "admin": [
+   "view",
+   "events.ack",
+   "tests.run",
+   "components.control",
+   "rules.edit",
+   "settings.edit",
+   "configs.edit",
+   "ips.manage",
+   "backup.manage",
+   "update.manage",
+   "audit.view",
+   "users.manage"
+  ]
+ }
+}

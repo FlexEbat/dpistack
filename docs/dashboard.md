@@ -46,6 +46,29 @@ The screen is built from the settings schema that the program itself serves, so 
 
 The same actions are available from the command line: `dpistack settings list|check|set|secret|job` (see [operations.md](operations.md)).
 
+## Users and roles
+
+The panel has more than one user. The first one is `admin`, with the password you set at install (`sudo dpistack panel-passwd`). Sign in with a user name and a password; an empty name means `admin`.
+
+| Role | May do |
+|---|---|
+| viewer | look at every screen except Configs |
+| analyst | viewer, run the self-tests, read the audit |
+| operator | analyst, control components, edit rules |
+| admin | everything, including settings, configs, IPS mode, updates and users |
+| custom | exactly the permissions you tick |
+
+The Account screen changes your own password and, for users who may manage users, adds users, changes roles, disables and removes them. The same from the command line (the password is read from stdin):
+
+```
+printf '%s\n' 'a long password' | sudo dpistack users add anna operator
+sudo dpistack users list
+sudo dpistack users role anna custom --perms view,rules.edit
+sudo dpistack users disable anna
+```
+
+The last user who may manage users cannot be removed, disabled or demoted. A change of the role or the password ends that user's sessions; a disabled user is cut off at once.
+
 ## Panel security
 
 - The panel does not run as root; it does privileged things by calling `sudo -n dpistack <command>`, where `dpistack` lets the panel user reach the control commands only and checks the arguments against lists.

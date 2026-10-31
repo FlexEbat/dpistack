@@ -710,7 +710,7 @@ cmd_uninstall() {
 	rm -f "$(path_panel_service_unit)" "$(path_panel_bin)"
 	run systemctl daemon-reload
 
-	rm -f "$(path_conf)" "$(path_conf_draft)" "$(path_secrets)" "$(path_panel_auth)"
+	rm -f "$(path_conf)" "$(path_conf_draft)" "$(path_secrets)" "$(path_panel_auth)" "$(path_users)"
 	rmdir "$(dirname "$(path_conf)")" 2>/dev/null || true
 	rmdir "${DPISTACK_ROOT}/opt/dpistack" "$(path_log_dir)" 2>/dev/null || true
 	rm -rf "$(path_state_dir)"
@@ -835,7 +835,7 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health runtime version self-update)
+	mode-confirm mode-rollback fw panel-passwd test health runtime users version self-update)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen
