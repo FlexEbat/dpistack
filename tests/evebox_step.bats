@@ -90,3 +90,26 @@ install_base() {
 	MOCK_SS_LISTEN="5636,3000" run install_base
 	[ "$status" -eq 0 ]
 }
+
+@test "v0.29.1: the data directory of EveBox is made and given to the user of the service before the start" {
+	run install_base
+	[ "$status" -eq 0 ]
+	[ -d "$DPISTACK_ROOT/var/lib/evebox" ]
+	[ "$(stat -c %a "$DPISTACK_ROOT/var/lib/evebox")" = "750" ]
+	grep -q "^chown -R evebox:evebox $DPISTACK_ROOT/var/lib/evebox\$" "$MOCK_CALLS_LOG"
+	own=$(grep -n "^chown -R evebox:evebox" "$MOCK_CALLS_LOG" | head -1 | cut -d: -f1)
+	start=$(grep -n "^systemctl enable --now evebox.service" "$MOCK_CALLS_LOG" | head -1 | cut -d: -f1)
+	[ "$own" -lt "$start" ]
+}
+
+@test "v0.29.1: a unit that runs as root needs no chown, the directory is still made" {
+	FAKE="$(mktemp -d)"
+	printf '#!/usr/bin/env bash\nif [[ "$1" == show && "$*" == *User* ]]; then echo root; exit 0; fi\nexec "%s/tests/mocks/systemctl" "$@"\n' "$REPO_DIR" >"$FAKE/systemctl"
+	chmod +x "$FAKE/systemctl"
+	PATH="$FAKE:$PATH" run install_base
+	[ "$status" -eq 0 ]
+	[ -d "$DPISTACK_ROOT/var/lib/evebox" ]
+	run grep -c "^chown -R evebox" "$MOCK_CALLS_LOG"
+	[ "$output" = "0" ]
+	rm -rf "$FAKE"
+}

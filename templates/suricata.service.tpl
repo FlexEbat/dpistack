@@ -4,13 +4,17 @@
 # autoconf @e_rundir@/@e_sysconfdir@ placeholders replaced by
 # dpistack's own and the binary path pointed at the source-build
 # prefix, since distro/oisf packages ship their own unit instead.
+# One addition: --af-packet. Without a capture mode Suricata prints its usage
+# and exits with 1 (seen on a real Debian 13 install, v0.29.1); the interfaces
+# still come from the af-packet section of suricata.yaml, and the IPS drop-in
+# replaces the whole ExecStart with -q.
 [Unit]
 Description=Suricata Intrusion Detection Service (built from source by dpistack)
 After=syslog.target network-online.target
 
 [Service]
 ExecStartPre=/bin/rm -f @@RUNDIR@@suricata.pid
-ExecStart=/usr/local/bin/suricata -c @@SYSCONFDIR@@suricata.yaml --pidfile @@RUNDIR@@suricata.pid
+ExecStart=/usr/local/bin/suricata -c @@SYSCONFDIR@@suricata.yaml --pidfile @@RUNDIR@@suricata.pid --af-packet
 ExecReload=/bin/kill -USR2 $MAINPID
 Restart=on-failure
 
