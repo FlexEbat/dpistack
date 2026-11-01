@@ -354,15 +354,23 @@ prepare_packages() {
 	fi
 }
 
-# report_dead_parts - after the install: every selected part that is not
-# running, with the reason; the installation is not called finished cleanly.
+# APPLIED_STEPS / DEAD_PARTS: what this run changed, and which of those parts
+# do not run. A second run that changes nothing checks nothing and prints nothing.
+APPLIED_STEPS=()
+DEAD_PARTS=()
+
+# report_dead_parts - after the install: every part that this run applied and
+# that does not run, with the reason; the installation is not called finished
+# cleanly. A part already explained by its step is not explained twice.
 report_dead_parts() {
-	local id dead=()
-	for id in suricata evebox ntopng redis panel victoriametrics prometheus node_exporter grafana; do
-		diagnose_unit "$id" && dead+=("$id")
+	local id
+	for id in "${APPLIED_STEPS[@]}"; do
+		in_list "$id" "${DEAD_PARTS[@]}" && continue
+		[[ "$id" =~ ^(suricata|evebox|ntopng|redis|panel|victoriametrics|prometheus|node_exporter|grafana)$ ]] || continue
+		diagnose_unit "$id" && DEAD_PARTS+=("$id")
 	done
-	if ((${#dead[@]})); then
-		echo "WARNING: not running after the install: ${dead[*]} (the reasons are above; after the fix: dpistack restart <part>, then dpistack test all)" >&2
+	if ((${#DEAD_PARTS[@]})); then
+		echo "WARNING: not running after the install: ${DEAD_PARTS[*]} (the reasons are above; after the fix: dpistack restart <part>, then dpistack test all)" >&2
 	fi
 	return 0
 }
@@ -379,6 +387,7 @@ run_apply() {
 		if ! step_call apply "$name"; then
 			die 1 "step $name failed, to continue: install.sh install --only $name"
 		fi
+		APPLIED_STEPS+=("$name")
 		if step_call check "$name"; then
 			state_set_step_done "$name"
 			echo "[$i/$total] $name ... done"
@@ -387,7 +396,9 @@ run_apply() {
 			# apply (5.4: a manually edited file is left alone with a
 			# notice, not overwritten) - that isn't a failed apply.
 			echo "[$i/$total] $name ... partly applied, see the notes above"
-			[[ "$DRY_RUN" == "1" ]] || diagnose_unit "$name" || true
+			if [[ "$DRY_RUN" != "1" ]] && diagnose_unit "$name"; then
+				DEAD_PARTS+=("$name")
+			fi
 		fi
 	done
 }

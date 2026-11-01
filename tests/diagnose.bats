@@ -59,3 +59,42 @@ teardown() {
 	run "$CTL" diagnose frobnicate
 	[ "$status" -eq 2 ]
 }
+
+# --- the installer itself (v0.29.1) ---
+
+install_with_dead_suricata() {
+	local dir
+	dir="$(mktemp -d)"
+	mkdir -p "$DPISTACK_ROOT/etc"
+	printf 'ID=ubuntu\nID_LIKE=debian\n' >"$DPISTACK_ROOT/etc/os-release"
+	cat >"$dir/systemctl" <<FAKE
+#!/usr/bin/env bash
+if [[ "\$1" == is-active && "\$*" == *suricata.service* ]]; then echo failed; exit 3; fi
+if [[ "\$1" == show && "\$*" == *Result* ]]; then printf 'Result=exit-code\nExecMainStatus=1\n'; exit 0; fi
+if [[ "\$1" == show ]]; then echo loaded; exit 0; fi
+exec "$REPO_DIR/tests/mocks/systemctl" "\$@"
+FAKE
+	cat >"$dir/journalctl" <<'FAKE'
+#!/usr/bin/env bash
+echo "suricata[1]: Error: the plugin could not be loaded"
+FAKE
+	chmod +x "$dir"/*
+	PATH="$dir:$REPO_DIR/tests/mocks:$PATH" MOCK_IP_EXISTING_IFACES=enp2s0 MOCK_CALLS_LOG="$DPISTACK_ROOT/calls.log" \
+		bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+}
+
+@test "the install says why a part is dead and ends with a warning naming it" {
+	run install_with_dead_suricata
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"suricata ... partly applied"* ]]
+	[[ "$output" == *"suricata: suricata.service is failed"* ]]
+	[[ "$output" == *"the plugin could not be loaded"* ]]
+	[[ "$output" == *"WARNING: not running after the install: suricata"* ]]
+}
+
+@test "a part that runs gives no warning" {
+	PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_IP_EXISTING_IFACES=enp2s0 MOCK_CALLS_LOG="$DPISTACK_ROOT/calls.log" \
+		run bash -c "printf 'ID=ubuntu\nID_LIKE=debian\n' >'$DPISTACK_ROOT/etc/os-release' 2>/dev/null || { mkdir -p '$DPISTACK_ROOT/etc'; printf 'ID=ubuntu\nID_LIKE=debian\n' >'$DPISTACK_ROOT/etc/os-release'; }; bash '$REPO_DIR/install.sh' install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no"
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"WARNING: not running"* ]]
+}
