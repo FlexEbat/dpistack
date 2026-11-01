@@ -87,6 +87,27 @@ step_evebox_check() {
 	return 0
 }
 
+# evebox_prepare_data_dir - the directory EveBox keeps its SQLite databases in
+# must exist and belong to the user of the service. Without it EveBox stops at
+# "unable to open database file" (code 14) on the first start (seen on a real
+# Debian 13 install, v0.29.1). The user is the one systemd runs the unit as;
+# a unit without User= runs as root and needs no chown.
+evebox_prepare_data_dir() {
+	local dir user group
+	dir="$(path_evebox_data_dir)"
+	user=$(systemctl show -p User --value "$EVEBOX_UNIT" 2>/dev/null || true)
+	if [[ -z "$user" ]] && getent passwd evebox >/dev/null 2>&1; then
+		user=evebox
+	fi
+	run mkdir -p "$dir" || return 1
+	run chmod 0750 "$dir" || return 1
+	[[ -z "$user" || "$user" == root ]] && return 0
+	group=$(systemctl show -p Group --value "$EVEBOX_UNIT" 2>/dev/null || true)
+	[[ -n "$group" ]] || group=$(id -gn "$user" 2>/dev/null || echo "$user")
+	# Files an earlier failed start may have left under another owner too.
+	run chown -R "$user:$group" "$dir" || return 1
+}
+
 step_evebox_apply() {
 	if docker_wanted evebox; then
 		runtime_release_native "$EVEBOX_UNIT" || return 1
@@ -107,6 +128,8 @@ step_evebox_apply() {
 	if getent group suricata >/dev/null 2>&1; then
 		run usermod -a -G suricata evebox || return 1
 	fi
+
+	evebox_prepare_data_dir || return 1
 
 	run systemctl enable --now "$EVEBOX_UNIT" || return 1
 

@@ -286,6 +286,11 @@ step_verify_apply() {
 	VERIFY_HTTPS_URL="${CONF[TEST_HTTPS_URL]:-https://example.com}"
 	VERIFY_BT_LIVE="${CONF[TEST_BT_LIVE]:-no}"
 	VERIFY_IFACES="${CONF[IFACES]:-}"
+	# The live BitTorrent test replays a pcap with tcpreplay: when the owner asked
+	# for it, the installer brings the tool instead of failing the test for it.
+	if [[ "$VERIFY_BT_LIVE" == "yes" ]] && ! command -v tcpreplay >/dev/null 2>&1; then
+		pkg_install tcpreplay || echo "verify: could not install tcpreplay, the live BitTorrent test will fail" >&2
+	fi
 	# A failed test never cancels the install: it lands in the final report.
 	verify_run 0 "${VERIFY_TESTS[@]}" || true
 	return 0

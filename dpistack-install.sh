@@ -1505,7 +1505,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.29.1"
+DPISTACK_VERSION="0.29.2"
 
 : "${DRY_RUN:=0}"
 
@@ -7594,6 +7594,27 @@ step_evebox_check() {
 	return 0
 }
 
+# evebox_prepare_data_dir - the directory EveBox keeps its SQLite databases in
+# must exist and belong to the user of the service. Without it EveBox stops at
+# "unable to open database file" (code 14) on the first start (seen on a real
+# Debian 13 install, v0.29.1). The user is the one systemd runs the unit as;
+# a unit without User= runs as root and needs no chown.
+evebox_prepare_data_dir() {
+	local dir user group
+	dir="$(path_evebox_data_dir)"
+	user=$(systemctl show -p User --value "$EVEBOX_UNIT" 2>/dev/null || true)
+	if [[ -z "$user" ]] && getent passwd evebox >/dev/null 2>&1; then
+		user=evebox
+	fi
+	run mkdir -p "$dir" || return 1
+	run chmod 0750 "$dir" || return 1
+	[[ -z "$user" || "$user" == root ]] && return 0
+	group=$(systemctl show -p Group --value "$EVEBOX_UNIT" 2>/dev/null || true)
+	[[ -n "$group" ]] || group=$(id -gn "$user" 2>/dev/null || echo "$user")
+	# Files an earlier failed start may have left under another owner too.
+	run chown -R "$user:$group" "$dir" || return 1
+}
+
 step_evebox_apply() {
 	if docker_wanted evebox; then
 		runtime_release_native "$EVEBOX_UNIT" || return 1
@@ -7614,6 +7635,8 @@ step_evebox_apply() {
 	if getent group suricata >/dev/null 2>&1; then
 		run usermod -a -G suricata evebox || return 1
 	fi
+
+	evebox_prepare_data_dir || return 1
 
 	run systemctl enable --now "$EVEBOX_UNIT" || return 1
 
@@ -10587,6 +10610,11 @@ step_verify_apply() {
 	VERIFY_HTTPS_URL="${CONF[TEST_HTTPS_URL]:-https://example.com}"
 	VERIFY_BT_LIVE="${CONF[TEST_BT_LIVE]:-no}"
 	VERIFY_IFACES="${CONF[IFACES]:-}"
+	# The live BitTorrent test replays a pcap with tcpreplay: when the owner asked
+	# for it, the installer brings the tool instead of failing the test for it.
+	if [[ "$VERIFY_BT_LIVE" == "yes" ]] && ! command -v tcpreplay >/dev/null 2>&1; then
+		pkg_install tcpreplay || echo "verify: could not install tcpreplay, the live BitTorrent test will fail" >&2
+	fi
 	# A failed test never cancels the install: it lands in the final report.
 	verify_run 0 "${VERIFY_TESTS[@]}" || true
 	return 0
@@ -11013,13 +11041,17 @@ put templates/suricata.service.tpl 644 <<'DPISTACK_BUNDLE_END'
 # autoconf @e_rundir@/@e_sysconfdir@ placeholders replaced by
 # dpistack's own and the binary path pointed at the source-build
 # prefix, since distro/oisf packages ship their own unit instead.
+# One addition: --af-packet. Without a capture mode Suricata prints its usage
+# and exits with 1 (seen on a real Debian 13 install, v0.29.1); the interfaces
+# still come from the af-packet section of suricata.yaml, and the IPS drop-in
+# replaces the whole ExecStart with -q.
 [Unit]
 Description=Suricata Intrusion Detection Service (built from source by dpistack)
 After=syslog.target network-online.target
 
 [Service]
 ExecStartPre=/bin/rm -f @@RUNDIR@@suricata.pid
-ExecStart=/usr/local/bin/suricata -c @@SYSCONFDIR@@suricata.yaml --pidfile @@RUNDIR@@suricata.pid
+ExecStart=/usr/local/bin/suricata -c @@SYSCONFDIR@@suricata.yaml --pidfile @@RUNDIR@@suricata.pid --af-packet
 ExecReload=/bin/kill -USR2 $MAINPID
 Restart=on-failure
 
