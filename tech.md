@@ -1,11 +1,12 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v42** (2026-10-31)
-**Program version: v0.29.0** (slices 0-34 are done, 35-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
+**Document version: v43** (2026-10-31)
+**Program version: v0.29.1** (slices 0-34 are done, 35-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.29.1: the install report of 2026-10-31 (Debian 13, source build with nDPI): Suricata was not running after its step and EveBox failed, and the installer said only "partly applied" and "installation finished". Now a step that leaves its part dead prints the state, the systemd exit status and the last 25 lines of the log; the end of the install lists every part that does not run and says so as a warning; `dpistack diagnose` gives the same later. The root cause of that stand is not known yet (the journal was not in the report); it is to be read from the new output.
 - v0.29.0: slice 34. Users, roles (viewer, analyst, operator, admin, custom) and permissions: `dpistack users ...`, `users.json`, login with a user name, a permission on every route of the panel, `/api/me`, `/api/users`, the Account screen.
 - v0.28.0: slices 32 and 33. The resource budget of the panel is gone (the script, the gate stage, the weight test, the lines in the documents). `dpistack runtime [--json]` and section 4.10: what can run in Docker, the runtime of every part, the links between the parts and a check of each; `docs/runtimes.md`. Slices 34-45 (users and roles, audit, backup, the new screens) are written in section 17.
 - v0.27.0: the panel design follows the landing page design skill (9.1, 18.31): Geist and Geist Mono served by the panel, Phosphor icons, the Tailwind type scale, the fixed spacing table, flat backgrounds, one motion curve, a floating bar and a full height menu on narrow screens, scroll reveals, skeletons; the remaining items of the Debian 13 report: a kept busy port stops the menu, the saved config asks for the network access confirmation, apt waits for the dpkg lock, a hint for a re-run from the installed copy.
@@ -449,6 +450,7 @@ The only place of the privileged actions of the panel and the watchdog. It works
 | `mode-rollback`, `fw apply\|remove\|restore` | internal: the rollback by the timer and the `DPISTACK` chain (`dpistack-fw.service` calls `restore` at boot) |
 | `test bittorrent\|https\|all [--json]` | section 10 |
 | `health [--json]` | one run of the watchdog |
+| `diagnose [<part>]` | the parts that should run and do not: state, systemd exit status and the last 25 log lines; the installer runs the same after a step that is "partly applied" and at the end (v0.29.1) |
 | `runtime [--json]` | what can run in Docker, the runtime of every part, the links between them (4.10) |
 | `panel-passwd` | reads the password from stdin, writes an argon2id hash into `panel.auth` and into the user `admin` of `users.json` |
 | `users list [--json]`, `users add <name> <role> [--perms a,b]`, `users passwd <name>`, `users role <name> <role> [--perms a,b]`, `users disable\|enable\|remove <name>` | users of the panel in `/etc/dpistack/users.json` (slice 34); passwords on stdin, 8 characters at least; exit 3 when the change would leave nobody able to manage users, 4 for an unknown user; open to the panel |
