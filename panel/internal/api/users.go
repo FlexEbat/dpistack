@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -133,6 +134,7 @@ func (s *server) usersCreate(w http.ResponseWriter, r *http.Request) {
 	if !checkRole(w, b) || !checkPassword(w, b.Password) {
 		return
 	}
+	auditDetail(r, "user="+b.Name+" role="+b.Role)
 	if _, err := s.cfg.Ctl.UsersAdd(r.Context(), b.Name, b.Role, b.Perms, b.Password); err != nil {
 		ctlError(w, err)
 		return
@@ -167,6 +169,7 @@ func (s *server) usersChange(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "nothing to change")
 		return
 	}
+	auditDetail(r, "user="+name+auditChanges(b))
 	// A new role is applied first: the last-manager guard of dpistack refuses
 	// it before anything else is touched.
 	if b.Role != "" {
@@ -206,6 +209,7 @@ func (s *server) usersDelete(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "you cannot remove your own account")
 		return
 	}
+	auditDetail(r, "user="+name)
 	if _, err := s.cfg.Ctl.UsersState(r.Context(), "remove", name); err != nil {
 		ctlError(w, err)
 		return
@@ -239,4 +243,19 @@ func (s *server) mePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	s.sessions.DeleteUser(me.Name)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// auditChanges names what a change touches, never the new password.
+func auditChanges(b userBody) string {
+	var s string
+	if b.Role != "" {
+		s += " role=" + b.Role
+	}
+	if b.Password != "" {
+		s += " password=changed"
+	}
+	if b.Disabled != nil {
+		s += " disabled=" + strconv.FormatBool(*b.Disabled)
+	}
+	return s
 }

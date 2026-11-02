@@ -69,6 +69,14 @@ sudo dpistack users disable anna
 
 The last user who may manage users cannot be removed, disabled or demoted. A change of the role or the password ends that user's sessions; a disabled user is cut off at once.
 
+## The audit log
+
+Every action that can change something is written to `/var/lib/dpistack/audit/audit.jsonl`: who (the user name, or `-` for a call with no sign-in), from which address, what, the result (`ok`, `denied` or `error`) and a short note. That covers signing in (a wrong password is a line with the name that was tried), every change made in the panel, and every `dpistack` command that changes something when it is run by hand with `sudo` (the line says `cli <command>` and names the user who ran `sudo`). Reading screens and commands such as `list` and `status` leave no line.
+
+No password, token or password hash is ever written: a changed password is logged as `password=changed`, and a setting given as `KEY=VALUE` on the command line is logged as `KEY=...`.
+
+The Audit screen shows the log, newest first, with filters (user, part of the action, result, date) and exports the selection as CSV or JSON. It needs the permission `audit.view`; the roles analyst, operator and admin have it. The file is rotated at 10 MB and five files are kept.
+
 ## Panel security
 
 - The panel does not run as root; it does privileged things by calling `sudo -n dpistack <command>`, where `dpistack` lets the panel user reach the control commands only and checks the arguments against lists.

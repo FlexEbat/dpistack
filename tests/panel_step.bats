@@ -103,7 +103,7 @@ unit_file() {
 	[ -x "$DPISTACK_ROOT/usr/local/bin/dpistack-panel" ]
 	grep -q "^go build .* -o .* ./cmd/panel" "$MOCK_CALLS_LOG"
 	ver=$(sed -n 's/^DPISTACK_VERSION="\(.*\)"/\1/p' "$REPO_DIR/lib/common.sh")
-	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -users-file $DPISTACK_ROOT/etc/dpistack/users.json -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack -metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json -version $ver -eve-file $DPISTACK_ROOT/var/log/suricata/eve.json -tests-file $DPISTACK_ROOT/var/lib/dpistack/tests-last.json -events-file $DPISTACK_ROOT/var/lib/dpistack/events.jsonl -metrics-token-file $DPISTACK_ROOT/etc/dpistack/metrics.token -rules-file $DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules -disk-paths $DPISTACK_ROOT/var/log/suricata,$DPISTACK_ROOT/var/lib/evebox" "$(unit_file)"
+	grep -qx "ExecStart=$DPISTACK_ROOT/usr/local/bin/dpistack-panel -addr 127.0.0.1:9800 -access localhost -auth-file $DPISTACK_ROOT/etc/dpistack/panel.auth -users-file $DPISTACK_ROOT/etc/dpistack/users.json -health-file $DPISTACK_ROOT/var/lib/dpistack/health.json -ctl $DPISTACK_ROOT/usr/local/sbin/dpistack -metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json -audit-file $DPISTACK_ROOT/var/lib/dpistack/audit/audit.jsonl -version $ver -eve-file $DPISTACK_ROOT/var/log/suricata/eve.json -tests-file $DPISTACK_ROOT/var/lib/dpistack/tests-last.json -events-file $DPISTACK_ROOT/var/lib/dpistack/events.jsonl -metrics-token-file $DPISTACK_ROOT/etc/dpistack/metrics.token -rules-file $DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules -disk-paths $DPISTACK_ROOT/var/log/suricata,$DPISTACK_ROOT/var/lib/evebox" "$(unit_file)"
 	grep -q "^systemctl enable --now dpistack-panel.service" "$MOCK_CALLS_LOG"
 }
 
@@ -439,4 +439,16 @@ release_binary_name() {
 	printf 'PANEL_MODE=unlimited\n' >"$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
 	run install_base
 	[ "$status" -eq 0 ]
+}
+
+@test "slice 35: the audit directory is the panel user's, 0770, and an existing log is kept" {
+	mkdir -p "$DPISTACK_ROOT/var/lib/dpistack/audit"
+	printf '{"ts":"2026-11-01T00:00:00Z","user":"root","action":"cli test","result":"ok"}\n' >"$DPISTACK_ROOT/var/lib/dpistack/audit/audit.jsonl"
+	run install_base
+	[ "$status" -eq 0 ]
+	[ -d "$DPISTACK_ROOT/var/lib/dpistack/audit" ]
+	[ "$(stat -c %a "$DPISTACK_ROOT/var/lib/dpistack/audit")" = "770" ]
+	grep -q "^chown dpistack:dpistack $DPISTACK_ROOT/var/lib/dpistack/audit\$" "$MOCK_CALLS_LOG"
+	[ "$(grep -c 'cli test' "$DPISTACK_ROOT/var/lib/dpistack/audit/audit.jsonl")" -eq 1 ]
+	grep -q -- "-audit-file $DPISTACK_ROOT/var/lib/dpistack/audit/audit.jsonl" "$(unit_file)"
 }

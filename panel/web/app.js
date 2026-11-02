@@ -11,6 +11,7 @@ import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
 import { start as startSettings } from "./modules/settings.js";
 import * as account from "./modules/account.js";
+import { start as startAudit } from "./modules/audit.js";
 import { start as startVersion } from "./modules/version.js";
 import { menu, revealOnce, skipLink } from "./modules/chrome.js";
 
@@ -43,7 +44,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts", "account"];
+const VIEWS = ["overview", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts", "audit", "account"];
 let me = { name: "", role: "", perms: ["view"] };
 let stopView = null;
 
@@ -171,6 +172,23 @@ const SCREENS = {
     startAlerts(
       api,
       { error: $("alerts-error"), check: $("al-check"), limit: $("al-limit"), refresh: $("al-refresh"), list: $("al-list") },
+      showLogin,
+    ),
+  audit: () =>
+    startAudit(
+      api,
+      {
+        error: $("audit-error"),
+        form: $("audit-form"),
+        user: $("audit-user"),
+        action: $("audit-action"),
+        result: $("audit-result"),
+        since: $("audit-since"),
+        limit: $("audit-limit"),
+        csv: $("audit-csv"),
+        json: $("audit-json"),
+        list: $("audit-list"),
+      },
       showLogin,
     ),
   account: () =>

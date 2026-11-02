@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/FlexEbat/dpistack/panel/internal/audit"
 	"log"
 	"net"
 	"net/http"
@@ -40,6 +41,7 @@ func run(args []string) error {
 	access := fs.String("access", "localhost", "ACCESS_MODE: localhost, lan or nginx")
 	lanCIDR := fs.String("lan-cidr", "", "LAN_CIDR resolved to an address/length; required for lan")
 	authFile := fs.String("auth-file", "/etc/dpistack/panel.auth", "argon2id hash of the panel password (the old one-password panel; used when users.json is absent)")
+	auditFile := fs.String("audit-file", "/var/lib/dpistack/audit.jsonl", "audit log (one JSON line per action); empty switches it off")
 	usersFile := fs.String("users-file", "/etc/dpistack/users.json", "users, roles and password hashes")
 	healthFile := fs.String("health-file", "/var/lib/dpistack/health.json", "watchdog report")
 	ctlPath := fs.String("ctl", "/usr/local/sbin/dpistack", "dpistack path")
@@ -122,6 +124,7 @@ func run(args []string) error {
 		Policy:      policy,
 		AuthFile:    *authFile,
 		UsersFile:   *usersFile,
+		Audit:       auditLog(*auditFile),
 		HealthFile:  *healthFile,
 		Lite:        *lite,
 		Ctl:         &ctl.Runner{Path: *ctlPath, Sudo: *useSudo, Prefix: splitPrefix(*ctlPrefix)},
@@ -183,4 +186,12 @@ func splitPrefix(s string) []string {
 		return nil
 	}
 	return strings.Split(s, ",")
+}
+
+// auditLog returns the audit log for a path; an empty path switches it off.
+func auditLog(path string) *audit.Log {
+	if path == "" {
+		return nil
+	}
+	return &audit.Log{Path: path}
 }

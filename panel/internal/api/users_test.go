@@ -136,6 +136,8 @@ var routePerms = []struct {
 	{"GET", "/api/eve/stream", auth.PermView, true},
 	{"GET", "/api/logs/suricata", auth.PermView, false},
 	{"GET", "/api/logs/suricata/stream", auth.PermView, true},
+	{"GET", "/api/audit", auth.PermAuditView, false},
+	{"GET", "/api/audit/export?format=csv", auth.PermAuditView, false},
 	{"GET", "/api/users", auth.PermUsersManage, false},
 	{"POST", "/api/users", auth.PermUsersManage, false},
 	{"PUT", "/api/users/vi", auth.PermUsersManage, false},

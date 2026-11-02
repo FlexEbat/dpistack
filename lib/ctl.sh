@@ -1904,18 +1904,73 @@ cmd_diagnose() {
 	return 0
 }
 
-ctl_main() {
-	if [[ $# -eq 0 ]]; then
-		ctl_usage
-		exit 2
+# --- audit log of verbs run by hand (tech.md 4.5, slice 35) ---
+
+# audit_wanted <verb> [<subverb>] - does this call change something? Reads
+# (list, status, check) are not logged.
+audit_wanted() {
+	local sub="${2:-}"
+	case "$1" in
+	start | stop | restart | reload | config-write | config-revert | self-update | reconfigure | rules-update | rules-group | rules-sid | mode-confirm | mode-rollback | fw | panel-passwd | test) return 0 ;;
+	settings) [[ "$sub" == set || "$sub" == secret ]] ;;
+	rules-sources | iface | users) [[ -n "$sub" && "$sub" != list ]] ;;
+	mode) [[ "$sub" == ids || "$sub" == ips ]] ;;
+	*) return 1 ;;
+	esac
+}
+
+# audit_append <user> <action> <target> <result> <detail> - one JSON line. A
+# failure to write never fails the verb.
+audit_append() {
+	local file dir ts ip=""
+	file=$(path_audit_jsonl)
+	dir=$(dirname "$file")
+	mkdir -p "$dir" 2>/dev/null || return 0
+	ts=$(date -u +%FT%TZ)
+	[[ -n "${SSH_CLIENT:-}" ]] && ip="${SSH_CLIENT%% *}"
+	if [[ ! -e "$file" ]]; then
+		: >"$file" 2>/dev/null || return 0
+		chmod 0660 "$file" 2>/dev/null || true
+		if getent passwd dpistack >/dev/null 2>&1; then
+			chown dpistack:dpistack "$dir" "$file" 2>/dev/null || true
+		fi
 	fi
+	jq -nc --arg ts "$ts" --arg user "$1" --arg ip "$ip" --arg action "$2" --arg target "$3" --arg result "$4" --arg detail "$5" \
+		'{ts:$ts,user:$user,ip:$ip,action:$action,target:$target,result:$result,detail:$detail} | with_entries(select(.value != ""))' \
+		>>"$file" 2>/dev/null || true
+	return 0
+}
 
-	# Every argument is checked before any command runs (4.5).
-	local arg
-	for arg in "$@"; do
-		[[ "$arg" =~ ^[A-Za-z0-9._:=/@+,\ -]*$ ]] || fail 5 "invalid characters in the argument"
+# audit_detail <args...> - the arguments of a verb with every value of KEY=VALUE
+# hidden: a setting can be a secret.
+audit_detail() {
+	local a out=()
+	for a in "$@"; do
+		if [[ "$a" == *=* ]]; then out+=("${a%%=*}=..."); else out+=("$a"); fi
 	done
+	printf '%s' "${out[*]}"
+}
 
+# audit_run <verb> <args...> - runs the verb in a subshell and logs it with
+# its exit code. The panel calls the verbs through sudo as the user dpistack
+# and writes its own line, so that caller is not logged twice.
+audit_run() {
+	local rc=0 user="${SUDO_USER:-root}" result=ok
+	if [[ "$user" == dpistack ]] || ! audit_wanted "$@"; then
+		ctl_dispatch "$@"
+		return $?
+	fi
+	(ctl_dispatch "$@") || rc=$?
+	case "$rc" in
+	0) result=ok ;;
+	3) result=denied ;; # refused: the verb saw a conflict and changed nothing
+	*) result=error ;;
+	esac
+	audit_append "$user" "cli $1" "${2:-}" "$result" "$(audit_detail "${@:2}") (exit $rc)"
+	return "$rc"
+}
+
+ctl_dispatch() {
 	local cmd="$1"
 	shift
 	case "$cmd" in
@@ -1951,4 +2006,19 @@ ctl_main() {
 		exit 2
 		;;
 	esac
+}
+
+ctl_main() {
+	if [[ $# -eq 0 ]]; then
+		ctl_usage
+		exit 2
+	fi
+
+	# Every argument is checked before any command runs (4.5).
+	local arg
+	for arg in "$@"; do
+		[[ "$arg" =~ ^[A-Za-z0-9._:=/@+,\ -]*$ ]] || fail 5 "invalid characters in the argument"
+	done
+
+	audit_run "$@"
 }

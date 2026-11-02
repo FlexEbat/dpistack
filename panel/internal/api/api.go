@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"github.com/FlexEbat/dpistack/panel/internal/audit"
 	"io/fs"
 	"log"
 	"mime"
@@ -42,7 +43,8 @@ const (
 type Config struct {
 	Policy      *auth.Policy
 	AuthFile    string
-	UsersFile   string // users.json (slice 34); AuthFile is the fallback of the old one-password panel
+	Audit       *audit.Log // nil: no audit log
+	UsersFile   string     // users.json (slice 34); AuthFile is the fallback of the old one-password panel
 	HealthFile  string
 	Ctl         *ctl.Runner
 	Eve         *eve.Reader // nil: viewing events is off (EVE_FILE=no)
@@ -96,6 +98,8 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/users", s.need(auth.PermUsersManage, s.usersCreate))
 	mux.HandleFunc("PUT /api/users/{name}", s.need(auth.PermUsersManage, s.usersChange))
 	mux.HandleFunc("DELETE /api/users/{name}", s.need(auth.PermUsersManage, s.usersDelete))
+	mux.HandleFunc("GET /api/audit", s.need(auth.PermAuditView, s.auditList))
+	mux.HandleFunc("GET /api/audit/export", s.need(auth.PermAuditView, s.auditExport))
 	mux.HandleFunc("GET /api/status", s.need(auth.PermView, s.status))
 	mux.HandleFunc("GET /api/version", s.need(auth.PermView, s.versionGet))
 	mux.HandleFunc("POST /api/update", s.need(auth.PermUpdateManage, s.updateStart))
@@ -140,7 +144,7 @@ func New(cfg Config) http.Handler {
 	if cfg.Web != nil {
 		mux.Handle("/", static(edition(cfg.Lite, http.FileServerFS(cfg.Web))))
 	}
-	return s.guard(mux)
+	return s.guard(s.audited(mux))
 }
 
 // static serves the embedded site for GET and HEAD only. It is registered
@@ -236,6 +240,9 @@ func (s *server) authed(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "sign-in required")
 			return
 		}
+		if act := actorOf(r); act != nil {
+			act.user = user.Name
+		}
 		r = r.WithContext(context.WithValue(r.Context(), principalKey{}, principal{user: user}))
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
@@ -276,6 +283,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	if body.Username == "" {
 		body.Username = auth.DefaultLoginUsername
 	}
+	auditUser(r, body.Username)
 	user, good, err := s.users.Login(body.Username, body.Password)
 	switch {
 	case errors.Is(err, auth.ErrNoUsers):
