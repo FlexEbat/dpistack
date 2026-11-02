@@ -18,6 +18,8 @@ path_proc_net_route() { echo "${DPISTACK_ROOT}/proc/net/route"; }
 path_state_dir() { echo "${DPISTACK_ROOT}/var/lib/dpistack"; }
 path_state_file() { echo "$(path_state_dir)/state"; }
 path_health_json() { echo "$(path_state_dir)/health.json"; }
+path_audit_dir() { echo "$(path_state_dir)/audit"; }
+path_audit_jsonl() { echo "$(path_audit_dir)/audit.jsonl"; }
 path_events_jsonl() { echo "$(path_state_dir)/events.jsonl"; }
 path_tests_last_json() { echo "$(path_state_dir)/tests-last.json"; }
 path_metrics_json() { echo "$(path_state_dir)/metrics.json"; }

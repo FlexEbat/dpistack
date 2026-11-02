@@ -1,11 +1,12 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v44** (2026-10-31)
-**Program version: v0.29.2** (slices 0-34 are done, 35-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
+**Document version: v45** (2026-10-31)
+**Program version: v0.30.0** (slices 0-35 are done, 36-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.30.0: slice 35. The audit log: `/var/lib/dpistack/audit/audit.jsonl`, one JSON line `{ts, user, ip, action, target, result, detail}` for every call of the panel that can change something (any method but GET under `/api/`, signed in or not: a failed login is a line with the name that was tried and `denied`) and for every verb that changes something when root runs it by hand (`cli <verb>`, the user is `SUDO_USER`, the address is the SSH client). Rotation at 10 MB, 5 files. No password, token or hash is ever written: the panel never reads the body for the log, a detail names flags (`password=changed`), and a CLI argument `KEY=VALUE` is logged as `KEY=...`. `GET /api/audit` and `/api/audit/export?format=csv|json` with the filters user, action, result, since, until, limit need `audit.view`; the Audit screen. The panel's own calls through sudo (as the user `dpistack`) are not logged twice. The directory `audit/` belongs to the panel user (0770) because the panel renames files when it rotates.
 - v0.29.2: the three causes found with the v0.29.1 report from a real Debian 13 stand (source build, nDPI on). (1) The unit of a from-source Suricata had no capture mode: Suricata printed its usage and exited with 1; the unit now has `--af-packet` (the IPS drop-in still replaces ExecStart with `-q`). (2) EveBox stopped at "unable to open database file" because `/var/lib/evebox` was not made and not given to the user of the service; the step now makes it (0750), takes the user from `systemctl show -p User` (or the user `evebox`) and chowns it before the start. (3) `TEST_BT_LIVE=yes` failed for a missing `tcpreplay`; the install now installs it when the owner asked for the live test. Tests: `tests/suricata_unit.bats`, `tests/verify_deps.bats`, two in `tests/evebox_step.bats`.
 - v0.29.1: the install report of 2026-10-31 (Debian 13, source build with nDPI): Suricata was not running after its step and EveBox failed, and the installer said only "partly applied" and "installation finished". Now a step that leaves its part dead prints the state, the systemd exit status and the last 25 lines of the log; the end of the install lists every part that does not run and says so as a warning; `dpistack diagnose` gives the same later. The root cause of that stand is not known yet (the journal was not in the report); it is to be read from the new output.
 - v0.29.0: slice 34. Users, roles (viewer, analyst, operator, admin, custom) and permissions: `dpistack users ...`, `users.json`, login with a user name, a permission on every route of the panel, `/api/me`, `/api/users`, the Account screen.
@@ -451,6 +452,7 @@ The only place of the privileged actions of the panel and the watchdog. It works
 | `mode-rollback`, `fw apply\|remove\|restore` | internal: the rollback by the timer and the `DPISTACK` chain (`dpistack-fw.service` calls `restore` at boot) |
 | `test bittorrent\|https\|all [--json]` | section 10 |
 | `health [--json]` | one run of the watchdog |
+| audit of verbs | every verb of this table that changes something (not `list`, `status`, `check`) appends a line to the audit log when it is run by hand (slice 35) |
 | `diagnose [<part>]` | the parts that should run and do not: state, systemd exit status and the last 25 log lines; the installer runs the same after a step that is "partly applied" and at the end (v0.29.1) |
 | `runtime [--json]` | what can run in Docker, the runtime of every part, the links between them (4.10) |
 | `panel-passwd` | reads the password from stdin, writes an argon2id hash into `panel.auth` and into the user `admin` of `users.json` |
@@ -537,6 +539,7 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 | method and path | what it does |
 | --- | --- |
 | `POST /api/login`, `POST /api/logout` | the session is in a `HttpOnly; SameSite=Strict` cookie; the login body is `{username?, password}`, no name means `admin`; a wrong name, a disabled user and a wrong password give the same answer |
+| `GET /api/audit`, `GET /api/audit/export` | permission `audit.view`; filters `user`, `action` (substring of action and target), `result` (`ok`, `denied`, `error`), `since`, `until` (a date or RFC 3339), `limit` (up to 5000); the export is `csv` or `json` as a download (CSV cells that start like a formula are quoted) |
 | `GET /api/me`, `POST /api/me/password` | who is signed in with the permissions; a user changes their own password with the current one (their sessions end) |
 | `GET\|POST /api/users`, `PUT\|DELETE /api/users/{name}` | permission `users.manage`; the list never holds a hash; nobody can remove or disable their own account |
 | permissions | every other route needs one (table in `panel/internal/api/users_test.go`, checked for every role); reading `/api/config*` needs `configs.edit`; a missing permission is 403 `{"error":"forbidden","permission":...}` |
@@ -1886,6 +1889,8 @@ The owner sent a list of changes for the panel (`todo.md`). Decisions are made h
 **What it does:** `/var/lib/dpistack/audit.jsonl` (append only, written by the panel, rotated at 10 MB, 5 files): `{ts, user, ip, action, target, result, detail}` for logins (success and failure), logouts, every mutating API call, and every privileged verb run by hand (`dpistack` writes the same file as root through `audit` verb). The screen: filters by user, action, result and time, export CSV/JSON. Secrets are never written.
 
 **Acceptance criteria:** (1) a failed login, a settings change, a rule change and a user change are each one line with the right user. (2) No line holds a password, token or hash. (3) The permission `audit.view` is needed to read.
+
+**Status:** done in v0.30.0. As built: the file is in its own directory `audit/` (the panel rotates it and the state directory stays root's); the log is written by the panel in a wrapper around the whole API (so a call refused by a permission or by the login limit is logged too), the CLI side is `audit_run` in `lib/ctl.sh` (the verb runs in a subshell, the line carries its exit code: 0 `ok`, 3 `denied`, anything else `error`). Tests: `panel/internal/audit/audit_test.go`, `panel/internal/api/audit_test.go`, `tests/audit_cli.bats`, the audit directory in `tests/panel_step.bats`, `panel/web/test/audit.test.mjs`.
 
 ### Slice 36: backup and restore (v0.31.0)
 

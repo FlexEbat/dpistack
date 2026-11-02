@@ -97,7 +97,7 @@ panel_args() {
 	fi
 	args="-addr ${host}:${port} -access ${mode}"
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
-	args+=" -auth-file $(path_panel_auth) -users-file $(path_users) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json)"
+	args+=" -auth-file $(path_panel_auth) -users-file $(path_users) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json) -audit-file $(path_audit_jsonl)"
 	args+=" -version ${DPISTACK_VERSION}"
 	panel_is_lite && args+=" -lite"
 	# Without the flag the panel shows that viewing events is off.
@@ -303,6 +303,15 @@ step_panel_apply() {
 		run install -D -m 0640 /dev/null "$mfile" || return 1
 	fi
 	run chown "$PANEL_USER:$PANEL_USER" "$mfile" || return 1
+
+	# The audit log (slice 35) has a directory of its own, because the panel
+	# rotates it (it renames files) and the state directory stays root's.
+	# Root appends to the same file when it runs a verb by hand.
+	local adir
+	adir=$(path_audit_dir)
+	run mkdir -p "$adir" || return 1
+	run chown "$PANEL_USER:$PANEL_USER" "$adir" || return 1
+	run chmod 0770 "$adir" || return 1
 
 	# The bearer token of /metrics: readable by the panel, nobody else. In a
 	# dry run only the fact is printed, never the value.

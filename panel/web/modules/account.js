@@ -4,7 +4,7 @@
 // the screen only hides what would answer 403.
 
 // The permission that a screen needs to be of any use (nav entries only).
-export const VIEW_PERM = { configs: "configs.edit" };
+export const VIEW_PERM = { configs: "configs.edit", audit: "audit.view" };
 
 export function visibleViews(views, perms) {
   return views.filter((v) => !VIEW_PERM[v] || perms.includes(VIEW_PERM[v]));
