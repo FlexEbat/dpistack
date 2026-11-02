@@ -12,7 +12,9 @@ permissions:
 jobs:
   gate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # The gate takes about 18 minutes (about 600 bats tests run one after
+    # another); 20 was too tight and cancelled the run of v0.29.2.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -90,4 +92,12 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/dpistack-install.sh dist/dpistack-panel-linux-amd64 dist/dpistack-panel-linux-arm64 dist/*.sha256 --generate-notes --title "$GITHUB_REF_NAME"
+        run: |
+          files=(dist/*.tar.gz dist/dpistack-install.sh dist/dpistack-panel-linux-amd64 dist/dpistack-panel-linux-arm64 dist/*.sha256)
+          # A release that was made by hand before the tag workflow ran gets
+          # the files added instead of the whole run failing (v0.26.1, v0.27.0).
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" --generate-notes --title "$GITHUB_REF_NAME"
+          fi
