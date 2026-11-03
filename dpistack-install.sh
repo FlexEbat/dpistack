@@ -1505,7 +1505,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.30.0"
+DPISTACK_VERSION="0.30.1"
 
 : "${DRY_RUN:=0}"
 
@@ -1549,6 +1549,25 @@ run() {
 		log "ERROR" "command failed (rc=$rc): $*"
 		return "$rc"
 	fi
+}
+
+# git_clone_retry <url> <dir> - git clone that survives a dropped connection.
+# A clone of nDPI died on a real Debian 13 install (v0.29.1) with "HTTP/2
+# stream was not closed cleanly" and stopped the whole install. HTTP/1.1 is
+# used for the clone and a failed attempt is repeated (3 tries, growing pause;
+# DPISTACK_RETRY_DELAY seconds per try, default 5) after the half-made
+# directory is removed.
+git_clone_retry() {
+	local url=$1 dir=$2 try rc=0 tries=3
+	for ((try = 1; try <= tries; try++)); do
+		run git -c http.version=HTTP/1.1 clone "$url" "$dir" && return 0
+		rc=$?
+		((try < tries)) || break
+		log "WARN" "git clone of $url failed (try $try of $tries), repeating"
+		[[ -n "$dir" ]] && rm -rf -- "$dir"
+		sleep $((try * ${DPISTACK_RETRY_DELAY:-5}))
+	done
+	return "$rc"
 }
 
 lock_acquire() {
@@ -8314,7 +8333,7 @@ ndpi_build_from_source() {
 	ref=$(ndpi_target_ref)
 
 	if [[ ! -d "$src_dir/.git" ]]; then
-		run git clone "$NDPI_REPO_URL" "$src_dir" || return 1
+		git_clone_retry "$NDPI_REPO_URL" "$src_dir" || return 1
 	else
 		run git -C "$src_dir" fetch --tags origin || return 1
 	fi
@@ -9996,7 +10015,7 @@ SURICATA_REPO_URL="https://github.com/OISF/suricata.git"
 # series, never master (9.0.0-dev is a development build). Built for real
 # together with nDPI 4.14 and its plugin; raise it after testing a newer
 # 8.0.x (and keep SURICATA_COPR in os.sh on the same series).
-SURICATA_STABLE_REF="suricata-8.0.7"
+SURICATA_STABLE_REF="suricata-8.0.8"
 
 suricata_target_ref() {
 	echo "${CONF[SURICATA_VERSION]:-$SURICATA_STABLE_REF}"
@@ -10053,7 +10072,7 @@ suricata_build_from_source() {
 	ref=$(suricata_target_ref)
 
 	if [[ ! -d "$src_dir/.git" ]]; then
-		run git clone "$SURICATA_REPO_URL" "$src_dir" || return 1
+		git_clone_retry "$SURICATA_REPO_URL" "$src_dir" || return 1
 		run git -C "$src_dir" submodule update --init --recursive || return 1
 	else
 		run git -C "$src_dir" fetch --tags origin || return 1
