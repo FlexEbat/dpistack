@@ -1,11 +1,12 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v47** (2026-11-03)
-**Program version: v0.31.0** (slices 0-35 are done, 36-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
+**Document version: v48** (2026-11-03)
+**Program version: v0.31.1** (slices 0-35 are done, 36-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.31.1: the Update button failed on an installation with `ACCESS_MODE=lan` (section 18.34). `self-update apply` ran `install.sh install -y` without `ACCESS_CONFIRM=yes`, so the validation stopped with code 2 ("needs --set ACCESS_CONFIRM=yes") and nothing was updated. Now an access mode and bind address equal to the applied ones count as confirmed; a mode edited by hand after the last apply still stops.
 - v0.31.0: `LAN_CIDR` takes a list (section 18.33). The report: a WireGuard server in Docker on the same host reached the panel from a phone and got `403 access from this address is forbidden`, because the panel saw the Docker or tunnel address, not an address of `192.168.1.0/24`, and `LAN_CIDR` held one network. Now `LAN_CIDR` is `auto`, one CIDR, or a comma-separated list of them (`auto` inside the list is the network of the default route); the panel, the nginx `allow` lines and the ufw/firewalld rules follow the whole list.
 - v0.30.1: the review of the install log and of CI/CD of 2026-11-02 (section 18.32). The log was made by an old v0.29.1 copy of the repository: its Suricata usage failure, EveBox "unable to open database file" and missing tcpreplay are the ones v0.29.2 already fixed. What was still open and is fixed here: `git clone` of nDPI (and of Suricata) died once with "HTTP/2 stream was not closed cleanly" and stopped the install; the clone now goes through `git_clone_retry` (HTTP/1.1, 3 tries, the half-made directory removed between them). `SURICATA_STABLE_REF` is raised to `suricata-8.0.8` (the weekly check of 2026-11-02 built it and opened issue 60).
 - v0.30.0: slice 35. The audit log: `/var/lib/dpistack/audit/audit.jsonl`, one JSON line `{ts, user, ip, action, target, result, detail}` for every call of the panel that can change something (any method but GET under `/api/`, signed in or not: a failed login is a line with the name that was tried and `denied`) and for every verb that changes something when root runs it by hand (`cli <verb>`, the user is `SUDO_USER`, the address is the SSH client). Rotation at 10 MB, 5 files. No password, token or hash is ever written: the panel never reads the body for the log, a detail names flags (`password=changed`), and a CLI argument `KEY=VALUE` is logged as `KEY=...`. `GET /api/audit` and `/api/audit/export?format=csv|json` with the filters user, action, result, since, until, limit need `audit.view`; the Audit screen. The panel's own calls through sudo (as the user `dpistack`) are not logged twice. The directory `audit/` belongs to the panel user (0770) because the panel renames files when it rotates.
@@ -55,6 +56,7 @@ Program changelog (what was done per slice of section 17):
 - v0.3.1 (slices 14-15 and the full review): alert channels (`log`, `tg`, `mail`, `panel`), `selfinstall` with the `dpistack` command and the control menu; the fixes of section 18.1: `run` returns the real error code, writing files leaves no truncated result, `state` is protected by a lock, the free keys of `dpistack.conf` are checked against patterns, `*_VERSION` for ntopng and EveBox take effect, CI is pinned by SHA.
 
 Changelog of this document:
+- v48: v0.31.1. Section 18.34.
 - v40: v0.27.0. Sections 9.1 and 18.31; the panel weight rule (fonts apart); the fonts and icons are no longer "system fonts" and "thin line icons".
 - v39: v0.26.2. Section 18.30.
 - v38: v0.26.1. The policy of confirmations (5.0 and 18.29) replaces "every action asks first".
@@ -2497,3 +2499,13 @@ The owner connected from a mobile network through a WireGuard server that runs i
 
 Tests: `panel/internal/auth/auth_test.go` (a list, spaces, outside every network, a list in nginx mode, an empty or bad element), `tests/access_step.bats` (one `allow` per network, bad list code 2), `tests/panel_step.bats` (the unit gets the list, `auto` resolved), `tests/firewall_rules.bats` (a rule per network and port, a dropped network is taken out).
 
+### 18.34 The Update button on a `lan` installation (v0.31.1)
+
+The audit log of 2026-11-03 showed `POST /api/update` and then `cli self-update apply` ending with `error` (exit 2), after which the owner restarted every component by hand. The watchdog had also reported `ntopng.process: inactive` and `ntopng.port: port 3001 is not listening` about half a minute before the update; the update never reached any step, so it did not stop ntopng (the cause of that stop is not in the files sent: the journal of `ntopng` is needed).
+
+| id | decision |
+| --- | --- |
+| D32 | **Cause.** `selfupdate_apply` ran the new installer as `install.sh install -y`. In non-interactive mode `config_validate` refuses `ACCESS_MODE` other than `localhost` (or a non-loopback `BIND_ADDR`) without `--set ACCESS_CONFIRM=yes` and the installer exits with 2 before the preflight. `reconfigure` already handled this (`ctl_cmd_reconfigure` passes the confirmation when the mode is the applied one); `self-update` did not, and its test ran only on `localhost`, so it passed |
+| D33 | **Fix.** `selfupdate_access_unchanged` compares `ACCESS_MODE` and `BIND_ADDR` of the saved config with `applied.ACCESS_MODE` and `applied.BIND_ADDR` in the state; equal means already confirmed and `--set ACCESS_CONFIRM=yes` is added. A mode that was edited by hand after the last apply (or a state without a record) is not confirmed: the update still stops with exit 2 and the message, because an update must not widen access |
+
+Tests: `tests/self_update.bats` (an update on a `lan` installation passes; a mode edited after the last apply stops with 2). The new test fails on v0.31.0 and passes now.

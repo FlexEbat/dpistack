@@ -1066,7 +1066,23 @@ selfupdate_apply() {
 	grep -q "^DPISTACK_VERSION=\"${tag#v}\"" "$src/lib/common.sh" ||
 		fail 1 "the archive does not carry the version ${tag#v}, nothing was installed"
 	echo "installing ${tag#v} on the saved config"
-	(cd "$src" && bash ./install.sh install -y)
+	local -a args=(install -y)
+	# -y refuses a non-localhost access mode without ACCESS_CONFIRM=yes (exit 2
+	# in the validation). An update changes no setting, so a mode that is the
+	# one already applied stays confirmed; a mode edited by hand after the last
+	# apply is not, and the validation still stops there.
+	selfupdate_access_unchanged && args+=(--set ACCESS_CONFIRM=yes)
+	(cd "$src" && bash ./install.sh "${args[@]}")
+}
+
+# selfupdate_access_unchanged - the access mode and the bind address in the
+# saved config are the ones that were applied (and confirmed) last time.
+selfupdate_access_unchanged() {
+	local applied_access applied_bind
+	applied_access=$(state_read_value "applied.ACCESS_MODE")
+	applied_bind=$(state_read_value "applied.BIND_ADDR")
+	[[ -n "$applied_access" && "$applied_access" == "$(conf_get ACCESS_MODE localhost)" &&
+	"${applied_bind:-auto}" == "$(conf_get BIND_ADDR auto)" ]]
 }
 
 cmd_self_update() {

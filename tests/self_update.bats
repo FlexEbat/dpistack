@@ -118,3 +118,26 @@ base() {
 	[ "$status" -eq 3 ]
 	[[ "$output" == *"no newer release"* ]]
 }
+
+@test "apply on a lan install does not stop at the access confirmation" {
+	run base --set ACCESS_MODE=lan --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 0 ]
+	latest v99.0.0
+	release 99.0.0
+	run bash "$REPO_DIR/install.sh" self-update apply
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"needs --set ACCESS_CONFIRM=yes"* ]]
+	grep -q 'DPISTACK_VERSION="99.0.0"' "$DPISTACK_ROOT/usr/local/lib/dpistack/installer/lib/common.sh"
+}
+
+@test "apply does not confirm an access mode that was edited after the last apply" {
+	run base
+	[ "$status" -eq 0 ]
+	sed -i 's/^ACCESS_MODE=.*/ACCESS_MODE=lan/' "$CONF_FILE"
+	grep -q '^ACCESS_MODE=lan' "$CONF_FILE"
+	latest v99.0.0
+	release 99.0.0
+	run bash "$REPO_DIR/install.sh" self-update apply
+	[ "$status" -eq 2 ]
+	[[ "$output" == *"needs --set ACCESS_CONFIRM=yes"* ]]
+}
