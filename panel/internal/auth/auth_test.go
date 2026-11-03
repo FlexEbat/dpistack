@@ -149,6 +149,11 @@ func TestPolicy(t *testing.T) {
 		{"nginx peer must be loopback", "nginx", "", "203.0.113.7:5000", "", false},
 		{"localhost with forwarded stranger", "localhost", "", "127.0.0.1:5000", "203.0.113.7", false},
 		{"v4-mapped peer", "lan", "192.168.1.0/24", "[::ffff:192.168.1.5]:5000", "", true},
+		{"list: first network", "lan", "192.168.1.0/24,172.18.0.0/16", "192.168.1.5:5000", "", true},
+		{"list: second network", "lan", "192.168.1.0/24,172.18.0.0/16", "172.18.0.2:5000", "", true},
+		{"list: spaces are ignored", "lan", "192.168.1.0/24, 172.18.0.0/16", "172.18.0.2:5000", "", true},
+		{"list: outside every network", "lan", "192.168.1.0/24,172.18.0.0/16", "10.8.0.2:5000", "", false},
+		{"list in nginx mode", "nginx", "192.168.1.0/24,10.8.0.0/24", "127.0.0.1:5000", "10.8.0.7", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -179,7 +184,7 @@ func TestPolicyBadForwardedHeaderFailsClosed(t *testing.T) {
 }
 
 func TestNewPolicyValidation(t *testing.T) {
-	for _, tc := range [][2]string{{"lan", ""}, {"lan", "nonsense"}, {"open", ""}} {
+	for _, tc := range [][2]string{{"lan", ""}, {"lan", "nonsense"}, {"open", ""}, {"lan", "192.168.1.0/24,"}, {"lan", "192.168.1.0/24,nonsense"}} {
 		if _, err := NewPolicy(tc[0], tc[1]); err == nil {
 			t.Errorf("NewPolicy(%q, %q) must fail", tc[0], tc[1])
 		}

@@ -1505,7 +1505,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.30.1"
+DPISTACK_VERSION="0.31.0"
 
 : "${DRY_RUN:=0}"
 
@@ -6868,7 +6868,7 @@ SCHEMA_PATTERN[RULES_GROUPS]="^${_word}(,${_word})*\$"
 SCHEMA_PATTERN[RULES_UPDATE_CALENDAR]='^[A-Za-z0-9*:/,. -]+$'
 SCHEMA_PATTERN[EVEBOX_ES_URL]="^https?://${_url}\$"
 SCHEMA_PATTERN[TEST_HTTPS_URL]="^https?://${_url}\$"
-SCHEMA_PATTERN[LAN_CIDR]="^(auto|${_cidr})\$"
+SCHEMA_PATTERN[LAN_CIDR]="^(auto|${_cidr})(,(auto|${_cidr}))*\$"
 SCHEMA_PATTERN[NGINX_CERT]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[NGINX_KEY]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[METRICS_RETENTION]='^[0-9]+[dhwmy]?$'
@@ -7237,19 +7237,42 @@ access_detect_lan_cidr() {
 	echo "$network"
 }
 
+# access_effective_lan_cidr - the allowed networks as one comma-separated
+# list. LAN_CIDR is one network, auto, or a list of them (v0.31.0: the LAN
+# and, say, the network of a WireGuard container); auto inside a list stands
+# for the network of the default-route interface. Fails when nothing is left.
 access_effective_lan_cidr() {
-	local v="${CONF[LAN_CIDR]:-auto}"
-	if [[ -z "$v" || "$v" == "auto" ]]; then
-		access_detect_lan_cidr
-	else
-		echo "$v"
-	fi
+	local v="${CONF[LAN_CIDR]:-auto}" item found out=""
+	[[ -z "$v" ]] && v="auto"
+	local -a items=()
+	IFS=',' read -r -a items <<<"$v"
+	for item in "${items[@]}"; do
+		if [[ "$item" == "auto" ]]; then
+			found=$(access_detect_lan_cidr) || continue
+			item="$found"
+		fi
+		[[ ",$out," == *",$item,"* ]] && continue
+		out+="${out:+,}$item"
+	done
+	[[ -n "$out" ]] || return 1
+	echo "$out"
+}
+
+# access_cidr_each <list> - one network per line.
+access_cidr_each() {
+	local item
+	local -a items=()
+	IFS=',' read -r -a items <<<"$1"
+	for item in "${items[@]}"; do
+		[[ -n "$item" ]] && echo "$item"
+	done
+	return 0
 }
 
 # access_render_service <name> <public-port> <upstream-port>
 access_render_nginx_service() {
 	local name="$1" port="$2" upstream="$3" cidr="$4"
-	local listen tls_block
+	local listen tls_block allow_block="" net
 	if [[ "${CONF[NGINX_TLS]:-none}" == "none" ]]; then
 		listen="${port}"
 		tls_block=""
@@ -7258,11 +7281,14 @@ access_render_nginx_service() {
 		tls_block="    ssl_certificate $(access_tls_cert_path "$name");
     ssl_certificate_key $(access_tls_key_path "$name");"
 	fi
+	while IFS= read -r net; do
+		allow_block+="${allow_block:+$'\n'}    allow ${net};"
+	done < <(access_cidr_each "$cidr")
 	render_template "$SCRIPT_DIR/templates/nginx.conf.tpl" \
 		"NAME=$name" \
 		"LISTEN=$listen" \
 		"TLS_BLOCK=$tls_block" \
-		"ALLOW_BLOCK=    allow ${cidr};" \
+		"ALLOW_BLOCK=${allow_block}" \
 		"UPSTREAM_PORT=$upstream"
 }
 
@@ -7425,8 +7451,11 @@ access_fw_wanted() {
 		[[ "${CONF[METRICS_BACKEND]:-none}" != "none" ]] && ports+=("$(metrics_port "${CONF[METRICS_BACKEND]}")")
 		;;
 	esac
-	for port in "${ports[@]}"; do
-		echo "$cidr,$port"
+	local net
+	for net in $(access_cidr_each "$cidr"); do
+		for port in "${ports[@]}"; do
+			echo "$net,$port"
+		done
 	done
 	return 0
 }

@@ -77,7 +77,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `EVEBOX_PORT` | integer 1..65535 | `5636` | light | EveBox port. (advanced) |
 | `ACCESS_MODE` | localhost \| lan \| nginx | `localhost` | light | Who can open the panels: localhost, the local network or through nginx. |
 | `BIND_ADDR` | string | `auto` | light | Address the web services listen on: auto (127.0.0.1, or every address in lan mode) or one IPv4 address of this host, for example 192.168.1.156. An address that is not loopback opens the panels to LAN_CIDR. |
-| `LAN_CIDR` | string | `auto` | light | The network allowed in lan mode, or auto. (advanced) |
+| `LAN_CIDR` | string | `auto` | light | The network allowed in lan mode, or auto; several networks may be given separated by commas (auto stands for the network of the default route), for example auto,172.18.0.0/16. (advanced) |
 | `PANEL_PORT` | integer 1..65535 | `9800` | light | Port of this panel. (advanced) |
 | `NTOPNG_PORT` | integer 1..65535 | `3000` | light | ntopng port. (advanced) |
 | `NGINX_MANAGE` | yes \| snippet | `snippet` | light | How to manage nginx: replace the configuration or only drop in a fragment. (advanced) |
