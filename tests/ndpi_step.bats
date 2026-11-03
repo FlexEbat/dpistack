@@ -97,3 +97,48 @@ teardown() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"NEEDS_BUILD"* ]]
 }
+
+# v0.30.1: a clone of nDPI died on a real install with "HTTP/2 stream was not
+# closed cleanly" and stopped the install. The clone is repeated, over HTTP/1.1.
+@test "git_clone_retry repeats a failed clone and succeeds on the second try" {
+	fakebin="$(mktemp -d)"
+	cat >"$fakebin/git" <<FAKE
+#!/bin/bash
+echo "git \$*" >>"$fakebin/calls"
+if [[ ! -e "$fakebin/failed" ]]; then
+	touch "$fakebin/failed"
+	mkdir -p "\${@: -1}"
+	exit 128
+fi
+mkdir -p "\${@: -1}/.git"
+FAKE
+	chmod +x "$fakebin/git"
+	run env PATH="$fakebin:$PATH" DPISTACK_RETRY_DELAY=0 bash -c '
+		DPISTACK_ROOT="'"$DPISTACK_ROOT"'"
+		source "'"$REPO_DIR"'/lib/paths.sh"
+		source "'"$REPO_DIR"'/lib/common.sh"
+		git_clone_retry https://example.invalid/ndpi.git "'"$DPISTACK_ROOT"'/src"
+		echo "RC=$?"
+	'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"RC=0"* ]]
+	[ "$(grep -c 'clone' "$fakebin/calls")" -eq 2 ]
+	grep -q -- '-c http.version=HTTP/1.1 clone' "$fakebin/calls"
+	[ -d "$DPISTACK_ROOT/src/.git" ]
+	rm -rf "$fakebin"
+}
+
+@test "git_clone_retry gives up after three tries and returns the git status" {
+	fakebin="$(mktemp -d)"
+	printf '#!/bin/bash\necho x >>"%s/calls"\nexit 128\n' "$fakebin" >"$fakebin/git"
+	chmod +x "$fakebin/git"
+	run env PATH="$fakebin:$PATH" DPISTACK_RETRY_DELAY=0 bash -c '
+		DPISTACK_ROOT="'"$DPISTACK_ROOT"'"
+		source "'"$REPO_DIR"'/lib/paths.sh"
+		source "'"$REPO_DIR"'/lib/common.sh"
+		git_clone_retry https://example.invalid/ndpi.git "'"$DPISTACK_ROOT"'/src"
+	'
+	[ "$status" -eq 128 ]
+	[ "$(wc -l <"$fakebin/calls")" -eq 3 ]
+	rm -rf "$fakebin"
+}

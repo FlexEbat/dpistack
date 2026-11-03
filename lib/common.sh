@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.30.0"
+DPISTACK_VERSION="0.30.1"
 
 : "${DRY_RUN:=0}"
 
@@ -49,6 +49,25 @@ run() {
 		log "ERROR" "command failed (rc=$rc): $*"
 		return "$rc"
 	fi
+}
+
+# git_clone_retry <url> <dir> - git clone that survives a dropped connection.
+# A clone of nDPI died on a real Debian 13 install (v0.29.1) with "HTTP/2
+# stream was not closed cleanly" and stopped the whole install. HTTP/1.1 is
+# used for the clone and a failed attempt is repeated (3 tries, growing pause;
+# DPISTACK_RETRY_DELAY seconds per try, default 5) after the half-made
+# directory is removed.
+git_clone_retry() {
+	local url=$1 dir=$2 try rc=0 tries=3
+	for ((try = 1; try <= tries; try++)); do
+		run git -c http.version=HTTP/1.1 clone "$url" "$dir" && return 0
+		rc=$?
+		((try < tries)) || break
+		log "WARN" "git clone of $url failed (try $try of $tries), repeating"
+		[[ -n "$dir" ]] && rm -rf -- "$dir"
+		sleep $((try * ${DPISTACK_RETRY_DELAY:-5}))
+	done
+	return "$rc"
 }
 
 lock_acquire() {

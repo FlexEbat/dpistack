@@ -63,7 +63,7 @@ ndpi_build_from_source() {
 	ref=$(ndpi_target_ref)
 
 	if [[ ! -d "$src_dir/.git" ]]; then
-		run git clone "$NDPI_REPO_URL" "$src_dir" || return 1
+		git_clone_retry "$NDPI_REPO_URL" "$src_dir" || return 1
 	else
 		run git -C "$src_dir" fetch --tags origin || return 1
 	fi

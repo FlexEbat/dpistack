@@ -192,7 +192,7 @@ SURICATA_REPO_URL="https://github.com/OISF/suricata.git"
 # series, never master (9.0.0-dev is a development build). Built for real
 # together with nDPI 4.14 and its plugin; raise it after testing a newer
 # 8.0.x (and keep SURICATA_COPR in os.sh on the same series).
-SURICATA_STABLE_REF="suricata-8.0.7"
+SURICATA_STABLE_REF="suricata-8.0.8"
 
 suricata_target_ref() {
 	echo "${CONF[SURICATA_VERSION]:-$SURICATA_STABLE_REF}"
@@ -249,7 +249,7 @@ suricata_build_from_source() {
 	ref=$(suricata_target_ref)
 
 	if [[ ! -d "$src_dir/.git" ]]; then
-		run git clone "$SURICATA_REPO_URL" "$src_dir" || return 1
+		git_clone_retry "$SURICATA_REPO_URL" "$src_dir" || return 1
 		run git -C "$src_dir" submodule update --init --recursive || return 1
 	else
 		run git -C "$src_dir" fetch --tags origin || return 1
