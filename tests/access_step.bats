@@ -297,3 +297,21 @@ load_preflight() {
 	[ "$status" -eq 2 ]
 	[[ "$output" == *"scrapes the panel"* ]]
 }
+
+# v0.31.0: LAN_CIDR may list several networks (the LAN and, say, the network
+# of a WireGuard container in Docker whose clients the panel saw as 172.x).
+@test "LAN_CIDR list: nginx gets one allow line per network, then deny all" {
+	run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes \
+		--set LAN_CIDR=192.168.1.0/24,172.18.0.0/16
+	[ "$status" -eq 0 ]
+	[ "$(grep -c '^    allow 192.168.1.0/24;$' "$NGINX_SNIPPET")" -eq 3 ]
+	[ "$(grep -c '^    allow 172.18.0.0/16;$' "$NGINX_SNIPPET")" -eq 3 ]
+	[ "$(grep -c '^    deny all;$' "$NGINX_SNIPPET")" -eq 3 ]
+}
+
+@test "LAN_CIDR list: a bad element or an empty one is refused with code 2" {
+	run install_base --set ACCESS_MODE=lan --set ACCESS_CONFIRM=yes --set LAN_CIDR=192.168.1.0/24,nonsense
+	[ "$status" -eq 2 ]
+	run install_base --set ACCESS_MODE=lan --set ACCESS_CONFIRM=yes --set LAN_CIDR=192.168.1.0/24,
+	[ "$status" -eq 2 ]
+}

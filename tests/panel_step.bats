@@ -452,3 +452,10 @@ release_binary_name() {
 	[ "$(grep -c 'cli test' "$DPISTACK_ROOT/var/lib/dpistack/audit/audit.jsonl")" -eq 1 ]
 	grep -q -- "-audit-file $DPISTACK_ROOT/var/lib/dpistack/audit/audit.jsonl" "$(unit_file)"
 }
+
+@test "LAN_CIDR list: the panel gets every network in -lan-cidr, auto inside the list is resolved" {
+	MOCK_IP_DEFAULT_IFACE="enp2s0" MOCK_IP_LINK_ROUTE="192.168.1.0/24" run install_base --set ACCESS_MODE=lan \
+		--set ACCESS_CONFIRM=yes --set LAN_CIDR=auto,172.18.0.0/16
+	[ "$status" -eq 0 ]
+	grep -q ' -access lan -lan-cidr 192.168.1.0/24,172.18.0.0/16 ' "$(unit_file)"
+}

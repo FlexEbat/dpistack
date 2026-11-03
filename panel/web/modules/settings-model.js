@@ -56,7 +56,7 @@ export const HINTS = {
   EVEBOX_RETENTION_DAYS: "How many days EveBox keeps events (0: no limit).",
   ACCESS_MODE: "Who can open the panels: localhost, the local network or through nginx.",
   BIND_ADDR: "Address the web services listen on: auto (127.0.0.1, or every address in lan mode) or one IPv4 address of this host, for example 192.168.1.156. An address that is not loopback opens the panels to LAN_CIDR.",
-  LAN_CIDR: "The network allowed in lan mode, or auto.",
+  LAN_CIDR: "The network allowed in lan mode, or auto; several networks may be given separated by commas (auto stands for the network of the default route), for example auto,172.18.0.0/16.",
   PANEL_PORT: "Port of this panel.",
   NTOPNG_PORT: "ntopng port.",
   PANEL_RUNTIME: "Where the panel runs: as a service on the host or as a Docker container (host commands go through nsenter).",

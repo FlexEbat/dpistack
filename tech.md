@@ -1,11 +1,12 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v46** (2026-11-02)
-**Program version: v0.30.1** (slices 0-35 are done, 36-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
+**Document version: v47** (2026-11-03)
+**Program version: v0.31.0** (slices 0-35 are done, 36-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.31.0: `LAN_CIDR` takes a list (section 18.33). The report: a WireGuard server in Docker on the same host reached the panel from a phone and got `403 access from this address is forbidden`, because the panel saw the Docker or tunnel address, not an address of `192.168.1.0/24`, and `LAN_CIDR` held one network. Now `LAN_CIDR` is `auto`, one CIDR, or a comma-separated list of them (`auto` inside the list is the network of the default route); the panel, the nginx `allow` lines and the ufw/firewalld rules follow the whole list.
 - v0.30.1: the review of the install log and of CI/CD of 2026-11-02 (section 18.32). The log was made by an old v0.29.1 copy of the repository: its Suricata usage failure, EveBox "unable to open database file" and missing tcpreplay are the ones v0.29.2 already fixed. What was still open and is fixed here: `git clone` of nDPI (and of Suricata) died once with "HTTP/2 stream was not closed cleanly" and stopped the install; the clone now goes through `git_clone_retry` (HTTP/1.1, 3 tries, the half-made directory removed between them). `SURICATA_STABLE_REF` is raised to `suricata-8.0.8` (the weekly check of 2026-11-02 built it and opened issue 60).
 - v0.30.0: slice 35. The audit log: `/var/lib/dpistack/audit/audit.jsonl`, one JSON line `{ts, user, ip, action, target, result, detail}` for every call of the panel that can change something (any method but GET under `/api/`, signed in or not: a failed login is a line with the name that was tried and `denied`) and for every verb that changes something when root runs it by hand (`cli <verb>`, the user is `SUDO_USER`, the address is the SSH client). Rotation at 10 MB, 5 files. No password, token or hash is ever written: the panel never reads the body for the log, a detail names flags (`password=changed`), and a CLI argument `KEY=VALUE` is logged as `KEY=...`. `GET /api/audit` and `/api/audit/export?format=csv|json` with the filters user, action, result, since, until, limit need `audit.view`; the Audit screen. The panel's own calls through sudo (as the user `dpistack`) are not logged twice. The directory `audit/` belongs to the panel user (0770) because the panel renames files when it rotates.
 - v0.29.2: the three causes found with the v0.29.1 report from a real Debian 13 stand (source build, nDPI on). (1) The unit of a from-source Suricata had no capture mode: Suricata printed its usage and exited with 1; the unit now has `--af-packet` (the IPS drop-in still replaces ExecStart with `-q`). (2) EveBox stopped at "unable to open database file" because `/var/lib/evebox` was not made and not given to the user of the service; the step now makes it (0750), takes the user from `systemctl show -p User` (or the user `evebox`) and chowns it before the start. (3) `TEST_BT_LIVE=yes` failed for a missing `tcpreplay`; the install now installs it when the owner asked for the live test. Tests: `tests/suricata_unit.bats`, `tests/verify_deps.bats`, two in `tests/evebox_step.bats`.
@@ -342,7 +343,7 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `EVEBOX_RETENTION_DAYS` | `30` | number of days, `0` = no limit; the mechanism is by assumption A9 |
 | `ACCESS_MODE` | `localhost` | `localhost` `lan` `nginx` |
 | `BIND_ADDR` | `auto` | `auto` or one IPv4 address of this host (checked by `preflight`). `auto` = `127.0.0.1` in `localhost` mode and `0.0.0.0` in `lan` mode; an address makes ntopng, EveBox, the panel, the metrics backend, Grafana and node_exporter listen there. A non-loopback address with `ACCESS_MODE=localhost` opens the panels to `LAN_CIDR`: the panel runs with `-access lan` and the access confirmation is needed. Ignored with `nginx` (the services stay on `127.0.0.1`) |
-| `LAN_CIDR` | auto | the CIDR of the network of the default-route interface |
+| `LAN_CIDR` | auto | the CIDR of the network of the default-route interface, or a comma-separated list of CIDRs (v0.31.0); `auto` inside a list stands for that network, for example `auto,172.18.0.0/16` |
 | `PANEL_PORT` | `9800` | 1..65535 |
 | `PANEL_RUNTIME` | `native` | `native` (the unit `dpistack-panel.service`) or `docker` (the service `panel` of the same compose project: the image `dpistack-panel:<hash of the binary>` built on the host from `alpine`, `network_mode: host`, `pid: host`, `privileged`; commands to the host go through `nsenter -t 1 -m -u -i -n -p -- env DPISTACK_CALLER=panel dpistack ...`); heavy, affects the `panel` step |
 | `PANEL_EDITION` | `full` | `full` (the rich dark console with a particle background) or `lite` (the same features on a plain, light page); light, affects the `panel` step; asked in the quick install. Replaced `PANEL_MODE` (v0.23.0) |
@@ -575,7 +576,7 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 | `GET /api/settings`, `POST /api/settings/check`, `POST /api/settings/apply`, `GET /api/settings/job`, `PUT /api/settings/secret/{key}` | every setting and the secrets (the schema comes from `dpistack settings list --json`) |
 | `GET /metrics` | the Prometheus export (section 4.9) |
 
-The panel answers 403 if the IP of the client is outside `LAN_CIDR` (with the `lan` policy) or outside loopback (the `localhost` policy). With `nginx` it trusts `X-Forwarded-For` only from `127.0.0.1`.
+The panel answers 403 if the IP of the client is outside every network of `LAN_CIDR` (with the `lan` policy) or outside loopback (the `localhost` policy). With `nginx` it trusts `X-Forwarded-For` only from `127.0.0.1`.
 
 ### 4.9 The metrics export `GET /metrics`
 
@@ -2483,4 +2484,16 @@ The owner asked to read the whole log of a real Debian 13 install and to review 
 CI/CD review (all runs through the GitHub API, 2026-11-02): the last runs of `ci`, `security`, `release` and `suricata-watch` on `main` (`a25cf00`) are green; code scanning has no open alerts; `main` is protected. The only red runs in the recent history are `ci` on `dev` for `77604ba` (v0.29.1, 2026-10-31) and `7ca3217` (v0.29.0), both fixed by the next commit and green since; cancelled runs are the ones replaced by a newer run of the same branch (concurrency) and one `release` of v0.29.2 that was re-run green. Open: issue 60 (done here) and Dependabot PR 54 (`upload-sarif` 4.39.0 -> 4.39.1).
 
 Still open: the HTTPS self-test and the whole install have to be repeated on the real Debian 13 stand with v0.30.1 (the owner tests).
+
+### 18.33 `LAN_CIDR` as a list (v0.31.0)
+
+The owner connected from a mobile network through a WireGuard server that runs in Docker on the dpistack host and got `{"error":"access from this address is forbidden"}` from the panel, while another panel on a neighbouring port opened. The cause is by design: the panel checks the client address itself (section 8) and the client was the WireGuard container (a Docker bridge address such as `172.x.x.x`, or the tunnel address), outside the single network `LAN_CIDR` held. The other panel has no address check of its own, and this host had no firewall tool (`FIREWALL_MANAGE=auto` found neither ufw nor firewalld).
+
+| id | decision |
+| --- | --- |
+| D29 | **A list, not a second key.** `LAN_CIDR` is `auto`, one CIDR, or a comma-separated list (`auto,172.18.0.0/16`); the schema pattern `^(auto\|cidr)(,(auto\|cidr))*$` refuses an empty or bad element (code 2). Everything that used the one network follows the list: `-lan-cidr` of the panel (`auth.NewPolicy` parses every element, `Allowed` is true for any of them, spaces around a comma are ignored), one `allow` line per network in the nginx blocks, one ufw/firewalld rule per network and port (the state keeps `cidr,port` pairs, so dropping a network from the list takes its rules out), the access plan line |
+| D30 | **`auto` inside the list** is the network of the default-route interface, so the usual setup stays `auto,<the Docker or tunnel network>`. A list where `auto` cannot be resolved keeps the other elements; with nothing left the closed fallback of 4.8 applies (the panel lets in `127.0.0.1` only) |
+| D31 | **Which network to add.** The one the panel sees as the client: for WireGuard in Docker the bridge network of the container (`docker network inspect` of its network) or, when the container does not translate addresses, the tunnel subnet. A wide range such as `0.0.0.0/0` is not recommended: the panel then accepts every address and, without a firewall, so do ntopng and EveBox |
+
+Tests: `panel/internal/auth/auth_test.go` (a list, spaces, outside every network, a list in nginx mode, an empty or bad element), `tests/access_step.bats` (one `allow` per network, bad list code 2), `tests/panel_step.bats` (the unit gets the list, `auto` resolved), `tests/firewall_rules.bats` (a rule per network and port, a dropped network is taken out).
 

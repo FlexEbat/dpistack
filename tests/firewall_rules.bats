@@ -132,3 +132,15 @@ fwd_path() {
 	[ "$status" -eq 0 ]
 	if grep -q '^systemctl restart suricata.service' "$MOCK_CALLS_LOG"; then false; fi
 }
+
+@test "ufw: a LAN_CIDR list opens every port for every network and dropping a network takes its rules out" {
+	run install_lan --set LAN_CIDR=10.1.0.0/24,172.18.0.0/16
+	[ "$status" -eq 0 ]
+	grep -qxF 'ufw allow from 10.1.0.0/24 to any port 3000 proto tcp' "$UFW_RULES"
+	grep -qxF 'ufw allow from 172.18.0.0/16 to any port 3000 proto tcp' "$UFW_RULES"
+	grep -qxF 'ufw allow from 172.18.0.0/16 to any port 9800 proto tcp' "$UFW_RULES"
+	run bash "$REPO_DIR/install.sh" reconfigure -y --force --set ACCESS_CONFIRM=yes --set LAN_CIDR=10.1.0.0/24
+	[ "$status" -eq 0 ]
+	if grep -q '172.18.0.0/16' "$UFW_RULES"; then false; fi
+	grep -qxF 'ufw allow from 10.1.0.0/24 to any port 3000 proto tcp' "$UFW_RULES"
+}
