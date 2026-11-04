@@ -1,108 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v53** (2026-11-04)
-**Program version: v0.33.0** (slices 0-36 are done, 37 is partly done, 38-45 are not started; the table is in section 17; section 17 holds the history, section 18 the reviews)
+**Document version: v54** (2026-11-04)
+**Program version: v0.33.0** (slices 0-36 are done, 37 is partly done, 38-45 are not started; the list of slices is in section 17, the reviews in section 18)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
-Program changelog (what was done per slice of section 17):
+Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
 - v0.33.0: slice 36. `dpistack backup create [--out FILE]|list [--json]|verify FILE|restore FILE [--dry-run]` and the Backups screen (section 18.36). One tar.gz of the configs with a manifest (program version, sha256 and mode of every file); `verify` fails on a changed byte, an extra entry or a link; `restore` checks the schema and `suricata -T` before it replaces anything and keeps the previous files; the panel names an archive by its file name only.
 - v0.32.1: the Audit screen says what was done ("Restart ntopng", "Sign in") instead of the route template, the raw path moves to a muted Target column; the Account and Audit forms have padding and flexible fields (D44, D45 of 18.35).
 - v0.32.0: the corner of the panel and the Build info window, the unslop pass over the look (section 18.35); the Rules screen no longer fails on a fresh install without `disable.conf`; dates in the panel are shown in the `en-GB` format.
 - v0.31.1: the Update button failed on an installation with `ACCESS_MODE=lan` (section 18.34). `self-update apply` ran `install.sh install -y` without `ACCESS_CONFIRM=yes`, so the validation stopped with code 2 ("needs --set ACCESS_CONFIRM=yes") and nothing was updated. Now an access mode and bind address equal to the applied ones count as confirmed; a mode edited by hand after the last apply still stops.
 - v0.31.0: `LAN_CIDR` takes a list (section 18.33). The report: a WireGuard server in Docker on the same host reached the panel from a phone and got `403 access from this address is forbidden`, because the panel saw the Docker or tunnel address, not an address of `192.168.1.0/24`, and `LAN_CIDR` held one network. Now `LAN_CIDR` is `auto`, one CIDR, or a comma-separated list of them (`auto` inside the list is the network of the default route); the panel, the nginx `allow` lines and the ufw/firewalld rules follow the whole list.
-- v0.30.1: the review of the install log and of CI/CD of 2026-11-02 (section 18.32). The log was made by an old v0.29.1 copy of the repository: its Suricata usage failure, EveBox "unable to open database file" and missing tcpreplay are the ones v0.29.2 already fixed. What was still open and is fixed here: `git clone` of nDPI (and of Suricata) died once with "HTTP/2 stream was not closed cleanly" and stopped the install; the clone now goes through `git_clone_retry` (HTTP/1.1, 3 tries, the half-made directory removed between them). `SURICATA_STABLE_REF` is raised to `suricata-8.0.8` (the weekly check of 2026-11-02 built it and opened issue 60).
-- v0.30.0: slice 35. The audit log: `/var/lib/dpistack/audit/audit.jsonl`, one JSON line `{ts, user, ip, action, target, result, detail}` for every call of the panel that can change something (any method but GET under `/api/`, signed in or not: a failed login is a line with the name that was tried and `denied`) and for every verb that changes something when root runs it by hand (`cli <verb>`, the user is `SUDO_USER`, the address is the SSH client). Rotation at 10 MB, 5 files. No password, token or hash is ever written: the panel never reads the body for the log, a detail names flags (`password=changed`), and a CLI argument `KEY=VALUE` is logged as `KEY=...`. `GET /api/audit` and `/api/audit/export?format=csv|json` with the filters user, action, result, since, until, limit need `audit.view`; the Audit screen. The panel's own calls through sudo (as the user `dpistack`) are not logged twice. The directory `audit/` belongs to the panel user (0770) because the panel renames files when it rotates.
-- v0.29.2: the three causes found with the v0.29.1 report from a real Debian 13 stand (source build, nDPI on). (1) The unit of a from-source Suricata had no capture mode: Suricata printed its usage and exited with 1; the unit now has `--af-packet` (the IPS drop-in still replaces ExecStart with `-q`). (2) EveBox stopped at "unable to open database file" because `/var/lib/evebox` was not made and not given to the user of the service; the step now makes it (0750), takes the user from `systemctl show -p User` (or the user `evebox`) and chowns it before the start. (3) `TEST_BT_LIVE=yes` failed for a missing `tcpreplay`; the install now installs it when the owner asked for the live test. Tests: `tests/suricata_unit.bats`, `tests/verify_deps.bats`, two in `tests/evebox_step.bats`.
-- v0.29.1: the install report of 2026-10-31 (Debian 13, source build with nDPI): Suricata was not running after its step and EveBox failed, and the installer said only "partly applied" and "installation finished". Now a step that leaves its part dead prints the state, the systemd exit status and the last 25 lines of the log; the end of the install lists every part that does not run and says so as a warning; `dpistack diagnose` gives the same later. The root cause of that stand is not known yet (the journal was not in the report); it is to be read from the new output.
-- v0.29.0: slice 34. Users, roles (viewer, analyst, operator, admin, custom) and permissions: `dpistack users ...`, `users.json`, login with a user name, a permission on every route of the panel, `/api/me`, `/api/users`, the Account screen.
-- v0.28.0: slices 32 and 33. The resource budget of the panel is gone (the script, the gate stage, the weight test, the lines in the documents). `dpistack runtime [--json]` and section 4.10: what can run in Docker, the runtime of every part, the links between the parts and a check of each; `docs/runtimes.md`. Slices 34-45 (users and roles, audit, backup, the new screens) are written in section 17.
-- v0.27.0: the panel design follows the landing page design skill (9.1, 18.31): Geist and Geist Mono served by the panel, Phosphor icons, the Tailwind type scale, the fixed spacing table, flat backgrounds, one motion curve, a floating bar and a full height menu on narrow screens, scroll reveals, skeletons; the remaining items of the Debian 13 report: a kept busy port stops the menu, the saved config asks for the network access confirmation, apt waits for the dpkg lock, a hint for a re-run from the installed copy.
-- v0.26.2: fixes from the first install report on Debian 13 (18.30): the unversioned `rustc` of the apt repositories counts as a usable Rust (nDPI is no longer switched off there), the first Suricata start has a rules file, the BitTorrent replay matches the sample pcap whatever the host `HOME_NET` is.
-- v0.26.1: the confirmations were re-examined (18.29): about a dozen questions that guarded nothing are gone from the installer menu (a value that was just typed, read-only screens, edits of a draft, loading a file, entering and leaving a group of the guided setup); the ones that guard a loss, an overwrite, an interruption or a security change stay. The panel is not touched: the owner works with it only during installation or through the CLI, so its confirmations stay as they were (decision of the owner, 18.29).
-- v0.26.0: a complete uninstall (the whole docker project, the images it built, every file dpistack made; "Uninstall" in the first menu of an existing installation too), the panel shows its version in the corner and glows when a newer release exists (a click asks, then `dpistack self-update` installs it), the settings check refuses nDPI with the docker runtime in the panel as well (section 18.28).
-- v0.25.2: the first real install on Debian 13 (section 18.27): the control menu no longer locks the installer out (`Configure` in it said "another dpistack instance is running"), the `dpistack` command is installed before the preflight, a config left by a failed preflight is called "Saved config found, the install did not finish" and not an installation, the panel is built in a Go container when the host Go is missing or older than `panel/go.mod` asks (Docker is enough), the nDPI plugin is switched off at once when the docker runtime of Suricata is chosen, the preflight failure names the next command.
-- v0.25.1: `--fast` (the short questionnaire first), an option as the first argument of `install.sh`, the menu wording "Suricata with the nDPI plugin" (nDPI shown as a sub-item of Suricata), `upload-sarif` v4.39.0, the fix of issue 45 (`suricata -T` of the rendered yaml with `-S /dev/null`).
-- v0.25.0: every part is chosen on its own and (until v0.26.1) the menu asked before every action. New keys `SURICATA_ENABLE`, `RULES_ENABLE`, `EVEBOX_ENABLE`, `NTOPNG_ENABLE` (with its Redis) and `PANEL_ENABLE`, next to the existing `NDPI_ENABLE`, `WATCH_ENABLE`, `GRAFANA_ENABLE`, `NODE_EXPORTER_ENABLE` and `METRICS_BACKEND`; a switched-off part is skipped by its steps (`install.sh`, `step_component_enabled`), what is already installed stays. The screen \"Choose components\" (`m`), the guided setup (`w`, offered first on a fresh `install`) that asks every setting of the chosen parts, a confirmation before every menu action, `0`/`cancel` as an exit on every screen. Tests `tests/menu_confirm.bats` (17).
-- v0.24.0: `BIND_ADDR` (listen on one address of this host, chosen from the list of local addresses), optional metrics stack parts chosen separately (a storage, Grafana, node_exporter; steps `nodeexp` and `grafana`), the second command name `dpistack-ctl` is gone (a leftover link of an earlier version is removed on install), README rewritten, `tech.md` restored in full in English, releases and tags.
-- v0.23.0: `PANEL_EDITION=full|lite` replaced `PANEL_MODE=limited|unlimited` (the unit limits `MemoryMax=64M` and `CPUQuota=20%` and the `-max-streams` flag are gone); `full` redesigned (dark matte surfaces, one blue accent, sidebar, entrance animations, particle background), `lite` is the same panel with every feature on a plain, light page; the program is English only; the README and the guides come in English and Russian.
-- v0.1.0 (slices 0-7): the installer skeleton (`install.sh`, the `dpistack.conf` schema, layered config, locking); Suricata (`distro`/`oisf`/`source`, rendering of `suricata.yaml`, logrotate, systemd); nDPI (a package or a build from source); rules (`suricata-update`, a safe update that keeps the previous set, a timer); Redis and ntopng; EveBox (the official repository, `evebox.yaml`, retention); access (`localhost`/`lan`/`nginx`, TLS, `ufw`). The gate (`shfmt` + `shellcheck` + `bats`) is green. `docs/prototype.md` and `docs/real-test-guide.md`.
-- v0.2.0 (slices 8-9): `reconfigure` is a real transactional flow (diff, light/heavy, a `suricata -T` check on a temporary file before anything is written to disk, only the affected steps are applied); `upgrade` (`apt-get install --only-upgrade`, pinned versions are skipped by apt itself); `uninstall`/`--purge` (removes only what dpistack created itself and does not touch the packages and services of the components: a decision, not a literal reading of the spec, see `docs/prototype.md`); the text menu of `install`/`reconfigure` (no dialog libraries): quick install, sections by key group, a draft, the panel password, confirmations. `lib/render.sh` is one shared `@@KEY@@` renderer instead of per-step `awk` scripts that drifted apart. Gate: 95 bats, green.
-- v0.3.0 (slices 10-13): `dpistack-ctl` (status, control, logs, configs with a backup and a rollback, `reconfigure`, rules, `iface`, `panel-passwd`, `test`, `health`); the `panel` step (the `dpistack` user, `sudoers` checked with `visudo`); the BitTorrent and HTTPS check tests and the `verify` step; `dpistack-watch` with the `watch` step and units. The panel password is stored as argon2id (the `argon2` package), `reconfigure` compares the config with a snapshot of the applied state. Gate: 164 bats, green. The `selfinstall` module (slice 15) did not exist yet, so the watchdog unit skipped its run until the installer copy appeared.
-- v0.20.0 (slice 30, section 3): the single file. `scripts/bundle.sh` builds `dpistack-install.sh` (in the repository root): `install.sh`, `lib/`, `templates/`, `bin/` and `tests/data/` (the binary pcap through base64) as heredocs with no change of logic; at start the file unpacks into a temporary directory and runs the real `install.sh` from there with the same arguments and exit code, and the directory is removed on exit. The panel (a ready `dpistack-panel-linux-<arch>` binary or the `panel/` directory) is looked for next to the file itself through `DPISTACK_ORIGIN_DIR` (in the modular version that is the directory of `install.sh`, the behavior is as before). `bundle.sh --check` in the gate fails if the file does not match the sources; `dpistack-install.sh` passes `shellcheck` in the gate. Tests `tests/bundle.bats` (14).
-- v0.20.1 (the full review after slice 30, section 18.21): a real NFQUEUE was checked in network namespaces with Suricata 7.0.3 (drop, alert-only, `--queue-bypass`, `--user`); fixed: options without a value hanging, `uninstall --dry-run`, writing the hash during a dry run, the step order of `reconfigure`, the menu under `curl | bash`, an error being erased in the mode block, `reset-failed` of the rollback timer; `dpistack-install.sh` and the panel binaries in the release; the tests of the mode screen on `node --test` in the gate.
-- v0.22.0 (R159-R165, section 18.23): the Settings screen with every key of the schema and a new stylesheet, the `settings` verbs, `PANEL_MODE`, `PANEL_RUNTIME=docker`, the `zypper`, `pacman` and `generic` families, the documentation in `docs/`, `AGENTS.md`, `CONTRIBUTING.md`.
-- v0.21.0 (R155-R158, section 18.23): one command `dpistack` instead of `dpistack` and `dpistack-ctl` (the old name stayed as a link), running as root only, `suricata-version` in `suricata.yaml` by the series of the installed Suricata and a `suricata -T` check before writing, a busy port gives a warning and a choice of another one.
-- v0.20.4 (R154, section 18.22): the panel screens with polling (Overview, Components, Metrics, Alerts) no longer show an older answer on top of a newer one and do not start a second polling loop if a request is already on its way when a range button is pressed or the tab becomes visible again (`modules/poll.js`, `test/poll.test.mjs`). The keys of `evebox.yaml.tpl` were checked against EveBox's official `examples/evebox.yaml`.
-- v0.20.3 (the review continued, section 18.22): R144-R153. The rotation of `eve.json` no longer makes it `root:root 0640` (the panel and EveBox lost read access), the `suricata` group is created where it is missing (Debian, Ubuntu), the log directory is given to it (setgid 2750), `eve-log` writes `filemode: 0640`; the command socket of Suricata is the same in `suricata.yaml`, `dpistack-ctl reload`, the rules step and logrotate (`reload` used to go to a socket that did not exist); `postrotate` calls `suricatasc` with an explicit socket (in docker through `compose exec`); in NFQ mode the panel takes packets from `stats.decoder.pkts` instead of drawing zeros; IPS works without `iptables` too, through the `nft` table `inet dpistack`; the `ufw` and `firewalld` rules that `access` added are removed when the access mode changes and on `uninstall` (only its own, the list is in the state `access.fw.rules`); `uninstall` restarts a Suricata that was running in NFQ; `dpistack-fw.service` is ordered before `network-pre.target`. Tests: `tests/suricata_logs.bats` (5), `tests/firewall_rules.bats` (6), four `nft` tests in `tests/ips.bats`, Go tests of the NFQ statistics, UTF-8 truncation and infinity in `Save`; the Go tests run on Go 1.27.3 with the real `go.mod`.
-- v0.20.2 (the review continued, section 18.21): R133-R143: reloading the rules after a periodic update, `install-conf` only on the first build, the `prebuilt` panel on `reconfigure`, a non-numeric choice in the menu, fetching the metrics backend again when its version changes, negative checks in the tests that really check something, stopping the previous instance when the runtime changes.
-- v0.19.0 (slice 29, section 6): IPS mode. `SURICATA_MODE=ips` is accepted. `dpistack-ctl mode ids|ips [--confirm-timeout S]` (10-3600, 120 by default), `mode status [--json]`, `mode-confirm`, the internal `mode-rollback` and `fw apply|remove|restore`. `ips`: `IPS_METHOD=nfq` sets up the `DPISTACK` chain with one `NFQUEUE --queue-bypass` rule and one `-j DPISTACK` jump into every chain of `IPS_NFQ_CHAINS` (iptables and ip6tables), Suricata starts with `-q 0` through a drop-in; `afpacket` turns on `copy-mode: ips` with pairs of interfaces. The rollback is started by a `systemd-run` timer; without `mode-confirm` the mode goes back to `ids` and the rules are removed. At boot `dpistack-fw.service` restores the rules (an unconfirmed switch rolls back on reboot). Other people's chains and rules are not touched. The panel: the "Suricata mode" block (a confirmation, a countdown, the "Confirm IPS" button), `GET|POST /api/mode`, `POST /api/mode/confirm`. Tests `tests/ips.bats` (14) and `panel/internal/api/mode_test.go` (8).
-- v0.18.0 (slice 28, section 5.1): the metrics backend. `METRICS_BACKEND=victoriametrics|prometheus` is accepted; `lib/step_metrics.sh` installs a binary from the project's GitHub release (VictoriaMetrics v1.153.0, Prometheus v3.15.0) with a check of the sha256 of the archive, which is pinned in the code (A10 confirmed against the checksum files of those releases), creates the `dpistack-metrics` user in the `dpistack` group, writes `scrape.yaml` (one target, the panel's `/metrics`, the token from `credentials_file`) and the unit `dpistack-vm.service` or `prometheus.service` with `METRICS_RETENTION`. The bind address follows `ACCESS_MODE` (in `lan` 0.0.0.0 and the port is opened for `LAN_CIDR`, otherwise 127.0.0.1). `METRICS_BACKEND_RUNTIME=docker` goes through compose (the images `victoriametrics/victoria-metrics` and `prom/prometheus` with the version tag). Changing the backend or `none` stops the previous one, the data in `/var/lib/dpistack-metrics` stays, `uninstall` removes the unit and the binary, `--purge` the data too. `disk.free` in `dpistack-watch` takes the data directory into account. The retention with a backend is checked more strictly: only `h`, `d`, `w`, `y`. Tests `tests/metrics_step.bats` (18).
-- v0.17.0 (slice 27, section 5.1): the Docker runtime. `SURICATA_RUNTIME`, `EVEBOX_RUNTIME` and `NTOPNG_RUNTIME` accept `docker` (the redis behind ntopng follows `NTOPNG_RUNTIME`; `METRICS_BACKEND_RUNTIME=docker` was still refused until slice 28). `lib/runtime_docker.sh` renders one compose project `dpistack` (`/opt/dpistack/compose/compose.yaml`, `templates/compose.yaml.tpl`) from the docker components only; every service has `network_mode: host`, Suricata has `NET_ADMIN`, `NET_RAW`, `SYS_NICE`, volumes on the same host paths (`/var/log/suricata`, `/etc/suricata`, `/etc/evebox`, `/etc/ntopng`). In docker mode the steps `suricata`, `evebox`, `ntopng`, `redis` install no packages and no repositories, they write the configs to the host and run `docker compose up -d <service>`. `dpistack-ctl`: `status` (the state of the container in systemd words, the image as the version), `start|stop|restart`, `logs` (`docker compose logs`), `reload suricata` (`exec` into the container), the check of `suricata.yaml` and of the rules in the container, `rules-update` through the container. `preflight`: no `compose` plugin, and `SURICATA_RUNTIME=docker` with `NDPI_ENABLE=yes`, give code 3. The BitTorrent replay is skipped with a reason when Suricata is in a container. Tests `tests/runtime_docker.bats` (18).
-- v0.16.0 (slice 26, section 5.5): SELinux on the RHEL family: the nginx ports (`NTOPNG_PORT`, `EVEBOX_PORT`, `PANEL_PORT`) get `http_port_t`, the ntopng port, if it is neither 3000 nor 3001 (in `nginx` mode it is `PORT+10000`), gets `ntop_port_t` through `semanage port` (`-a`, `-m` on refusal; a ready type is skipped; a type missing from the policy is a warning, not a refusal); every file written by the installer or `ctl` gets the label of the policy (`restorecon -F` in `atomic_write`), and at the end of `install` and `reconfigure` there is one `restorecon -RF` pass over the existing paths of dpistack and of the components. `FIREWALL_MANAGE=auto` with a stopped `firewalld` writes no rules and does not fail, it says so. `preflight` checks the OISF COPR for building this very OS version (`epel-N` or `fedora-N`) and stops the install with code 3 before `dnf copr enable`. Tests `tests/selinux.bats` (12) and `tests/pkg_dnf.bats` (7).
-- v0.15.0 (slice 25 and R81): `README.md` (what it is, the topology limit, the threat model, quick install, config, `install`/`reconfigure`/`upgrade`/`uninstall`, `dpistack-ctl`, `scrape_configs` for Prometheus, VictoriaMetrics and `vmagent`, development); `scripts/check-conf-example.sh` in the gate compares the keys and defaults of `dpistack.conf.example` with table 4.3 and `lib/schema.sh` (it found five mismatches, fixed). `install --dry-run` no longer writes `/etc/dpistack/panel.auth`, does not install `argon2` and does not print the panel password (R81).
-- v0.14.0 (slice 24, section 9): the Tests screen (running `bittorrent`, `https`, `all`, the result line by line with a status and a reason, the last result is read from `tests-last.json` and survives a restart of the panel), the Alerts screen (`events.jsonl`, newest first, a filter by check), the "Capture interfaces" block on the Components screen (adding and removing through `ctl iface`).
-- v0.13.0 (slice 23, section 9): `GET /metrics` in Prometheus 0.0.4 format per section 4.9 with the `METRICS_TOKEN` token in the `Authorization: Bearer` header; a metric without data is not printed; the disk is read at most once a second; the token reaches the panel through the file `/etc/dpistack/metrics.token` (`0640 root:dpistack`), not through a flag. The installer no longer prints the token with `--dry-run` (it used to); the final report shows the token together with a ready entry for `scrape_configs`, once, and also on a `reconfigure` that turned the export on.
-- v0.12.0 (slice 22, section 9): the Metrics screen: six charts (packets per second, drops, panel CPU and memory, the size of `eve.json`, free space) for 1, 6 and 24 hours. The package `panel/internal/metrics`: a ring of 24 hours in 30-second steps, a snapshot in `metrics.json` once an hour and on stop, recovery after a restart; a reset of the Suricata counters skips the interval instead of giving a negative value; a series that is unavailable is marked with a reason, not a zero. The panel got the `-metrics-file` flag; the installer creates only that file for the panel user.
-- v0.11.0 (slice 21, section 9): the Events screen: the latest events of `eve.json` by type (`alert` by default), a filter by text and time, raw JSON on click, a live tail over SSE. The package `panel/internal/eve`: reading from a saved offset, rotation without losing events, a broken or incomplete line is skipped, at most 5000 events in memory. The panel got the `-eve-file` flag; with `EVE_FILE=no` it is absent and the screen says that the view is off. `EVE_FILE` now renders the panel unit again on `reconfigure`.
-- v0.10.0 (slice 20, section 9): the Rules screen: sources (enable, disable, add by address, remove your own), groups, turning a rule off and on by `sid`, a search of up to 50 rules, the "Update now" button with a result, a time and the reason of a failure. `ctl rules-sources list --enabled`; `ctl rules-update` prints to stdout what `suricata-update` and the checks said.
-- v0.9.0 (slice 19, section 9): the Configs screen (choosing a file from a list, an editor, "Check", "Save", "Save and apply", "Roll back"). `ctl config-write` got `--check`. The body of `PUT` is limited to 1 MiB.
-- v0.8.0 (slice 18, section 9): the Components and Logs screens. The start, stop, restart and "Reload rules" buttons through `ctl` with a confirmation; stopping and restarting the panel itself need a second confirmation and happen after the answer; a log of the last N lines (up to 1000) and a live tail over SSE. `ctl logs` got the `--until-stdin-closed` key.
-- v0.7.1 (decisions on the open questions of slice 17): in `nginx` mode the services listen on `PORT+10000` behind nginx, which holds `PORT` (both used to want one port); `PANEL_SOURCE=auto` takes a ready `dpistack-panel-linux-<arch>` next to `install.sh` by default and builds otherwise; the release archive now contains ready panel binaries for amd64 and arm64.
-- v0.7.0 (slice 17, section 9): installing the panel with the `panel` step (the binary by `PANEL_SOURCE`, the unit `dpistack-panel.service` with `MemoryMax=64M`, `CPUQuota=20%`, bound by `ACCESS_MODE`), the Overview screen (the overall `overall`, the components, the checks of the watchdog; polling every 10 s on a visible tab only), the resource budget check `scripts/panel-budget.sh` in the gate, `uninstall` removes the unit and the binary of the panel. Fixed: the generated panel password is now printed in the report once (the flag used to be set but never read).
-- v0.6.0 (slice 16, section 9): the panel server in Go (`panel/`): sign-in with argon2id, 12-hour sessions, CSRF, at most 5 sign-in attempts in 5 minutes per IP, an address policy by `ACCESS_MODE`, `GET /api/status` from `ctl status` and `health.json`, a minimal shell (sign-in and an empty Overview), static files embedded in the binary. The password hash is now `-m 14` (16 MiB) instead of 64 MiB: checking a password at 64 MiB did not fit into the panel's `MemoryMax=64M`.
-- v0.5.1 (the owner's answers, section 12.4): Rocky and AlmaLinux from 8, Debian from 12, Ubuntu LTS from 22.04; RHEL and CentOS Stream with a warning; an automatic check of the Suricata releases once a week.
-- v0.5.0 (the Ubuntu, Debian, RHEL platforms, section 18.5): stable versions instead of development builds (Suricata 8.0.7, ntop.org `apt-stable`), `contrib` on Debian, the OISF COPR and `/etc/sysconfig/suricata` on the RHEL family, the EveBox RPM repository, a check of the supported platforms and repositories in `preflight`, removing the panel user on `--purge`.
-- v0.4.0 (real installs on Ubuntu 24.04 and the dnf family, section 18.4): the interface is detected by itself, `iproute2` and `curl` are installed before preflight, nDPI is pinned to 4.14 by default, the nDPI plugin goes to `/usr/lib/suricata`, `make install-conf`, a fall back to the Suricata package where there is no Rust 1.85; the dnf layer (EPEL/CRB, `rpm`, `versionlock`, `firewalld`, `setsebool`, the ntop.org repository) without a check on a real host.
-- v0.3.3 (packages and build, section 18.3): one `apt-get update` at the start of `install`, `reconfigure` and `upgrade`; the base packages and the build dependencies are installed by itself; no Suricata or nDPI package means a build from source; the ntop.org repository for Debian by the release name; Rust 1.85 from `rustc-1.N`; gitleaks in CI as a binary.
-- v0.3.2 (the repeated review, section 18.2): rendering configs keeps permissions (`evebox.yaml`, units and `logrotate` used to get 0600), a failing `run` in a step stops the step, `universe` on Ubuntu only, the `applied` snapshot under the `state` lock.
-- v0.3.1 (slices 14-15 and the full review): alert channels (`log`, `tg`, `mail`, `panel`), `selfinstall` with the `dpistack` command and the control menu; the fixes of section 18.1: `run` returns the real error code, writing files leaves no truncated result, `state` is protected by a lock, the free keys of `dpistack.conf` are checked against patterns, `*_VERSION` for ntopng and EveBox take effect, CI is pinned by SHA.
 
-Changelog of this document:
+Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v54: the same keep-five rule for both changelogs; section 17 is one list (done slices in parentheses, the specifications of the slices still to do below it); every merge into `main` makes a new version and a tag (12.3).
 - v53: v0.33.0. Slice 36 done: the `backup` verbs (4.5), the Backups routes (4.8), 18.36.
 - v52: the status of every slice in one table (section 17), status lines of slices 36 to 45.
 - v51: v0.32.1, D44 and D45 of 18.35; the summary of v0.31.1 and v0.32.0 in 18.35.
 - v50: D43 of 18.35 (the repository links are set by `app.js`).
-- v49: v0.32.0. Section 18.35, rules 6 and 7 of 12.3.
-- v48: v0.31.1. Section 18.34.
-- v40: v0.27.0. Sections 9.1 and 18.31; the panel weight rule (fonts apart); the fonts and icons are no longer "system fonts" and "thin line icons".
-- v39: v0.26.2. Section 18.30.
-- v38: v0.26.1. The policy of confirmations (5.0 and 18.29) replaces "every action asks first".
-- v37: v0.26.0. The uninstall list (5.7), the `self-update` verb and `GET /api/version`, `POST /api/update`, `GET /api/update/job` (4.5, 9), the corner badge, 18.28.
-- v36: v0.25.2. The lock inside one process, the `selfinstall` step before the preflight (5.1 items 4 and 6), `install.finished` in `state`, the panel built in a Go container (9, 2), the nDPI/docker rule in the menu, the decisions of 18.27.
-- v35: v0.25.1. `install.sh` without a command opens the install menu on a terminal (it did already; the usage is printed only without a terminal), an option may come first (`install.sh --fast`), `--fast` opens the short questionnaire at once, the menu names the pair "Suricata with the nDPI plugin" (decisions D1-D4 of 18.26). The `upload-sarif` action is pinned to v4.39.0, and the check of the rendered `suricata.yaml` no longer fails on a missing rule file (issue 45, D5).
-- v34: v0.25.0. The keys `*_ENABLE` of the parts (4.3), the component choice screen, the guided setup and the confirmations (5.0, 5.1), the test hook `DPISTACK_MENU_ASSUME_YES` (11), the decisions of 18.25.
-- v33: v0.24.0. `BIND_ADDR` (4.3, 5), the metrics stack parts `NODE_EXPORTER_*` and `GRAFANA_*` (4.1, 4.3, 5), `dpistack-ctl` removed (4.2, 4.4), the full document restored in English (the Russian text of v31 translated; the contracts of sections 4-12 brought up to date).
-- v32: v0.23.0. `PANEL_EDITION=full|lite` (4.3, 9), the unit limits and `-max-streams` removed, English only program and bilingual guides (13).
-- v31: v0.22.0. The Settings screen and the `settings` verbs (4.5, 4.8, 9), `PANEL_MODE`, `PANEL_RUNTIME=docker`, the package families `zypper`, `pacman`, `generic` (2, 5), the documentation set.
-- v28: slice 30. The single file `dpistack-install.sh` (section 3 and "Slice 30. Result"), `ORIGIN_DIR`, the `bundle` stage of the gate (12), tests in section 11, the review of slice 30 (18.20).
-- v27: slice 29. IPS mode (section 6, 4.5), the `IPS_*` keys are read, the section "Slice 29. Result", tests in section 11, the review of slice 29 (18.19).
-- v26: slice 28. The metrics backend (4.3, 5.1), A10 closed, the retention (4.3), the section "Slice 28. Result", tests in section 11, the review of slice 28 (18.18).
-- v25: slice 27. The Docker runtime (5.1, 4.3, 4.5), A6 stays an assumption, the section "Slice 27. Result", tests in section 11, the review of slice 27 (18.17).
-- v24: slice 26. SELinux and firewalld on the RHEL family, the COPR check by OS version in `preflight` (5.5), the section "Slice 26. Result", new tests in section 11, the review of slice 26 (18.16).
-- v23: slice 25 and R81. The gate got the `conf example` stage (12), a trial run does not touch `panel.auth` and does not print the password (5, item 5, and 4.5), "choose yourself" decisions on the README and the license (slice 25, A11), the review of slice 25 (18.15), R81 closed.
-- v22: slice 24. The answers of `/api/tests/*`, `/api/alerts`, `/api/iface` (4.8; `GET /api/iface` added: the screen needs the list), section 9 "Tests, alerts and interfaces", the flags `-tests-file` and `-events-file` are now always passed, the review of slice 24 (18.14).
-- v21: slice 23. The `/metrics` token: the `Bearer` scheme, the token file, `Content-Type` (4.9), the flags `-metrics-token-file`, `-tests-file`, `-rules-file`, `-disk-paths` and section 9 "Metrics export", `METRICS_TOKEN` affects the `panel` step, the final report (section 5, item 8), the review of slice 23 (18.13).
-- v20: slice 22. The answer of `/api/metrics` (4.8), section 9 "Metrics for charts", the `-metrics-file` flag, the panel writes `metrics.json` (section 3), the review of slice 22 (18.12).
-- v19: slice 21. The `-eve-file` flag (section 9, "Start"), the answers of `/api/eve` and `/api/eve/stream` (4.8), section 9 "EVE events", `EVE_FILE` now affects the `panel` step too (`lib/schema.sh`), the review of slice 21 (18.11).
-- v18: slice 20. `rules-sources list --enabled` and the output of `rules-update` (4.5), the bodies and answers of `/api/rules/*` (4.8), section 9 "Rules in the panel", the review of slice 20 (18.10).
-- v17: slice 19. `config-write --check` (4.5), `GET /api/config` and `POST /api/config/{name}/check` (4.8), section 9 "Config editor", the review of slice 19 (18.9).
-- v16: slice 18. The rules of the components and logs API, the `--until-stdin-closed` key in `ctl logs` (4.5), section 9 "Components and logs", the review of slice 18 (18.8).
-- v15: ports in `nginx` mode (sections 7, 9, 18.7), `PANEL_SOURCE=auto` and ready binaries in the release archive (sections 4.3, 9, 12), open questions 1 and 2 of 18.7 closed.
-- v14: slice 17. Installing the panel and the unit (section 9, "Installing the panel"), the check of Go and of a ready binary in `preflight`, `scripts/panel-budget.sh` in the gate (section 12), what `release.yml` puts into the release archive, the open questions of 18.7.
-- v13: slice 16. The start parameters of the panel and the embedded static files (section 9, section 3), the CSRF scheme and the rule "the last entry of `X-Forwarded-For`" (section 9), argon2id `-m 14` (4.5), the dependencies `golang.org/x/crypto` v0.58.0 and `golang.org/x/sys` v0.49.0, the minimum Go 1.26 (section 2), `actions/setup-go` in `gate` (section 12), the review of the tests: three useless ones removed, the result of the review of slice 16 (18.6).
-- v12: the platforms by the owner's answers (section 1 item 3 and 11, section 2, section 11), "dev" means non-stable versions, the automatic check of Suricata releases (12.4), the rule about Docker images.
-- v11: the project is a full one, not an MVP (section 1, item 11), the platform matrix and its acceptance (section 11), stable channels (5.1), section 18.5.
-- v10: section 18.4 (real installs), `NDPI_VERSION` empty = 4.14 (section 3, keys), automatic detection of `IFACES`, the dnf family in 5.1 and 5.5, `tests/families.bats` in section 11.
-- v9: preparing packages (5.1 step 4a), a fall back to a build from source and the build dependencies (5.5), gitleaks without a third-party action (12.1), the result of the review 18.3; the open item about `apt-get update` from 18.1 closed.
-- v8: protection of the `main` branch and merging through a pull request (12.3), the result of the repeated review (18.2).
-- v7: the order of the branches and merging dev into main (12.3); the full review of the code and CI (18.1); templates of the free keys (4.3), the `ctl` rules for secrets, locks and `logs -n` (4.5), pinning the actions by SHA and checking the tag on `main` (12.1).
-- v6: slices 14 and 15 (alert channels, `selfinstall` and the control menu), CI/CD and security checks (12.1, 12.2), the repository structure is extended with `.github/`, `scripts/security.sh`, `SECURITY.md`. Review and bug hunt: the result is recorded in section 18.
-- v5: decisions on slices 10-13, entered by the owner's permission "choose yourself". (1) Assumption A2 closed: the merged nDPI plugin has no separate `ndpi.*` fields in EVE, nDPI shows through `alert.signature` and `alert.metadata`; the BitTorrent test with the plugin adds its own rule `ndpi-protocol:BitTorrent` (section 10, 4.7). (2) Assumption A8 closed: EveBox and ntopng have no config check mode, non-emptiness is checked (4.5). (3) The format of `tests-last.json` is described (4.6). (4) The state of the applied config is kept in `state` as `applied.<KEY>`, `reconfigure` finds the difference by it (4.2, 4.5). (5) The argon2id hash of the panel password is computed by the `argon2` CLI (4.5). (6) Section 8 is extended: a threshold gives the worse status, the meaning of the `process` and `port` states, `jq` as a dependency. (7) The environment variables for the tests are described in section 11.
-- v4: `install.sh` installs itself as the persistent command `dpistack` (`/usr/local/sbin/dpistack`, the new step `selfinstall`). Without arguments `dpistack` opens the CLI menu: the install if there is no config, otherwise the control menu (Configure, Status, Logs, Tests, Upgrade, Uninstall, Panel password): section 5.2. Section 5 is renumbered (5.0-5.7). A new slice 15 "the persistent `dpistack` command and the control menu"; slices 15-29 are shifted by +1 (now 31 slices, 0-30), stage 4 is renamed "control and panel" (15-25), stage 5 is 26-30.
-- v3: `install` and `reconfigure` are a text menu (section 5.0), not only a linear run over the config. A new slice 9 "the menu of install and reconfigure"; all slices numbered 9 and above are shifted by +1 (there were 28 slices, now 29), the borders of stages 2-5 are recalculated.
-- v2: LXD removed (the runtime is `native` and `docker` only). Added the metrics export `/metrics` and the VictoriaMetrics/Prometheus backends (the `METRICS_*` keys, section 4.9), the `reconfigure` command and the step-by-step description of `install`/`reconfigure` (section 5), EveBox retention, the threat model (section 1), slice 0 (a manual prototype), a README and LICENSE slice. Large slices are split, stage 5 is moved to "after the MVP". Defaults changed: `NDPI_ENABLE=yes`, `SURICATA_SOURCE=source`.
-- v1: the first version. The structure and discipline are taken from the tech.md of the notes site (slices, gate, DoD, `CONTRACT GAP`). The domain, the stack and the contracts are written anew.
 
 ---
 
@@ -639,7 +554,6 @@ The links between the parts and what is checked on each: `suricata` to `evebox` 
 
 `dpistack runtime [--json]` (read only, open to the panel) prints the table above with the runtime of every part now, the flag `mixed` (some parts are containers and some are native) and the list of links `{from, to, what, endpoint, ok}`; `ok` is `true` or `false` when both ends run and `null` when one does not. A refusal of an impossible combination stays where it is (the config check, `preflight` and `mode ips`: nDPI with a Suricata container, IPS with a Suricata container) and names the reason.
 
-
 ## 5. The installer: rules and scenarios
 
 A **step** is a pair of functions `step_<name>_check` (code 0 if the state already matches the config) and `step_<name>_apply`, plus `step_<name>_plan` (one line for dry-run). The order of the steps: `preflight`, `selfinstall`, `ndpi`, `suricata`, `rules`, `redis`, `ntopng`, `evebox`, `metrics`, `nodeexp`, `grafana`, `access`, `panel`, `watch`, `verify`.
@@ -1103,7 +1017,7 @@ Work goes in the `dev` branch, the `main` branch holds only the tested state:
 2. The commit must pass the checks: locally `scripts/gate.sh` (`shfmt`, `shellcheck`, `scripts/security.sh`, `scripts/check-conf-example.sh`, `bats`), on GitHub the workflows `ci` and `security` for that commit.
 3. While at least one check is red or not finished, nothing is merged into `main`.
 4. When everything is green, a PR `dev` -> `main` is opened and merged with a merge commit (not squash, not rebase) with a message like `merge dev into main: <what went in>`; there are no direct commits to `main`.
-5. A release is made by the tag `vX.Y.Z` on `main` (12.1: a tag not on `main` is not published). Releases and tags exist for every version (v0.22.0 and later made at the time, v0.2.0-v0.25.2 added afterwards at the last commit of each version and marked "not latest"); the tag must equal `DPISTACK_VERSION` of the tagged commit. Since v0.26.0 the release is also what the panel's update check reads (`releases/latest`): a version without a published release (not a draft, not a pre-release) is never offered as an update, so every merge of a new version into `main` is followed by the release `vX.Y.Z` on that merge commit.
+5. Every merge into `main` is a new version, with no exception (owner's rule, v0.33.0): the PR raises `DPISTACK_VERSION` in `lib/common.sh` and the program version at the top of this file (and the program changelog, which keeps five entries), and right after the merge the tag `vX.Y.Z` and the GitHub release `vX.Y.Z` are made on the merge commit. A merge that does not change the version is not made; a version that was merged is never reused. The tag must be on `main` (12.1: a tag not on `main` is not published) and must equal `DPISTACK_VERSION` of the tagged commit. Since v0.26.0 the release is also what the panel's update check reads (`releases/latest`): a version without a published release (not a draft, not a pre-release) is never offered as an update. Releases and tags exist for every version (v0.2.0-v0.25.2 were added afterwards at the last commit of each version and marked "not latest").
 
 If a merge gives a conflict, it is resolved in `dev`, after which the checks pass again.
 
@@ -1198,34 +1112,97 @@ Do not write code with an invented contract. Do not extend the key schema, the l
 
 ---
 
-## 17. Stages and slices, assumptions
+## 17. Slices and assumptions
 
-The order is strict, from the top down. One slice per session. A slice is closed when the Definition of Done of section 14 is met (for slices 0 and 25 the acceptance criteria, with no gate). A slice is vertical: from a config key to a visible result.
+One list. A slice in parentheses is done; every other slice is still to do and carries its specification below. The order is strict, from the top down, one slice per session. A slice is closed when the Definition of Done of section 14 is met. A slice is vertical: from a config key to a visible result. Slice 31 was never used. The detail of a done slice is in the sections 4 to 12 (contracts), in section 18 (reviews) and in the git history; the program changelog at the top keeps only the last five entries.
 
-*A note on names (v0.24.0): the texts of the slices below are the history of how the project was built and keep the names of that time. The command `dpistack-ctl` of those slices is today the set of verbs of `dpistack` (4.5); there is no separate program, and the messages quoted in Russian in the original are the English messages of the program now.*
+### The slices
 
-- **Stage 0, the prototype.** Slice 0.
-- **Stage 1, the skeleton.** Slice 1.
-- **Stage 2, the core on the host (native).** Slices 2-9.
-- **Stage 3, checks and watching.** Slices 10-14.
-- **Stage 4, control and the panel.** Slices 15-25. **The end of stage 4 = a working panel.**
-- **Stage 5, platforms and extensions.** Slices 26-30; slice 26 (the RHEL family) goes first.
+- (Slice 0: the manual prototype)
+- (Slice 1: the skeleton, v0.1.0)
+- (Slice 2: Suricata (IDS) from packages, EVE, systemd, logrotate, v0.1.0)
+- (Slice 3: rules, v0.1.0)
+- (Slice 4: nDPI and Suricata from source, v0.1.0)
+- (Slice 5: Redis and ntopng, v0.1.0)
+- (Slice 6: EveBox, v0.1.0)
+- (Slice 7: access (localhost, lan, nginx), firewall, v0.1.0)
+- (Slice 8: reconfigure, upgrade, uninstall, v0.2.0)
+- (Slice 9: the install and reconfigure menu, v0.2.0)
+- (Slice 10: `dpistack-ctl`, status, control, logs, v0.3.0)
+- (Slice 11: `dpistack-ctl`, configs, rules, iface, reconfigure, v0.3.0)
+- (Slice 12: the BitTorrent and HTTPS tests, v0.3.0)
+- (Slice 13: the watchdog, v0.3.0)
+- (Slice 14: alert channels, v0.3.1)
+- (Slice 15: the persistent command `dpistack` and the control menu, v0.3.1)
+- (Slice 16: the panel, the server, sign-in, security, v0.6.0)
+- (Slice 17: the panel, the install and Overview, v0.7.0)
+- (Slice 18: components and logs, v0.8.0)
+- (Slice 19: the config editor, v0.9.0)
+- (Slice 20: rules in the panel, v0.10.0)
+- (Slice 21: EVE events, v0.11.0)
+- (Slice 22: metrics, charts, v0.12.0)
+- (Slice 23: the `/metrics` export, v0.13.0)
+- (Slice 24: tests, alerts, interfaces in the panel, v0.14.0)
+- (Slice 25: README and LICENSE, v0.15.0)
+- (Slice 26: the RHEL family and SELinux (a required platform), v0.16.0)
+- (Slice 27: the Docker runtime, v0.17.0)
+- (Slice 28: the metrics backend, VictoriaMetrics and Prometheus, v0.18.0)
+- (Slice 29: IPS mode, v0.19.0)
+- (Slice 30: the single file, v0.20.0)
+- (Slice 32: no panel budget, v0.28.0)
+- (Slice 33: runtimes, the matrix and the links, v0.28.0)
+- (Slice 34: users, roles and permissions, v0.29.0)
+- (Slice 35: the audit log and login history, v0.30.0)
+- (Slice 36: backup and restore, v0.33.0)
+- Slice 37: the shell of the panel. (Done: the corner, the Build info window, the look, v0.32.0; readable Audit actions, v0.32.1.) To do: see below.
+- Slice 38: Overview v2, System health and topology
+- Slice 39: Traffic Explorer
+- Slice 40: the Events workspace and exceptions
+- Slice 41: Rules v2
+- Slice 42: the IPS page
+- Slice 43: the Alert Center
+- Slice 44: Settings v2
+- Slice 45: security of the panel
 
-### Status of the slices (v52, 2026-11-03, program v0.32.1)
+### To do: the specifications
 
-| slices | status |
-| --- | --- |
-| 0 | done: the prototype |
-| 1 | done: the skeleton |
-| 2-9 | done: the core on the host (stage 2) |
-| 10-14 | done: checks and watching (stage 3) |
-| 15-25 | done: control and the panel (stage 4, the end of it is a working panel) |
-| 26-30 | done: platforms and extensions (stage 5): RHEL family, Docker runtime, metrics backend, IPS mode, the single file |
-| 31 | there is no section for slice 31 in this file: the numbering goes from 30 to 32 |
-| 32-35 | done: no panel budget and runtimes (v0.28.0), users and roles (v0.29.0), the audit log (v0.30.0) |
-| 36 | done in v0.33.0: backup and restore (verbs and the Backups screen). The version numbers in the headings of 37 to 45 were a plan and are not binding |
-| 37 | partly done: the corner (Translation placeholder, version chip, GitHub, Exit), the Build info window and the look (v0.32.0, 18.35), readable Audit actions (v0.32.1). Not done: the sidebar in groups, the host, state, mode and alert bell in the top bar, the theme switch, the collapsible sidebar, routes by hash, hiding sections by permission |
-| 38-45 | not started: Overview v2 and topology, Traffic Explorer, the Events workspace, Rules v2, the IPS page, the Alert Center, Settings v2, security of the panel |
+Decided on the request of 2026-10-31 (`todo.md`), "choose yourself". General rules for all of these slices: (1) Nothing is shown that the program cannot really do: the IPS page does not say "dry run" unless a drop is really tested (slice 42 calls what it does a "rule test"). (2) Every change of the system goes through a verb of section 4.5; the panel never writes outside `/var/lib/dpistack`. (3) Every action that changes something is written to the audit log (slice 35) with the user, the time, the address and the result. (4) The permission of the user is checked in the panel for every route (slice 34), the verbs trust the panel. (5) There are no resource budgets for the panel. (6) New screens follow the design of 9.1 and work in both themes.
+
+#### Slice 37: the shell of the panel (to do)
+
+**What is left:** the sidebar in groups (Monitoring: Overview, Traffic, Events, Alerts; Protection: Rules, IPS, Exceptions; System: Components, Interfaces and topology, Health, Backups, Updates; Admin: Settings, Users, Audit, Security), a top bar (host, state, mode, alert bell, user menu, theme), a collapsible sidebar, routes by hash, and the permission-aware hiding of sections.
+
+#### Slice 38: Overview v2, System health and topology
+
+**What it does:** Overview with four state cards, the traffic graph, events by severity, components with version and last check, recent events, warnings (packet drops, a stale rules update, a missing capture); `GET /api/system` (CPU, memory, disk, load, interfaces with speed and counters, docker and systemd state); the interface page with the capture flag and a simple topology (host, interfaces, Suricata, outputs).
+
+#### Slice 39: Traffic Explorer
+
+**What it does:** devices (by IP and MAC when seen), applications (nDPI `app_proto`/`ndpi` fields), domains (DNS, TLS SNI), connections (flow events), per-device detail, filters and a link to ntopng. The data comes only from EVE events and the counters the panel already reads; where the data is not there (no flow events, no nDPI) the page says exactly that.
+
+#### Slice 40: the Events workspace and exceptions
+
+**What it does:** filters (IP, SID, category, protocol, severity, domain, time), grouping, related events by `flow_id`, a detail panel, the history of one SID, export JSON/CSV, and "create an exception" from an event: a threshold or suppress entry with an expiry and the narrowest scope (SID plus source or destination), stored in the exceptions file that the rules step renders.
+
+#### Slice 41: Rules v2
+
+**What it does:** counts per source (total, enabled, disabled), the date and the history of updates, SID descriptions, search by category, provider and text, a custom rules editor (`local.rules`) with validation by `suricata -T` on a temporary copy, a SID conflict check and a change history.
+
+#### Slice 42: the IPS page
+
+**What it does:** mode and method, NFQ state, packets processed and dropped, the number of drop rules, the latest blocking events, the rollback state, and readiness checks (the iptables or nft chain, the queue, the confirmation timer). The "rule test" replays a controlled pcap through Suricata offline with the chosen rules and reports which rules would drop; it never touches live traffic.
+
+#### Slice 43: the Alert Center
+
+**What it does:** alerts of the watchdog and of Suricata with states: new, acknowledged, snoozed until, resolved; history and filters. State lives in `/var/lib/dpistack/alerts-state.json`.
+
+#### Slice 44: Settings v2
+
+**What it does:** categories, the standard and advanced levels, three columns, search, a diff of the staged change before it is applied, profiles (named sets of keys saved and applied), and for every key the default, the allowed values, the dependencies and what is restarted.
+
+#### Slice 45: security of the panel
+
+**What it does:** the list of own sessions with a revoke button, API tokens (read only or by role), rotation of the session secret, login history, and a security check (access mode, TLS, default ports, users without a recent login, rule file permissions) shown as a list with a fix hint.
 
 ### Assumptions that need checking (not frozen)
 
@@ -1242,751 +1219,6 @@ The order is strict, from the top down. One slice per session. A slice is closed
 | A9 | The retention mechanism of EveBox (`EVEBOX_RETENTION_DAYS`): a built-in setting or a periodic cleanup | 0, 6 |
 | A10 | The source of the VictoriaMetrics and Prometheus binary for `native` and the check of the checksum. **Closed in v26:** the GitHub releases of the projects (`VictoriaMetrics/VictoriaMetrics`: `victoria-metrics-linux-<arch>-<version>.tar.gz` and `_checksums.txt`; `prometheus/prometheus`: `prometheus-<version>.linux-<arch>.tar.gz` and `sha256sums.txt`); the file names and sums were taken from the real releases, v1.153.0 and v3.15.0 are pinned (older than two weeks on 2026-10-18, a newer one is not taken). node_exporter (v1.12.1, taken the same way on 2026-10-25) follows the same rule; Grafana has no GitHub release, so its tarball sum is read from the vendor file next to it | 28 |
 | A11 | The type of the license is chosen by the owner. There is no answer: the repository holds MIT (Copyright 2026 FlexEbat), it stays until the owner says otherwise | 25 |
-
----
-
-### Slice 0: the manual prototype
-
-There is no code. On a clean test machine (Ubuntu LTS) the whole bundle is brought up by hand by the documentation of the components. The result: `docs/prototype.md` and `tests/data/bittorrent.pcap` with `tests/data/README.md`.
-
-**Acceptance criteria:**
-
-1. For the assumptions A2, A3, A4, A5, A9 an answer is recorded with commands and output. The owner updates `tech.md` to v3 and removes them from the table.
-2. The real names of the nDPI fields in EVE for `alert` and `netflow` are recorded on the example of BitTorrent and TLS.
-3. `bittorrent.pcap` on replay (`suricata -r`) gives an ET P2P signature and/or the nDPI protocol `BitTorrent`. The way of recording is described.
-4. The list of the packages, repositories and versions that were needed is recorded, and the time of building Suricata from source on the test machine.
-
-**Do not:** scripts, templates, automation.
-
----
-
-### Slice 1: the skeleton
-
-**What to build:**
-
-- The tree of section 3 with empty steps (each prints `plan` and `no changes`).
-- `lib/paths.sh`, `lib/common.sh` (`run`, `log`, `die`, `lock`, `atomic_write`, `backup`), `lib/os.sh` (OS detection, `pkg_*` for apt and dnf), `lib/state.sh`.
-- `lib/schema.sh` with the full table of 4.3 (including the column of the affected steps of 5.3) and `lib/config.sh`: layers, the check, basic and advanced questions, saving, the diff.
-- `install.sh` with all the commands and options of 4.4.
-- `dpistack.conf.example`, `scripts/gate.sh`, `tests/mocks/`.
-
-**Acceptance criteria:**
-
-1. `scripts/gate.sh` is green on the skeleton.
-2. `install.sh install --dry-run -y` passes all the steps, changes nothing, code 0.
-3. An unknown key, a value outside the options, `EVEBOX_DB=elasticsearch` without `EVEBOX_ES_URL`, `METRICS_BACKEND=victoriametrics` with `METRICS_EXPORT=no` give code 2 and a clear message.
-4. The values that only the next slice implements are refused with the message `not supported yet` (there are none now).
-5. The interactive mode saves the answers into `dpistack.conf`, a repeated `-y` gives the same config.
-6. `os.sh` detects `apt` for Ubuntu/Debian and `dnf` for Fedora/RHEL/Rocky/Alma correctly by the stubs of `os-release`, `ID_LIKE` included.
-7. Secrets from `--set ALERT_TG_TOKEN=...` go to `secrets.conf` (0600), not to `dpistack.conf` and not to the output.
-8. Two simultaneous runs: the second exits with code 1 because of the lock.
-9. `reconfigure --dry-run` on stubs prints the diff of keys and the list of the affected steps by the table of 5.3.
-
-**Tests:** `tests/config.bats`, `tests/os.bats`, `tests/dryrun.bats`, `tests/lock.bats` by criteria 2-9.
-
-**Do not:** a real install of anything, templates, the panel.
-
----
-
-### Slice 2: Suricata (IDS) from packages, EVE, systemd, logrotate
-
-**Files:** `lib/step_suricata.sh`, `lib/step_preflight.sh`, `lib/runtime_native.sh`, `templates/suricata.yaml.tpl`, `templates/logrotate.tpl`.
-
-**What it does:** a real `preflight`; installing Suricata with `SURICATA_SOURCE` of `distro`/`oisf` (adding a repository through `pkg_repo_add`); rendering `suricata.yaml` (af-packet by `IFACES`, EVE by `EVE_TYPES`, `stats`, `HOME_NET`); logrotate; `systemctl enable --now`. Until slice 4 the values `SURICATA_SOURCE=source` and `NDPI_ENABLE=yes` are refused as `not supported yet`, the tests run with `--set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no`.
-
-**Acceptance criteria:**
-
-1. `suricata -T` passes on the rendered config.
-2. Two interfaces in `IFACES` give two `af-packet` blocks with different `cluster-id`.
-3. `EVE_TYPES=alert,dns` gives only those types in the config; `stats` is there if it is in the list.
-4. `eve.json` grows with traffic on the interface, `stats` arrives every `STATS_INTERVAL_SEC`, the permissions of the file are `0640`.
-5. A non-existent interface stops `preflight` before the packages are installed, code 3.
-6. A repeated run: no changes. A hand-edited file is not overwritten without `--force`; with `--force` there is a backup.
-7. `PIN_VERSIONS=yes` pins the package (`apt-mark hold` or `versionlock`).
-
-**Tests:** `tests/suricata_step.bats` by criteria 2, 3, 5, 6, 7 (on stubs).
-
-**Do not:** rules, nDPI, IPS, access over the network.
-
----
-
-### Slice 3: rules
-
-**Files:** `lib/step_rules.sh`, the units `dpistack-rules.{service,timer}`.
-
-**What it does:** installing `suricata-update`, the sources from `RULES_SOURCES` and `RULES_URLS`, `enable.conf` from `RULES_GROUPS`, the timer, a safe update with a rollback.
-
-**Acceptance criteria:**
-
-1. After the install `suricata.rules` exists, `suricata -T` passes, the p2p and policy groups are on.
-2. `RULES_UPDATE_CALENDAR=daily` changes `OnCalendar` in the unit.
-3. A failed `suricata -T` after an update restores the previous set, the exit code is not 0.
-4. `RULES_UPDATE=off` creates no timer.
-5. Your own URL in `RULES_URLS` is registered as a source and gets into the set.
-
-**Tests:** `tests/rules_step.bats` by criteria 2-5.
-
-**Do not:** the interface for managing rules (slice 20).
-
----
-
-### Slice 4: nDPI and Suricata from source
-
-**Files:** `lib/step_ndpi.sh`, an addition to `step_suricata.sh`, `templates/suricata.service.tpl`.
-
-**What it does:** with `NDPI_ENABLE=yes` builds or installs nDPI, with `SURICATA_SOURCE=source` builds Suricata with `--enable-ndpi`, connects `ndpi.so`. The default values become workable.
-
-**Acceptance criteria:**
-
-1. `suricata --build-info` shows nDPI support, `ndpi.so` is found, Suricata starts with the plugin.
-2. A rule with `requires: keyword ndpi-protocol; ndpi-protocol:TLS;` loads and fires on test TLS traffic.
-3. `NDPI_ENABLE=yes` with `SURICATA_SOURCE=oisf` and no `ndpi.so` in the non-interactive mode stops with code 2 and a text about `SURICATA_SOURCE=source`.
-4. An incompatible version of nDPI is visible as a `configure` error in the output, the install does not continue.
-5. The real names of the nDPI fields in EVE from the report of slice 0 are entered into 4.7 through `CONTRACT GAP` (assumption A2).
-6. A repeated run does not rebuild what is already built of the same version.
-
-**Tests:** `tests/ndpi_step.bats` by criteria 3, 6.
-
-**Do not:** ntopng, own builds of other components.
-
----
-
-### Slice 5: Redis and ntopng
-
-**Files:** `lib/step_redis.sh`, `lib/step_ntopng.sh`, `templates/ntopng.conf.tpl`.
-
-**What it does:** the ntop repository, the package `ntopng`, Redis, a config with `NTOPNG_IFACES` and `NTOPNG_PORT`, bound to `127.0.0.1` until slice 7.
-
-**Acceptance criteria:**
-
-1. `ntopng` and `redis` are active, the port `NTOPNG_PORT` listens on `127.0.0.1`.
-2. `NTOPNG_IFACES` equals `IFACES` by default, an explicit value overrides.
-3. The default administrator password does not stay in a working state (assumption A4): either it is set by the installer, or ntopng is limited to `127.0.0.1` with a warning.
-4. A repeated run: no changes.
-
-**Tests:** `tests/ntopng_step.bats` by criteria 2, 4.
-
-**Do not:** ntopng Enterprise, licenses.
-
----
-
-### Slice 6: EveBox
-
-**Files:** `lib/step_evebox.sh`, `templates/evebox.yaml.tpl`.
-
-**What it does:** the package from the EveBox repository, `evebox.yaml`, reads `eve.json` (SQLite) or writes to Elasticsearch, the unit, retention by `EVEBOX_RETENTION_DAYS`.
-
-**Acceptance criteria:**
-
-1. `evebox` is active, the port `EVEBOX_PORT` listens on `127.0.0.1`, an alert from `eve.json` is visible in the interface.
-2. `EVEBOX_DB=elasticsearch` without an available `EVEBOX_ES_URL` stops the install before the unit starts.
-3. With `EVE_FILE=no` and `EVEBOX_DB=sqlite` the step says that EveBox will not be able to read events and requires a confirmation.
-4. Events older than `EVEBOX_RETENTION_DAYS` are deleted by the mechanism chosen under assumption A9; `0` turns deletion off. The way was checked on test data with old time marks.
-5. A repeated run: no changes.
-
-**Tests:** `tests/evebox_step.bats` by criteria 2, 3, 5.
-
-**Do not:** the EveBox agent, EveBox authentication.
-
----
-
-### Slice 7: access (localhost, lan, nginx), firewall
-
-**Files:** `lib/step_access.sh`, `templates/nginx.conf.tpl`.
-
-**What it does:** binding all the web interfaces by `ACCESS_MODE`. `lan`: bind to `0.0.0.0`, with `FIREWALL_MANAGE=auto` only `LAN_CIDR` is allowed. `nginx`: nginx listens on the public port of the interface (`NTOPNG_PORT`, `EVEBOX_PORT`, `PANEL_PORT`) on all addresses, and the service itself listens on `127.0.0.1:<port>+10000` (two sockets on one port would give `EADDRINUSE`; the config in this mode requires ports not above 55535, the rule is in `access_backend_port`, the same formula is repeated by the watchdog and by `preflight`, which checks both ports), one `server` per interface with its own port (no subpaths are used), `allow LAN_CIDR; deny all`, TLS by `NGINX_TLS`. `NGINX_MANAGE=snippet` writes a file into `/var/lib/dpistack/nginx/` and prints the command to include it. Since v0.24.0 `BIND_ADDR` narrows the bind of `localhost` and `lan` to one address of the host (4.3).
-
-**Acceptance criteria:**
-
-1. `localhost`: no interface listens on anything but `127.0.0.1` (`ss -ltn`).
-2. `lan`: the interfaces listen on `0.0.0.0`, the installer prints a warning about visibility and about a password over HTTP.
-3. `nginx` with `snippet` does not touch the system `nginx.conf` and does not reload nginx.
-4. `nginx -t` passes on the rendered config (the check in an isolated directory).
-5. `NGINX_TLS=existing` without `NGINX_CERT` and `NGINX_KEY` gives code 2.
-6. A mode other than `localhost` is not applied without a confirmation of the warning (code 2).
-7. On SELinux systems the step reports the needed `setsebool` and applies them, and `semanage port` for the nginx ports is done by slice 26.
-
-**Tests:** `tests/access_step.bats` by criteria 1, 3, 5, 6.
-
-**Do not:** SSO, basic auth, automatic getting of certificates.
-
----
-
-### Slice 8: reconfigure, upgrade, uninstall
-
-**What it does:** the real commands `reconfigure`, `upgrade`, `uninstall`, `uninstall --purge` by sections 5.3 and 5.7.
-
-**Acceptance criteria:**
-
-1. `reconfigure` without `dpistack.conf` exits with code 2; with no changes in the keys it prints `no changes`, code 0.
-2. A change of `IFACES` renders `suricata.yaml` and `ntopng.conf` again, restarts both components and does not touch the other steps.
-3. A change of a "heavy" key (`SURICATA_SOURCE`, `*_VERSION`) without a confirmation is not applied; with `-y` without `--force` too.
-4. A failed `suricata -T` at `reconfigure` keeps the previous `suricata.yaml` and `dpistack.conf`, code 1, the output of the check is shown.
-5. A hand-edited file is not overwritten at `reconfigure` without `--force`.
-6. `uninstall` stops and disables the units of the bundle, removes the units and binaries of the bundle, keeps the configs and data of the components; `--purge` removes them too, but not the packages installed not by the installer.
-7. `upgrade` with `PIN_VERSIONS=yes` does not change the pinned packages; without pinning it updates.
-8. `uninstall` on a clean system ends with code 0 and the message `nothing to remove`.
-9. `install`, `uninstall --purge`, `install` gives the same result as the first install.
-
-**Tests:** `tests/reconfigure.bats`, `tests/uninstall.bats` by criteria 1-8.
-
-**Do not:** a rollback of `upgrade`.
-
----
-
-### Slice 9: the install and reconfigure menu
-
-**Files:** `lib/menu.sh`, a refinement of `install.sh`.
-
-**What it does:** the menu of sections 5.0-5.1 and 5.3 on top of the schema, the config, the steps and the `reconfigure` of slices 1 and 8. Applying goes with the same functions as with `-y`. The control menu (5.2) and the persistent command `dpistack` are a separate slice 15.
-
-**Acceptance criteria:**
-
-1. `install.sh install` on a terminal (or with `DPISTACK_INPUT`) shows the main menu with the sections of 5.0; `-y` does not show a menu.
-2. Without a terminal, without `DPISTACK_INPUT` and without `-y` the installer exits with code 2 and a hint about `-y`.
-3. Editing a key is checked by the schema at once: a wrong value is refused with the list of the allowed ones, the previous value stays; Enter keeps the value, `-` resets to the default, `?` shows the hint.
-4. Markers: `*` at the keys that differ from the defaults; in `reconfigure` `~` at those that differ from the applied; `!` at the keys with an error.
-5. The items "Install" (`i`) and "Apply" (`a`) are unavailable while the main menu has problems; the summary of problems shows the cross errors (for example, `METRICS_BACKEND` with `METRICS_EXPORT=no`).
-6. "Quick install" shows the found interfaces without `lo`, marks the default-route interface, accepts numbers separated by commas and writes the names into `IFACES`.
-7. With an existing `dpistack.conf` `install` shows the screen "Installation found" and does not overwrite the config silently.
-8. The draft `dpistack.conf.draft` is created after every change, holds no secrets, at the next start it is offered to continue; `dpistack.conf` does not change before applying.
-9. `q` with unapplied edits asks for a confirmation; `Ctrl+C` ends the work with no changes to the system and no temporary files.
-10. Secrets are typed without echo and in the screens, the summary and the diff they are shown as `set` or `not set`.
-11. `reconfigure`: the items `d` (the diff with a light or heavy mark), `a`, `r`, `s`, `t` work; a failed check at `a` leaves the menu open with the edits.
-12. `NO_COLOR` and `--no-color` remove the ANSI sequences from the output.
-
-**Tests:** `tests/menu.bats` by criteria 1-5, 7-12 (input from the file `DPISTACK_INPUT`, the result is checked by the saved files and the output, not by the number of calls).
-
-**Do not:** `dialog`, `whiptail`, ncurses, cursor sequences, a mouse, themes.
-
----
-
-### Slice 10: `dpistack-ctl`, status, control, logs
-
-**Files:** `bin/dpistack-ctl` (the commands `status`, `start|stop|restart`, `reload`, `logs`, `version`; today `lib/ctl.sh`), `templates/sudoers.tpl`, a part of the `panel` step (the user `dpistack`, sudoers).
-
-**Acceptance criteria:**
-
-1. `status --json` gives valid JSON with all the installed components of 4.1 and the field `ndpi_plugin`.
-2. `start|stop|restart` works through the runtime of the component; an `<id>` outside the list gives code 5, a missing component code 4.
-3. `logs <id> -n 5000` gives code 2 (the limit is 1000); `logs --follow` ends when the output stream is closed.
-4. Arguments with shell metacharacters give code 5 with no execution.
-5. The user `dpistack` calls `sudo -n dpistack-ctl status` without a password and cannot call other commands through `sudo`.
-
-**Tests:** `tests/ctl_basic.bats` by criteria 1-4.
-
-**Do not:** configs, rules, `iface`, `test`, `health`, `mode`, `reconfigure`.
-
----
-
-### Slice 11: `dpistack-ctl`, configs, rules, iface, reconfigure
-
-**What it does:** `config-read`, `config-write`, `config-revert`, `reconfigure`, `rules-*`, `iface`, `panel-passwd`.
-
-**Acceptance criteria:**
-
-1. `config-write`, on a failed check, does not change the file, gives code 3 and the output of the check; on success it makes a backup and an atomic replace.
-2. `config-revert` restores the latest backup.
-3. `config-write dpistack.conf --apply` calls `reconfigure`; `reconfigure` on a heavy change refuses with code 3 and a text about `install.sh reconfigure`.
-4. `rules-sid` with a non-numeric argument and `config-read` with a name outside the list give code 5 with no execution.
-5. `iface add` and `iface remove` change `IFACES` and call `reconfigure`; removing the last interface is refused; a hand-edited `suricata.yaml` is not overwritten (rule 5.4).
-6. `rules-group`, `rules-sources`, `rules-search` edit and read the same files as the `rules` step.
-7. `panel-passwd` writes an argon2id hash, the permissions of `panel.auth` are `0640 root:dpistack`, the password does not get into the output and the log.
-8. The syntax check of `evebox.yaml` and `ntopng.conf` is implemented under assumption A8 and written into the report.
-
-**Tests:** `tests/ctl_config.bats` by criteria 1-7.
-
-**Do not:** `test`, `health`, `mode`.
-
----
-
-### Slice 12: the BitTorrent and HTTPS tests
-
-**Files:** `dpistack-ctl test`, `templates/suricata-test.yaml.tpl`, `lib/step_verify.sh`.
-
-**Acceptance criteria:**
-
-1. `test bittorrent` gives `pass` with the `emerging-p2p` group on and with the nDPI plugin loaded, each separately.
-2. Without the p2p rules and without the plugin: `skip` with a reason, code 0.
-3. The main `eve.json` did not change after `test bittorrent` (a comparison of the size).
-4. `test https` gives `pass` when `curl` causes a `tls` event with the right `tls.sni`, and `fail` with a clear reason when there is no event (the interface is not the one, curl failed).
-5. `tests-last.json` holds the result of the last run.
-6. `verify` runs `all` with `TEST_ON_INSTALL=yes`; `fail` does not cancel the install and goes into the final report.
-
-**Tests:** `tests/test_cmd.bats` by criteria 2, 3, 4, 5 (on the stubs `suricata` and `curl`, ready `eve.json`).
-
-**Do not:** real torrents, downloading files.
-
----
-
-### Slice 13: the watchdog
-
-**Files:** `bin/dpistack-watch`, the `watch` step, the units `dpistack-watch.{service,timer}`, `ctl health`.
-
-**Acceptance criteria:**
-
-1. Every check of section 8 writes `status` by the thresholds of the config (tests on the borders: a value exactly at a threshold).
-2. Stopping `suricata` gives `suricata.process=crit` in one run.
-3. An `eve.json` older than `WATCH_EVE_STALE_SEC` gives `crit`; with `EVE_FILE=no` or without `stats` in `EVE_TYPES` the checks get `na`, `overall` ignores them.
-4. A reset of the cumulative `stats` counters (a new value lower than before) does not give a false drop rate.
-5. `disk.free` takes the minimum over several partitions and names the worst path in `detail`.
-6. `health.json` is valid, written atomically, `since` changes only on a status change.
-7. `WATCH_AUTORESTART=yes` restarts a failed component no more than 3 times an hour.
-8. `dpistack-ctl health` makes one run and prints the same JSON.
-
-**Tests:** `tests/watch.bats` by criteria 1, 3, 4, 5, 6, 7.
-
-**Do not:** alerts (slice 14), collecting series for charts.
-
----
-
-### Slice 14: alert channels
-
-**What it does:** the channels `panel`, `log`, `tg`, `mail` in `dpistack-watch`.
-
-**Acceptance criteria:**
-
-1. A change `ok -> warn` sends one message to each channel of `ALERT_CHANNELS`, a change back sends a recovery message.
-2. While the status is not `ok`, a repeat goes no more often than `WATCH_REPEAT_MIN`.
-3. `ALERT_CHANNELS=panel,tg` writes nothing to the journal and sends no mail; a failure of `tg` does not stop the write into `events.jsonl`.
-4. An empty `ALERT_TG_TOKEN` with `tg` in the list: the installer stops the configuration with code 2, the watchdog on the fly writes the channel error to the journal and goes on.
-5. The token and the SMTP password do not appear in the journal, `--dry-run` and `events.jsonl`.
-
-**Tests:** `tests/alerts.bats` by criteria 1-5 (the stubs `curl` and `logger`).
-
-**Do not:** routing by severity, quiet hours, escalation.
-
----
-
-### Slice 15: the persistent command `dpistack` and the control menu
-
-**Files:** `lib/step_selfinstall.sh`, a refinement of `install.sh` and `lib/menu.sh` (the main install menu is already there from slice 9, the control menu and the "Configure" screen without a quick install are new).
-
-**What it does:** the `selfinstall` step (section 5, the note before 5.0) copies `install.sh`, `lib/*.sh`, `templates/*` into `/usr/local/lib/dpistack/installer/` and puts the executable file at `/usr/local/sbin/dpistack`. The binary `dpistack` with no arguments shows the install menu (if there is no config) or the control menu (5.2), relying on `dpistack-ctl` (slices 10-11) for the status, logs and tests. The subcommands `dpistack status|test|logs|upgrade|uninstall|reconfigure`.
-
-**Acceptance criteria:**
-
-1. After `install.sh install` on a clean system `/usr/local/sbin/dpistack` exists, is executable, and `dpistack --dry-run status` (or an equivalent) gives the same result as the original `install.sh` of the same commit.
-2. A second run of `install.sh install` (or `dpistack install`): the `selfinstall` step does not copy files again if their hash did not change ("no changes"); a changed `install.sh` in the source (a new version of the bundle) is copied over.
-3. The binary `dpistack` with no arguments, with an existing `dpistack.conf`, shows the control menu (the items "Configure", "Component status", "Logs", "Run tests", "Upgrade packages", "Uninstall", "Panel password"), not the install menu.
-4. The binary `dpistack` with no arguments, with no `dpistack.conf`, shows the install menu, like `install.sh install` on a fresh system.
-5. In the control menu: "Component status" calls `dpistack-ctl status` and shows the result line by line; "Logs" lets you choose a component by a number and calls `dpistack-ctl logs <id> -n 200`; "Run tests" calls `dpistack-ctl test all`. An unavailable or failed `dpistack-ctl` shows the reason and returns to the control menu without ending `dpistack`.
-6. "Configure" from the control menu and the command `dpistack reconfigure` open the same screen of the config sections (5.3); from the control menu this screen has the item "Back", with a direct call it does not.
-7. "Uninstall" in the control menu requires typing the word `remove`; a wrong input or an empty line return to the menu with no changes; a confirmed input offers a choice of a normal removal or `--purge` and calls the matching flow of 5.7.
-8. The explicit command `dpistack install` (or `install.sh install`) with an existing `dpistack.conf` shows the screen "Installation found" with the items "configure", "apply the current config again", "open the control menu", "quit", and not the control menu at once.
-9. The non-interactive subcommands `dpistack status`, `dpistack test bittorrent`, `dpistack logs suricata -n 50` return the same exit code and output as a direct call of `dpistack-ctl` with the same arguments.
-10. `uninstall` removes `/usr/local/sbin/dpistack` and `/usr/local/lib/dpistack/installer/`; after that `dpistack` is not found in `PATH`.
-
-**Tests:** `tests/dpistack_cmd.bats` by criteria 2, 3, 4, 6, 7, 9, 10 (stubs of `dpistack-ctl`, input from `DPISTACK_INPUT`).
-
-**Do not:** shell completion, a man page, a change of the user's `PATH`, anything specific to a shell (`zsh`, `fish`).
-
----
-
-### Slice 16: the panel, the server, sign-in, security
-
-**Files:** `panel/cmd/panel/main.go`, `panel/internal/{api,auth,ctl,health}/`, a minimal shell `panel/web/` (the sign-in page and an empty Overview).
-
-**What it does:** the server, sign-in, sessions, CSRF, the restriction by IP, `GET /api/status`. It is started by hand, the install is in slice 17.
-
-**Acceptance criteria:**
-
-1. Without a session any `/api/*` except `POST /api/login` gives 401.
-2. A wrong password gives 401; the sixth attempt in 5 minutes from one IP gives 429.
-3. A changing request without a right `X-CSRF-Token` gives 403.
-4. A client outside `LAN_CIDR` with `lan` and outside `127.0.0.1` with `localhost` gets 403; `X-Forwarded-For` is taken into account only from `127.0.0.1`.
-5. `GET /api/status` returns the components from `ctl status` and `health.json`; an unavailable `ctl` gives 502 with a clear text.
-6. The sign-in cannot be turned off by the config (there is no key).
-
-**Tests:** `panel/internal/api/*_test.go`, `auth/*_test.go` by criteria 1-5.
-
-**Do not:** the install, the other screens, WebSocket, external JS libraries.
-
----
-
-### Slice 17: the panel, the install and Overview
-
-**Files:** `lib/step_panel.sh`, `templates/dpistack-panel.service.tpl`, `panel/web/` (the Overview screen).
-
-**What it does:** building or installing the binary by `PANEL_SOURCE`, the unit, setting the password (5.1), the Overview screen, the binding by `ACCESS_MODE` (v0.28.0: the resource budget check was removed).
-
-**Acceptance criteria:**
-
-1. `install.sh` installs and starts the panel, signing in with the given or the generated password works, the generated password is shown in the report once and is stored nowhere in plain form.
-2. Overview shows the state of the components and the overall `overall` from `health.json`.
-3. (Removed in v0.28.0.) The panel had a limit on the RSS at idle and on the size of the static files; there is none now.
-4. The unit has `MemoryMax` and `CPUQuota` and has no `NoNewPrivileges` and `ProtectSystem` (v0.23.0: the unit has no `MemoryMax` and `CPUQuota` any more, see section 9; v0.28.0: the budget check is gone as well).
-5. `PANEL_SOURCE=prebuilt` without a ready binary gives code 3 at `preflight`.
-6. A repeated run: no changes.
-
-**Tests:** `tests/panel_step.bats` by criteria 4, 5, 6.
-
-**Do not:** the other screens.
-
----
-
-### Slice 18: components and logs
-
-**What it does:** the Components screen (the buttons start/stop/restart/reload with a confirmation), the Logs screen (the last N lines and SSE).
-
-**Acceptance criteria:**
-
-1. A button runs `ctl` and updates the status without reloading the page.
-2. Stopping `panel` from the panel itself needs a separate confirmation.
-3. `GET /api/logs/{id}?lines=5000` gives 400 (the limit is 1000).
-4. SSE closes the process `ctl logs --follow` when the client breaks the connection (no hanging processes).
-5. An action on a component that does not exist gives 404 and a clear message.
-
-**Tests:** `panel/internal/api/components_test.go` by criteria 3-5.
-
-**Do not:** charts, filters by log level.
-
----
-
-### Slice 19: the config editor
-
-**What it does:** the Configs screen: choosing a file from a list, an editor, "Check", "Save", "Save and apply", "Roll back".
-
-**Acceptance criteria:**
-
-1. A change of `suricata.yaml`: "Check" returns the output of `suricata -T`, "Save" on a failed check does not change the file.
-2. "Save and apply" reloads the component; for `dpistack.conf` it runs `reconfigure`, and shows a heavy change as a refusal with a text.
-3. "Roll back" restores the previous backup.
-4. `GET /api/config/etc-passwd` gives 404 (a name outside the list), a body of `PUT` larger than 1 MB gives 413.
-5. A file edited through the panel counts as hand-edited for the installer (rule 5.4).
-
-**Tests:** `panel/internal/api/config_test.go` by criteria 1-4.
-
-**Do not:** syntax highlighting, a diff between versions, an editor on Monaco or CodeMirror.
-
----
-
-### Slice 20: rules in the panel
-
-**What it does:** the Rules screen.
-
-**Acceptance criteria:**
-
-1. A list of sources with enabling, disabling and adding a URL.
-2. Enabling and disabling groups.
-3. Turning a rule off by `sid` writes it into `disable.conf`, after an update the rule is not loaded.
-4. A search by `sid` and text, up to 50 results.
-5. The button "Update now" shows the result and the time of the last update; a failed update shows the reason and keeps the previous set.
-
-**Tests:** `panel/internal/api/rules_test.go` by criteria 3-5.
-
-**Do not:** an editor of single rules outside `local.rules`, importing sets from a file.
-
----
-
-### Slice 21: EVE events
-
-**Files:** `panel/internal/eve/`, the Events screen.
-
-**Acceptance criteria:**
-
-1. `GET /api/eve?type=alert&limit=50` returns no more than the last 50 alerts; `limit=1000` gives 400.
-2. Reading `eve.json` is incremental: after one line is appended, only it is read (a test by the offset).
-3. Rotation of the file (a new inode or a size lower than the offset) does not lose events and does not break reading.
-4. A broken or incomplete last line is skipped with no error.
-5. With `EVE_FILE=no` the screen shows that the view is unavailable, not an empty list.
-6. The SSE `eve/stream` serves only the new events of the chosen type.
-
-**Tests:** `panel/internal/eve/*_test.go` by criteria 1-4.
-
-**Do not:** a full-text search over the whole file, export, aggregations.
-
----
-
-### Slice 22: metrics, charts
-
-**Files:** `panel/internal/metrics/`, the Metrics screen.
-
-**Acceptance criteria:**
-
-1. The series pps, drops, cpu, rss, the size of `eve.json`, disk for 1, 6, 24 hours.
-2. After a restart of the panel the series are restored from `metrics.json`.
-3. A reset of the cumulative Suricata counters does not give negative values on the chart.
-4. The ring does not exceed 24 hours of 30 seconds.
-5. The screen shows unavailable series (`EVE_FILE=no`, no `stats`) with a mark, not with a zero.
-
-**Tests:** `panel/internal/metrics/*_test.go` by criteria 2-4.
-
-**Do not:** requests for an arbitrary period, saving to disk beyond `metrics.json`.
-
----
-
-### Slice 23: the `/metrics` export
-
-**What it does:** `GET /metrics` by section 4.9, generating `METRICS_TOKEN` at install.
-
-**Acceptance criteria:**
-
-1. Without a token and with a wrong token 401, with the right one 200 and `Content-Type: text/plain; version=0.0.4`.
-2. All the metrics of 4.9 are present when there is data; `na` checks and the metrics that depend on `EVE_FILE=no` or on the absence of `stats` are not printed.
-3. The output passes `promtool check metrics` if it is there, otherwise parsing by a test parser of the format.
-4. `METRICS_EXPORT=no` gives 404.
-5. A reset of the Suricata counters does not give a negative `dpistack_suricata_drop_ratio`.
-6. The token does not get into the journal, `dpistack.conf` and the output of `--dry-run`; in the report of the installer it is shown together with the `scrape_config` line.
-7. Requests to `/metrics` do not read the disk more often than once a second.
-
-**Tests:** `panel/internal/api/metrics_export_test.go` by criteria 1-5, 7.
-
-**Do not:** `client_golang`, a push mode, Grafana dashboards of our own.
-
----
-
-### Slice 24: tests, alerts, interfaces in the panel
-
-**What it does:** the Tests and Alerts screens, adding and removing interfaces.
-
-**Acceptance criteria:**
-
-1. The buttons that run tests call `POST /api/tests/...`, the result is shown line by line with the status `pass`, `fail`, `skip` and a reason.
-2. "The last result" survives a restart of the panel.
-3. The Alerts screen shows `events.jsonl`, newest first, with a filter by check.
-4. Adding and removing an interface through the panel calls `ctl iface` and updates the status.
-
-**Tests:** `panel/internal/api/tests_test.go`, `alerts_test.go` by criteria 1-3.
-
-**Do not:** setting up the alert channels from the panel (they are edited through `dpistack.conf` in the editor), the IPS button (slice 29).
-
----
-
-### Slice 25: README and LICENSE
-
-**What it does:** `README.md`, `LICENSE`, `dpistack.conf.example` is checked against 4.3.
-
-**Acceptance criteria:**
-
-1. The README contains: what it is, the topology limit, the threat model, the quick install, an example config, a description of `install`/`reconfigure`, working with `ctl`, an example `scrape_config` for Prometheus, VictoriaMetrics and `vmagent`.
-2. All the commands of the README were run by hand on a clean Ubuntu LTS, the result matched.
-3. All the links in the README open.
-4. `LICENSE` matches the owner's choice (A11).
-5. Every key of `dpistack.conf.example` is in 4.3, and the other way round.
-
-**Tests:** the check of criterion 5 by a script in the gate.
-
-**Do not:** a documentation site, translations (since v0.23.0 the README and the guides do come in two languages, see section 13).
-
-**Result (v23, "choose yourself" decisions):** the README was in Russian (the language of the owner and of the installer messages; `SECURITY.md` stays English, no translations), it has no external links, only local ones (`tests/ci_config.bats` checks that each points to an existing file and that the README has all the sections of criterion 1). In the example `scrape_configs` the token comes from `credentials_file`, not from `credentials`: this keeps the token out of a config that is put into a repository; the final report of the installer prints `credentials` with the token, because it shows it once. Criterion 5 is checked by `scripts/check-conf-example.sh` (in the gate and in `tests/ci_config.bats`, with two mutations: a missing key and a mismatch of a default). Criterion 4: the MIT license, A11 without an answer from the owner. In v0.24.0 the README was rewritten (what it is and why, the components and a diagram, the quick install, the choices, the panel, the listen address, IPS, the metrics stack, the commands, the topology limit, the threat model, the documentation set).
-
----
-
-### Slice 26: the RHEL family and SELinux (a required platform)
-
-**The environment of the check:** Fedora, Rocky or Alma.
-
-**What it does:** `pkg_*` for dnf, the repositories (COPR/OISF, ntop, EveBox), the names of packages and units, SELinux contexts, `firewalld`.
-
-**Acceptance criteria:**
-
-1. Slices 2-7 pass on Fedora and on one RHEL-compatible distribution.
-2. With `enforcing` the panel, ntopng, EveBox and Suricata start without AVC denials for the paths they need (`restorecon`, `setsebool`, `semanage port`).
-3. `FIREWALL_MANAGE=auto` opens the ports only for `LAN_CIDR` through `firewalld`.
-4. `PIN_VERSIONS=yes` uses `versionlock`.
-5. A source that is missing for the chosen OS version gives code 3 at `preflight`, not an error in the middle of the install.
-
-**Tests:** `tests/os.bats` (an extension), `tests/pkg_dnf.bats` by criteria 4, 5.
-
-**Do not:** CentOS 7 and other EOL versions.
-
-**Result (v24, "choose yourself" decisions):** the mode `Permissive` counts as SELinux being on, the same as `Enforcing`: labels and ports are set in it too, otherwise a later move to `Enforcing` would start refusing what worked. The port type: `http_port_t` only for the ports on which nginx listens (`ACCESS_MODE=nginx`), `ntop_port_t` only for the ntopng port; the panel and EveBox have no types of their own (a unit from `/usr/local/bin` and from the EveBox package runs without the policy of the component), their ports are not labeled. `semanage` is installed as `policycoreutils-python-utils` when needed. The file label is set at every write (`atomic_write`), because `mv` from another directory carries the label of the source, and Suricata under `suricata_t` would not read a file with a foreign label; a common pass at the end of `install` and `reconfigure` catches what is written not through `atomic_write` (binaries, units). The pass goes after applying the steps: services started during the install could have started before it, so the first check on a stand is `ausearch -m avc -ts recent` and, on denials, `systemctl restart`. Criteria 3 and 4 are covered by stubs. Criterion 5: the address `.../coprs/g/oisf/suricata-8.0/repo/<chroot>/group_oisf-suricata-8.0-<chroot>.repo` (overridable with `OISF_COPR_REPO_URL`) must be checked against the real COPR. Criterion 1 and criterion 2 in the part "without AVC denials" need real Fedora, Rocky and Alma and are not done.
-
----
-
-### Slice 27: the Docker runtime
-
-**Files:** `lib/runtime_docker.sh`, `templates/compose.yaml.tpl`.
-
-**What it does:** any of `suricata`, `evebox`, `ntopng` (and `redis` behind `ntopng`) in a container. Suricata with `network_mode: host` and `NET_ADMIN`, `NET_RAW`; a common volume with `eve.json`. Since v0.24.0 the same file also carries `victoriametrics`, `prometheus`, `node_exporter`, `grafana` and `panel`.
-
-**Acceptance criteria:**
-
-1. A mixed scheme (Suricata native, EveBox and ntopng docker) comes up and sees the same events.
-2. `dpistack-ctl status`, `start|stop|restart`, `logs` work through `docker compose`.
-3. `eve.json` from the containerized Suricata is available to the panel and the watchdog at the same path `/var/log/suricata/eve.json`.
-4. The images and the volume paths are confirmed (assumption A6).
-5. The `DOCKER-USER` rules and other people's rules are not touched.
-6. The values `*_RUNTIME=docker` stop being refused as `not supported yet`.
-
-**Tests:** `tests/runtime_docker.bats` by criteria 2, 5, 6 (the stub `docker`).
-
-**Do not:** podman, swarm, kubernetes, LXD.
-
-**Result (v25, "choose yourself" decisions):** all the services run with `network_mode: host`, not in a compose network: this way `*_BIND`, the ports and the `access` rules mean the same as with native, and dpistack does not touch `iptables` and the `DOCKER-USER` chain at all (there are no published ports and no networks of its own, a test checks this). The image tags: `latest` for Suricata and EveBox, `stable` for ntopng, `7-alpine` for redis; a pinned `*_VERSION` becomes the tag. `PIN_VERSIONS` adds nothing for images: a tag is the pinning. nDPI is not installed into the image: `SURICATA_RUNTIME=docker` with `NDPI_ENABLE=yes` stops in `preflight` with a clear reason, the plugin must not be turned off silently. The rules are updated by `suricata-update` on the host (the rules directory is mounted into the container), reloading and checking go in the container. The BitTorrent replay (on the host) with a docker Suricata is skipped with a reason: events on live traffic are checked by `TEST_BT_LIVE`. A move of a component from docker to native leaves the container: it is stopped by hand (`docker compose -p dpistack down`), there is no automatic move. Criteria 1, 2, 3, 5, 6 are covered by tests on stubs.
-
----
-
-### Slice 28: the metrics backend, VictoriaMetrics and Prometheus
-
-**Files:** `lib/step_metrics.sh`, `templates/scrape.yaml.tpl`, the units of the backend.
-
-**What it does:** with `METRICS_BACKEND` other than `none` installs VictoriaMetrics (single-node) or Prometheus in `native` or `docker`, puts `scrape.yaml` with the target `GET /metrics` of the panel and the token from a file, sets `METRICS_RETENTION`, binds by `ACCESS_MODE`.
-
-**Acceptance criteria:**
-
-1. The backend is active, the scrape target has the state `up`, the series `dpistack_*` are available to a query.
-2. `METRICS_RETENTION=30d` gets into the start parameters of the backend (`-retentionPeriod` or `--storage.tsdb.retention.time`).
-3. The token is read by the backend from a file (`bearer_token_file` or `authorization`), it is not in `dpistack.conf` and not in the command line of the process.
-4. The backend listens by the rules of `ACCESS_MODE`, with `localhost` only on `127.0.0.1`.
-5. The source of the binary and the check of the checksum for `native` are confirmed (assumption A10).
-6. `disk.free` and the checks `<id>.process`/`<id>.port` take the backend into account.
-7. A change of `METRICS_BACKEND` through `reconfigure` counts as a heavy change; `none` stops the backend but does not delete the data without `--purge`.
-8. A repeated run: no changes.
-
-**Tests:** `tests/metrics_step.bats` by criteria 2, 3, 4, 7, 8.
-
-**Do not:** Alertmanager, remote write, `vmagent` as a separate component (Grafana and node_exporter came later as optional components of their own, v0.24.0).
-
-**Result (v26, "choose yourself" decisions):** the binary is taken from the release of the project, not from the distribution package: VictoriaMetrics has no package, and one way for both backends is easier to check. The version and the sha256 of the archive are pinned in the code, not read from a file next to the archive: a file from the same page would not protect against a swapped release. To move to a new release the version and the sums are edited together (or `DPISTACK_METRICS_*` for a while). One `scrape.yaml` for both backends (the format of `scrape_configs` is common); the target is the own port of the panel over HTTP (behind nginx it is the port plus 10000), so that the collector does not need TLS. nginx does not proxy the backend, so in `nginx` and `localhost` it listens on 127.0.0.1, in `lan` on 0.0.0.0 and its port is opened for `LAN_CIDR`. The data lies outside `/var/lib/dpistack` (in `/var/lib/dpistack-metrics`), otherwise `uninstall` without `--purge` would delete the series together with the state directory. The token file and the user `dpistack` are created by the `metrics` step before the backend starts (Prometheus does not start with a missing `credentials_file`); the `panel` step then writes the same file with the same owner. The retention is checked more strictly (4.3). The container of the backend starts as `dpistack-metrics` and the group `dpistack` with the files mounted at the same absolute paths, so that `scrape.yaml` works unchanged. The Docker containers of the other components stay at `uninstall`, like the packages of the native stack; the container of the backend is removed. Criteria 2, 3, 4, 7, 8 and 5 (the sum check) are covered by tests; criterion 1 needs a real stand.
-
----
-
-### Slice 29: IPS mode
-
-**What it does:** `dpistack-ctl mode`, the IPS template, the `DPISTACK` chain, `dpistack-fw.service`, the rollback timer, a button in the panel.
-
-**Acceptance criteria:**
-
-1. `mode ips` turns on the chosen `IPS_METHOD`, restarts Suricata, starts the rollback timer.
-2. Without `mode-confirm` in `--confirm-timeout` the mode goes back to `ids`, the `DPISTACK` rules are removed.
-3. The NFQUEUE rules go with `--queue-bypass`; stopping Suricata does not cut the network.
-4. After a reboot of the host `dpistack-fw.service` restores the `DPISTACK` rules in the current mode.
-5. Other people's chains and rules are unchanged (a comparison of `iptables-save` before and after, without `DPISTACK`).
-6. In the panel switching to IPS asks for a confirmation and shows a countdown to the rollback.
-7. The value `SURICATA_MODE=ips` stops being refused as `not supported yet`.
-
-**Tests:** `tests/ips.bats` by criteria 2, 3, 5, 7 (the stubs `iptables`, `nft`).
-
-**Do not:** an automatic generation of `drop` rules, turning `alert` into `drop` for the user.
-
-**Result (v27, "choose yourself" decisions):** NFQUEUE through `iptables` and `ip6tables` (on systems with `iptables-nft` this works too); if there is no `iptables` but there is `nft`, the rules go into a separate table `inet dpistack` (since v0.20.3, section 18.22); if there is neither, `preflight` and `mode ips` stop with a reason. One queue `0`. In `DPISTACK` there is one rule `NFQUEUE --queue-bypass`, and into the chosen chains one jump each is inserted at position 1: this is the only thing dpistack adds to other people's chains, and it removes it whole (`-D` of its own jump only, then `-F` and `-X` of its own chain). The mode is kept in `SURICATA_MODE` in `dpistack.conf`: `mode` changes it, checks the whole file, applies `reconfigure` and on failure restores the file. A switch awaiting confirmation is written into `mode.pending` (the mark of the end of the time) and waits for `mode-confirm`; the rollback is started by a `systemd-run --on-active` timer, not by an own daemon. The order: first Suricata is restarted in `ips`, and only then the rules start sending it traffic; in the opposite direction the rules go first. `ips` for `SURICATA_RUNTIME=docker` is not supported (the config check). Suricata in NFQ mode is started by the drop-in `suricata.service.d/dpistack-mode.conf` with an empty `ExecStart=`, `Type=simple` and `-q 0`: this way the package unit (with `-D` and `--af-packet`), the RPM one and an own one work alike. With afpacket the interfaces go in pairs (`IFACES` is an even number, the pair 0-1, 2-3). The panel requires `acknowledged: true` for `ips` at the API level, not only a dialog in the browser. A reboot before the confirmation counts as a rollback (the transient timer does not survive it). Criteria 1-5 and 7 are covered by tests on stubs, criterion 6 (the API and the markup of the screen) is checked by Go tests; the countdown in a browser was not looked at by hand.
-
----
-
-### Slice 30: the single file
-
-**What it does:** `scripts/bundle.sh` builds `dpistack-install.sh` from `install.sh`, `lib/`, `templates/`, `bin/` (embedding into heredocs), with no change of logic.
-
-**Acceptance criteria:**
-
-1. `dpistack-install.sh --help` and `--dry-run -y` give the same output as the modular version.
-2. The built file passes `bash -n` and `shellcheck`.
-3. `bundle.sh --check` in the gate compares the built file with what the script generates from the current sources.
-
-**Tests:** `tests/bundle.bats` by criteria 1, 3.
-
-**Do not:** self-update, packaging into deb/rpm.
-
-**Result (v28, "choose yourself" decisions):** the built file lies in the repository (the root), not only in the release: this way `bundle.sh --check` in the gate catches a stale file and a user can take it straight from the repository. The file unpacks the payload and runs the real `install.sh`, it does not glue the code into one program: the logic is not retold, and the match with the modular version follows from the code being the same (a test compares the output of `--help` and `install --dry-run -y` and the tree `/usr/local/lib/dpistack/installer` after an install). The content is the payload of `selfinstall` (`install.sh lib templates bin tests/data`), because it is this payload that puts the installer copy into the system. The panel (a binary or the sources) is not in the file and is looked for next to it, like next to `install.sh`: without it `preflight` stops the install, as in the modular version. A heredoc terminator, a file without a final line break and NUL bytes in the text stop the build: a heredoc would silently change the file. Binary files go through base64 (one now, `tests/data/bittorrent.pcap`). A run from a pipe (`curl ... | bash`) works, but the menu gets no input from a terminal: it is better to download the file and run it. Criteria 1, 2 and 3 are covered by tests.
-
----
-
-## The request of 2026-10-31 (`todo.md`): slices 32-45 (v41)
-
-The owner sent a list of changes for the panel (`todo.md`). Decisions are made here ("choose yourself"); the order puts what other slices stand on first (identity before the audit, the shell before the screens). A slice is done only when it has acceptance criteria that tests check and the gate is green; the status line of each slice says what is done.
-
-**General rules for all of these slices.** (1) Nothing is shown that the program cannot really do: the IPS page does not say "dry run" unless a drop is really tested (slice 42 calls what it does a "rule test"). (2) Every change of the system goes through a verb of section 4.5; the panel never writes outside `/var/lib/dpistack`. (3) Every action that changes something is written to the audit log (slice 35) with the user, the time, the address and the result. (4) The permission of the user is checked in the panel for every route (slice 34), the verbs trust the panel. (5) There are no resource budgets for the panel. (6) New screens follow the design of 9.1 and work in both themes.
-
-### Slice 32: no panel budget (v0.28.0)
-
-**What it does:** removes the resource budget of the panel: `scripts/panel-budget.sh`, its stage in `scripts/gate.sh`, the weight test of the design, the lines in README, CONTRIBUTING and AGENTS and in section 9.
-
-**Acceptance criteria:** (1) `grep -ri budget` finds nothing in code, scripts, tests and the documents outside the history of section 17 and 18. (2) The gate has no budget stage. (3) The panel unit has no limits (already true since v0.23.0).
-
-**Status:** done in v0.28.0.
-
-### Slice 33: runtimes, the matrix and the links (v0.28.0)
-
-**What it does:** section 4.10 and the verb `dpistack runtime [--json]`; `docs/runtimes.md` (en, ru) with the matrix and one example per combination.
-
-**Acceptance criteria:** (1) the verb lists every part with `docker` (`yes`, `no`, `follows:<id>`), the runtime now and the reason. (2) `mixed` is true only when containers and native parts are both present. (3) A link is `true` or `false` only when both ends run, and `false` when the real file or port is not there. (4) The verb is open to the panel and refuses unknown arguments.
-
-**Tests:** `tests/runtime_matrix.bats`.
-
-**Status:** done in v0.28.0.
-
-### Slice 34: users, roles and permissions (v0.29.0)
-
-**What it does:** more than one user of the panel. Users live in `/etc/dpistack/users.json` (0640, `root:dpistack`): `{"users":[{"name","role","perms"?,"hash","created","disabled"}]}`. The first user is `admin`, made from the old `panel.auth` on upgrade or at install (the file `panel.auth` stays as the source of the migration only). Names: `^[a-z][a-z0-9_.-]{1,31}$`. Permissions: `view`, `events.ack`, `tests.run`, `components.control`, `rules.edit`, `settings.edit`, `configs.edit`, `ips.manage`, `backup.manage`, `update.manage`, `audit.view`, `users.manage`. Roles are presets: `viewer` (`view`), `analyst` (`view`, `events.ack`, `tests.run`, `audit.view`), `operator` (analyst plus `components.control`, `rules.edit`), `admin` (all). A user may carry an explicit `perms` list instead of a role (`custom`), so the permissions are configurable per user. Verbs: `users list [--json]`, `users add <name> <role> [--perms a,b]` (the password on stdin), `users passwd <name>` (stdin), `users role <name> <role> [--perms a,b]`, `users disable|enable|remove <name>`; the last enabled admin cannot be removed, disabled or demoted; `panel-passwd` is `users passwd admin`. Login takes `username` (default `admin`). `GET /api/me` returns `{user, role, perms}`. Every route has a permission; a missing one gives 403 `{"error":"forbidden"}`. `GET|POST /api/users`, `PUT|DELETE /api/users/{name}` need `users.manage`. A change of a role or a password ends the sessions of that user, and an account is read again on every request, so a disabled or removed user is cut off at once. The UI of this slice: an Account screen (own password; with `users.manage` also the list, add, role, disable, remove) and the menu entry Configs hidden without `configs.edit`; a refused action shows the missing permission. Hiding every single button by permission is part of slice 37 (the shell).
-
-**Acceptance criteria:** (1) migration from `panel.auth` gives the user `admin` with the same password. (2) `viewer` can read and cannot POST anything (403 on every mutating route); `operator` cannot change settings or users. (3) The last admin is protected. (4) A role change ends the sessions of that user. (5) A wrong user name and a wrong password give the same answer and the same delay. (6) Passwords never appear in arguments, logs or the audit log.
-
-**Tests:** `tests/users.bats`, `panel/internal/auth/users_test.go`, `panel/internal/api/permissions_test.go` (a table: every route against every role).
-
-**Status:** done in v0.29.0 (the panel falls back to `panel.auth` when `users.json` is absent, so an upgrade needs no step).
-
-### Slice 35: the audit log and login history (v0.30.0)
-
-**What it does:** `/var/lib/dpistack/audit.jsonl` (append only, written by the panel, rotated at 10 MB, 5 files): `{ts, user, ip, action, target, result, detail}` for logins (success and failure), logouts, every mutating API call, and every privileged verb run by hand (`dpistack` writes the same file as root through `audit` verb). The screen: filters by user, action, result and time, export CSV/JSON. Secrets are never written.
-
-**Acceptance criteria:** (1) a failed login, a settings change, a rule change and a user change are each one line with the right user. (2) No line holds a password, token or hash. (3) The permission `audit.view` is needed to read.
-
-**Status:** done in v0.30.0. As built: the file is in its own directory `audit/` (the panel rotates it and the state directory stays root's); the log is written by the panel in a wrapper around the whole API (so a call refused by a permission or by the login limit is logged too), the CLI side is `audit_run` in `lib/ctl.sh` (the verb runs in a subshell, the line carries its exit code: 0 `ok`, 3 `denied`, anything else `error`). Tests: `panel/internal/audit/audit_test.go`, `panel/internal/api/audit_test.go`, `tests/audit_cli.bats`, the audit directory in `tests/panel_step.bats`, `panel/web/test/audit.test.mjs`.
-
-### Slice 36: backup and restore (v0.33.0)
-
-**Status:** done in v0.33.0 (18.36). Not done: exceptions and "panel state" in the archive (no such files exist yet; slice 40 adds the exceptions file to the list), uploading an archive from the computer.
-
-**What it does:** `dpistack backup create [--out FILE]`, `backup list`, `backup verify FILE`, `backup restore FILE [--dry-run]`: one tar.gz of the configs (`dpistack.conf`, `suricata.yaml`, local rules, `users.json`, exceptions, panel state) without logs and secrets of third parties; a manifest with sha256 of every file and the program version. Restore checks the manifest, runs `suricata -T` on the restored configuration, keeps the previous files and rolls back on a failure. The panel: Backups under System (create, download, verify, restore with a diff).
-
-**Acceptance criteria:** (1) create, verify and restore give the same files. (2) A changed byte fails `verify`. (3) A restore that fails `suricata -T` leaves the old files. (4) The permission `backup.manage`.
-
-### Slice 37: the shell of the panel (v0.32.0)
-
-**Status:** partly done (see the table of the status of the slices, section 17): the corner and the Build info window, not the sidebar groups, the top bar, routes by hash and permission hiding.
-
-**What it does:** the sidebar in groups (Monitoring: Overview, Traffic, Events, Alerts; Protection: Rules, IPS, Exceptions; System: Components, Interfaces and topology, Health, Backups, Updates; Admin: Settings, Users, Audit, Security), a top bar (host, state, mode, alert bell, user menu, theme), a collapsible sidebar, routes by hash, and the permission-aware hiding of sections.
-
-### Slice 38: Overview v2, System health and topology (v0.33.0)
-
-**Status:** not started.
-
-**What it does:** Overview with four state cards, the traffic graph, events by severity, components with version and last check, recent events, warnings (packet drops, a stale rules update, a missing capture); `GET /api/system` (CPU, memory, disk, load, interfaces with speed and counters, docker and systemd state); the interface page with the capture flag and a simple topology (host, interfaces, Suricata, outputs).
-
-### Slice 39: Traffic Explorer (v0.34.0)
-
-**Status:** not started.
-
-**What it does:** devices (by IP and MAC when seen), applications (nDPI `app_proto`/`ndpi` fields), domains (DNS, TLS SNI), connections (flow events), per-device detail, filters and a link to ntopng. The data comes only from EVE events and the counters the panel already reads; where the data is not there (no flow events, no nDPI) the page says exactly that.
-
-### Slice 40: the Events workspace and exceptions (v0.35.0)
-
-**Status:** not started.
-
-**What it does:** filters (IP, SID, category, protocol, severity, domain, time), grouping, related events by `flow_id`, a detail panel, the history of one SID, export JSON/CSV, and "create an exception" from an event: a threshold or suppress entry with an expiry and the narrowest scope (SID plus source or destination), stored in the exceptions file that the rules step renders.
-
-### Slice 41: Rules v2 (v0.36.0)
-
-**Status:** not started.
-
-**What it does:** counts per source (total, enabled, disabled), the date and the history of updates, SID descriptions, search by category, provider and text, a custom rules editor (`local.rules`) with validation by `suricata -T` on a temporary copy, a SID conflict check and a change history.
-
-### Slice 42: the IPS page (v0.37.0)
-
-**Status:** not started.
-
-**What it does:** mode and method, NFQ state, packets processed and dropped, the number of drop rules, the latest blocking events, the rollback state, and readiness checks (the iptables or nft chain, the queue, the confirmation timer). The "rule test" replays a controlled pcap through Suricata offline with the chosen rules and reports which rules would drop; it never touches live traffic.
-
-### Slice 43: the Alert Center (v0.38.0)
-
-**Status:** not started.
-
-**What it does:** alerts of the watchdog and of Suricata with states: new, acknowledged, snoozed until, resolved; history and filters. State lives in `/var/lib/dpistack/alerts-state.json`.
-
-### Slice 44: Settings v2 (v0.39.0)
-
-**Status:** not started.
-
-**What it does:** categories, the standard and advanced levels, three columns, search, a diff of the staged change before it is applied, profiles (named sets of keys saved and applied), and for every key the default, the allowed values, the dependencies and what is restarted.
-
-### Slice 45: security of the panel (v0.40.0)
-
-**Status:** not started.
-
-**What it does:** the list of own sessions with a revoke button, API tokens (read only or by role), rotation of the session secret, login history, and a security check (access mode, TLS, default ports, users without a recent login, rule file permissions) shown as a list with a fix hint.
-
 
 ---
 
