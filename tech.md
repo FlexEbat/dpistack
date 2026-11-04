@@ -1,7 +1,7 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v51** (2026-11-03)
-**Program version: v0.32.1** (slices 0-35 are done, 36-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
+**Document version: v52** (2026-11-03)
+**Program version: v0.32.1** (slices 0-35 are done, 37 is partly done, 36 and 38-45 are not started; the table is in section 17; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
@@ -58,6 +58,7 @@ Program changelog (what was done per slice of section 17):
 - v0.3.1 (slices 14-15 and the full review): alert channels (`log`, `tg`, `mail`, `panel`), `selfinstall` with the `dpistack` command and the control menu; the fixes of section 18.1: `run` returns the real error code, writing files leaves no truncated result, `state` is protected by a lock, the free keys of `dpistack.conf` are checked against patterns, `*_VERSION` for ntopng and EveBox take effect, CI is pinned by SHA.
 
 Changelog of this document:
+- v52: the status of every slice in one table (section 17), status lines of slices 36 to 45.
 - v51: v0.32.1, D44 and D45 of 18.35; the summary of v0.31.1 and v0.32.0 in 18.35.
 - v50: D43 of 18.35 (the repository links are set by `app.js`).
 - v49: v0.32.0. Section 18.35, rules 6 and 7 of 12.3.
@@ -1206,6 +1207,22 @@ The order is strict, from the top down. One slice per session. A slice is closed
 - **Stage 4, control and the panel.** Slices 15-25. **The end of stage 4 = a working panel.**
 - **Stage 5, platforms and extensions.** Slices 26-30; slice 26 (the RHEL family) goes first.
 
+### Status of the slices (v52, 2026-11-03, program v0.32.1)
+
+| slices | status |
+| --- | --- |
+| 0 | done: the prototype |
+| 1 | done: the skeleton |
+| 2-9 | done: the core on the host (stage 2) |
+| 10-14 | done: checks and watching (stage 3) |
+| 15-25 | done: control and the panel (stage 4, the end of it is a working panel) |
+| 26-30 | done: platforms and extensions (stage 5): RHEL family, Docker runtime, metrics backend, IPS mode, the single file |
+| 31 | there is no section for slice 31 in this file: the numbering goes from 30 to 32 |
+| 32-35 | done: no panel budget and runtimes (v0.28.0), users and roles (v0.29.0), the audit log (v0.30.0) |
+| 36 | not started: backup and restore. The version numbers in the headings of 36 to 45 were a plan and are not binding: v0.31.0 shipped the `LAN_CIDR` list and the later versions shipped fixes and the corner of the panel |
+| 37 | partly done: the corner (Translation placeholder, version chip, GitHub, Exit), the Build info window and the look (v0.32.0, 18.35), readable Audit actions (v0.32.1). Not done: the sidebar in groups, the host, state, mode and alert bell in the top bar, the theme switch, the collapsible sidebar, routes by hash, hiding sections by permission |
+| 38-45 | not started: Overview v2 and topology, Traffic Explorer, the Events workspace, Rules v2, the IPS page, the Alert Center, Settings v2, security of the panel |
+
 ### Assumptions that need checking (not frozen)
 
 | # | assumption | confirmed in slice |
@@ -1906,43 +1923,63 @@ The owner sent a list of changes for the panel (`todo.md`). Decisions are made h
 
 ### Slice 36: backup and restore (v0.31.0)
 
+**Status:** not started.
+
 **What it does:** `dpistack backup create [--out FILE]`, `backup list`, `backup verify FILE`, `backup restore FILE [--dry-run]`: one tar.gz of the configs (`dpistack.conf`, `suricata.yaml`, local rules, `users.json`, exceptions, panel state) without logs and secrets of third parties; a manifest with sha256 of every file and the program version. Restore checks the manifest, runs `suricata -T` on the restored configuration, keeps the previous files and rolls back on a failure. The panel: Backups under System (create, download, verify, restore with a diff).
 
 **Acceptance criteria:** (1) create, verify and restore give the same files. (2) A changed byte fails `verify`. (3) A restore that fails `suricata -T` leaves the old files. (4) The permission `backup.manage`.
 
 ### Slice 37: the shell of the panel (v0.32.0)
 
+**Status:** partly done (see the table of the status of the slices, section 17): the corner and the Build info window, not the sidebar groups, the top bar, routes by hash and permission hiding.
+
 **What it does:** the sidebar in groups (Monitoring: Overview, Traffic, Events, Alerts; Protection: Rules, IPS, Exceptions; System: Components, Interfaces and topology, Health, Backups, Updates; Admin: Settings, Users, Audit, Security), a top bar (host, state, mode, alert bell, user menu, theme), a collapsible sidebar, routes by hash, and the permission-aware hiding of sections.
 
 ### Slice 38: Overview v2, System health and topology (v0.33.0)
+
+**Status:** not started.
 
 **What it does:** Overview with four state cards, the traffic graph, events by severity, components with version and last check, recent events, warnings (packet drops, a stale rules update, a missing capture); `GET /api/system` (CPU, memory, disk, load, interfaces with speed and counters, docker and systemd state); the interface page with the capture flag and a simple topology (host, interfaces, Suricata, outputs).
 
 ### Slice 39: Traffic Explorer (v0.34.0)
 
+**Status:** not started.
+
 **What it does:** devices (by IP and MAC when seen), applications (nDPI `app_proto`/`ndpi` fields), domains (DNS, TLS SNI), connections (flow events), per-device detail, filters and a link to ntopng. The data comes only from EVE events and the counters the panel already reads; where the data is not there (no flow events, no nDPI) the page says exactly that.
 
 ### Slice 40: the Events workspace and exceptions (v0.35.0)
+
+**Status:** not started.
 
 **What it does:** filters (IP, SID, category, protocol, severity, domain, time), grouping, related events by `flow_id`, a detail panel, the history of one SID, export JSON/CSV, and "create an exception" from an event: a threshold or suppress entry with an expiry and the narrowest scope (SID plus source or destination), stored in the exceptions file that the rules step renders.
 
 ### Slice 41: Rules v2 (v0.36.0)
 
+**Status:** not started.
+
 **What it does:** counts per source (total, enabled, disabled), the date and the history of updates, SID descriptions, search by category, provider and text, a custom rules editor (`local.rules`) with validation by `suricata -T` on a temporary copy, a SID conflict check and a change history.
 
 ### Slice 42: the IPS page (v0.37.0)
+
+**Status:** not started.
 
 **What it does:** mode and method, NFQ state, packets processed and dropped, the number of drop rules, the latest blocking events, the rollback state, and readiness checks (the iptables or nft chain, the queue, the confirmation timer). The "rule test" replays a controlled pcap through Suricata offline with the chosen rules and reports which rules would drop; it never touches live traffic.
 
 ### Slice 43: the Alert Center (v0.38.0)
 
+**Status:** not started.
+
 **What it does:** alerts of the watchdog and of Suricata with states: new, acknowledged, snoozed until, resolved; history and filters. State lives in `/var/lib/dpistack/alerts-state.json`.
 
 ### Slice 44: Settings v2 (v0.39.0)
 
+**Status:** not started.
+
 **What it does:** categories, the standard and advanced levels, three columns, search, a diff of the staged change before it is applied, profiles (named sets of keys saved and applied), and for every key the default, the allowed values, the dependencies and what is restarted.
 
 ### Slice 45: security of the panel (v0.40.0)
+
+**Status:** not started.
 
 **What it does:** the list of own sessions with a revoke button, API tokens (read only or by role), rotation of the session secret, login history, and a security check (access mode, TLS, default ports, users without a recent login, rule file permissions) shown as a list with a fix hint.
 
