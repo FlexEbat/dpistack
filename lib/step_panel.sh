@@ -97,7 +97,7 @@ panel_args() {
 	fi
 	args="-addr ${host}:${port} -access ${mode}"
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
-	args+=" -auth-file $(path_panel_auth) -users-file $(path_users) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json) -audit-file $(path_audit_jsonl)"
+	args+=" -auth-file $(path_panel_auth) -users-file $(path_users) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json) -audit-file $(path_audit_jsonl) -backups-dir $(path_backup_archives_dir)"
 	args+=" -version ${DPISTACK_VERSION}"
 	panel_is_lite && args+=" -lite"
 	# Without the flag the panel shows that viewing events is off.

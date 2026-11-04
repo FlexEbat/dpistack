@@ -1,11 +1,12 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v52** (2026-11-03)
-**Program version: v0.32.1** (slices 0-35 are done, 37 is partly done, 36 and 38-45 are not started; the table is in section 17; section 17 holds the history, section 18 the reviews)
+**Document version: v53** (2026-11-04)
+**Program version: v0.33.0** (slices 0-36 are done, 37 is partly done, 38-45 are not started; the table is in section 17; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.33.0: slice 36. `dpistack backup create [--out FILE]|list [--json]|verify FILE|restore FILE [--dry-run]` and the Backups screen (section 18.36). One tar.gz of the configs with a manifest (program version, sha256 and mode of every file); `verify` fails on a changed byte, an extra entry or a link; `restore` checks the schema and `suricata -T` before it replaces anything and keeps the previous files; the panel names an archive by its file name only.
 - v0.32.1: the Audit screen says what was done ("Restart ntopng", "Sign in") instead of the route template, the raw path moves to a muted Target column; the Account and Audit forms have padding and flexible fields (D44, D45 of 18.35).
 - v0.32.0: the corner of the panel and the Build info window, the unslop pass over the look (section 18.35); the Rules screen no longer fails on a fresh install without `disable.conf`; dates in the panel are shown in the `en-GB` format.
 - v0.31.1: the Update button failed on an installation with `ACCESS_MODE=lan` (section 18.34). `self-update apply` ran `install.sh install -y` without `ACCESS_CONFIRM=yes`, so the validation stopped with code 2 ("needs --set ACCESS_CONFIRM=yes") and nothing was updated. Now an access mode and bind address equal to the applied ones count as confirmed; a mode edited by hand after the last apply still stops.
@@ -58,6 +59,7 @@ Program changelog (what was done per slice of section 17):
 - v0.3.1 (slices 14-15 and the full review): alert channels (`log`, `tg`, `mail`, `panel`), `selfinstall` with the `dpistack` command and the control menu; the fixes of section 18.1: `run` returns the real error code, writing files leaves no truncated result, `state` is protected by a lock, the free keys of `dpistack.conf` are checked against patterns, `*_VERSION` for ntopng and EveBox take effect, CI is pinned by SHA.
 
 Changelog of this document:
+- v53: v0.33.0. Slice 36 done: the `backup` verbs (4.5), the Backups routes (4.8), 18.36.
 - v52: the status of every slice in one table (section 17), status lines of slices 36 to 45.
 - v51: v0.32.1, D44 and D45 of 18.35; the summary of v0.31.1 and v0.32.0 in 18.35.
 - v50: D43 of 18.35 (the repository links are set by `app.js`).
@@ -285,7 +287,7 @@ Placement rules:
 | the menu draft | `/etc/dpistack/dpistack.conf.draft` (0600 root) |
 | secrets | `/etc/dpistack/secrets.conf` (0600 root) |
 | the panel password hash | `/etc/dpistack/panel.auth` (0640 root:dpistack) |
-| state | `/var/lib/dpistack/` (`state`, `health.json`, `events.jsonl`, `tests-last.json`, `metrics.json`, `backups/`, `staging/`, `scrape.yaml`) |
+| state | `/var/lib/dpistack/` (`state`, `health.json`, `events.jsonl`, `tests-last.json`, `metrics.json`, `backups/`, `archives/`, `staging/`, `scrape.yaml`) |
 | the lock | `/var/lock/dpistack.lock` |
 | the install log | `/var/log/dpistack/install.log` |
 | helpers | `/usr/local/sbin/dpistack` (the persistent command, section 5.2), `/usr/local/sbin/dpistack-watch`, libraries and templates in `/usr/local/lib/dpistack/` (among them the installer copy in `/usr/local/lib/dpistack/installer/`) |
@@ -467,6 +469,7 @@ The only place of the privileged actions of the panel and the watchdog. It works
 | `runtime [--json]` | what can run in Docker, the runtime of every part, the links between them (4.10) |
 | `panel-passwd` | reads the password from stdin, writes an argon2id hash into `panel.auth` and into the user `admin` of `users.json` |
 | `users list [--json]`, `users add <name> <role> [--perms a,b]`, `users passwd <name>`, `users role <name> <role> [--perms a,b]`, `users disable\|enable\|remove <name>` | users of the panel in `/etc/dpistack/users.json` (slice 34); passwords on stdin, 8 characters at least; exit 3 when the change would leave nobody able to manage users, 4 for an unknown user; open to the panel |
+| `backup create [--out FILE]`, `backup list [--json]`, `backup verify FILE`, `backup restore FILE [--dry-run]` | archives of the configs in `/var/lib/dpistack/archives/` (slice 36, 18.36); `create` and `restore` are audited; the panel may name an archive by its file name only (`--out` and paths give 5 for it); exit 3 for an archive or a configuration that failed its checks, 4 for a missing archive |
 | `version` | the version of the bundle |
 
 Arguments: letters, digits and `. _ : = / @ + , -` and a space are allowed (`rules-search` takes a phrase); everything else, including `; | & $ ( ) < > \` quotes and a line break, gives code `5` before any action. A URL with `?`, `&`, `%` therefore does not pass `rules-sources add-url`.
@@ -549,6 +552,7 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 | method and path | what it does |
 | --- | --- |
 | `POST /api/login`, `POST /api/logout` | the session is in a `HttpOnly; SameSite=Strict` cookie; the login body is `{username?, password}`, no name means `admin`; a wrong name, a disabled user and a wrong password give the same answer |
+| `GET /api/backups`, `POST /api/backups`, `GET /api/backups/{name}`, `POST /api/backups/{name}/verify`, `POST /api/backups/{name}/restore` | permission `backup.manage`; list, create, download (the panel reads the archive from `-backups-dir` and follows no link), verify, and restore with `{dry_run:true}` (the difference) or `{acknowledged:true}`; a bare restore is 400; a failed check is 409 with the checker's words in `output` |
 | `GET /api/audit`, `GET /api/audit/export` | permission `audit.view`; filters `user`, `action` (substring of action and target), `result` (`ok`, `denied`, `error`), `since`, `until` (a date or RFC 3339), `limit` (up to 5000); the export is `csv` or `json` as a download (CSV cells that start like a formula are quoted) |
 | `GET /api/me`, `POST /api/me/password` | who is signed in with the permissions; a user changes their own password with the current one (their sessions end) |
 | `GET\|POST /api/users`, `PUT\|DELETE /api/users/{name}` | permission `users.manage`; the list never holds a hash; nobody can remove or disable their own account |
@@ -1219,7 +1223,7 @@ The order is strict, from the top down. One slice per session. A slice is closed
 | 26-30 | done: platforms and extensions (stage 5): RHEL family, Docker runtime, metrics backend, IPS mode, the single file |
 | 31 | there is no section for slice 31 in this file: the numbering goes from 30 to 32 |
 | 32-35 | done: no panel budget and runtimes (v0.28.0), users and roles (v0.29.0), the audit log (v0.30.0) |
-| 36 | not started: backup and restore. The version numbers in the headings of 36 to 45 were a plan and are not binding: v0.31.0 shipped the `LAN_CIDR` list and the later versions shipped fixes and the corner of the panel |
+| 36 | done in v0.33.0: backup and restore (verbs and the Backups screen). The version numbers in the headings of 37 to 45 were a plan and are not binding |
 | 37 | partly done: the corner (Translation placeholder, version chip, GitHub, Exit), the Build info window and the look (v0.32.0, 18.35), readable Audit actions (v0.32.1). Not done: the sidebar in groups, the host, state, mode and alert bell in the top bar, the theme switch, the collapsible sidebar, routes by hash, hiding sections by permission |
 | 38-45 | not started: Overview v2 and topology, Traffic Explorer, the Events workspace, Rules v2, the IPS page, the Alert Center, Settings v2, security of the panel |
 
@@ -1921,9 +1925,9 @@ The owner sent a list of changes for the panel (`todo.md`). Decisions are made h
 
 **Status:** done in v0.30.0. As built: the file is in its own directory `audit/` (the panel rotates it and the state directory stays root's); the log is written by the panel in a wrapper around the whole API (so a call refused by a permission or by the login limit is logged too), the CLI side is `audit_run` in `lib/ctl.sh` (the verb runs in a subshell, the line carries its exit code: 0 `ok`, 3 `denied`, anything else `error`). Tests: `panel/internal/audit/audit_test.go`, `panel/internal/api/audit_test.go`, `tests/audit_cli.bats`, the audit directory in `tests/panel_step.bats`, `panel/web/test/audit.test.mjs`.
 
-### Slice 36: backup and restore (v0.31.0)
+### Slice 36: backup and restore (v0.33.0)
 
-**Status:** not started.
+**Status:** done in v0.33.0 (18.36). Not done: exceptions and "panel state" in the archive (no such files exist yet; slice 40 adds the exceptions file to the list), uploading an archive from the computer.
 
 **What it does:** `dpistack backup create [--out FILE]`, `backup list`, `backup verify FILE`, `backup restore FILE [--dry-run]`: one tar.gz of the configs (`dpistack.conf`, `suricata.yaml`, local rules, `users.json`, exceptions, panel state) without logs and secrets of third parties; a manifest with sha256 of every file and the program version. Restore checks the manifest, runs `suricata -T` on the restored configuration, keeps the previous files and rolls back on a failure. The panel: Backups under System (create, download, verify, restore with a diff).
 
@@ -2581,3 +2585,18 @@ Not done yet, on purpose: the audit screen shows route templates (`/api/componen
 Tests: `panel/web/test/version.test.mjs` (the rows, the time), `panel/web/test/design.test.mjs` (no gradient, controls not pills, menu left aligned), `panel/internal/api/version_test.go` (the `build` object), `tests/panel_step.bats` (`panel_ldflags`).
 
 Summary of 2026-11-03 (v0.31.1, v0.32.0, v0.32.1): the Update button works on `lan` installations (D32, D33); the corner has Translation (placeholder), the version chip, GitHub and Exit, and the Build info window shows the build and the update banner (D40 to D42); the look follows the unslop rules (D34 to D39); the Rules screen works on a fresh install; the Audit screen is readable (D44). Not done: a chart on the Overview, the review of the look in a real browser, the cause of the ntopng stop seen in the log (the journal of `ntopng` is needed).
+
+### 18.36 Backup and restore (v0.33.0)
+
+Decisions ("choose yourself"):
+
+| id | decision |
+| --- | --- |
+| D46 | **What is in the archive.** `dpistack.conf`, `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`, `users.json`: the files that exist. `secrets.conf` is not in it (the tokens are the owner's own and should not travel in an archive that the panel can download); enter them again after a restore on a new host. Exceptions and panel state of the slice text do not exist yet |
+| D47 | **Format.** `manifest.json` (`format 1`, `program`, `created`, `files[{name, sha256, mode, size}]`) and `files/<name>`; owner 0, no extended attributes. Only these names are accepted on read; an entry that is not a plain file, an absolute path, `..` or a name outside the list gives exit 3 before anything is unpacked into place |
+| D48 | **Where.** `/var/lib/dpistack/archives/` (0750 `root:dpistack`, archives 0640), apart from `backups/` which holds the single copies made before a file is replaced. `uninstall` removes the state directory, so the documentation says to copy an archive away (`--out`, Download) |
+| D49 | **Restore.** Verify the archive, then check what would be left: the schema for `dpistack.conf`, `suricata -T` on the restored `suricata.yaml` and `local.rules` together (`suricata_check_set` takes the second candidate), a non-empty `evebox.yaml` and `ntopng.conf`. Suricata not installed: the check is skipped with a line saying so (a restore onto a bare host is a normal case). Then under the installer lock each file is copied to `backups/`, replaced atomically; a failed write puts every replaced file back. A restore leaves the render hash alone (as `config-write` does), so the installer treats the files as hand-edited; it applies nothing, the next step is `dpistack reconfigure` |
+| D50 | **Dry run** prints `new:`, `same:` or `changed:` per file and a unified diff; `users.json` is shown as changed without a diff because it holds password hashes |
+| D51 | **The panel cannot choose a path.** For the panel (`sudo` as `dpistack` or `DPISTACK_CALLER=panel`) `--out` and any argument that is not a bare `*.tar.gz` name give exit 5, so a stolen session cannot make root read or write elsewhere. Download is read by the panel itself from `-backups-dir` (the archive group is `dpistack`), refuses a link and a name that is not a bare file name. A real restore from the panel needs `acknowledged:true`; the screen always runs the dry run first and asks |
+
+Tests: `tests/backup.bats` (20), `panel/internal/api/backups_test.go` (9) and the Backups rows of the route table in `users_test.go`, `panel/web/test/backups.test.mjs`, `-backups-dir` in `tests/panel_step.bats`. Not done: the look of the screen was not checked in a browser; the Backups screen only reads the archives of this host.

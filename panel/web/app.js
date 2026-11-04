@@ -12,6 +12,7 @@ import { start as startMode } from "./modules/mode.js";
 import { start as startSettings } from "./modules/settings.js";
 import * as account from "./modules/account.js";
 import { start as startAudit } from "./modules/audit.js";
+import { start as startBackups } from "./modules/backups.js";
 import { start as startVersion } from "./modules/version.js";
 import { menu, revealOnce, skipLink } from "./modules/chrome.js";
 
@@ -45,7 +46,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts", "audit", "account"];
+const VIEWS = ["overview", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts", "audit", "backups", "account"];
 let me = { name: "", role: "", perms: ["view"] };
 let stopView = null;
 
@@ -189,6 +190,18 @@ const SCREENS = {
         csv: $("audit-csv"),
         json: $("audit-json"),
         list: $("audit-list"),
+      },
+      showLogin,
+    ),
+  backups: () =>
+    startBackups(
+      api,
+      {
+        error: $("backups-error"),
+        message: $("backups-message"),
+        create: $("backups-create"),
+        result: $("backups-result"),
+        list: $("backups-list"),
       },
       showLogin,
     ),

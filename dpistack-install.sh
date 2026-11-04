@@ -896,7 +896,7 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health runtime users diagnose version self-update)
+	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen
@@ -1505,7 +1505,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.32.1"
+DPISTACK_VERSION="0.33.0"
 
 : "${DRY_RUN:=0}"
 
@@ -2234,6 +2234,7 @@ Usage: dpistack <command> [arguments]
   test bittorrent|https|all [--json] check tests (section 10)
   health [--json]                    one watchdog run
   users list|add|passwd|role|disable|enable|remove  users of the panel (passwords on stdin)
+  backup create [--out FILE]|list [--json]|verify FILE|restore FILE [--dry-run]  configs in one tar.gz
   diagnose [<part>]                  the parts that do not run: state, exit status, last log lines
   runtime [--json]                   what can run in docker, the runtime of every part, the links between them
   version                            bundle version
@@ -2611,12 +2612,14 @@ config_commit() {
 	ctl_unlock
 }
 
-# suricata_check_set <name> <staged-file>
+# suricata_check_set <name> <staged-file> [<staged local.rules>]
 # `suricata -T` on a temporary copy of the set: the live ruleset plus
 # the candidate local.rules, with the candidate suricata.yaml when that
-# is what changes. Nothing outside the temp dir is touched.
+# is what changes. A restore changes both at once: it passes the
+# candidate local.rules as the third argument. Nothing outside the temp
+# dir is touched.
 suricata_check_set() {
-	local name="$1" staged="$2" tmp yaml rc docker=0 rulepath
+	local name="$1" staged="$2" extra_rules="${3:-}" tmp yaml rc docker=0 rulepath
 	[[ "$(component_unit suricata)" == docker:* ]] && docker=1
 	((docker)) || command -v suricata >/dev/null 2>&1 || {
 		echo "suricata is not installed" >&2
@@ -2630,6 +2633,7 @@ suricata_check_set() {
 		: >"$tmp/rules/suricata.rules"
 	fi
 	[[ "$name" == "local.rules" ]] && cat "$staged" >>"$tmp/rules/suricata.rules"
+	[[ -n "$extra_rules" ]] && cat "$extra_rules" >>"$tmp/rules/suricata.rules"
 	yaml="$(path_suricata_yaml)"
 	[[ "$name" == "suricata.yaml" ]] && yaml="$staged"
 	# In docker the check runs in the same image the service uses, with the
@@ -4108,6 +4112,362 @@ cmd_diagnose() {
 	return 0
 }
 
+# ---------------------------------------------------------------- backup
+# Slice 36 (tech.md 4.5, 18.36): one tar.gz of the configs with a manifest
+# (the program version, the sha256 and the mode of every file). Logs and
+# secrets.conf are not in it.
+
+BACKUP_FILES=(dpistack.conf suricata.yaml evebox.yaml ntopng.conf local.rules enable.conf disable.conf modify.conf drop.conf users.json)
+
+backup_live_path() {
+	case "$1" in
+	users.json) path_users ;;
+	*) config_path "$1" ;;
+	esac
+}
+
+# backup_resolve <archive> - prints the path of an existing archive. A bare
+# name is a file of the archives directory. The panel may only name such a
+# file: it must not make root read or write a path of its choosing.
+backup_resolve() {
+	local arg="$1" path="$1"
+	if restricted_caller; then
+		[[ "$arg" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.tar\.gz$ ]] ||
+			fail 5 "backup: the panel names an archive by its file name only"
+		path="$(path_backup_archives_dir)/$arg"
+	elif [[ "$arg" != */* ]]; then
+		path="$(path_backup_archives_dir)/$arg"
+	fi
+	[[ -f "$path" ]] || fail 4 "backup: no such archive: $arg"
+	printf '%s\n' "$path"
+}
+
+# backup_unpack <archive> <dest> - unpacks into <dest> and checks the
+# manifest. Prints the reason and returns 3 when the archive is not a sound
+# backup. Only manifest.json and files/<known name> are accepted, as plain
+# files, so a hand-made archive cannot write anywhere else.
+backup_unpack() {
+	local arc="$1" dest="$2" entry kind name want got mode
+	local listing types
+	listing=$(tar -tzf "$arc" 2>/dev/null) || {
+		echo "not a readable tar.gz archive"
+		return 3
+	}
+	types=$(tar -tvzf "$arc" 2>/dev/null | cut -c1 | sort -u | tr -d '\n')
+	[[ "$types" =~ ^[-d]+$ ]] || {
+		echo "the archive holds an entry that is not a plain file"
+		return 3
+	}
+	while IFS= read -r entry; do
+		entry="${entry%/}"
+		case "$entry" in
+		manifest.json | files) ;;
+		files/*)
+			name="${entry#files/}"
+			in_list "$name" "${BACKUP_FILES[@]}" || {
+				echo "unexpected entry: $entry"
+				return 3
+			}
+			;;
+		*)
+			echo "unexpected entry: $entry"
+			return 3
+			;;
+		esac
+	done <<<"$listing"
+	tar -xzf "$arc" -C "$dest" --no-same-owner --no-same-permissions 2>/dev/null || {
+		echo "the archive cannot be unpacked"
+		return 3
+	}
+	[[ -f "$dest/manifest.json" ]] || {
+		echo "manifest.json is missing"
+		return 3
+	}
+	jq -e '.format == 1 and (.files | type == "array") and ([.files[].name] | length == (unique | length))' \
+		"$dest/manifest.json" >/dev/null 2>&1 || {
+		echo "manifest.json is not valid"
+		return 3
+	}
+	while IFS=$'\t' read -r name want mode; do
+		in_list "$name" "${BACKUP_FILES[@]}" || {
+			echo "the manifest names a file that is not allowed: $name"
+			return 3
+		}
+		[[ "$mode" =~ ^[0-7]{3,4}$ ]] || {
+			echo "$name: the mode in the manifest is not valid"
+			return 3
+		}
+		[[ -f "$dest/files/$name" ]] || {
+			echo "$name: the file is missing from the archive"
+			return 3
+		}
+		got=$(sha256sum "$dest/files/$name")
+		got="${got%% *}"
+		[[ "$got" == "$want" ]] || {
+			echo "$name: the checksum does not match the manifest"
+			return 3
+		}
+	done < <(jq -r '.files[] | [.name, .sha256, .mode] | @tsv' "$dest/manifest.json")
+	for name in "$dest"/files/*; do
+		[[ -e "$name" ]] || continue
+		jq -e --arg n "${name##*/}" 'any(.files[]; .name == $n)' "$dest/manifest.json" >/dev/null ||
+			{
+				echo "${name##*/}: the file is not in the manifest"
+				return 3
+			}
+	done
+	return 0
+}
+
+backup_create() {
+	local out="" tmp name src sum dir dest ts n=1
+	while (($#)); do
+		case "$1" in
+		--out)
+			[[ $# -ge 2 ]] || fail 2 "backup create: --out needs a file name"
+			out="$2"
+			shift 2
+			;;
+		*) fail 2 "backup create: unknown argument: $1" ;;
+		esac
+	done
+	restricted_caller && [[ -n "$out" ]] && fail 5 "backup create: --out is not available to the panel"
+	dir=$(path_backup_archives_dir)
+	if [[ -n "$out" ]]; then
+		dest="$out"
+	else
+		mkdir -p "$dir"
+		chmod 0750 "$dir"
+		getent group dpistack >/dev/null 2>&1 && chgrp dpistack "$dir"
+		ts=$(date -u +%Y%m%dT%H%M%SZ)
+		dest="$dir/dpistack-backup-$ts.tar.gz"
+		while [[ -e "$dest" ]]; do
+			dest="$dir/dpistack-backup-$ts.$n.tar.gz"
+			n=$((n + 1))
+		done
+	fi
+	[[ -e "$dest" ]] && fail 1 "backup create: $dest exists already"
+	tmp=$(mktemp -d) || fail 1 "backup create: no temporary directory"
+	mkdir -p "$tmp/files"
+	: >"$tmp/list"
+	for name in "${BACKUP_FILES[@]}"; do
+		src=$(backup_live_path "$name")
+		[[ -f "$src" ]] || continue
+		cp "$src" "$tmp/files/$name"
+		sum=$(sha256sum "$tmp/files/$name")
+		printf '%s\t%s\t%s\t%s\n' "$name" "${sum%% *}" "$(stat -c %a "$src")" "$(stat -c %s "$src")" >>"$tmp/list"
+	done
+	if [[ ! -s "$tmp/list" ]]; then
+		rm -rf "$tmp"
+		fail 1 "backup create: there is nothing to back up"
+	fi
+	jq -Rn --arg program "$DPISTACK_VERSION" --arg created "$(date -u +%FT%TZ)" \
+		'{format: 1, program: $program, created: $created,
+		files: [inputs | split("\t") | {name: .[0], sha256: .[1], mode: .[2], size: (.[3] | tonumber)}]}' \
+		<"$tmp/list" >"$tmp/manifest.json" || {
+		rm -rf "$tmp"
+		fail 1 "backup create: the manifest cannot be written"
+	}
+	mkdir -p "$(dirname "$dest")"
+	if ! (umask 027 && tar --owner=0 --group=0 --numeric-owner -C "$tmp" -czf "$dest.part" manifest.json files) ||
+		! mv "$dest.part" "$dest"; then
+		rm -rf "$tmp" "$dest.part"
+		fail 1 "backup create: the archive cannot be written"
+	fi
+	if [[ -z "$out" ]] && getent group dpistack >/dev/null 2>&1; then
+		chgrp dpistack "$dest"
+	fi
+	n=$(wc -l <"$tmp/list")
+	rm -rf "$tmp"
+	echo "$dest"
+	echo "backup created: ${n//[[:space:]]/} files"
+}
+
+backup_list() {
+	local json=0 dir f tmp first=1 info
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "backup list: unknown argument: $1" ;;
+	esac
+	dir=$(path_backup_archives_dir)
+	((json)) && printf '['
+	if [[ -d "$dir" ]]; then
+		while IFS= read -r f; do
+			[[ -n "$f" ]] || continue
+			info=$(tar -xzOf "$f" manifest.json 2>/dev/null | jq -c '{program, created, files: (.files | length)}' 2>/dev/null) || info=""
+			[[ -n "$info" ]] || info='{}'
+			info=$(jq -c --arg name "${f##*/}" --argjson size "$(stat -c %s "$f")" '. + {name: $name, size: $size}' <<<"$info")
+			if ((json)); then
+				((first)) || printf ','
+				printf '%s' "$info"
+			else
+				jq -r '"\(.name)  \(.created // "?")  v\(.program // "?")  \(.files // 0) files  \(.size) bytes"' <<<"$info"
+			fi
+			first=0
+		done < <(ls -1t "$dir"/*.tar.gz 2>/dev/null)
+	fi
+	((json)) && printf ']\n'
+	return 0
+}
+
+backup_verify() {
+	[[ $# -eq 1 ]] || fail 2 "backup verify: an archive is needed"
+	local arc tmp out rc
+	arc=$(backup_resolve "$1") || exit $?
+	tmp=$(mktemp -d)
+	out=$(backup_unpack "$arc" "$tmp")
+	rc=$?
+	if ((rc != 0)); then
+		rm -rf "$tmp"
+		echo "$out"
+		fail 3 "backup verify: ${arc##*/} is not a sound backup"
+	fi
+	echo "ok: $(jq -r '"\(.files | length) files, program v\(.program), made \(.created)"' "$tmp/manifest.json")"
+	rm -rf "$tmp"
+}
+
+# backup_check_restored <dir> - the checks of config-write for the files of
+# the archive: the schema for dpistack.conf, `suricata -T` for the set that
+# the restore would leave (suricata.yaml and local.rules together), a
+# non-empty file for the two configs without a checker. 0 passed, 3 failed.
+backup_check_restored() {
+	local dir="$1" name out rc yaml="" rules=""
+	[[ -f "$dir/files/dpistack.conf" ]] && {
+		out=$(config_validate_staged dpistack.conf "$dir/files/dpistack.conf")
+		rc=$?
+		if ((rc != 0)); then
+			echo "dpistack.conf: the check failed"
+			[[ -n "$out" ]] && echo "$out"
+			return 3
+		fi
+	}
+	for name in evebox.yaml ntopng.conf; do
+		[[ -f "$dir/files/$name" ]] || continue
+		[[ -s "$dir/files/$name" ]] || {
+			echo "$name: the file is empty"
+			return 3
+		}
+	done
+	[[ -f "$dir/files/suricata.yaml" ]] && yaml="$dir/files/suricata.yaml"
+	[[ -f "$dir/files/local.rules" ]] && rules="$dir/files/local.rules"
+	if [[ -n "$yaml" ]]; then
+		out=$(suricata_check_set suricata.yaml "$yaml" "$rules")
+	elif [[ -n "$rules" ]]; then
+		out=$(suricata_check_set local.rules "$rules")
+	else
+		return 0
+	fi
+	rc=$?
+	case "$rc" in
+	0) ;;
+	4) echo "suricata is not installed here: suricata.yaml and the rules were not checked" ;;
+	*)
+		echo "suricata -T failed on the restored configuration"
+		[[ -n "$out" ]] && echo "$out"
+		return 3
+		;;
+	esac
+	return 0
+}
+
+backup_restore() {
+	local dry=0 arg arc="" tmp out rc name live mode
+	for arg in "$@"; do
+		case "$arg" in
+		--dry-run) dry=1 ;;
+		-*) fail 2 "backup restore: unknown argument: $arg" ;;
+		*)
+			[[ -z "$arc" ]] || fail 2 "backup restore: one archive only"
+			arc="$arg"
+			;;
+		esac
+	done
+	[[ -n "$arc" ]] || fail 2 "backup restore: an archive is needed"
+	arc=$(backup_resolve "$arc") || exit $?
+	tmp=$(mktemp -d)
+	out=$(backup_unpack "$arc" "$tmp")
+	rc=$?
+	if ((rc != 0)); then
+		rm -rf "$tmp"
+		echo "$out"
+		fail 3 "backup restore: ${arc##*/} is not a sound backup, nothing changed"
+	fi
+	out=$(backup_check_restored "$tmp")
+	rc=$?
+	[[ -n "$out" ]] && echo "$out"
+	if ((rc != 0)); then
+		rm -rf "$tmp"
+		fail 3 "backup restore: the restored configuration does not pass its checks, nothing changed"
+	fi
+
+	local -a names=()
+	while IFS= read -r name; do names+=("$name"); done < <(jq -r '.files[].name' "$tmp/manifest.json")
+	if ((dry)); then
+		for name in "${names[@]}"; do
+			live=$(backup_live_path "$name")
+			if [[ ! -e "$live" ]]; then
+				echo "new:     $name"
+			elif cmp -s "$live" "$tmp/files/$name"; then
+				echo "same:    $name"
+			elif [[ "$name" == users.json ]]; then
+				# The accounts hold password hashes; they are not shown.
+				echo "changed: $name (not shown)"
+			else
+				echo "changed: $name"
+				diff -u --label "now/$name" --label "backup/$name" "$live" "$tmp/files/$name" | tail -n +3
+			fi
+		done
+		rm -rf "$tmp"
+		echo "dry run: nothing was changed"
+		return 0
+	fi
+
+	local rb done_names=() undo
+	rb="$tmp/previous"
+	mkdir -p "$rb"
+	ctl_lock
+	for name in "${names[@]}"; do
+		live=$(backup_live_path "$name")
+		[[ -f "$live" ]] && cp -p "$live" "$rb/$name"
+	done
+	for name in "${names[@]}"; do
+		live=$(backup_live_path "$name")
+		mode=$(stat -c %a "$live" 2>/dev/null || jq -r --arg n "$name" '.files[] | select(.name == $n) | .mode' "$tmp/manifest.json")
+		backup "$live"
+		done_names+=("$name")
+		if atomic_write "$live" "$mode" <"$tmp/files/$name" &&
+			{ [[ "$name" != users.json ]] || ! getent group dpistack >/dev/null 2>&1 || chown root:dpistack "$live"; }; then
+			continue
+		fi
+		# A write failed: the files already replaced (and this one) go
+		# back, the others were not touched.
+		for undo in "${done_names[@]}"; do
+			live=$(backup_live_path "$undo")
+			if [[ -f "$rb/$undo" ]]; then atomic_write "$live" <"$rb/$undo"; else rm -f "$live"; fi
+		done
+		ctl_unlock
+		rm -rf "$tmp"
+		fail 1 "backup restore: a file could not be written, the previous files are back"
+	done
+	ctl_unlock
+	rm -rf "$tmp"
+	echo "restored ${#names[@]} files; the previous ones are in $(path_backups_dir)"
+	echo "next: dpistack reconfigure, then check the parts with dpistack status"
+}
+
+cmd_backup() {
+	local sub="${1:-}"
+	[[ $# -ge 1 ]] && shift
+	case "$sub" in
+	create) backup_create "$@" ;;
+	list) backup_list "$@" ;;
+	verify) backup_verify "$@" ;;
+	restore) backup_restore "$@" ;;
+	*) fail 2 "backup: create [--out FILE] | list [--json] | verify FILE | restore FILE [--dry-run]" ;;
+	esac
+}
+
 # --- audit log of verbs run by hand (tech.md 4.5, slice 35) ---
 
 # audit_wanted <verb> [<subverb>] - does this call change something? Reads
@@ -4118,6 +4478,7 @@ audit_wanted() {
 	start | stop | restart | reload | config-write | config-revert | self-update | reconfigure | rules-update | rules-group | rules-sid | mode-confirm | mode-rollback | fw | panel-passwd | test) return 0 ;;
 	settings) [[ "$sub" == set || "$sub" == secret ]] ;;
 	rules-sources | iface | users) [[ -n "$sub" && "$sub" != list ]] ;;
+	backup) [[ "$sub" == create || "$sub" == restore ]] ;;
 	mode) [[ "$sub" == ids || "$sub" == ips ]] ;;
 	*) return 1 ;;
 	esac
@@ -4204,6 +4565,7 @@ ctl_dispatch() {
 	diagnose) cmd_diagnose "$@" ;;
 	runtime) cmd_runtime "$@" ;;
 	users) cmd_users "$@" ;;
+	backup) cmd_backup "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
 	*)
 		ctl_usage >&2
@@ -6297,6 +6659,9 @@ path_events_jsonl() { echo "$(path_state_dir)/events.jsonl"; }
 path_tests_last_json() { echo "$(path_state_dir)/tests-last.json"; }
 path_metrics_json() { echo "$(path_state_dir)/metrics.json"; }
 path_backups_dir() { echo "$(path_state_dir)/backups"; }
+# Archives of `dpistack backup create` (slice 36); backups/ holds the single
+# copies of a file made before it is replaced.
+path_backup_archives_dir() { echo "$(path_state_dir)/archives"; }
 path_staging_dir() { echo "$(path_state_dir)/staging"; }
 path_scrape_yaml() { echo "$(path_state_dir)/scrape.yaml"; }
 # Data of the metrics backend lives outside path_state_dir: uninstall
@@ -8860,7 +9225,7 @@ panel_args() {
 	fi
 	args="-addr ${host}:${port} -access ${mode}"
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
-	args+=" -auth-file $(path_panel_auth) -users-file $(path_users) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json) -audit-file $(path_audit_jsonl)"
+	args+=" -auth-file $(path_panel_auth) -users-file $(path_users) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json) -audit-file $(path_audit_jsonl) -backups-dir $(path_backup_archives_dir)"
 	args+=" -version ${DPISTACK_VERSION}"
 	panel_is_lite && args+=" -lite"
 	# Without the flag the panel shows that viewing events is off.

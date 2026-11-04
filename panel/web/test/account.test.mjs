@@ -9,8 +9,8 @@ test("a viewer does not see Configs, an account with the permission does", () =>
   assert.deepEqual(visibleViews(views, ["view", "configs.edit"]), views);
 });
 
-test("only Configs and Audit hide a menu entry: every other screen is readable with view", () => {
-  assert.deepEqual(Object.keys(VIEW_PERM), ["configs", "audit"]);
+test("only Configs, Audit and Backups hide a menu entry: every other screen is readable with view", () => {
+  assert.deepEqual(Object.keys(VIEW_PERM), ["configs", "audit", "backups"]);
 });
 
 test("a refusal names the missing permission and nothing else is rewritten", () => {

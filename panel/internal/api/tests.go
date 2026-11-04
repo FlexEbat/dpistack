@@ -24,6 +24,7 @@ type opState struct {
 	ifaceBusy    bool
 	modeBusy     bool
 	settingsBusy bool
+	backupBusy   bool
 }
 
 func (o *opState) begin(flag *bool) bool {

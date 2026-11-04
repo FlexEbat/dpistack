@@ -91,3 +91,16 @@ Each part is its own choice, in the quick install, on the Settings screen or wit
 ## Backups
 
 Before every config write through `config-write` and `settings set` a backup is made; `config-revert` restores the latest one. Component data (rules, EveBox, ntopng, metrics) lives in its own directories and is removed only by `uninstall --purge`.
+
+### Backup archives
+
+`sudo dpistack backup create` packs the configuration into one `tar.gz` in `/var/lib/dpistack/archives/` (`--out FILE` writes it elsewhere): `dpistack.conf`, `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf` and `users.json`, whichever exist, with a manifest of the program version and the sha256 of every file. Logs and `secrets.conf` are not included: enter the secrets again on a new host. `uninstall` removes the state directory, so copy an archive off the host with `--out` or the Download button of the Backups screen.
+
+```
+sudo dpistack backup list
+sudo dpistack backup verify dpistack-backup-20261104T100000Z.tar.gz
+sudo dpistack backup restore dpistack-backup-20261104T100000Z.tar.gz --dry-run
+sudo dpistack backup restore dpistack-backup-20261104T100000Z.tar.gz
+```
+
+`verify` fails when a byte of a file changed or the archive holds anything the manifest does not name. `restore` verifies the archive, checks the restored `dpistack.conf` against the schema and the restored Suricata files with `suricata -T`, and only then replaces the files; if any check fails nothing changes. The replaced files are kept in `/var/lib/dpistack/backups/`. `--dry-run` shows what would change (the accounts in `users.json` are not shown). After a restore run `sudo dpistack reconfigure`. The Backups screen (permission `backup.manage`, admin only by default) does the same, and a restore there always shows the difference first.
