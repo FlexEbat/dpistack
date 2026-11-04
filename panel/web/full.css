@@ -109,6 +109,8 @@ button[type="submit"]:hover:not(:disabled), button.primary:hover:not(:disabled),
 .perm { display: inline-flex; align-items: center; gap: var(--s-50); font-size: var(--text-sm); color: var(--muted); }
 .toolbar input[type="number"] { width: 6.5rem; }
 .toolbar input.wide { flex: 1 1 16rem; min-width: 0; }
+form.toolbar { padding: var(--s-100) var(--s-200); }
+form.toolbar input[type="text"], form.toolbar input[type="password"] { flex: 1 1 12rem; min-width: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: var(--s-50); }
 .actions button { padding: var(--s-50) var(--s-75); font-size: var(--text-sm); line-height: var(--lh-sm); }
 select { padding-right: var(--s-300); }
