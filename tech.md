@@ -1,6 +1,6 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v49** (2026-11-03)
+**Document version: v50** (2026-11-03)
 **Program version: v0.32.0** (slices 0-35 are done, 36-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
@@ -57,6 +57,7 @@ Program changelog (what was done per slice of section 17):
 - v0.3.1 (slices 14-15 and the full review): alert channels (`log`, `tg`, `mail`, `panel`), `selfinstall` with the `dpistack` command and the control menu; the fixes of section 18.1: `run` returns the real error code, writing files leaves no truncated result, `state` is protected by a lock, the free keys of `dpistack.conf` are checked against patterns, `*_VERSION` for ntopng and EveBox take effect, CI is pinned by SHA.
 
 Changelog of this document:
+- v50: D43 of 18.35 (the repository links are set by `app.js`).
 - v49: v0.32.0. Section 18.35, rules 6 and 7 of 12.3.
 - v48: v0.31.1. Section 18.34.
 - v40: v0.27.0. Sections 9.1 and 18.31; the panel weight rule (fonts apart); the fonts and icons are no longer "system fonts" and "thin line icons".
@@ -2532,6 +2533,7 @@ What the review found, and what was done:
 | D40 | **The corner.** Choose yourself: Translation (a placeholder: a button that says "Translation is not available yet"), the version chip (lit with a coloured border when an update exists, no glow), GitHub (a link to the repository, no star count: the panel does not call out), Exit (an icon button). Telegram, the crown, the heart and the sparkles of the mockup are not in dpistack and are not added |
 | D41 | **Build info.** A click on the version always opens the window: the update banner (with Update and Not now, the confirmation of before) only when a newer release exists, then Version, Build time, Commit (12 characters, copy button), Runtime, Latest release, and the links to GitHub and the releases. The backend and frontend commits of the mockup are one commit here (one repository, one binary). `GET /api/version` returns a `build` object (`commit`, `time`, `go`, `platform`; empty fields are left out) |
 | D42 | **Where the commit comes from.** `BUILD_INFO` (`commit=`, `date=`) is substituted by git in `git archive` tarballs (`.gitattributes`: `export-subst`), written by the release workflow into the archive, and read from the checkout when there is a `.git`. `panel_ldflags` (`lib/step_panel.sh`) turns it into `-X main.buildCommit` and `-X main.buildTime` for the host build and the container build; the release workflow stamps the ready binaries. A missing or unsubstituted file stamps nothing and the window shows fewer rows |
+| D43 | **No external address in the page.** `tests/settings_ui.bats` forbids `href="https://..."` in `index.html`; the GitHub and Releases links carry `data-repo` and `app.js` sets the address from the constant `REPO_URL` (the first v0.32.0 commit put the addresses in the HTML and the gate failed) |
 
 Not done yet, on purpose: the audit screen shows route templates (`/api/components/{id}/{action}`) as the action, the Account and Audit forms still sit in one rounded toolbar each, and the Overview has no chart. They are the next pass (the owner has not seen the first one). The look of the new corner was not checked in a browser (there is none in CI, 9.1); it is checked by the stylesheet rules and the unit tests.
 

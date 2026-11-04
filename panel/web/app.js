@@ -15,6 +15,7 @@ import { start as startAudit } from "./modules/audit.js";
 import { start as startVersion } from "./modules/version.js";
 import { menu, revealOnce, skipLink } from "./modules/chrome.js";
 
+const REPO_URL = "https://github.com/FlexEbat/dpistack";
 const $ = (id) => document.getElementById(id);
 
 function cookie(name) {
@@ -257,6 +258,10 @@ async function showOverview() {
   }
   showView("overview");
   // The corner: the version, and the update when there is one.
+  // The repository links are set here, so the page itself carries no external address.
+  for (const a of document.querySelectorAll("a[data-repo]")) {
+    a.href = REPO_URL + (a.dataset.repo ? "/" + a.dataset.repo : "");
+  }
   const note = $("translate-note");
   $("translate-btn").onclick = () => {
     note.hidden = !note.hidden;
