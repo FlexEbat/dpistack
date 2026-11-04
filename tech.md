@@ -1,11 +1,12 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v48** (2026-11-03)
-**Program version: v0.31.1** (slices 0-35 are done, 36-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
+**Document version: v49** (2026-11-03)
+**Program version: v0.32.0** (slices 0-35 are done, 36-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.32.0: the corner of the panel and the Build info window, the unslop pass over the look (section 18.35); the Rules screen no longer fails on a fresh install without `disable.conf`; dates in the panel are shown in the `en-GB` format.
 - v0.31.1: the Update button failed on an installation with `ACCESS_MODE=lan` (section 18.34). `self-update apply` ran `install.sh install -y` without `ACCESS_CONFIRM=yes`, so the validation stopped with code 2 ("needs --set ACCESS_CONFIRM=yes") and nothing was updated. Now an access mode and bind address equal to the applied ones count as confirmed; a mode edited by hand after the last apply still stops.
 - v0.31.0: `LAN_CIDR` takes a list (section 18.33). The report: a WireGuard server in Docker on the same host reached the panel from a phone and got `403 access from this address is forbidden`, because the panel saw the Docker or tunnel address, not an address of `192.168.1.0/24`, and `LAN_CIDR` held one network. Now `LAN_CIDR` is `auto`, one CIDR, or a comma-separated list of them (`auto` inside the list is the network of the default route); the panel, the nginx `allow` lines and the ufw/firewalld rules follow the whole list.
 - v0.30.1: the review of the install log and of CI/CD of 2026-11-02 (section 18.32). The log was made by an old v0.29.1 copy of the repository: its Suricata usage failure, EveBox "unable to open database file" and missing tcpreplay are the ones v0.29.2 already fixed. What was still open and is fixed here: `git clone` of nDPI (and of Suricata) died once with "HTTP/2 stream was not closed cleanly" and stopped the install; the clone now goes through `git_clone_retry` (HTTP/1.1, 3 tries, the half-made directory removed between them). `SURICATA_STABLE_REF` is raised to `suricata-8.0.8` (the weekly check of 2026-11-02 built it and opened issue 60).
@@ -56,6 +57,7 @@ Program changelog (what was done per slice of section 17):
 - v0.3.1 (slices 14-15 and the full review): alert channels (`log`, `tg`, `mail`, `panel`), `selfinstall` with the `dpistack` command and the control menu; the fixes of section 18.1: `run` returns the real error code, writing files leaves no truncated result, `state` is protected by a lock, the free keys of `dpistack.conf` are checked against patterns, `*_VERSION` for ntopng and EveBox take effect, CI is pinned by SHA.
 
 Changelog of this document:
+- v49: v0.32.0. Section 18.35, rules 6 and 7 of 12.3.
 - v48: v0.31.1. Section 18.34.
 - v40: v0.27.0. Sections 9.1 and 18.31; the panel weight rule (fonts apart); the fonts and icons are no longer "system fonts" and "thin line icons".
 - v39: v0.26.2. Section 18.30.
@@ -1096,6 +1098,9 @@ Work goes in the `dev` branch, the `main` branch holds only the tested state:
 5. A release is made by the tag `vX.Y.Z` on `main` (12.1: a tag not on `main` is not published). Releases and tags exist for every version (v0.22.0 and later made at the time, v0.2.0-v0.25.2 added afterwards at the last commit of each version and marked "not latest"); the tag must equal `DPISTACK_VERSION` of the tagged commit. Since v0.26.0 the release is also what the panel's update check reads (`releases/latest`): a version without a published release (not a draft, not a pre-release) is never offered as an update, so every merge of a new version into `main` is followed by the release `vX.Y.Z` on that merge commit.
 
 If a merge gives a conflict, it is resolved in `dev`, after which the checks pass again.
+
+6. Authorship (owner's rule, v0.32.0): every commit, in `dev` and in `main`, is authored and committed by the owner, `FlexEbat <52438328+FlexEbat@users.noreply.github.com>`. No other author, no `Co-authored-by` trailer, no tool or assistant named in the message. Set it before the first commit (`git config user.name FlexEbat`, `git config user.email 52438328+FlexEbat@users.noreply.github.com`); a commit made under another name is fixed with `git commit --amend --reset-author` before it is merged.
+7. A one-off exception to rule 3 needs the owner's explicit word in that session (v0.32.0 was merged on the owner's word that the checks had passed, before the run finished); the exception is not a standing rule.
 
 ### 12.2 Security checks (`scripts/security.sh`)
 
@@ -2509,3 +2514,25 @@ The audit log of 2026-11-03 showed `POST /api/update` and then `cli self-update 
 | D33 | **Fix.** `selfupdate_access_unchanged` compares `ACCESS_MODE` and `BIND_ADDR` of the saved config with `applied.ACCESS_MODE` and `applied.BIND_ADDR` in the state; equal means already confirmed and `--set ACCESS_CONFIRM=yes` is added. A mode that was edited by hand after the last apply (or a state without a record) is not confirmed: the update still stops with exit 2 and the message, because an update must not widen access |
 
 Tests: `tests/self_update.bats` (an update on a `lan` installation passes; a mode edited after the last apply stops with 2). The new test fails on v0.31.0 and passes now.
+
+### 18.35 The corner, Build info and the unslop pass (v0.32.0)
+
+The owner sent screenshots of the panel (nine, all reviewed), mockups of the corner (`NEED.png`) and of the Build info window (`NEED2.png`), and asked to follow the unslop rules (github.com/heydamir/unslop) and to write only in English.
+
+What the review found, and what was done:
+
+| id | finding | decision |
+| --- | --- | --- |
+| D34 | The menu labels were centered, so the icons stood in different columns (the shared `button` rule centers, the menu rule did not override `justify-content`) | `justify-content: flex-start` and the 8px radius in the menu; a test pins it |
+| D35 | Pills everywhere (inputs, buttons, menu), gradient heading, a drifting point field behind the content | Controls and menu use the 8px radius, the heading is a solid colour, the canvas is removed from the page. `fx.js` and `nofx.js` stay because the edition switch (`api.go`) and its test serve them; with no canvas `fx.js` does nothing. The old rule "a gradient fills the heading" (9.1) is replaced by "no gradient anywhere" in `design.test.mjs` |
+| D36 | The same sentence under every page title | Removed: the title is enough |
+| D37 | The Rules screen showed `file missing: disable.conf` on an installation that never disabled a rule | A list file that does not exist is an empty list (`rules.js`) |
+| D38 | Dates used the `ru-RU` locale | `en-GB` |
+| D39 | The corner clipped "Sign out" at a medium width | The header wraps and the corner may wrap; on a narrow screen only the icons of the chips remain |
+| D40 | **The corner.** Choose yourself: Translation (a placeholder: a button that says "Translation is not available yet"), the version chip (lit with a coloured border when an update exists, no glow), GitHub (a link to the repository, no star count: the panel does not call out), Exit (an icon button). Telegram, the crown, the heart and the sparkles of the mockup are not in dpistack and are not added |
+| D41 | **Build info.** A click on the version always opens the window: the update banner (with Update and Not now, the confirmation of before) only when a newer release exists, then Version, Build time, Commit (12 characters, copy button), Runtime, Latest release, and the links to GitHub and the releases. The backend and frontend commits of the mockup are one commit here (one repository, one binary). `GET /api/version` returns a `build` object (`commit`, `time`, `go`, `platform`; empty fields are left out) |
+| D42 | **Where the commit comes from.** `BUILD_INFO` (`commit=`, `date=`) is substituted by git in `git archive` tarballs (`.gitattributes`: `export-subst`), written by the release workflow into the archive, and read from the checkout when there is a `.git`. `panel_ldflags` (`lib/step_panel.sh`) turns it into `-X main.buildCommit` and `-X main.buildTime` for the host build and the container build; the release workflow stamps the ready binaries. A missing or unsubstituted file stamps nothing and the window shows fewer rows |
+
+Not done yet, on purpose: the audit screen shows route templates (`/api/components/{id}/{action}`) as the action, the Account and Audit forms still sit in one rounded toolbar each, and the Overview has no chart. They are the next pass (the owner has not seen the first one). The look of the new corner was not checked in a browser (there is none in CI, 9.1); it is checked by the stylesheet rules and the unit tests.
+
+Tests: `panel/web/test/version.test.mjs` (the rows, the time), `panel/web/test/design.test.mjs` (no gradient, controls not pills, menu left aligned), `panel/internal/api/version_test.go` (the `build` object), `tests/panel_step.bats` (`panel_ldflags`).

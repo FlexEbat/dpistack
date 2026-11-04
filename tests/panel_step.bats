@@ -459,3 +459,25 @@ release_binary_name() {
 	[ "$status" -eq 0 ]
 	grep -q ' -access lan -lan-cidr 192.168.1.0/24,172.18.0.0/16 ' "$(unit_file)"
 }
+
+# The Build info window: the commit and its date are stamped into the panel
+# binary from BUILD_INFO (release archives) or from git (a checkout).
+ldflags_of() {
+	bash -c 'ORIGIN_DIR="$1"; source "$2/lib/step_panel.sh"; panel_ldflags' _ "$1" "$REPO_DIR"
+}
+
+@test "panel_ldflags stamps the commit and the date from BUILD_INFO" {
+	printf 'commit=%s\ndate=%s\n' a70ec9a1b2c3d4e5f60718293a4b5c6d7e8f9012 2026-11-03T12:00:00Z >"$WORK/BUILD_INFO"
+	run ldflags_of "$WORK"
+	[ "$status" -eq 0 ]
+	[ "$output" = "-s -w -X main.buildCommit=a70ec9a1b2c3d4e5f60718293a4b5c6d7e8f9012 -X main.buildTime=2026-11-03T12:00:00Z" ]
+}
+
+@test "panel_ldflags stamps nothing from an unsubstituted or missing BUILD_INFO" {
+	printf 'commit=$Format:%%H$\ndate=$Format:%%cI$\n' >"$WORK/BUILD_INFO"
+	run ldflags_of "$WORK"
+	[ "$output" = "-s -w" ]
+	rm "$WORK/BUILD_INFO"
+	run ldflags_of "$WORK"
+	[ "$output" = "-s -w" ]
+}

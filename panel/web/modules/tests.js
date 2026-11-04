@@ -23,7 +23,7 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function when(iso) {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("ru-RU");
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-GB");
 }
 
 // rows draws the results. The status is a word as well as a style, so it

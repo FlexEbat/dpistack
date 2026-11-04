@@ -28,6 +28,13 @@ import (
 	"github.com/FlexEbat/dpistack/panel/web"
 )
 
+// Stamped by the build (-ldflags "-X main.buildCommit=... -X main.buildTime=..."):
+// the commit of the sources and its date. Both stay empty in a plain build.
+var (
+	buildCommit string
+	buildTime   string
+)
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "panel:", err)
@@ -120,6 +127,7 @@ func run(args []string) error {
 	}
 	handler := api.New(api.Config{
 		Version:     *version,
+		Build:       api.BuildInfo{Commit: buildCommit, Time: buildTime},
 		Update:      checker,
 		Policy:      policy,
 		AuthFile:    *authFile,

@@ -64,10 +64,13 @@ jobs:
           name="dpistack-${GITHUB_REF_NAME#v}"
           mkdir -p "dist/$name/tests"
           cp -a install.sh lib templates bin panel README.md LICENSE dpistack.conf.example "dist/$name/"
+          # Which commit this is: the archive has no .git, the installer and the
+          # panel read it from here (Build info window).
+          printf 'commit=%s\ndate=%s\n' "$GITHUB_SHA" "$(git show -s --format=%cI HEAD)" > "dist/$name/BUILD_INFO"
           # Ready panel binaries: a host without Go installs the panel from
           # these (PANEL_SOURCE=auto picks the one for its CPU).
           for arch in amd64 arm64; do
-            (cd panel && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-s -w" \
+            (cd panel && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.buildCommit=$GITHUB_SHA -X main.buildTime=$(git show -s --format=%cI HEAD)" \
               -o "../dist/$name/dpistack-panel-linux-$arch" ./cmd/panel)
           done
           cp -a tests/data "dist/$name/tests/"

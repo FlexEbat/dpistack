@@ -104,3 +104,18 @@ func TestUpdateJobPassesThrough(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }
+
+func TestVersionCarriesTheBuild(t *testing.T) {
+	c := newOpsCtl(t)
+	e := setup(t, withOpsCtl(c), func(cfg *Config, _ string) {
+		cfg.Version = "0.31.1"
+		cfg.Build = BuildInfo{Commit: "a70ec9a1b2c3", Time: "2026-11-03T12:00:00Z"}
+	})
+	cookies, csrf := e.login()
+	w := send(e, "GET", "/api/version", "", cookies, csrf)
+	m := jsonMap(t, w.Body.Bytes())
+	b, _ := m["build"].(map[string]any)
+	if w.Code != 200 || m["version"] != "0.31.1" || b["commit"] != "a70ec9a1b2c3" || b["time"] != "2026-11-03T12:00:00Z" || b["go"] == "" || b["platform"] == "" {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+}

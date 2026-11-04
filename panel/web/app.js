@@ -257,9 +257,18 @@ async function showOverview() {
   }
   showView("overview");
   // The corner: the version, and the update when there is one.
+  const note = $("translate-note");
+  $("translate-btn").onclick = () => {
+    note.hidden = !note.hidden;
+    if (!note.hidden) setTimeout(() => (note.hidden = true), 2500);
+  };
   stopVersion?.();
   stopVersion = startVersion(api, {
     badge: $("version-badge"),
+    badgeText: $("version-text"),
+    banner: $("update-banner"),
+    facts: $("build-facts"),
+    close: $("update-close"),
     dialog: $("update-dialog"),
     text: $("update-text"),
     status: $("update-status"),
