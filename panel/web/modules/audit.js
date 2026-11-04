@@ -19,6 +19,26 @@ export function exportUrl(f, format) {
   return "/api/audit/export?" + q.toString();
 }
 
+const VERBS = { restart: "Restart", start: "Start", stop: "Stop", reload: "Reload" };
+const FIXED = {
+  "/api/login": "Sign in",
+  "/api/logout": "Sign out",
+  "/api/update": "Update the panel",
+  "/api/password": "Change password",
+};
+
+// describe says what an entry did in words. The recorded action is the route
+// template (POST /api/components/{id}/{action}), which tells nothing; the
+// target holds the real path. An entry it does not know keeps the recorded
+// action.
+export function describe(action, target) {
+  const path = String(target || "");
+  if (FIXED[path]) return FIXED[path];
+  const m = /^\/api\/components\/([a-z0-9_-]+)\/([a-z_]+)$/.exec(path);
+  if (m && VERBS[m[2]]) return VERBS[m[2]] + " " + m[1];
+  return action ?? "";
+}
+
 function cell(text, className) {
   const td = document.createElement("td");
   if (className) td.className = className;
@@ -76,8 +96,8 @@ export function start(api, els, onError) {
         cell(e.ts.replace("T", " ").replace("Z", "")),
         cell(e.user),
         cell(e.ip),
-        cell(e.action),
-        cell(e.target),
+        cell(describe(e.action, e.target)),
+        cell(e.target, "muted"),
         cell(e.result, "result-" + e.result),
         cell(e.detail),
       );

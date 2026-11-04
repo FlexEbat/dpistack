@@ -1,11 +1,12 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v50** (2026-11-03)
-**Program version: v0.32.0** (slices 0-35 are done, 36-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
+**Document version: v51** (2026-11-03)
+**Program version: v0.32.1** (slices 0-35 are done, 36-45 are planned in section 17; section 17 holds the history, section 18 the reviews)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog (what was done per slice of section 17):
+- v0.32.1: the Audit screen says what was done ("Restart ntopng", "Sign in") instead of the route template, the raw path moves to a muted Target column; the Account and Audit forms have padding and flexible fields (D44, D45 of 18.35).
 - v0.32.0: the corner of the panel and the Build info window, the unslop pass over the look (section 18.35); the Rules screen no longer fails on a fresh install without `disable.conf`; dates in the panel are shown in the `en-GB` format.
 - v0.31.1: the Update button failed on an installation with `ACCESS_MODE=lan` (section 18.34). `self-update apply` ran `install.sh install -y` without `ACCESS_CONFIRM=yes`, so the validation stopped with code 2 ("needs --set ACCESS_CONFIRM=yes") and nothing was updated. Now an access mode and bind address equal to the applied ones count as confirmed; a mode edited by hand after the last apply still stops.
 - v0.31.0: `LAN_CIDR` takes a list (section 18.33). The report: a WireGuard server in Docker on the same host reached the panel from a phone and got `403 access from this address is forbidden`, because the panel saw the Docker or tunnel address, not an address of `192.168.1.0/24`, and `LAN_CIDR` held one network. Now `LAN_CIDR` is `auto`, one CIDR, or a comma-separated list of them (`auto` inside the list is the network of the default route); the panel, the nginx `allow` lines and the ufw/firewalld rules follow the whole list.
@@ -57,6 +58,7 @@ Program changelog (what was done per slice of section 17):
 - v0.3.1 (slices 14-15 and the full review): alert channels (`log`, `tg`, `mail`, `panel`), `selfinstall` with the `dpistack` command and the control menu; the fixes of section 18.1: `run` returns the real error code, writing files leaves no truncated result, `state` is protected by a lock, the free keys of `dpistack.conf` are checked against patterns, `*_VERSION` for ntopng and EveBox take effect, CI is pinned by SHA.
 
 Changelog of this document:
+- v51: v0.32.1, D44 and D45 of 18.35; the summary of v0.31.1 and v0.32.0 in 18.35.
 - v50: D43 of 18.35 (the repository links are set by `app.js`).
 - v49: v0.32.0. Section 18.35, rules 6 and 7 of 12.3.
 - v48: v0.31.1. Section 18.34.
@@ -2534,7 +2536,11 @@ What the review found, and what was done:
 | D41 | **Build info.** A click on the version always opens the window: the update banner (with Update and Not now, the confirmation of before) only when a newer release exists, then Version, Build time, Commit (12 characters, copy button), Runtime, Latest release, and the links to GitHub and the releases. The backend and frontend commits of the mockup are one commit here (one repository, one binary). `GET /api/version` returns a `build` object (`commit`, `time`, `go`, `platform`; empty fields are left out) |
 | D42 | **Where the commit comes from.** `BUILD_INFO` (`commit=`, `date=`) is substituted by git in `git archive` tarballs (`.gitattributes`: `export-subst`), written by the release workflow into the archive, and read from the checkout when there is a `.git`. `panel_ldflags` (`lib/step_panel.sh`) turns it into `-X main.buildCommit` and `-X main.buildTime` for the host build and the container build; the release workflow stamps the ready binaries. A missing or unsubstituted file stamps nothing and the window shows fewer rows |
 | D43 | **No external address in the page.** `tests/settings_ui.bats` forbids `href="https://..."` in `index.html`; the GitHub and Releases links carry `data-repo` and `app.js` sets the address from the constant `REPO_URL` (the first v0.32.0 commit put the addresses in the HTML and the gate failed) |
+| D44 | **Audit in words.** `describe` (`modules/audit.js`) turns the recorded action (a route template such as `POST /api/components/{id}/{action}`) and the target path into "Restart ntopng", "Stop suricata", "Sign in", "Sign out", "Update the panel", "Change password"; an entry it does not know keeps the recorded action. The filter "action contains" still searches the recorded text |
+| D45 | **Forms.** A form used as a toolbar (Account, Audit) has its own padding, and its text and password fields grow (`flex: 1 1 12rem`), so a placeholder is no longer cut |
 
 Not done yet, on purpose: the audit screen shows route templates (`/api/components/{id}/{action}`) as the action, the Account and Audit forms still sit in one rounded toolbar each, and the Overview has no chart. They are the next pass (the owner has not seen the first one). The look of the new corner was not checked in a browser (there is none in CI, 9.1); it is checked by the stylesheet rules and the unit tests.
 
 Tests: `panel/web/test/version.test.mjs` (the rows, the time), `panel/web/test/design.test.mjs` (no gradient, controls not pills, menu left aligned), `panel/internal/api/version_test.go` (the `build` object), `tests/panel_step.bats` (`panel_ldflags`).
+
+Summary of 2026-11-03 (v0.31.1, v0.32.0, v0.32.1): the Update button works on `lan` installations (D32, D33); the corner has Translation (placeholder), the version chip, GitHub and Exit, and the Build info window shows the build and the update banner (D40 to D42); the look follows the unslop rules (D34 to D39); the Rules screen works on a fresh install; the Audit screen is readable (D44). Not done: a chart on the Overview, the review of the look in a real browser, the cause of the ntopng stop seen in the log (the journal of `ntopng` is needed).
