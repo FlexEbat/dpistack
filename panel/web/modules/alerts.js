@@ -21,7 +21,7 @@ function option(value, text) {
 
 function when(iso) {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("ru-RU");
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-GB");
 }
 
 export const word = (s) => WORD[s] || s;

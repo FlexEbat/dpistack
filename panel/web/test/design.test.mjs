@@ -138,20 +138,20 @@ test("radius: Tailwind values only", () => {
   });
 });
 
-test("backgrounds are flat: a gradient only fills text, and only the heading uses it", () => {
+test("backgrounds are flat and text is solid: no gradient anywhere (unslop, tech.md 18.35)", () => {
   each((name, r) => {
-    const has = r.decls.some(([, v]) => /gradient\(/.test(v));
-    if (!has) return;
-    // the dark scheme of lite only swaps the colours of the heading rule
-    const swap = r.selector === "h1" && /prefers-color-scheme: dark/.test(r.atrule || "");
-    assert.ok(swap || r.decls.some(([p, v]) => p === "background-clip" && v === "text"), `${name} ${r.selector}`);
-    assert.match(r.selector, /^h1$/, `${name} ${r.selector}`);
-    assert.ok(r.decls.every(([, v]) => !/radial|conic/.test(v)), name);
+    assert.ok(r.decls.every(([, v]) => !/gradient\(/.test(v)), `${name} ${r.selector}`);
+    assert.ok(r.decls.every(([p, v]) => !(p === "background-clip" && v === "text")), `${name} ${r.selector}`);
   });
-  const dark = SHEETS["full.css"];
-  assert.match(dark, /linear-gradient\(90deg, #FFFFFF, #9B9B9B\)/);
-  assert.match(SHEETS["lite.css"], /linear-gradient\(90deg, #000000, #666666\)/);
-  assert.match(SHEETS["lite.css"], /linear-gradient\(90deg, #FFFFFF, #9B9B9B\)/);
+});
+
+test("controls are not pills: the shared control rule uses the 8px radius, the menu stays square", () => {
+  for (const [name, rules] of Object.entries(PARSED)) {
+    const base = rules.find((r) => /(^|,\s*)button(,|$)/.test(r.selector) && r.decls.some(([p]) => p === "padding"));
+    assert.equal(base.decls.find(([p]) => p === "border-radius")[1], "var(--r-lg)", name);
+  }
+  const nav = PARSED["full.css"].find((r) => r.selector === "nav .nav-links button" && !r.atrule);
+  assert.equal(nav.decls.find(([p]) => p === "justify-content")[1], "flex-start");
 });
 
 test("dark backgrounds come from the list of six", () => {

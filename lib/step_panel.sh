@@ -173,6 +173,28 @@ panel_go_image() {
 	echo "${DPISTACK_GO_IMAGE:-golang:${need%.*}}"
 }
 
+# panel_ldflags - the linker flags of the panel build: "-s -w" and, when the
+# sources say which commit they are, the commit and its date for the Build
+# info window. The commit comes from the git checkout, or from BUILD_INFO
+# (git substitutes it in `git archive` tarballs, the release workflow writes
+# it); an unsubstituted or missing file stamps nothing.
+panel_ldflags() {
+	local commit="" when="" f="$ORIGIN_DIR/BUILD_INFO"
+	if [[ -d "$ORIGIN_DIR/.git" ]] && command -v git >/dev/null 2>&1; then
+		commit=$(git -C "$ORIGIN_DIR" rev-parse HEAD 2>/dev/null || true)
+		when=$(git -C "$ORIGIN_DIR" show -s --format=%cI HEAD 2>/dev/null || true)
+	elif [[ -f "$f" ]]; then
+		commit=$(sed -n 's/^commit=//p' "$f" | head -n1)
+		when=$(sed -n 's/^date=//p' "$f" | head -n1)
+	fi
+	[[ "$commit" =~ ^[0-9a-f]{40}$ ]] || commit=""
+	[[ "$when" =~ ^[0-9T:+Z.-]{10,32}$ ]] || when=""
+	local flags="-s -w"
+	[[ -n "$commit" ]] && flags+=" -X main.buildCommit=$commit"
+	[[ -n "$commit" && -n "$when" ]] && flags+=" -X main.buildTime=$when"
+	printf '%s' "$flags"
+}
+
 # panel_can_build_in_container - Docker is there and its daemon answers, so
 # Go on the host is not needed.
 panel_can_build_in_container() {
@@ -211,7 +233,7 @@ panel_bin_install() {
 	tmp=$(mktemp) || return 1
 	if panel_host_go_ok; then
 		if ! (cd "$ORIGIN_DIR/panel" &&
-			run env CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "$tmp" ./cmd/panel); then
+			run env CGO_ENABLED=0 go build -trimpath -ldflags "$(panel_ldflags)" -o "$tmp" ./cmd/panel); then
 			rm -f "$tmp"
 			log "ERROR" "panel: the build failed (see the Go output above; a ready binary: PANEL_SOURCE=prebuilt)"
 			return 1

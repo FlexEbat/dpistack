@@ -48,7 +48,7 @@ export function summarize(type, e) {
 function when(iso) {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("ru-RU");
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-GB");
 }
 
 export function start(api, els, onError) {

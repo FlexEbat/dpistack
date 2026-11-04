@@ -60,6 +60,9 @@ type Config struct {
 	Lite bool
 	// Version is the version of dpistack that started this panel ("0.25.2").
 	Version string
+	// Build says which sources and when the running binary was built from; it
+	// feeds the Build info window. Empty fields are not shown.
+	Build BuildInfo
 	// Update asks GitHub for a newer release; nil switches the check off.
 	Update *update.Checker
 }

@@ -2,9 +2,27 @@ package api
 
 import (
 	"net/http"
+	"runtime"
 
 	"github.com/FlexEbat/dpistack/panel/internal/update"
 )
+
+// BuildInfo is what the Build info window shows besides the version. Commit
+// and Time are stamped at build time (-ldflags); the rest comes from the Go
+// runtime.
+type BuildInfo struct {
+	Commit string `json:"commit,omitempty"`
+	Time   string `json:"time,omitempty"`
+	Go     string `json:"go,omitempty"`
+	Arch   string `json:"platform,omitempty"`
+}
+
+// versionResponse is the answer of GET /api/version: the release check and
+// the build of the running panel.
+type versionResponse struct {
+	update.Info
+	Build BuildInfo `json:"build"`
+}
 
 // versionInfo is what the corner of every screen shows. Without a checker
 // (the check is switched off) only the running version is known.
@@ -17,7 +35,9 @@ func (s *server) versionInfo(r *http.Request) update.Info {
 
 // versionGet handles GET /api/version.
 func (s *server) versionGet(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.versionInfo(r))
+	b := s.cfg.Build
+	b.Go, b.Arch = runtime.Version(), runtime.GOOS+"/"+runtime.GOARCH
+	writeJSON(w, http.StatusOK, versionResponse{Info: s.versionInfo(r), Build: b})
 }
 
 // updateStart handles POST /api/update. The person confirmed in the dialog;

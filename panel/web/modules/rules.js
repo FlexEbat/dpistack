@@ -38,7 +38,7 @@ export function parseConf(text) {
 
 function when(iso) {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("ru-RU");
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-GB");
 }
 
 export function start(api, els, onError) {
@@ -52,7 +52,13 @@ export function start(api, els, onError) {
       headers: { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-  const conf = (name) => api(`/api/config/${name}`).then((r) => parseConf(r.content));
+  // A list file that was never written (a fresh install has no disable.conf)
+  // is an empty list, not an error.
+  const conf = (name) =>
+    api(`/api/config/${name}`).then(
+      (r) => parseConf(r.content),
+      (e) => (/file missing/.test(String(e && e.message)) ? parseConf("") : Promise.reject(e)),
+    );
 
   function setBusy(on) {
     for (const b of els.root.querySelectorAll("button")) b.disabled = on;

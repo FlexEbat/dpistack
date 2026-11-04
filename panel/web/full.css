@@ -1,5 +1,5 @@
 /* dpistack panel, full edition. The visual system follows the landing page
-   design skill (tech.md 9.1): Geist only, the Tailwind type scale, the fixed
+   design skill (tech.md 9.1) and the unslop rules (tech.md 18.35): Geist only, the Tailwind type scale, the fixed
    spacing table, Tailwind radii, flat dark backgrounds from a short list, one
    motion curve. The fonts are served by the panel itself, so the page works
    offline under the Content-Security-Policy. */
@@ -38,15 +38,10 @@ body {
   font: 400 var(--text-sm)/var(--lh-sm) var(--sans);
 }
 html.menu-open { overflow: hidden; }
-#fx { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
 main { position: relative; z-index: 1; }
 p { text-wrap: pretty; }
 h1, h2, h3 { margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
-h1 {
-  max-width: 680px; font-size: var(--text-2xl); line-height: var(--lh-2xl); font-weight: 600;
-  background-image: linear-gradient(90deg, #FFFFFF, #9B9B9B); -webkit-background-clip: text; background-clip: text;
-  color: transparent; -webkit-text-fill-color: transparent;
-}
+h1 { max-width: 680px; font-size: var(--text-2xl); line-height: var(--lh-2xl); font-weight: 600; color: var(--fg); }
 h2 { margin: var(--s-400) 0 var(--s-100); font-size: var(--text-base); line-height: var(--lh-base); font-weight: 600; color: var(--soft); }
 h3 { font-size: var(--text-sm); line-height: var(--lh-sm); font-weight: 600; }
 .muted { color: var(--muted); }
@@ -66,7 +61,7 @@ h3 { font-size: var(--text-sm); line-height: var(--lh-sm); font-weight: 600; }
 #overview > nav { grid-area: nav; }
 #overview > header { grid-area: head; }
 #overview > div[id^="view-"] { grid-area: content; min-width: 0; max-width: 78rem; }
-header { display: flex; align-items: center; justify-content: space-between; gap: var(--s-200); padding: var(--s-400) 0 var(--s-300); }
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-200); min-width: 0; padding: var(--s-400) 0 var(--s-300); }
 header .titles p { max-width: 680px; margin: var(--s-50) 0 0; }
 nav {
   position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
@@ -80,8 +75,8 @@ nav {
 .nav-links { display: flex; flex-direction: column; gap: var(--s-50); }
 .menu-toggle { display: none; }
 nav .nav-links button {
-  display: flex; align-items: center; gap: var(--s-100); width: 100%; text-align: left;
-  padding: var(--s-75) var(--s-100); border: 1px solid transparent; border-radius: var(--r-full);
+  display: flex; align-items: center; justify-content: flex-start; gap: var(--s-100); width: 100%; text-align: left;
+  padding: var(--s-75) var(--s-100); border: 1px solid transparent; border-radius: var(--r-lg);
   background: transparent; color: var(--soft); font-size: var(--text-sm); line-height: var(--lh-sm); font-weight: 500;
 }
 nav .nav-links button .ico { color: var(--muted); transition: color 300ms var(--ease), transform 500ms var(--ease); }
@@ -93,10 +88,10 @@ nav .nav-links button[aria-current="page"] .ico { color: var(--accent-2); }
 /* ---- controls ---- */
 input, select, textarea, button {
   font: 400 var(--text-base)/var(--lh-base) var(--sans); color: var(--fg); background: var(--card-2);
-  border: 1px solid var(--edge); border-radius: var(--r-full); padding: var(--s-75) var(--s-100);
+  border: 1px solid var(--edge); border-radius: var(--r-lg); padding: var(--s-75) var(--s-100);
   transition: background-color 300ms var(--ease), border-color 300ms var(--ease), color 300ms var(--ease), opacity 300ms var(--ease), transform 300ms var(--ease);
 }
-textarea { border-radius: var(--r-2xl); }
+textarea { border-radius: var(--r-xl); }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible, h1:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
@@ -109,7 +104,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 input:hover:not(:disabled), select:hover:not(:disabled), textarea:hover:not(:disabled) { border-color: var(--muted); }
 button[type="submit"], button.primary, .toolbar button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 button[type="submit"]:hover:not(:disabled), button.primary:hover:not(:disabled), .toolbar button[aria-pressed="true"]:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
-#logout { color: var(--soft); }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-75); margin-bottom: var(--s-200); }
 .perms { display: flex; flex-wrap: wrap; gap: var(--s-50) var(--s-75); flex-basis: 100%; }
 .perm { display: inline-flex; align-items: center; gap: var(--s-50); font-size: var(--text-sm); color: var(--muted); }
@@ -121,10 +115,10 @@ select { padding-right: var(--s-300); }
 
 /* ---- surfaces ---- */
 form, .card, .overall, .chart-card, .log, .settings-bar, .editor, .result {
-  background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-2xl);
+  background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-xl);
 }
 section { overflow-x: auto; }
-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-2xl); overflow: hidden; }
+table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-xl); overflow: hidden; }
 th, td { padding: var(--s-100) var(--s-200); text-align: left; border-bottom: 1px solid var(--edge); vertical-align: top; }
 tr:last-child td { border-bottom: 0; }
 th { background: var(--card-2); color: var(--muted); font-weight: 500; font-size: var(--text-xs); line-height: var(--lh-xs); }
@@ -183,14 +177,42 @@ tbody tr:hover td { background: var(--card-2); }
 #login form { display: grid; gap: var(--s-100); padding: var(--s-300); }
 #login label { color: var(--muted); font-size: var(--text-xs); line-height: var(--lh-xs); }
 
-/* ---- version in the corner ---- */
-.corner { display: flex; align-items: center; gap: var(--s-75); }
-.version { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 500; }
+/* ---- the corner: translation, version, GitHub, exit ---- */
+.corner { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s-75); }
+.icon-btn { padding: var(--s-75); color: var(--soft); background: var(--card); }
+.icon-btn svg, .chip svg { width: 1.25rem; height: 1.25rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn svg.ico { fill: currentColor; stroke: none; }
+.chip svg.fill { fill: currentColor; stroke: none; }
+.icon-btn.small { padding: var(--s-25) var(--s-75); font-size: var(--text-xs); line-height: var(--lh-xs); }
+.chip {
+  display: inline-flex; align-items: center; gap: var(--s-75); padding: var(--s-75) var(--s-100); background: var(--card); color: var(--fg);
+  border: 1px solid var(--edge); border-radius: var(--r-lg); font-size: var(--text-sm); line-height: var(--lh-sm); font-weight: 600; text-decoration: none; cursor: pointer;
+  transition: background-color 300ms var(--ease), border-color 300ms var(--ease), color 300ms var(--ease);
+}
+.chip:hover { background: var(--hover); }
+.version { font-variant-numeric: tabular-nums; color: var(--soft); }
 .version.has-update { color: var(--accent-2); border-color: var(--accent); }
-#update-dialog { max-width: 28rem; border: 1px solid var(--edge); border-radius: var(--r-2xl); padding: var(--s-300); color: inherit; background: var(--card); }
+.note-anchor { position: relative; }
+.note { position: absolute; top: 100%; right: 0; z-index: 5; margin: var(--s-75) 0 0; padding: var(--s-75) var(--s-100); width: max-content; max-width: 16rem; color: var(--soft); background: var(--card-2); border: 1px solid var(--edge); border-radius: var(--r-lg); font-size: var(--text-xs); line-height: var(--lh-xs); }
+
+/* ---- Build info window ---- */
+#update-dialog { width: min(30rem, calc(100% - var(--s-400))); padding: var(--s-300); color: inherit; background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-xl); }
 #update-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
-#update-log:empty { display: none; }
-#update-log { max-height: 8rem; overflow: auto; font-size: var(--text-xs); line-height: var(--lh-xs); white-space: pre-wrap; }
+#update-dialog h2 { margin: 0; flex: 1; font-size: var(--text-lg); line-height: var(--lh-lg); color: var(--fg); }
+.dlg-head { display: flex; align-items: center; gap: var(--s-100); margin-bottom: var(--s-200); }
+.dlg-mark { width: 1.5rem; height: 1.5rem; fill: none; stroke: var(--accent-2); stroke-width: 1.75; stroke-linecap: round; }
+.banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-100); margin-bottom: var(--s-200); padding: var(--s-200); background: var(--card-2); border: 1px solid var(--accent); border-radius: var(--r-lg); }
+.banner strong { color: var(--accent-2); }
+.banner p { margin: var(--s-25) 0 0; max-width: 20rem; }
+.banner-actions { display: flex; gap: var(--s-75); }
+#update-status:empty, #update-log:empty { display: none; }
+#update-status { margin: 0 0 var(--s-100); }
+#update-log { max-height: 8rem; overflow: auto; margin: 0 0 var(--s-200); font-size: var(--text-xs); line-height: var(--lh-xs); white-space: pre-wrap; }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-100); margin: 0 0 var(--s-200); }
+.fact { min-width: 0; padding: var(--s-100) var(--s-200); background: var(--card-2); border: 1px solid var(--edge); border-radius: var(--r-lg); }
+.fact dt { color: var(--muted); font-size: var(--text-xs); line-height: var(--lh-xs); }
+.fact dd { display: flex; align-items: center; justify-content: space-between; gap: var(--s-75); margin: var(--s-25) 0 0; font: 500 var(--text-sm)/var(--lh-sm) var(--mono); word-break: break-all; }
+.dlg-foot { display: flex; gap: var(--s-75); }
 
 /* ---- loading: skeletons shaped like the blocks they stand for ---- */
 .skeleton { width: 100%; min-height: var(--s-800); border-radius: var(--r-2xl); background: var(--card-2); animation: pulse 1600ms var(--ease) infinite; }
@@ -239,6 +261,8 @@ tbody tr:hover td { background: var(--card-2); }
   nav .nav-links button:nth-child(n+8) { --d: 400ms; }
   header { padding: var(--s-300) 0 var(--s-200); }
   .setting { grid-template-columns: minmax(0, 1fr); }
+  .facts { grid-template-columns: minmax(0, 1fr); }
+  .corner .chip span:not(#version-text) { display: none; }
 }
 
 /* ---- reduced motion: no movement, only plain opacity changes ---- */
