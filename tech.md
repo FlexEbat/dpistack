@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v54** (2026-11-04)
-**Program version: v0.33.0** (slices 0-36 are done, 37 is partly done, 38-45 are not started; the list of slices is in section 17, the reviews in section 18)
+**Document version: v55** (2026-11-05)
+**Program version: v0.34.0** (slices 0-36 are done, 37 is mostly done, 38-45 are not started; the list of slices is in section 17, the reviews in section 18)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.34.0: slice 37, the shell of the panel (section 18.37). The menu is in four groups (Monitoring, Protection, System, Admin) and a group with no allowed entry is hidden; the address names the screen (`#events`, back and forward work, a screen the user may not use opens Overview); the menu folds to its icons and the choice is remembered. The top bar is still to do.
 - v0.33.0: slice 36. `dpistack backup create [--out FILE]|list [--json]|verify FILE|restore FILE [--dry-run]` and the Backups screen (section 18.36). One tar.gz of the configs with a manifest (program version, sha256 and mode of every file); `verify` fails on a changed byte, an extra entry or a link; `restore` checks the schema and `suricata -T` before it replaces anything and keeps the previous files; the panel names an archive by its file name only.
 - v0.32.1: the Audit screen says what was done ("Restart ntopng", "Sign in") instead of the route template, the raw path moves to a muted Target column; the Account and Audit forms have padding and flexible fields (D44, D45 of 18.35).
 - v0.32.0: the corner of the panel and the Build info window, the unslop pass over the look (section 18.35); the Rules screen no longer fails on a fresh install without `disable.conf`; dates in the panel are shown in the `en-GB` format.
 - v0.31.1: the Update button failed on an installation with `ACCESS_MODE=lan` (section 18.34). `self-update apply` ran `install.sh install -y` without `ACCESS_CONFIRM=yes`, so the validation stopped with code 2 ("needs --set ACCESS_CONFIRM=yes") and nothing was updated. Now an access mode and bind address equal to the applied ones count as confirmed; a mode edited by hand after the last apply still stops.
-- v0.31.0: `LAN_CIDR` takes a list (section 18.33). The report: a WireGuard server in Docker on the same host reached the panel from a phone and got `403 access from this address is forbidden`, because the panel saw the Docker or tunnel address, not an address of `192.168.1.0/24`, and `LAN_CIDR` held one network. Now `LAN_CIDR` is `auto`, one CIDR, or a comma-separated list of them (`auto` inside the list is the network of the default route); the panel, the nginx `allow` lines and the ufw/firewalld rules follow the whole list.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v55: v0.34.0. Slice 37 mostly done: the groups of the menu, routes by hash, the folded menu (18.37).
 - v54: the same keep-five rule for both changelogs; section 17 is one list (done slices in parentheses, the specifications of the slices still to do below it); every merge into `main` makes a new version and a tag (12.3).
 - v53: v0.33.0. Slice 36 done: the `backup` verbs (4.5), the Backups routes (4.8), 18.36.
 - v52: the status of every slice in one table (section 17), status lines of slices 36 to 45.
 - v51: v0.32.1, D44 and D45 of 18.35; the summary of v0.31.1 and v0.32.0 in 18.35.
-- v50: D43 of 18.35 (the repository links are set by `app.js`).
 
 ---
 
@@ -1154,7 +1154,7 @@ One list. A slice in parentheses is done; every other slice is still to do and c
 - (Slice 34: users, roles and permissions, v0.29.0)
 - (Slice 35: the audit log and login history, v0.30.0)
 - (Slice 36: backup and restore, v0.33.0)
-- Slice 37: the shell of the panel. (Done: the corner, the Build info window, the look, v0.32.0; readable Audit actions, v0.32.1.) To do: see below.
+- Slice 37: the shell of the panel. (Done: the corner, the Build info window, the look, v0.32.0; readable Audit actions, v0.32.1; the groups of the menu, routes by hash, the folded menu, v0.34.0.) To do: the top bar, see below.
 - Slice 38: Overview v2, System health and topology
 - Slice 39: Traffic Explorer
 - Slice 40: the Events workspace and exceptions
@@ -1168,9 +1168,11 @@ One list. A slice in parentheses is done; every other slice is still to do and c
 
 Decided on the request of 2026-10-31 (`todo.md`), "choose yourself". General rules for all of these slices: (1) Nothing is shown that the program cannot really do: the IPS page does not say "dry run" unless a drop is really tested (slice 42 calls what it does a "rule test"). (2) Every change of the system goes through a verb of section 4.5; the panel never writes outside `/var/lib/dpistack`. (3) Every action that changes something is written to the audit log (slice 35) with the user, the time, the address and the result. (4) The permission of the user is checked in the panel for every route (slice 34), the verbs trust the panel. (5) There are no resource budgets for the panel. (6) New screens follow the design of 9.1 and work in both themes.
 
-#### Slice 37: the shell of the panel (to do)
+#### Slice 37: the shell of the panel (mostly done)
 
-**What is left:** the sidebar in groups (Monitoring: Overview, Traffic, Events, Alerts; Protection: Rules, IPS, Exceptions; System: Components, Interfaces and topology, Health, Backups, Updates; Admin: Settings, Users, Audit, Security), a top bar (host, state, mode, alert bell, user menu, theme), a collapsible sidebar, routes by hash, and the permission-aware hiding of sections.
+**Done (v0.34.0):** the menu in groups, routes by hash, the collapsible menu, the permission-aware hiding of groups and entries. The groups hold only the screens that exist; Traffic, IPS, Exceptions, Health and Security join them with their slices.
+
+**What is left:** a top bar (host, state, mode, alert bell, user menu, theme). The bell waits for slice 43 and the theme switch needs a decision on a manual override of the system theme.
 
 #### Slice 38: Overview v2, System health and topology
 
@@ -1832,3 +1834,15 @@ Decisions ("choose yourself"):
 | D51 | **The panel cannot choose a path.** For the panel (`sudo` as `dpistack` or `DPISTACK_CALLER=panel`) `--out` and any argument that is not a bare `*.tar.gz` name give exit 5, so a stolen session cannot make root read or write elsewhere. Download is read by the panel itself from `-backups-dir` (the archive group is `dpistack`), refuses a link and a name that is not a bare file name. A real restore from the panel needs `acknowledged:true`; the screen always runs the dry run first and asks |
 
 Tests: `tests/backup.bats` (20), `panel/internal/api/backups_test.go` (9) and the Backups rows of the route table in `users_test.go`, `panel/web/test/backups.test.mjs`, `-backups-dir` in `tests/panel_step.bats`. Not done: the look of the screen was not checked in a browser; the Backups screen only reads the archives of this host.
+
+### 18.37 The shell of the panel (v0.34.0)
+
+Decisions ("choose yourself"):
+
+| id | decision |
+| --- | --- |
+| D52 | **Only screens that exist are in the menu.** Rule 1 of the slices 38-45 (nothing is shown that the program cannot do) applies to the menu too, so there are no greyed entries for later slices. Groups: Monitoring (Overview, Events, Metrics, Alerts), Protection (Rules), System (Components, Logs, Tests, Backups, Configs), Admin (Settings, Audit, Account). `app.js` and a test keep every screen in exactly one group |
+| D53 | **Routes are `#<screen>`.** `showView` sets the hash, `hashchange` shows the screen (back and forward work), the first load opens the screen of the address. A name that is not a screen, or a screen the user has no permission for (the same rule that hides its entry), opens Overview. The hash holds nothing else, so no value reaches the history |
+| D54 | **The folded menu** is an attribute on the signed-in page and the choice is kept in `localStorage` (`dpistack.nav.collapsed`), read and written inside `try`, because some browsers refuse storage. It applies only on wide screens: the narrow layout has its own menu |
+
+Tests: `panel/web/test/shell.test.mjs` (5). Not done: the top bar; the look of the folded menu and of the group headings was not checked in a browser (the rules of `design.test.mjs` pass for both stylesheets).
