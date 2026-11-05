@@ -57,7 +57,7 @@ const SCREENS = {
   overview: () =>
     startOverview(
       api,
-      { overall: $("overall"), components: $("components"), checks: $("checks"), error: $("overview-error") },
+      { overall: $("overall"), components: $("components"), checks: $("checks"), error: $("overview-error"), hostBox: $("host-box"), host: $("host"), ifaces: $("host-ifaces") },
       showLogin,
     ),
   components: () => {

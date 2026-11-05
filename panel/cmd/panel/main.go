@@ -24,6 +24,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/eve"
 	"github.com/FlexEbat/dpistack/panel/internal/export"
 	"github.com/FlexEbat/dpistack/panel/internal/metrics"
+	"github.com/FlexEbat/dpistack/panel/internal/system"
 	"github.com/FlexEbat/dpistack/panel/internal/update"
 	"github.com/FlexEbat/dpistack/panel/web"
 )
@@ -134,6 +135,7 @@ func run(args []string) error {
 		AuthFile:    *authFile,
 		UsersFile:   *usersFile,
 		BackupsDir:  *backupsDir,
+		System:      system.NewReader([]string{"/", "/var/lib/dpistack", "/var/log"}),
 		Audit:       auditLog(*auditFile),
 		HealthFile:  *healthFile,
 		Lite:        *lite,

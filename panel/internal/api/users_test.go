@@ -138,6 +138,7 @@ var routePerms = []struct {
 	{"GET", "/api/logs/suricata/stream", auth.PermView, true},
 	{"GET", "/api/audit", auth.PermAuditView, false},
 	{"GET", "/api/audit/export?format=csv", auth.PermAuditView, false},
+	{"GET", "/api/system", auth.PermView, false},
 	{"GET", "/api/backups", auth.PermBackupManage, false},
 	{"POST", "/api/backups", auth.PermBackupManage, false},
 	{"GET", "/api/backups/dpistack-backup-x.tar.gz", auth.PermBackupManage, false},

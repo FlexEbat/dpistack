@@ -1,5 +1,6 @@
 // The Overview screen: overall health, components and watchdog checks.
 import { tickets } from "./poll.js";
+import { statCards, ifaceRows } from "./system.js";
 
 const POLL_MS = 10000;
 
@@ -72,6 +73,31 @@ export function render(status, areas) {
   );
 }
 
+// renderSystem fills the host cards and the interface table. A host that
+// gave nothing leaves the section empty and hidden.
+export function renderSystem(info, areas) {
+  const cards = statCards(info);
+  areas.host.replaceChildren(
+    ...cards.map((c) => {
+      const card = el("div", "card stat");
+      card.append(el("span", "muted", c.label), el("strong", "stat-value", c.value));
+      if (c.level !== "na") card.append(badge(c.level));
+      if (c.note) card.append(el("span", "muted", c.note));
+      return card;
+    }),
+  );
+  const rows = ifaceRows(info);
+  areas.ifaces.replaceChildren(
+    rows.length
+      ? table(
+          ["Interface", "State", "Speed", "Received", "Sent", "Dropped", "Errors", ""],
+          rows.map((r) => [r.name, r.state, r.speed, r.rx, r.tx, String(r.lost), String(r.errors), r.capture]),
+        )
+      : el("p", "muted empty", "No interfaces."),
+  );
+  areas.hostBox.hidden = !cards.length && !rows.length;
+}
+
 // start polls while the tab is visible and the screen is shown, and stops
 // otherwise, so a closed or hidden panel costs no work. It returns stop().
 export function start(api, areas, onError) {
@@ -88,6 +114,13 @@ export function start(api, areas, onError) {
       if (!running || !seq.current(ticket)) return;
       render(status, areas);
       areas.error.textContent = "";
+      // The host part is extra: when it fails the rest of the screen stays.
+      try {
+        renderSystem(await api("/api/system"), areas);
+      } catch (err) {
+        if (err.status === 401) return onError(err);
+        areas.hostBox.hidden = true;
+      }
     } catch (err) {
       if (!running || !seq.current(ticket)) return;
       if (err.status === 401) return onError(err);
