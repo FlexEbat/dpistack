@@ -45,6 +45,7 @@ type Config struct {
 	AuthFile    string
 	Audit       *audit.Log // nil: no audit log
 	UsersFile   string     // users.json (slice 34); AuthFile is the fallback of the old one-password panel
+	BackupsDir  string     // the archives of `dpistack backup`, for downloading them; empty: no download
 	HealthFile  string
 	Ctl         *ctl.Runner
 	Eve         *eve.Reader // nil: viewing events is off (EVE_FILE=no)
@@ -103,6 +104,11 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("DELETE /api/users/{name}", s.need(auth.PermUsersManage, s.usersDelete))
 	mux.HandleFunc("GET /api/audit", s.need(auth.PermAuditView, s.auditList))
 	mux.HandleFunc("GET /api/audit/export", s.need(auth.PermAuditView, s.auditExport))
+	mux.HandleFunc("GET /api/backups", s.need(auth.PermBackupManage, s.backupsList))
+	mux.HandleFunc("POST /api/backups", s.need(auth.PermBackupManage, s.backupsCreate))
+	mux.HandleFunc("GET /api/backups/{name}", s.need(auth.PermBackupManage, s.backupsDownload))
+	mux.HandleFunc("POST /api/backups/{name}/verify", s.need(auth.PermBackupManage, s.backupsVerify))
+	mux.HandleFunc("POST /api/backups/{name}/restore", s.need(auth.PermBackupManage, s.backupsRestore))
 	mux.HandleFunc("GET /api/status", s.need(auth.PermView, s.status))
 	mux.HandleFunc("GET /api/version", s.need(auth.PermView, s.versionGet))
 	mux.HandleFunc("POST /api/update", s.need(auth.PermUpdateManage, s.updateStart))

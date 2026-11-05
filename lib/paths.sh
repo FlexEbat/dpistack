@@ -24,6 +24,9 @@ path_events_jsonl() { echo "$(path_state_dir)/events.jsonl"; }
 path_tests_last_json() { echo "$(path_state_dir)/tests-last.json"; }
 path_metrics_json() { echo "$(path_state_dir)/metrics.json"; }
 path_backups_dir() { echo "$(path_state_dir)/backups"; }
+# Archives of `dpistack backup create` (slice 36); backups/ holds the single
+# copies of a file made before it is replaced.
+path_backup_archives_dir() { echo "$(path_state_dir)/archives"; }
 path_staging_dir() { echo "$(path_state_dir)/staging"; }
 path_scrape_yaml() { echo "$(path_state_dir)/scrape.yaml"; }
 # Data of the metrics backend lives outside path_state_dir: uninstall

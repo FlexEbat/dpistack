@@ -91,3 +91,16 @@ dpistack iface remove eth1       # последний интерфейс уда�
 ## Резервные копии
 
 Перед каждой записью конфигурации через `config-write` и `settings set` создаётся резервная копия; `config-revert` возвращает последнюю. Данные компонентов (правила, EveBox, ntopng, метрики) лежат в своих каталогах и удаляются только `uninstall --purge`.
+
+### Архивы резервных копий
+
+`sudo dpistack backup create` упаковывает конфигурацию в один `tar.gz` в `/var/lib/dpistack/archives/` (`--out FILE` пишет в другое место): `dpistack.conf`, `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf` и `users.json`, какие есть, с манифестом: версия программы и sha256 каждого файла. Журналов и `secrets.conf` в архиве нет: на новом хосте секреты вводятся заново. `uninstall` удаляет каталог состояния, поэтому копию архива уносите с хоста через `--out` или кнопку Download на экране Backups.
+
+```
+sudo dpistack backup list
+sudo dpistack backup verify dpistack-backup-20261104T100000Z.tar.gz
+sudo dpistack backup restore dpistack-backup-20261104T100000Z.tar.gz --dry-run
+sudo dpistack backup restore dpistack-backup-20261104T100000Z.tar.gz
+```
+
+`verify` падает, если изменился байт файла или в архиве есть то, чего нет в манифесте. `restore` проверяет архив, сверяет `dpistack.conf` со схемой, файлы Suricata проверяет через `suricata -T` и только потом заменяет файлы; если любая проверка не прошла, ничего не меняется. Заменённые файлы остаются в `/var/lib/dpistack/backups/`. `--dry-run` показывает, что изменится (учётные записи из `users.json` не показываются). После восстановления выполните `sudo dpistack reconfigure`. Экран Backups (право `backup.manage`, по умолчанию только admin) делает то же, а восстановление там всегда сначала показывает разницу.

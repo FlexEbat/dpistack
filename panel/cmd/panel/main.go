@@ -50,6 +50,7 @@ func run(args []string) error {
 	authFile := fs.String("auth-file", "/etc/dpistack/panel.auth", "argon2id hash of the panel password (the old one-password panel; used when users.json is absent)")
 	auditFile := fs.String("audit-file", "/var/lib/dpistack/audit.jsonl", "audit log (one JSON line per action); empty switches it off")
 	usersFile := fs.String("users-file", "/etc/dpistack/users.json", "users, roles and password hashes")
+	backupsDir := fs.String("backups-dir", "", "the archives of `dpistack backup`, for downloading them from the Backups screen; empty switches the download off")
 	healthFile := fs.String("health-file", "/var/lib/dpistack/health.json", "watchdog report")
 	ctlPath := fs.String("ctl", "/usr/local/sbin/dpistack", "dpistack path")
 	version := fs.String("version", "", "the dpistack version shown in the corner of the panel")
@@ -132,6 +133,7 @@ func run(args []string) error {
 		Policy:      policy,
 		AuthFile:    *authFile,
 		UsersFile:   *usersFile,
+		BackupsDir:  *backupsDir,
 		Audit:       auditLog(*auditFile),
 		HealthFile:  *healthFile,
 		Lite:        *lite,
