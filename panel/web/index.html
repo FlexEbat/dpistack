@@ -76,6 +76,16 @@
   <div id="view-overview">
     <p id="overview-error" class="error" role="alert"></p>
     <section id="overall" class="overall" aria-live="polite"><div class="skeleton" aria-hidden="true"></div></section>
+    <div id="glance-box" hidden>
+      <section id="glance-cards" class="stats"></section>
+      <section id="glance-warnings" class="warnings" role="status" hidden></section>
+    </div>
+    <div id="alerts-box" hidden>
+      <h2>Alerts</h2>
+      <section id="alerts-severity"></section>
+      <h3>Latest</h3>
+      <section id="alerts-recent"></section>
+    </div>
     <div id="host-box" hidden>
       <h2>Host</h2>
       <section id="host" class="stats"></section>

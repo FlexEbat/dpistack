@@ -224,6 +224,8 @@ tbody tr:hover td { background: var(--card-2); }
 .js-reveal { opacity: 0; transform: translateY(var(--s-400)); transition: opacity 700ms var(--ease), transform 700ms var(--ease); }
 .js-reveal.in { opacity: 1; transform: none; }
 
+.warnings { display: grid; gap: var(--s-75); }
+.warning { margin: 0; padding: var(--s-100) var(--s-200); border: 1px solid var(--warn); border-radius: var(--r-xl); color: var(--warn); }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: var(--s-200); }
 .stat-value { font-size: var(--text-xl); line-height: var(--lh-xl); font-weight: 600; letter-spacing: -0.01em; }
 .nav-group { display: flex; flex-direction: column; gap: var(--s-50); }

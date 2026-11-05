@@ -61,6 +61,8 @@ nav { display: flex; flex-direction: column; gap: var(--s-25); position: sticky;
 nav .nav-links button { display: flex; align-items: center; gap: var(--s-75); text-align: left; border: 1px solid transparent; background: transparent; color: var(--fg); padding: var(--s-75) var(--s-100); border-radius: var(--r-lg); font-weight: 500; }
 nav .nav-links button:hover { background: var(--accent-soft); }
 nav .nav-links button[aria-current="page"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.warnings { display: grid; gap: var(--s-75); }
+.warning { margin: 0; padding: var(--s-100) var(--s-200); border: 1px solid var(--warn); border-radius: var(--r-xl); color: var(--warn); }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: var(--s-200); }
 .stat-value { font-size: var(--text-lg); line-height: var(--lh-lg); font-weight: 600; }
 .nav-group { display: flex; flex-direction: column; gap: var(--s-25); }
