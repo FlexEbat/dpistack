@@ -24,6 +24,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/export"
 	"github.com/FlexEbat/dpistack/panel/internal/health"
 	"github.com/FlexEbat/dpistack/panel/internal/metrics"
+	"github.com/FlexEbat/dpistack/panel/internal/system"
 	"github.com/FlexEbat/dpistack/panel/internal/update"
 )
 
@@ -43,9 +44,10 @@ const (
 type Config struct {
 	Policy      *auth.Policy
 	AuthFile    string
-	Audit       *audit.Log // nil: no audit log
-	UsersFile   string     // users.json (slice 34); AuthFile is the fallback of the old one-password panel
-	BackupsDir  string     // the archives of `dpistack backup`, for downloading them; empty: no download
+	Audit       *audit.Log     // nil: no audit log
+	UsersFile   string         // users.json (slice 34); AuthFile is the fallback of the old one-password panel
+	System      *system.Reader // the host state of /api/system; nil switches it off
+	BackupsDir  string         // the archives of `dpistack backup`, for downloading them; empty: no download
 	HealthFile  string
 	Ctl         *ctl.Runner
 	Eve         *eve.Reader // nil: viewing events is off (EVE_FILE=no)
@@ -109,6 +111,7 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/backups/{name}", s.need(auth.PermBackupManage, s.backupsDownload))
 	mux.HandleFunc("POST /api/backups/{name}/verify", s.need(auth.PermBackupManage, s.backupsVerify))
 	mux.HandleFunc("POST /api/backups/{name}/restore", s.need(auth.PermBackupManage, s.backupsRestore))
+	mux.HandleFunc("GET /api/system", s.need(auth.PermView, s.systemGet))
 	mux.HandleFunc("GET /api/status", s.need(auth.PermView, s.status))
 	mux.HandleFunc("GET /api/version", s.need(auth.PermView, s.versionGet))
 	mux.HandleFunc("POST /api/update", s.need(auth.PermUpdateManage, s.updateStart))

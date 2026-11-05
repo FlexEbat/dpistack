@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v55** (2026-11-05)
-**Program version: v0.34.0** (slices 0-36 are done, 37 is mostly done, 38-45 are not started; the list of slices is in section 17, the reviews in section 18)
+**Document version: v56** (2026-11-05)
+**Program version: v0.35.0** (slices 0-36 are done, 37 is mostly done, 38-45 are not started; the list of slices is in section 17, the reviews in section 18)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.35.0: slice 38, first part (section 18.38). `GET /api/system` (load, CPU share, memory, disks, uptime, interfaces with state, speed, counters and the capture flag) and a Host section with an Interfaces table on the Overview. Four state cards, the traffic graph, events by severity, recent events, warnings and the topology are still to do.
 - v0.34.0: slice 37, the shell of the panel (section 18.37). The menu is in four groups (Monitoring, Protection, System, Admin) and a group with no allowed entry is hidden; the address names the screen (`#events`, back and forward work, a screen the user may not use opens Overview); the menu folds to its icons and the choice is remembered. The top bar is still to do.
 - v0.33.0: slice 36. `dpistack backup create [--out FILE]|list [--json]|verify FILE|restore FILE [--dry-run]` and the Backups screen (section 18.36). One tar.gz of the configs with a manifest (program version, sha256 and mode of every file); `verify` fails on a changed byte, an extra entry or a link; `restore` checks the schema and `suricata -T` before it replaces anything and keeps the previous files; the panel names an archive by its file name only.
 - v0.32.1: the Audit screen says what was done ("Restart ntopng", "Sign in") instead of the route template, the raw path moves to a muted Target column; the Account and Audit forms have padding and flexible fields (D44, D45 of 18.35).
 - v0.32.0: the corner of the panel and the Build info window, the unslop pass over the look (section 18.35); the Rules screen no longer fails on a fresh install without `disable.conf`; dates in the panel are shown in the `en-GB` format.
-- v0.31.1: the Update button failed on an installation with `ACCESS_MODE=lan` (section 18.34). `self-update apply` ran `install.sh install -y` without `ACCESS_CONFIRM=yes`, so the validation stopped with code 2 ("needs --set ACCESS_CONFIRM=yes") and nothing was updated. Now an access mode and bind address equal to the applied ones count as confirmed; a mode edited by hand after the last apply still stops.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v56: v0.35.0. `GET /api/system` (4.8), the Host section of the Overview, 18.38.
 - v55: v0.34.0. Slice 37 mostly done: the groups of the menu, routes by hash, the folded menu (18.37).
 - v54: the same keep-five rule for both changelogs; section 17 is one list (done slices in parentheses, the specifications of the slices still to do below it); every merge into `main` makes a new version and a tag (12.3).
 - v53: v0.33.0. Slice 36 done: the `backup` verbs (4.5), the Backups routes (4.8), 18.36.
 - v52: the status of every slice in one table (section 17), status lines of slices 36 to 45.
-- v51: v0.32.1, D44 and D45 of 18.35; the summary of v0.31.1 and v0.32.0 in 18.35.
 
 ---
 
@@ -472,6 +472,7 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 | `GET /api/me`, `POST /api/me/password` | who is signed in with the permissions; a user changes their own password with the current one (their sessions end) |
 | `GET\|POST /api/users`, `PUT\|DELETE /api/users/{name}` | permission `users.manage`; the list never holds a hash; nobody can remove or disable their own account |
 | permissions | every other route needs one (table in `panel/internal/api/users_test.go`, checked for every role); reading `/api/config*` needs `configs.edit`; a missing permission is 403 `{"error":"forbidden","permission":...}` |
+| `GET /api/system` | permission `view`; the host state read from `/proc`, `/sys` and statfs: `uptime_seconds`, `load` (3 numbers), `cpu` (`cores`, `percent` since the previous call, `null` on the first), `memory` (kB), `disks` (`/`, `/var/lib/dpistack`, `/var/log`; a missing path is left out and paths on one filesystem count once), `interfaces` (`state`, `mac`, `mtu`, `speed_mbps` or `null`, byte, packet, error and drop counters, `virtual` when there is no `device` link, `capture` from `ctl iface list`, left out when that fails), `systemd_present`, `docker_socket` |
 | `GET /api/status` | the components (`ctl status`) + `health.json` |
 | `GET /api/version` | the running version and, from the latest GitHub release of the project (checked at most every 6 hours, a failed check again after 15 minutes), `latest`, `update_available`, `release_url`, `check_error`. The version comes from the panel flag `-version`, which `panel_args` fills, so an update that changes the unit restarts the panel with the new number |
 | `POST /api/update` | the Update button after the confirmation dialog: refused with 409 unless a newer release exists, otherwise `ctl self-update run` (202) |
@@ -1155,7 +1156,7 @@ One list. A slice in parentheses is done; every other slice is still to do and c
 - (Slice 35: the audit log and login history, v0.30.0)
 - (Slice 36: backup and restore, v0.33.0)
 - Slice 37: the shell of the panel. (Done: the corner, the Build info window, the look, v0.32.0; readable Audit actions, v0.32.1; the groups of the menu, routes by hash, the folded menu, v0.34.0.) To do: the top bar, see below.
-- Slice 38: Overview v2, System health and topology
+- Slice 38: Overview v2, System health and topology. (Done: `GET /api/system`, the Host section with the interfaces, v0.35.0.) To do: see below.
 - Slice 39: Traffic Explorer
 - Slice 40: the Events workspace and exceptions
 - Slice 41: Rules v2
@@ -1174,7 +1175,9 @@ Decided on the request of 2026-10-31 (`todo.md`), "choose yourself". General rul
 
 **What is left:** a top bar (host, state, mode, alert bell, user menu, theme). The bell waits for slice 43 and the theme switch needs a decision on a manual override of the system theme.
 
-#### Slice 38: Overview v2, System health and topology
+#### Slice 38: Overview v2, System health and topology (partly done)
+
+**Done (v0.35.0):** `GET /api/system` and, on the Overview, the host cards and the interfaces table. **Still to do:** the four state cards, the traffic graph, events by severity, recent events, the warnings, the capture flag and the topology on a page of their own, docker and systemd state beyond "the socket and the directory exist".
 
 **What it does:** Overview with four state cards, the traffic graph, events by severity, components with version and last check, recent events, warnings (packet drops, a stale rules update, a missing capture); `GET /api/system` (CPU, memory, disk, load, interfaces with speed and counters, docker and systemd state); the interface page with the capture flag and a simple topology (host, interfaces, Suricata, outputs).
 
@@ -1846,3 +1849,15 @@ Decisions ("choose yourself"):
 | D54 | **The folded menu** is an attribute on the signed-in page and the choice is kept in `localStorage` (`dpistack.nav.collapsed`), read and written inside `try`, because some browsers refuse storage. It applies only on wide screens: the narrow layout has its own menu |
 
 Tests: `panel/web/test/shell.test.mjs` (5). Not done: the top bar; the look of the folded menu and of the group headings was not checked in a browser (the rules of `design.test.mjs` pass for both stylesheets).
+
+### 18.38 The host state on the Overview (v0.35.0)
+
+Decisions ("choose yourself"):
+
+| id | decision |
+| --- | --- |
+| D55 | **Nothing is run for `/api/system`.** It reads `/proc/uptime`, `loadavg`, `stat`, `meminfo`, `/sys/class/net/*` and statfs. The CPU share needs two samples, so the first answer has `percent: null` and the screen says "measuring"; the reader keeps the previous sample, so the share is the average since the last call (the Overview calls every 10 s) |
+| D56 | **Honest names for what is only a hint.** `systemd_present` is the directory `/run/systemd/system`, `docker_socket` is the file `/var/run/docker.sock`. They do not say that the daemon is healthy; the state of the parts stays in `/api/status`. In the docker panel the numbers are those of the host (`pid: host`), the disks are those of the container's mounts |
+| D57 | **The host part is extra.** When `/api/system` fails (switched off, not readable) the Host section hides and the Overview shows the rest; only a 401 signs the user out. A card for data the host did not give is left out, not shown as 0 |
+
+Tests: `panel/internal/system/system_test.go` (5), `panel/internal/api/system_test.go` (3) and the `/api/system` row of the route table, `panel/web/test/system.test.mjs` (5), two cases in `panel/web/test/poll.test.mjs`. Not done: the look of the cards was not checked in a browser; the interface counters are totals since boot (no rate yet).

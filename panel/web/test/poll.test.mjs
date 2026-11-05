@@ -84,7 +84,9 @@ test("metrics: the answer for the range clicked first does not overwrite the new
 test("overview: a load in flight when the tab comes back does not start a second poll loop", async () => {
   let calls = 0;
   const pending = [];
-  const api = () => {
+  const api = (path) => {
+    // the host part answers at once: only the status polls are counted
+    if (path === "/api/system") return Promise.resolve({});
     calls++;
     const d = deferred();
     pending.push(d);
@@ -107,4 +109,34 @@ test("overview: a load in flight when the tab comes back does not start a second
   await settle();
   assert.equal(calls - before, 1, "two poll loops: every poll asked twice");
   assert.ok(els);
+});
+
+test("overview: when the host part fails the status still shows and the host section hides", async () => {
+  // no component rows: the fake document has no Node class for the table cells
+  const status = { health: null, components: [] };
+  const api = async (path) => {
+    if (path === "/api/system") throw Object.assign(new Error("the system page is switched off"), { status: 404 });
+    return status;
+  };
+  const hostBox = node();
+  hostBox.hidden = false;
+  const error = node();
+  const components = node();
+  const areas = new Proxy({ error, hostBox, components }, { get: (t, k) => (k in t ? t[k] : node()) });
+  stop = startOverview(api, areas, () => assert.fail("a 404 of the host part is not a sign-out"));
+  await settle();
+  assert.equal(hostBox.hidden, true);
+  assert.equal(error.textContent, "", "the failure of the extra part is not shown as an error of the screen");
+});
+
+test("overview: a 401 from the host part signs the user out", async () => {
+  let signedOut = false;
+  const api = async (path) => {
+    if (path === "/api/system") throw Object.assign(new Error("unauthorized"), { status: 401 });
+    return { health: null, components: [] };
+  };
+  const areas = new Proxy({ error: node(), hostBox: node() }, { get: (t, k) => (k in t ? t[k] : node()) });
+  stop = startOverview(api, areas, () => (signedOut = true));
+  await settle();
+  assert.equal(signedOut, true);
 });
