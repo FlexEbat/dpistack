@@ -76,7 +76,8 @@ function chart(values) {
   return box;
 }
 
-function card(def, series) {
+// seriesCard is one chart card; the Overview draws two of them.
+export function seriesCard(def, series) {
   const c = el("div", "chart-card");
   c.append(el("h3", "", def.title));
   if (!series || !series.available) {
@@ -113,7 +114,7 @@ export function start(api, els, onError) {
     try {
       const res = await api(`/api/metrics?range=${range}`);
       if (!running || !seq.current(ticket)) return;
-      els.charts.replaceChildren(...SERIES.map((def) => card(def, res.series[def.name])));
+      els.charts.replaceChildren(...SERIES.map((def) => seriesCard(def, res.series[def.name])));
       els.error.textContent = "";
     } catch (err) {
       if (!running || !seq.current(ticket)) return;
