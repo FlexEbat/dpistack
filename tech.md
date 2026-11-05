@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v58** (2026-11-05)
-**Program version: v0.37.0** (slices 0-36 are done, 37 is mostly done, 38-45 are not started; the list of slices is in section 17, the reviews in section 18)
+**Document version: v59** (2026-11-05)
+**Program version: v0.37.1** (slices 0-36 are done, 37 and 38 are partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.37.1: tech.md only: every slice has an entry in the style of 18.20, 18.0 is the index of slices (done and remaining), section 17 keeps the assumptions only.
 - v0.37.0: slice 38, third part (18.38). The Overview shows the packet and drop rate of the last hour and repeats the watchdog's stale rules and stale eve.json checks as warnings. Only the interfaces page with the topology is left of slice 38.
 - v0.36.0: slice 38, second part (18.38). The Overview opens with four state cards (protection mode, components, alerts in 24 h, packets lost on the capture interfaces), the warnings, alerts by severity and the latest five alerts. The traffic graph, the stale rules update warning and the topology page are still to do.
 - v0.35.0: slice 38, first part (section 18.38). `GET /api/system` (load, CPU share, memory, disks, uptime, interfaces with state, speed, counters and the capture flag) and a Host section with an Interfaces table on the Overview. Four state cards, the traffic graph, events by severity, recent events, warnings and the topology are still to do.
 - v0.34.0: slice 37, the shell of the panel (section 18.37). The menu is in four groups (Monitoring, Protection, System, Admin) and a group with no allowed entry is hidden; the address names the screen (`#events`, back and forward work, a screen the user may not use opens Overview); the menu folds to its icons and the choice is remembered. The top bar is still to do.
-- v0.33.0: slice 36. `dpistack backup create [--out FILE]|list [--json]|verify FILE|restore FILE [--dry-run]` and the Backups screen (section 18.36). One tar.gz of the configs with a manifest (program version, sha256 and mode of every file); `verify` fails on a changed byte, an extra entry or a link; `restore` checks the schema and `suricata -T` before it replaces anything and keeps the previous files; the panel names an archive by its file name only.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v59: v0.37.1. Section 17 is the assumptions only; 18.0 is the index of slices; 18.35 to 18.38 retitled and given findings tables (R173 to R188); 18.39 to 18.45 hold the specifications of the slices not started.
 - v58: v0.37.0. The traffic graph and the watchdog warnings on the Overview, D61-D62 of 18.38.
 - v57: v0.36.0. The state cards, warnings and alerts on the Overview, D58-D60 of 18.38.
 - v56: v0.35.0. `GET /api/system` (4.8), the Host section of the Overview, 18.38.
 - v55: v0.34.0. Slice 37 mostly done: the groups of the menu, routes by hash, the folded menu (18.37).
-- v54: the same keep-five rule for both changelogs; section 17 is one list (done slices in parentheses, the specifications of the slices still to do below it); every merge into `main` makes a new version and a tag (12.3).
 
 ---
 
@@ -56,7 +56,7 @@ This is the source of truth of the project. Read it before every task and follow
 - The names of config keys, paths, commands, metrics, fields and endpoints come from here. Do not invent your own variants.
 - The contract you need is not here: STOP and give a `CONTRACT GAP` block (section 15). Do not write code with an invented key or field.
 - Only the owner of the project changes this file. Every change of a contract raises the version at the top of the file.
-- Work one slice at a time. The stages and slices are in section 17, go from the top down.
+- Work one slice at a time. The index of slices is 18.0 and every slice has its entry in section 18; go from the top down.
 
 ---
 
@@ -943,7 +943,7 @@ The result of each test is written into `tests-last.json` (4.6). `--json` prints
 
 ## 11. Project tests
 
-The tests are derived from the acceptance criteria of a slice, not from the finished code. The criteria are written in section 17 before the code.
+The tests are derived from the acceptance criteria of a slice, not from the finished code. The criteria are written in the entry of the slice in section 18 before the code.
 
 - Bash: `bats`. External commands (`apt-get`, `dnf`, `systemctl`, `suricata`, `curl`, `ss`, `docker`, `ip`) are replaced by stubs from `tests/mocks/` through `PATH`. Paths are redirected into `mktemp -d` through `DPISTACK_ROOT`. The other environment variables needed by the tests only: `DPISTACK_INPUT` (the menu input from a file), `DPISTACK_TEST_WAIT` (seconds to wait for an event instead of 20), `DPISTACK_NOW` (the time of the watchdog in epoch seconds), `DPISTACK_MENU_ASSUME_YES=1` (the menu answers yes to its confirmations and does not offer the guided setup; the older menu tests drive the screens with fixed lines, `tests/menu_confirm.bats` runs without it), `DPISTACK_VERBS_ONLY=1` (every argument is a verb; the helper `tests/helpers/verbs`), `DPISTACK_BIN` (another program that answers the verbs in the menu and the watchdog), `MOCK_IP_ADDRS` (`iface=address/prefix` pairs the `ip` stub reports for `ip -o -4 addr`).
 - Go: `go test`, the HTTP handlers through `httptest`, the call of `dpistack` is replaced by the interface `ctl.Runner`. A test of the choice of the stylesheet and script by the edition (`edition_test.go`).
@@ -1076,7 +1076,7 @@ Other conventions: decisions marked "choose yourself" are taken by the developer
 
 ## 14. Definition of Done of one slice
 
-1. The acceptance criteria of the slice from section 17 are met and checked by hand on a clean OS (stages 1-4: Ubuntu LTS; slices 26-28: the environment named there).
+1. The acceptance criteria of the slice from its entry in section 18 are met and checked by hand on a clean OS (stages 1-4: Ubuntu LTS; slices 26-28: the environment named there).
 2. The tests are written from the criteria, `scripts/gate.sh` is green.
 3. For the slices of the installer: the second run gives `no changes`, `--dry-run` changes nothing (checked by comparing the state of the system before and after).
 4. There are no new files and abstractions beyond section 3.
@@ -1113,103 +1113,9 @@ Do not write code with an invented contract. Do not extend the key schema, the l
 
 ---
 
-## 17. Slices and assumptions
+## 17. Assumptions that need checking (not frozen)
 
-One list. A slice in parentheses is done; every other slice is still to do and carries its specification below. The order is strict, from the top down, one slice per session. A slice is closed when the Definition of Done of section 14 is met. A slice is vertical: from a config key to a visible result. Slice 31 was never used. The detail of a done slice is in the sections 4 to 12 (contracts), in section 18 (reviews) and in the git history; the program changelog at the top keeps only the last five entries.
-
-### The slices
-
-- (Slice 0: the manual prototype)
-- (Slice 1: the skeleton, v0.1.0)
-- (Slice 2: Suricata (IDS) from packages, EVE, systemd, logrotate, v0.1.0)
-- (Slice 3: rules, v0.1.0)
-- (Slice 4: nDPI and Suricata from source, v0.1.0)
-- (Slice 5: Redis and ntopng, v0.1.0)
-- (Slice 6: EveBox, v0.1.0)
-- (Slice 7: access (localhost, lan, nginx), firewall, v0.1.0)
-- (Slice 8: reconfigure, upgrade, uninstall, v0.2.0)
-- (Slice 9: the install and reconfigure menu, v0.2.0)
-- (Slice 10: `dpistack-ctl`, status, control, logs, v0.3.0)
-- (Slice 11: `dpistack-ctl`, configs, rules, iface, reconfigure, v0.3.0)
-- (Slice 12: the BitTorrent and HTTPS tests, v0.3.0)
-- (Slice 13: the watchdog, v0.3.0)
-- (Slice 14: alert channels, v0.3.1)
-- (Slice 15: the persistent command `dpistack` and the control menu, v0.3.1)
-- (Slice 16: the panel, the server, sign-in, security, v0.6.0)
-- (Slice 17: the panel, the install and Overview, v0.7.0)
-- (Slice 18: components and logs, v0.8.0)
-- (Slice 19: the config editor, v0.9.0)
-- (Slice 20: rules in the panel, v0.10.0)
-- (Slice 21: EVE events, v0.11.0)
-- (Slice 22: metrics, charts, v0.12.0)
-- (Slice 23: the `/metrics` export, v0.13.0)
-- (Slice 24: tests, alerts, interfaces in the panel, v0.14.0)
-- (Slice 25: README and LICENSE, v0.15.0)
-- (Slice 26: the RHEL family and SELinux (a required platform), v0.16.0)
-- (Slice 27: the Docker runtime, v0.17.0)
-- (Slice 28: the metrics backend, VictoriaMetrics and Prometheus, v0.18.0)
-- (Slice 29: IPS mode, v0.19.0)
-- (Slice 30: the single file, v0.20.0)
-- (Slice 32: no panel budget, v0.28.0)
-- (Slice 33: runtimes, the matrix and the links, v0.28.0)
-- (Slice 34: users, roles and permissions, v0.29.0)
-- (Slice 35: the audit log and login history, v0.30.0)
-- (Slice 36: backup and restore, v0.33.0)
-- Slice 37: the shell of the panel. (Done: the corner, the Build info window, the look, v0.32.0; readable Audit actions, v0.32.1; the groups of the menu, routes by hash, the folded menu, v0.34.0.) To do: the top bar, see below.
-- Slice 38: Overview v2, System health and topology. (Done: `GET /api/system`, the Host section with the interfaces, v0.35.0; the state cards, warnings, alerts by severity and latest alerts, v0.36.0; the traffic graph and the watchdog warnings, v0.37.0.) To do: see below.
-- Slice 39: Traffic Explorer
-- Slice 40: the Events workspace and exceptions
-- Slice 41: Rules v2
-- Slice 42: the IPS page
-- Slice 43: the Alert Center
-- Slice 44: Settings v2
-- Slice 45: security of the panel
-
-### To do: the specifications
-
-Decided on the request of 2026-10-31 (`todo.md`), "choose yourself". General rules for all of these slices: (1) Nothing is shown that the program cannot really do: the IPS page does not say "dry run" unless a drop is really tested (slice 42 calls what it does a "rule test"). (2) Every change of the system goes through a verb of section 4.5; the panel never writes outside `/var/lib/dpistack`. (3) Every action that changes something is written to the audit log (slice 35) with the user, the time, the address and the result. (4) The permission of the user is checked in the panel for every route (slice 34), the verbs trust the panel. (5) There are no resource budgets for the panel. (6) New screens follow the design of 9.1 and work in both themes.
-
-#### Slice 37: the shell of the panel (mostly done)
-
-**Done (v0.34.0):** the menu in groups, routes by hash, the collapsible menu, the permission-aware hiding of groups and entries. The groups hold only the screens that exist; Traffic, IPS, Exceptions, Health and Security join them with their slices.
-
-**What is left:** a top bar (host, state, mode, alert bell, user menu, theme). The bell waits for slice 43 and the theme switch needs a decision on a manual override of the system theme.
-
-#### Slice 38: Overview v2, System health and topology (partly done)
-
-**Done (v0.35.0 to v0.37.0):** `GET /api/system`; on the Overview the host cards and the interfaces table, four state cards, warnings, alerts by severity, the latest alerts, the traffic graph and the watchdog warnings. **Still to do:** the interfaces page with a simple topology (host, interfaces, Suricata, outputs), docker and systemd state beyond "the socket and the directory exist".
-
-**What it does:** Overview with four state cards, the traffic graph, events by severity, components with version and last check, recent events, warnings (packet drops, a stale rules update, a missing capture); `GET /api/system` (CPU, memory, disk, load, interfaces with speed and counters, docker and systemd state); the interface page with the capture flag and a simple topology (host, interfaces, Suricata, outputs).
-
-#### Slice 39: Traffic Explorer
-
-**What it does:** devices (by IP and MAC when seen), applications (nDPI `app_proto`/`ndpi` fields), domains (DNS, TLS SNI), connections (flow events), per-device detail, filters and a link to ntopng. The data comes only from EVE events and the counters the panel already reads; where the data is not there (no flow events, no nDPI) the page says exactly that.
-
-#### Slice 40: the Events workspace and exceptions
-
-**What it does:** filters (IP, SID, category, protocol, severity, domain, time), grouping, related events by `flow_id`, a detail panel, the history of one SID, export JSON/CSV, and "create an exception" from an event: a threshold or suppress entry with an expiry and the narrowest scope (SID plus source or destination), stored in the exceptions file that the rules step renders.
-
-#### Slice 41: Rules v2
-
-**What it does:** counts per source (total, enabled, disabled), the date and the history of updates, SID descriptions, search by category, provider and text, a custom rules editor (`local.rules`) with validation by `suricata -T` on a temporary copy, a SID conflict check and a change history.
-
-#### Slice 42: the IPS page
-
-**What it does:** mode and method, NFQ state, packets processed and dropped, the number of drop rules, the latest blocking events, the rollback state, and readiness checks (the iptables or nft chain, the queue, the confirmation timer). The "rule test" replays a controlled pcap through Suricata offline with the chosen rules and reports which rules would drop; it never touches live traffic.
-
-#### Slice 43: the Alert Center
-
-**What it does:** alerts of the watchdog and of Suricata with states: new, acknowledged, snoozed until, resolved; history and filters. State lives in `/var/lib/dpistack/alerts-state.json`.
-
-#### Slice 44: Settings v2
-
-**What it does:** categories, the standard and advanced levels, three columns, search, a diff of the staged change before it is applied, profiles (named sets of keys saved and applied), and for every key the default, the allowed values, the dependencies and what is restarted.
-
-#### Slice 45: security of the panel
-
-**What it does:** the list of own sessions with a revoke button, API tokens (read only or by role), rotation of the session secret, login history, and a security check (access mode, TLS, default ports, users without a recent login, rule file permissions) shown as a list with a fix hint.
-
-### Assumptions that need checking (not frozen)
+The slices are not listed here: the index of slices, with what is done and what remains, is 18.0, and every slice has its own entry in section 18 in the style of 18.20. This section keeps only the assumptions.
 
 | # | assumption | confirmed in slice |
 | --- | --- | --- |
@@ -1248,6 +1154,60 @@ The checklist:
 The findings are fixed in the same session, then the gate is run again.
 
 *A note: the reviews below record what was found and fixed at the time. `dpistack-ctl` in them is the name of the verbs program of that time (today the verbs of `dpistack`), and some limits mentioned (for example `MemoryMax=64M` of the panel unit) were removed later (v0.23.0).*
+
+### 18.0 Index of slices: done and remaining
+
+One row per slice. **Done** means the Definition of Done of section 14 was met; a slice that is only partly done lists what is done and what remains, and the same two lists are in its entry below. The order is strict, from the top down, one slice per session. A slice is vertical: from a config key to a visible result. Slice 31 was never used. Every slice has an entry in the style of 18.20: `### 18.NN Slice N: name (version)`, a table of findings (No, Severity, Finding, Fix) and an `Open:` paragraph for what was not checked or is left. The entry of a slice not yet done holds its specification and is filled in with the review when the slice is done. The detail of the slices without an entry is in the sections 4 to 12 (contracts) and in the git history.
+
+| Slice | Name | Status | Version | Detail |
+| --- | --- | --- | --- | --- |
+| 0 | the manual prototype | done | v0.1.0 | sections 4 to 12 |
+| 1 | the skeleton | done | v0.1.0 | sections 4 to 12 |
+| 2 | Suricata (IDS) from packages, EVE, systemd, logrotate | done | v0.1.0 | sections 4 to 12 |
+| 3 | rules | done | v0.1.0 | sections 4 to 12 |
+| 4 | nDPI and Suricata from source | done | v0.1.0 | sections 4 to 12 |
+| 5 | Redis and ntopng | done | v0.1.0 | sections 4 to 12 |
+| 6 | EveBox | done | v0.1.0 | sections 4 to 12 |
+| 7 | access (localhost, lan, nginx), firewall | done | v0.1.0 | sections 4 to 12 |
+| 8 | reconfigure, upgrade, uninstall | done | v0.2.0 | sections 4 to 12 |
+| 9 | the install and reconfigure menu | done | v0.2.0 | sections 4 to 12 |
+| 10 | `dpistack-ctl`, status, control, logs | done | v0.3.0 | sections 4 to 12 |
+| 11 | `dpistack-ctl`, configs, rules, iface, reconfigure | done | v0.3.0 | sections 4 to 12 |
+| 12 | the BitTorrent and HTTPS tests | done | v0.3.0 | sections 4 to 12 |
+| 13 | the watchdog | done | v0.3.0 | sections 4 to 12 |
+| 14 | alert channels | done | v0.3.1 | sections 4 to 12 |
+| 15 | the persistent command `dpistack` and the control menu | done | v0.3.1 | sections 4 to 12 |
+| 16 | the panel, the server, sign-in, security | done | v0.6.0 | 18.6 |
+| 17 | the panel, the install and Overview | done | v0.7.0 | 18.7 |
+| 18 | components and logs | done | v0.8.0 | 18.8 |
+| 19 | the config editor | done | v0.9.0 | 18.9 |
+| 20 | rules in the panel | done | v0.10.0 | 18.10 |
+| 21 | EVE events | done | v0.11.0 | 18.11 |
+| 22 | metrics, charts | done | v0.12.0 | 18.12 |
+| 23 | the `/metrics` export | done | v0.13.0 | 18.13 |
+| 24 | tests, alerts, interfaces in the panel | done | v0.14.0 | 18.14 |
+| 25 | README and LICENSE | done | v0.15.0 | 18.15 |
+| 26 | the RHEL family and SELinux (a required platform) | done | v0.16.0 | 18.16 |
+| 27 | the Docker runtime | done | v0.17.0 | 18.17 |
+| 28 | the metrics backend, VictoriaMetrics and Prometheus | done | v0.18.0 | 18.18 |
+| 29 | IPS mode | done | v0.19.0 | 18.19 |
+| 30 | the single file | done | v0.20.0 | 18.20 |
+| 32 | no panel budget | done | v0.28.0 | sections 4 to 12 |
+| 33 | runtimes, the matrix and the links | done | v0.28.0 | sections 4 to 12 |
+| 34 | users, roles and permissions | done | v0.29.0 | sections 4 to 12 |
+| 35 | the audit log and login history | done | v0.30.0 | sections 4 to 12 |
+| 36 | backup and restore | done | v0.33.0 | 18.36 |
+| 37 | the shell of the panel | **partly done.** Done: the corner, Build info, the look, readable Audit actions, the menu in groups, routes by hash, the folded menu. Remaining: the top bar (host, state, mode, bell, user menu, theme) | v0.32.0, v0.32.1, v0.34.0 | 18.35, 18.37 |
+| 38 | Overview v2, system health and topology | **partly done.** Done: `GET /api/system`, host cards, interfaces table, state cards, warnings, alerts by severity, latest alerts, traffic graph, watchdog warnings. Remaining: the interfaces page with a simple topology; docker and systemd state beyond the socket and the directory | v0.35.0 to v0.37.0 | 18.38 |
+| 39 | Traffic Explorer | not started |  | 18.39 |
+| 40 | the Events workspace and exceptions | not started |  | 18.40 |
+| 41 | Rules v2 | not started |  | 18.41 |
+| 42 | the IPS page | not started |  | 18.42 |
+| 43 | the Alert Center | not started |  | 18.43 |
+| 44 | Settings v2 | not started |  | 18.44 |
+| 45 | security of the panel | not started |  | 18.45 |
+
+**Rules for the slices not yet done.** Decided on the request of 2026-10-31 (`todo.md`), "choose yourself". General rules for all of them: (1) Nothing is shown that the program cannot really do: the IPS page does not say "dry run" unless a drop is really tested (slice 42 calls what it does a "rule test"). (2) Every change of the system goes through a verb of section 4.5; the panel never writes outside `/var/lib/dpistack`. (3) Every action that changes something is written to the audit log (slice 35) with the user, the time, the address and the result. (4) The permission of the user is checked in the panel for every route (slice 34), the verbs trust the panel. (5) There are no resource budgets for the panel. (6) New screens follow the design of 9.1 and work in both themes.
 
 ### 18.1 The result of the full review (v7)
 
@@ -1796,7 +1756,9 @@ The audit log of 2026-11-03 showed `POST /api/update` and then `cli self-update 
 
 Tests: `tests/self_update.bats` (an update on a `lan` installation passes; a mode edited after the last apply stops with 2). The new test fails on v0.31.0 and passes now.
 
-### 18.35 The corner, Build info and the unslop pass (v0.32.0)
+### 18.35 Slice 37 (first part): the corner, Build info and the look (v0.32.0, v0.32.1)
+
+**Status:** a part of slice 37, done. The rest of slice 37 is in 18.37.
 
 The owner sent screenshots of the panel (nine, all reviewed), mockups of the corner (`NEED.png`) and of the Build info window (`NEED2.png`), and asked to follow the unslop rules (github.com/heydamir/unslop) and to write only in English.
 
@@ -1823,7 +1785,21 @@ Tests: `panel/web/test/version.test.mjs` (the rows, the time), `panel/web/test/d
 
 Summary of 2026-11-03 (v0.31.1, v0.32.0, v0.32.1): the Update button works on `lan` installations (D32, D33); the corner has Translation (placeholder), the version chip, GitHub and Exit, and the Build info window shows the build and the update banner (D40 to D42); the look follows the unslop rules (D34 to D39); the Rules screen works on a fresh install; the Audit screen is readable (D44). Not done: a chart on the Overview, the review of the look in a real browser, the cause of the ntopng stop seen in the log (the journal of `ntopng` is needed).
 
-### 18.36 Backup and restore (v0.33.0)
+### 18.36 Slice 36: backup and restore (v0.33.0)
+
+**Status:** done.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| R173 | high | `suricata -T` would have checked the restored `suricata.yaml` and `local.rules` one at a time, so two files that are valid alone and wrong together could pass | `suricata_check_set` takes the candidate `local.rules` as a third argument and a restore checks the pair; a test (`restore that fails suricata -T leaves every old file`) |
+| R174 | high | a hand-made archive could carry an absolute path, `..`, a link or a name outside the list and write elsewhere when unpacked | the entries are listed and refused (exit 3) before anything is unpacked, only `manifest.json` and `files/<known name>` as plain files are accepted, the manifest is checked against the sums; tests |
+| R175 | high | the panel could name any path and so make root read or write it | for the panel `--out` and any argument that is not a bare `*.tar.gz` name give exit 5; tests in `backup.bats` |
+| R176 | medium | the dry run diff of `users.json` would show password hashes in the panel | it is shown as `changed: users.json (not shown)`; a test |
+| R177 | medium | a bare `POST .../restore` would replace the configs without a preview or a confirmation | the body must say `dry_run` or `acknowledged`, otherwise 400, ctl is not called; a test |
+| R178 | medium | the download could follow a symlink out of the archives directory | `Lstat` and a regular file only; a test with a link to a secret |
+| R179 | low | a failed write in the middle of a restore would leave a mix of old and new files | the previous files are copied first and put back on a failure; a test of the refusal path |
+
+Open: the look of the Backups screen was not checked in a browser; a restore onto another host was not tried (`IFACES` may name an interface that is not there, `users.json` carries the old accounts); the panel cannot upload an archive; `reconfigure` after a restore is a manual step; the archives live in the state directory that `uninstall` removes (copy one away with `--out` or Download); a restore replaces several files one after another under one lock, it is not one atomic step.
 
 Decisions ("choose yourself"):
 
@@ -1836,9 +1812,20 @@ Decisions ("choose yourself"):
 | D50 | **Dry run** prints `new:`, `same:` or `changed:` per file and a unified diff; `users.json` is shown as changed without a diff because it holds password hashes |
 | D51 | **The panel cannot choose a path.** For the panel (`sudo` as `dpistack` or `DPISTACK_CALLER=panel`) `--out` and any argument that is not a bare `*.tar.gz` name give exit 5, so a stolen session cannot make root read or write elsewhere. Download is read by the panel itself from `-backups-dir` (the archive group is `dpistack`), refuses a link and a name that is not a bare file name. A real restore from the panel needs `acknowledged:true`; the screen always runs the dry run first and asks |
 
-Tests: `tests/backup.bats` (20), `panel/internal/api/backups_test.go` (9) and the Backups rows of the route table in `users_test.go`, `panel/web/test/backups.test.mjs`, `-backups-dir` in `tests/panel_step.bats`. Not done: the look of the screen was not checked in a browser; the Backups screen only reads the archives of this host.
+Tests: `tests/backup.bats` (20), `panel/internal/api/backups_test.go` (9) and the Backups rows of the route table in `users_test.go`, `panel/web/test/backups.test.mjs`, `-backups-dir` in `tests/panel_step.bats`.
 
-### 18.37 The shell of the panel (v0.34.0)
+### 18.37 Slice 37 (second part): the shell of the panel (v0.34.0)
+
+**Status:** slice 37 is partly done. **Done:** the menu in groups, routes by hash, the folded menu, the permission-aware hiding of groups and entries (this entry); the corner, Build info and the look (18.35). **Remaining:** the top bar (host, state, mode, alert bell, user menu, theme). The bell waits for slice 43 and the theme switch needs a decision on a manual override of the system theme.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| R180 | medium | the rule `#overview[data-collapsed]` (an id and an attribute) beats the narrow layout, so a user who folded the menu on a desktop and then narrowed the window got a broken grid | the folded rules are inside `min-width` media in both stylesheets and the fold button is hidden on a narrow screen |
+| R181 | medium | reading `window.localStorage` can itself throw in some browsers, and a first load would stop | the read is inside `try` and the menu starts expanded |
+| R182 | low | an address naming a screen the user has no permission for would show an empty screen | it opens Overview, by the same rule that hides the entry; `hashchange` is ignored while signed out |
+| R183 | low | a group heading would stay when every entry under it is hidden | `syncGroups` hides the group; a test |
+
+Open: the top bar; the look of the folded menu and of the group headings was not checked in a browser (the rules of `design.test.mjs` pass for both stylesheets); Traffic, IPS, Exceptions, Health and Security join the menu with their slices.
 
 Decisions ("choose yourself"):
 
@@ -1848,9 +1835,21 @@ Decisions ("choose yourself"):
 | D53 | **Routes are `#<screen>`.** `showView` sets the hash, `hashchange` shows the screen (back and forward work), the first load opens the screen of the address. A name that is not a screen, or a screen the user has no permission for (the same rule that hides its entry), opens Overview. The hash holds nothing else, so no value reaches the history |
 | D54 | **The folded menu** is an attribute on the signed-in page and the choice is kept in `localStorage` (`dpistack.nav.collapsed`), read and written inside `try`, because some browsers refuse storage. It applies only on wide screens: the narrow layout has its own menu |
 
-Tests: `panel/web/test/shell.test.mjs` (5). Not done: the top bar; the look of the folded menu and of the group headings was not checked in a browser (the rules of `design.test.mjs` pass for both stylesheets).
+Tests: `panel/web/test/shell.test.mjs` (5).
 
-### 18.38 The host state on the Overview (v0.35.0)
+### 18.38 Slice 38: Overview v2, system health and topology (v0.35.0 to v0.37.0)
+
+**Status:** partly done. **Done:** `GET /api/system`; on the Overview the host cards and the interfaces table, four state cards, warnings, alerts by severity, the latest alerts, the traffic graph and the watchdog warnings. **Remaining:** the interfaces page with a simple topology (host, interfaces, Suricata, outputs); docker and systemd state beyond "the socket and the directory exist".
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| R184 | medium | `/` and `/var/log` on one filesystem were reported as two disks | the disks are deduplicated by filesystem id, the first path is shown; a test |
+| R185 | medium | the first CPU sample has no rate and would have shown 0 % | `percent` is `null` on the first answer and the screen says "measuring"; a test |
+| R186 | medium | a failing extra source (a 404 of `/api/system`, a 503 of the metrics) would have been shown as an error of the whole Overview, or have signed the user out | an extra part that fails is left out; only a 401 signs the user out; tests for each source |
+| R187 | low | the existing poll test counted the new extra requests as status polls and failed | it counts only the status polls |
+| R188 | low | D60 said the stale rules update warning needed a new endpoint, but the watchdog already has `rules.age` | the Overview repeats `rules.age` and `suricata.eve_fresh` when they are warn or crit (D62) |
+
+Open: the interfaces page and the topology; the look of the cards, the warnings and the traffic charts was not checked in a browser; the interface counters are totals since boot (no rate); `docker_socket` and `systemd_present` only say that a file or a directory exists, not that the daemon is healthy; "Alerts, 24 h" counts the latest 200 alerts only.
 
 Decisions ("choose yourself"):
 
@@ -1860,7 +1859,7 @@ Decisions ("choose yourself"):
 | D56 | **Honest names for what is only a hint.** `systemd_present` is the directory `/run/systemd/system`, `docker_socket` is the file `/var/run/docker.sock`. They do not say that the daemon is healthy; the state of the parts stays in `/api/status`. In the docker panel the numbers are those of the host (`pid: host`), the disks are those of the container's mounts |
 | D57 | **The host part is extra.** When `/api/system` fails (switched off, not readable) the Host section hides and the Overview shows the rest; only a 401 signs the user out. A card for data the host did not give is left out, not shown as 0 |
 
-Tests: `panel/internal/system/system_test.go` (5), `panel/internal/api/system_test.go` (3) and the `/api/system` row of the route table, `panel/web/test/system.test.mjs` (5), two cases in `panel/web/test/poll.test.mjs`. Not done: the look of the cards was not checked in a browser; the interface counters are totals since boot (no rate yet).
+Tests: `panel/internal/system/system_test.go` (5), `panel/internal/api/system_test.go` (3) and the `/api/system` row of the route table, `panel/web/test/system.test.mjs` (5), two cases in `panel/web/test/poll.test.mjs`.
 
 Second part (v0.36.0), decisions ("choose yourself"):
 
@@ -1870,7 +1869,7 @@ Second part (v0.36.0), decisions ("choose yourself"):
 | D59 | **Honest windows.** "Alerts, 24 h" counts the alerts of the latest 200 whose time is within 24 hours; when 200 were read the screen says "of the latest 200 alerts". Alerts without a time are not counted. Severity is the EVE number: 1 high, 2 medium, 3 low, anything else unknown |
 | D60 | **What counts as a warning:** a component that failed; one that is stopped but set to start on boot; Suricata running with no interface set to capture; packets dropped on the capture interfaces since boot; a disk at least 90 % full. Each is a sentence about a fact the screen has. The stale rules update warning needs the date of the last update, which no endpoint gives yet |
 
-Tests: `panel/web/test/overview-model.test.mjs` (8), three cases in `poll.test.mjs`. Not done: the look of the cards and the warnings was not checked in a browser.
+Tests: `panel/web/test/overview-model.test.mjs` (8), three cases in `poll.test.mjs`.
 
 Third part (v0.37.0), decisions ("choose yourself"):
 
@@ -1879,4 +1878,88 @@ Third part (v0.37.0), decisions ("choose yourself"):
 | D61 | **The traffic graph reuses the Metrics screen.** The Overview draws the `pps` and `drops` cards of the last hour with the same `seriesCard` as `/metrics`, from `GET /api/metrics?range=1h` (the server samples every 30 s). Without metrics (503) the block hides; a series that cannot exist stays a note with its reason, never a flat line |
 | D62 | **The stale rules update warning is the watchdog's own check, not a new one.** `rules.age` (`WATCH_RULES_WARN_DAYS`, `WATCH_RULES_CRIT_DAYS`, mtime of `suricata.rules`, off with `RULES_UPDATE=off`) and `suricata.eve_fresh` are repeated in the warnings of the Overview when they are `warn` or `crit`, with the check's own detail line as the sentence. The process, port, drop and disk checks are not repeated: the screen says those from its own data. So there is no "last rules update" endpoint; this supersedes the remark in D60 |
 
-Tests: three more cases in `overview-model.test.mjs` and `poll.test.mjs`. Not done: the look of the traffic cards on the Overview was not checked in a browser.
+Tests: three more cases in `overview-model.test.mjs` and `poll.test.mjs`.
+
+### 18.39 Slice 39: Traffic Explorer (not started)
+
+**Status:** not started. **Remaining:** all of it.
+
+**What it does:** devices (by IP and MAC when seen), applications (nDPI `app_proto`/`ndpi` fields), domains (DNS, TLS SNI), connections (flow events), per-device detail, filters and a link to ntopng. The data comes only from EVE events and the counters the panel already reads; where the data is not there (no flow events, no nDPI) the page says exactly that.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| | | no review yet: the table is filled in when the slice is done | |
+
+Open: everything above. The entry is completed with the review (findings, decisions, tests, what was not checked) when the slice is done.
+
+### 18.40 Slice 40: the Events workspace and exceptions (not started)
+
+**Status:** not started. **Remaining:** all of it.
+
+**What it does:** filters (IP, SID, category, protocol, severity, domain, time), grouping, related events by `flow_id`, a detail panel, the history of one SID, export JSON/CSV, and "create an exception" from an event: a threshold or suppress entry with an expiry and the narrowest scope (SID plus source or destination), stored in the exceptions file that the rules step renders.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| | | no review yet: the table is filled in when the slice is done | |
+
+Open: everything above. The entry is completed with the review (findings, decisions, tests, what was not checked) when the slice is done.
+
+### 18.41 Slice 41: Rules v2 (not started)
+
+**Status:** not started. **Remaining:** all of it.
+
+**What it does:** counts per source (total, enabled, disabled), the date and the history of updates, SID descriptions, search by category, provider and text, a custom rules editor (`local.rules`) with validation by `suricata -T` on a temporary copy, a SID conflict check and a change history.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| | | no review yet: the table is filled in when the slice is done | |
+
+Open: everything above. The entry is completed with the review (findings, decisions, tests, what was not checked) when the slice is done.
+
+### 18.42 Slice 42: the IPS page (not started)
+
+**Status:** not started. **Remaining:** all of it.
+
+**What it does:** mode and method, NFQ state, packets processed and dropped, the number of drop rules, the latest blocking events, the rollback state, and readiness checks (the iptables or nft chain, the queue, the confirmation timer). The "rule test" replays a controlled pcap through Suricata offline with the chosen rules and reports which rules would drop; it never touches live traffic.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| | | no review yet: the table is filled in when the slice is done | |
+
+Open: everything above. The entry is completed with the review (findings, decisions, tests, what was not checked) when the slice is done.
+
+### 18.43 Slice 43: the Alert Center (not started)
+
+**Status:** not started. **Remaining:** all of it.
+
+**What it does:** alerts of the watchdog and of Suricata with states: new, acknowledged, snoozed until, resolved; history and filters. State lives in `/var/lib/dpistack/alerts-state.json`.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| | | no review yet: the table is filled in when the slice is done | |
+
+Open: everything above. The entry is completed with the review (findings, decisions, tests, what was not checked) when the slice is done.
+
+### 18.44 Slice 44: Settings v2 (not started)
+
+**Status:** not started. **Remaining:** all of it.
+
+**What it does:** categories, the standard and advanced levels, three columns, search, a diff of the staged change before it is applied, profiles (named sets of keys saved and applied), and for every key the default, the allowed values, the dependencies and what is restarted.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| | | no review yet: the table is filled in when the slice is done | |
+
+Open: everything above. The entry is completed with the review (findings, decisions, tests, what was not checked) when the slice is done.
+
+### 18.45 Slice 45: security of the panel (not started)
+
+**Status:** not started. **Remaining:** all of it.
+
+**What it does:** the list of own sessions with a revoke button, API tokens (read only or by role), rotation of the session secret, login history, and a security check (access mode, TLS, default ports, users without a recent login, rule file permissions) shown as a list with a fix hint.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| | | no review yet: the table is filled in when the slice is done | |
+
+Open: everything above. The entry is completed with the review (findings, decisions, tests, what was not checked) when the slice is done.
