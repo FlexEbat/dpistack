@@ -85,8 +85,8 @@ test("overview: a load in flight when the tab comes back does not start a second
   let calls = 0;
   const pending = [];
   const api = (path) => {
-    // the host part answers at once: only the status polls are counted
-    if (path === "/api/system") return Promise.resolve({});
+    // the extra parts answer at once: only the status polls are counted
+    if (path !== "/api/status") return Promise.resolve({});
     calls++;
     const d = deferred();
     pending.push(d);
@@ -139,4 +139,19 @@ test("overview: a 401 from the host part signs the user out", async () => {
   stop = startOverview(api, areas, () => (signedOut = true));
   await settle();
   assert.equal(signedOut, true);
+});
+
+test("overview: a 401 from the alerts or the mode also signs the user out", async () => {
+  for (const failing of ["/api/eve?type=alert&limit=200", "/api/mode"]) {
+    let signedOut = false;
+    const api = async (path) => {
+      if (path === failing) throw Object.assign(new Error("unauthorized"), { status: 401 });
+      return path === "/api/status" ? { health: null, components: [] } : {};
+    };
+    const areas = new Proxy({ error: node(), hostBox: node() }, { get: (t, k) => (k in t ? t[k] : node()) });
+    const s = startOverview(api, areas, () => (signedOut = true));
+    await settle();
+    s();
+    assert.equal(signedOut, true, failing);
+  }
 });
