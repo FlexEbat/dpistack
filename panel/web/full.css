@@ -224,8 +224,20 @@ tbody tr:hover td { background: var(--card-2); }
 .js-reveal { opacity: 0; transform: translateY(var(--s-400)); transition: opacity 700ms var(--ease), transform 700ms var(--ease); }
 .js-reveal.in { opacity: 1; transform: none; }
 
+.nav-group { display: flex; flex-direction: column; gap: var(--s-50); }
+.nav-label { margin: var(--s-200) 0 0; padding: 0 var(--s-100); color: var(--muted); font-size: var(--text-xs); line-height: var(--lh-xs); font-weight: 600; }
+.nav-collapse { margin-top: var(--s-200); }
+@media (min-width: 60.0625rem) {
+  #overview[data-collapsed] { grid-template-columns: 4.5rem minmax(0, 1fr); }
+  #overview[data-collapsed] nav { padding-left: var(--s-50); padding-right: var(--s-50); }
+  #overview[data-collapsed] .nav-label, #overview[data-collapsed] nav .nav-links button span, #overview[data-collapsed] .brand strong, #overview[data-collapsed] .brand small { display: none; }
+  #overview[data-collapsed] nav .nav-links button { justify-content: center; }
+  #overview[data-collapsed] .nav-collapse .ico { transform: scaleX(-1); }
+}
+
 /* ---- narrow screens: a floating bar and a full height menu ---- */
 @media (max-width: 60rem) {
+  .nav-collapse { display: none; }
   #overview { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; grid-template-areas: "head" "content"; padding: var(--s-800) var(--s-200) var(--s-500); }
   nav { position: static; display: block; height: auto; padding: 0; overflow: visible; background: transparent; border-right: 0; }
   .bar {

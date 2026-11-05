@@ -61,7 +61,20 @@ nav { display: flex; flex-direction: column; gap: var(--s-25); position: sticky;
 nav .nav-links button { display: flex; align-items: center; gap: var(--s-75); text-align: left; border: 1px solid transparent; background: transparent; color: var(--fg); padding: var(--s-75) var(--s-100); border-radius: var(--r-lg); font-weight: 500; }
 nav .nav-links button:hover { background: var(--accent-soft); }
 nav .nav-links button[aria-current="page"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.nav-group { display: flex; flex-direction: column; gap: var(--s-25); }
+.nav-label { margin: var(--s-100) 0 0; padding: 0 var(--s-100); color: var(--muted); font-size: var(--text-xs); line-height: var(--lh-xs); font-weight: 600; }
+.nav-collapse { margin-top: var(--s-100); }
+
+@media (min-width: 52.0625rem) {
+  #overview[data-collapsed] { grid-template-columns: 4.5rem minmax(0, 1fr); }
+  #overview[data-collapsed] .nav-label, #overview[data-collapsed] nav .nav-links button span { display: none; }
+  #overview[data-collapsed] nav .nav-links button { justify-content: center; }
+}
+
 @media (max-width: 52rem) {
+  .nav-collapse { display: none; }
+  .nav-group { flex-direction: row; align-items: center; }
+  .nav-label { display: none; }
   #overview { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "nav" "content"; }
   nav { flex-direction: row; overflow-x: auto; position: static; }
   .nav-links { flex-direction: row; }

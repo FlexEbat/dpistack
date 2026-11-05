@@ -13,6 +13,7 @@ import { start as startSettings } from "./modules/settings.js";
 import * as account from "./modules/account.js";
 import { start as startAudit } from "./modules/audit.js";
 import { start as startBackups } from "./modules/backups.js";
+import * as shell from "./modules/shell.js";
 import { start as startVersion } from "./modules/version.js";
 import { menu, revealOnce, skipLink } from "./modules/chrome.js";
 
@@ -248,7 +249,11 @@ const SCREENS = {
     ),
 };
 
+let current = "";
+
 function showView(name) {
+  current = name;
+  if (location.hash !== shell.hashOf(name)) location.hash = shell.hashOf(name);
   const btn = document.querySelector(`#nav button[data-view="${name}"]`);
   if (btn) $("page-title").textContent = btn.textContent.trim();
   show("overview"); // the signed-in page
@@ -269,7 +274,11 @@ async function showOverview() {
   for (const b of document.querySelectorAll("#nav button[data-view]")) {
     b.hidden = !account.visibleViews([b.dataset.view], me.perms).length;
   }
-  showView("overview");
+  shell.syncGroups(document);
+  // The address names the screen; one the user may not use opens Overview.
+  const wanted = shell.viewFromHash(location.hash, VIEWS);
+  const allowed = wanted && account.visibleViews([wanted], me.perms).length;
+  showView(allowed ? wanted : "overview");
   // The corner: the version, and the update when there is one.
   // The repository links are set here, so the page itself carries no external address.
   for (const a of document.querySelectorAll("a[data-repo]")) {
@@ -344,6 +353,19 @@ for (const b of document.querySelectorAll("#nav button[data-view]")) {
 }
 skipLink();
 revealOnce(document);
+let store = { getItem: () => null, setItem() {} };
+try {
+  store = window.localStorage; // some browsers refuse even the property
+} catch {
+  // the menu then starts expanded every time
+}
+shell.collapse(document, store);
+window.addEventListener("hashchange", () => {
+  const name = shell.viewFromHash(location.hash, VIEWS);
+  if (!name || name === current || $("overview").hidden) return;
+  if (!account.visibleViews([name], me.perms).length) return showView("overview");
+  showView(name);
+});
 
 $("logout").addEventListener("click", async () => {
   await api("/api/logout", { method: "POST" }).catch(() => {});
