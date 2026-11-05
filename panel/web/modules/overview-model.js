@@ -80,9 +80,24 @@ export function stateCards({ status, system, mode, alerts, now }) {
   return cards;
 }
 
+// The watchdog checks that the Overview repeats as a warning. The component
+// and disk checks are left out: the screen says those from its own data.
+const WATCH_CHECKS = ["rules.age", "suricata.eve_fresh"];
+
+// watchWarnings turns a warn or crit check of the watchdog into a sentence
+// from its own detail line.
+function watchWarnings(health) {
+  const out = [];
+  for (const c of (health && health.checks) || []) {
+    if (!WATCH_CHECKS.includes(c.id) || (c.status !== "warn" && c.status !== "crit") || !c.detail) continue;
+    out.push(c.detail.charAt(0).toUpperCase() + c.detail.slice(1) + ".");
+  }
+  return out;
+}
+
 // warnings: sentences for what needs a look. Each one is a fact the screen
 // has; the order is the order of importance.
-export function warnings({ status, system }) {
+export function warnings({ status, system, health }) {
   const out = [];
   for (const c of installed(status || {})) {
     if (c.state === "failed") out.push(c.id + " has failed.");
@@ -95,5 +110,6 @@ export function warnings({ status, system }) {
   for (const d of (system && system.disks) || []) {
     if (d.total_bytes > 0 && (d.total_bytes - d.free_bytes) / d.total_bytes >= 0.9) out.push("The disk " + d.path + " is more than 90 % full.");
   }
+  out.push(...watchWarnings(health));
   return out;
 }

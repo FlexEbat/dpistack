@@ -66,3 +66,16 @@ test("warnings name what needs a look and nothing else", () => {
   assert.deepEqual(warnings({ status: { components: [{ id: "suricata", state: "active", enabled: true }] }, system: { interfaces: [{ capture: false }] } }), ["Suricata is running but no interface is set to be captured."]);
   assert.deepEqual(warnings({}), []);
 });
+
+test("the watchdog's rules age and eve checks are warnings, the others are left to the screen", () => {
+  const health = { checks: [
+    { id: "rules.age", status: "warn", detail: "rules are 9.00 days old" },
+    { id: "suricata.eve_fresh", status: "crit", detail: "no new events for 400 s" },
+    { id: "disk.free", status: "crit", detail: "disk /var is full" },
+    { id: "process.suricata", status: "crit", detail: "not running" },
+    { id: "rules.age_x", status: "warn", detail: "other" },
+  ] };
+  assert.deepEqual(warnings({ status: { components: [] }, health }), ["Rules are 9.00 days old.", "No new events for 400 s."]);
+  assert.deepEqual(warnings({ status: { components: [] }, health: { checks: [{ id: "rules.age", status: "ok", detail: "" }, { id: "rules.age", status: "na", detail: "rule updates are off" }] } }), []);
+  assert.deepEqual(warnings({ status: { components: [] }, health: null }), []);
+});

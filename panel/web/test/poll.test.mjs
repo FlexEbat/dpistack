@@ -142,7 +142,7 @@ test("overview: a 401 from the host part signs the user out", async () => {
 });
 
 test("overview: a 401 from the alerts or the mode also signs the user out", async () => {
-  for (const failing of ["/api/eve?type=alert&limit=200", "/api/mode"]) {
+  for (const failing of ["/api/eve?type=alert&limit=200", "/api/mode", "/api/metrics?range=1h"]) {
     let signedOut = false;
     const api = async (path) => {
       if (path === failing) throw Object.assign(new Error("unauthorized"), { status: 401 });
@@ -154,4 +154,32 @@ test("overview: a 401 from the alerts or the mode also signs the user out", asyn
     s();
     assert.equal(signedOut, true, failing);
   }
+});
+
+test("overview: without metrics the traffic block hides and the rest stays", async () => {
+  const api = async (path) => {
+    if (path.startsWith("/api/metrics")) throw Object.assign(new Error("metrics are not collected"), { status: 503 });
+    return path === "/api/status" ? { health: null, components: [] } : {};
+  };
+  const trafficBox = node();
+  trafficBox.hidden = false;
+  const error = node();
+  const areas = new Proxy({ error, hostBox: node(), trafficBox }, { get: (t, k) => (k in t ? t[k] : node()) });
+  stop = startOverview(api, areas, () => assert.fail("a 503 of the metrics is not a sign-out"));
+  await settle();
+  assert.equal(trafficBox.hidden, true);
+  assert.equal(error.textContent, "");
+});
+
+test("overview: with metrics the traffic block is shown", async () => {
+  const api = async (path) => {
+    if (path.startsWith("/api/metrics")) return { series: { pps: { available: false, reason: "no stats", values: [] }, drops: { available: false, reason: "no stats", values: [] } } };
+    return path === "/api/status" ? { health: null, components: [] } : {};
+  };
+  const trafficBox = node();
+  trafficBox.hidden = true;
+  const areas = new Proxy({ error: node(), hostBox: node(), trafficBox }, { get: (t, k) => (k in t ? t[k] : node()) });
+  stop = startOverview(api, areas, () => {});
+  await settle();
+  assert.equal(trafficBox.hidden, false);
 });

@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v57** (2026-11-05)
-**Program version: v0.36.0** (slices 0-36 are done, 37 is mostly done, 38-45 are not started; the list of slices is in section 17, the reviews in section 18)
+**Document version: v58** (2026-11-05)
+**Program version: v0.37.0** (slices 0-36 are done, 37 is mostly done, 38-45 are not started; the list of slices is in section 17, the reviews in section 18)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.37.0: slice 38, third part (18.38). The Overview shows the packet and drop rate of the last hour and repeats the watchdog's stale rules and stale eve.json checks as warnings. Only the interfaces page with the topology is left of slice 38.
 - v0.36.0: slice 38, second part (18.38). The Overview opens with four state cards (protection mode, components, alerts in 24 h, packets lost on the capture interfaces), the warnings, alerts by severity and the latest five alerts. The traffic graph, the stale rules update warning and the topology page are still to do.
 - v0.35.0: slice 38, first part (section 18.38). `GET /api/system` (load, CPU share, memory, disks, uptime, interfaces with state, speed, counters and the capture flag) and a Host section with an Interfaces table on the Overview. Four state cards, the traffic graph, events by severity, recent events, warnings and the topology are still to do.
 - v0.34.0: slice 37, the shell of the panel (section 18.37). The menu is in four groups (Monitoring, Protection, System, Admin) and a group with no allowed entry is hidden; the address names the screen (`#events`, back and forward work, a screen the user may not use opens Overview); the menu folds to its icons and the choice is remembered. The top bar is still to do.
 - v0.33.0: slice 36. `dpistack backup create [--out FILE]|list [--json]|verify FILE|restore FILE [--dry-run]` and the Backups screen (section 18.36). One tar.gz of the configs with a manifest (program version, sha256 and mode of every file); `verify` fails on a changed byte, an extra entry or a link; `restore` checks the schema and `suricata -T` before it replaces anything and keeps the previous files; the panel names an archive by its file name only.
-- v0.32.1: the Audit screen says what was done ("Restart ntopng", "Sign in") instead of the route template, the raw path moves to a muted Target column; the Account and Audit forms have padding and flexible fields (D44, D45 of 18.35).
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v58: v0.37.0. The traffic graph and the watchdog warnings on the Overview, D61-D62 of 18.38.
 - v57: v0.36.0. The state cards, warnings and alerts on the Overview, D58-D60 of 18.38.
 - v56: v0.35.0. `GET /api/system` (4.8), the Host section of the Overview, 18.38.
 - v55: v0.34.0. Slice 37 mostly done: the groups of the menu, routes by hash, the folded menu (18.37).
 - v54: the same keep-five rule for both changelogs; section 17 is one list (done slices in parentheses, the specifications of the slices still to do below it); every merge into `main` makes a new version and a tag (12.3).
-- v53: v0.33.0. Slice 36 done: the `backup` verbs (4.5), the Backups routes (4.8), 18.36.
 
 ---
 
@@ -1156,7 +1156,7 @@ One list. A slice in parentheses is done; every other slice is still to do and c
 - (Slice 35: the audit log and login history, v0.30.0)
 - (Slice 36: backup and restore, v0.33.0)
 - Slice 37: the shell of the panel. (Done: the corner, the Build info window, the look, v0.32.0; readable Audit actions, v0.32.1; the groups of the menu, routes by hash, the folded menu, v0.34.0.) To do: the top bar, see below.
-- Slice 38: Overview v2, System health and topology. (Done: `GET /api/system`, the Host section with the interfaces, v0.35.0; the state cards, warnings, alerts by severity and latest alerts, v0.36.0.) To do: see below.
+- Slice 38: Overview v2, System health and topology. (Done: `GET /api/system`, the Host section with the interfaces, v0.35.0; the state cards, warnings, alerts by severity and latest alerts, v0.36.0; the traffic graph and the watchdog warnings, v0.37.0.) To do: see below.
 - Slice 39: Traffic Explorer
 - Slice 40: the Events workspace and exceptions
 - Slice 41: Rules v2
@@ -1177,7 +1177,7 @@ Decided on the request of 2026-10-31 (`todo.md`), "choose yourself". General rul
 
 #### Slice 38: Overview v2, System health and topology (partly done)
 
-**Done (v0.35.0, v0.36.0):** `GET /api/system`; on the Overview the host cards and the interfaces table, four state cards, warnings, alerts by severity and the latest alerts. **Still to do:** the traffic graph, the stale rules update warning, the interfaces page with a simple topology (host, interfaces, Suricata, outputs), docker and systemd state beyond "the socket and the directory exist".
+**Done (v0.35.0 to v0.37.0):** `GET /api/system`; on the Overview the host cards and the interfaces table, four state cards, warnings, alerts by severity, the latest alerts, the traffic graph and the watchdog warnings. **Still to do:** the interfaces page with a simple topology (host, interfaces, Suricata, outputs), docker and systemd state beyond "the socket and the directory exist".
 
 **What it does:** Overview with four state cards, the traffic graph, events by severity, components with version and last check, recent events, warnings (packet drops, a stale rules update, a missing capture); `GET /api/system` (CPU, memory, disk, load, interfaces with speed and counters, docker and systemd state); the interface page with the capture flag and a simple topology (host, interfaces, Suricata, outputs).
 
@@ -1871,3 +1871,12 @@ Second part (v0.36.0), decisions ("choose yourself"):
 | D60 | **What counts as a warning:** a component that failed; one that is stopped but set to start on boot; Suricata running with no interface set to capture; packets dropped on the capture interfaces since boot; a disk at least 90 % full. Each is a sentence about a fact the screen has. The stale rules update warning needs the date of the last update, which no endpoint gives yet |
 
 Tests: `panel/web/test/overview-model.test.mjs` (8), three cases in `poll.test.mjs`. Not done: the look of the cards and the warnings was not checked in a browser.
+
+Third part (v0.37.0), decisions ("choose yourself"):
+
+| id | decision |
+| --- | --- |
+| D61 | **The traffic graph reuses the Metrics screen.** The Overview draws the `pps` and `drops` cards of the last hour with the same `seriesCard` as `/metrics`, from `GET /api/metrics?range=1h` (the server samples every 30 s). Without metrics (503) the block hides; a series that cannot exist stays a note with its reason, never a flat line |
+| D62 | **The stale rules update warning is the watchdog's own check, not a new one.** `rules.age` (`WATCH_RULES_WARN_DAYS`, `WATCH_RULES_CRIT_DAYS`, mtime of `suricata.rules`, off with `RULES_UPDATE=off`) and `suricata.eve_fresh` are repeated in the warnings of the Overview when they are `warn` or `crit`, with the check's own detail line as the sentence. The process, port, drop and disk checks are not repeated: the screen says those from its own data. So there is no "last rules update" endpoint; this supersedes the remark in D60 |
+
+Tests: three more cases in `overview-model.test.mjs` and `poll.test.mjs`. Not done: the look of the traffic cards on the Overview was not checked in a browser.

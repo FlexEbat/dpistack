@@ -1,6 +1,7 @@
 // The Overview screen: overall health, components and watchdog checks.
 import { tickets } from "./poll.js";
 import { statCards, ifaceRows } from "./system.js";
+import { SERIES, seriesCard } from "./metrics.js";
 import { alertsOf, since, severityCounts, stateCards, warnings } from "./overview-model.js";
 
 const ALERT_LIMIT = 200;
@@ -102,6 +103,15 @@ export function renderSystem(info, areas) {
   areas.hostBox.hidden = !cards.length && !rows.length;
 }
 
+// renderTraffic draws the packet rate and the drop rate of the last hour,
+// the same cards as the Metrics screen. Without metrics the block hides.
+export function renderTraffic(res, areas) {
+  const defs = SERIES.filter((d) => d.name === "pps" || d.name === "drops");
+  const ok = res && res.series && defs.every((d) => res.series[d.name]);
+  areas.trafficBox.hidden = !ok;
+  if (ok) areas.traffic.replaceChildren(...defs.map((d) => seriesCard(d, res.series[d.name])));
+}
+
 // renderGlance fills the cards, the warnings, the alerts by severity and
 // the latest alerts. A source that did not answer is null and its part is
 // left out; the whole block hides when nothing is left.
@@ -117,7 +127,7 @@ export function renderGlance({ status, system, mode, eve }, areas, now = Date.no
       return card;
     }),
   );
-  const warn = status ? warnings({ status, system }) : [];
+  const warn = status ? warnings({ status, system, health: status.health }) : [];
   areas.warnings.replaceChildren(...warn.map((w) => el("p", "warning", w)));
   areas.warnings.hidden = !warn.length;
 
@@ -158,14 +168,15 @@ export function start(api, areas, onError) {
       areas.error.textContent = "";
       // The other parts are extra: when one fails the rest of the screen
       // stays, and only a 401 signs the user out.
-      const extra = await Promise.allSettled([api("/api/system"), api("/api/mode"), api("/api/eve?type=alert&limit=" + ALERT_LIMIT)]);
+      const extra = await Promise.allSettled([api("/api/system"), api("/api/mode"), api("/api/eve?type=alert&limit=" + ALERT_LIMIT), api("/api/metrics?range=1h")]);
       if (!running || !seq.current(ticket)) return;
       const unauth = extra.find((r) => r.status === "rejected" && r.reason && r.reason.status === 401);
       if (unauth) return onError(unauth.reason);
-      const [system, mode, eve] = extra.map((r) => (r.status === "fulfilled" ? r.value : null));
+      const [system, mode, eve, traffic] = extra.map((r) => (r.status === "fulfilled" ? r.value : null));
       if (system) renderSystem(system, areas);
       else areas.hostBox.hidden = true;
       renderGlance({ status, system, mode, eve }, areas);
+      renderTraffic(traffic, areas);
     } catch (err) {
       if (!running || !seq.current(ticket)) return;
       if (err.status === 401) return onError(err);
