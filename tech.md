@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v59** (2026-11-05)
-**Program version: v0.37.1** (slices 0-36 are done, 37 and 38 are partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v60** (2026-11-05)
+**Program version: v0.37.2** (slices 0-36 are done, 37 and 38 are partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.37.2: the cards of the Overview have a layout (they ran together: no padding, label, value and badge in one line), found by rendering the page in a real browser; v0.37.1 (tech.md only) was not tagged and is part of this version.
 - v0.37.1: tech.md only: every slice has an entry in the style of 18.20, 18.0 is the index of slices (done and remaining), section 17 keeps the assumptions only.
 - v0.37.0: slice 38, third part (18.38). The Overview shows the packet and drop rate of the last hour and repeats the watchdog's stale rules and stale eve.json checks as warnings. Only the interfaces page with the topology is left of slice 38.
 - v0.36.0: slice 38, second part (18.38). The Overview opens with four state cards (protection mode, components, alerts in 24 h, packets lost on the capture interfaces), the warnings, alerts by severity and the latest five alerts. The traffic graph, the stale rules update warning and the topology page are still to do.
 - v0.35.0: slice 38, first part (section 18.38). `GET /api/system` (load, CPU share, memory, disks, uptime, interfaces with state, speed, counters and the capture flag) and a Host section with an Interfaces table on the Overview. Four state cards, the traffic graph, events by severity, recent events, warnings and the topology are still to do.
-- v0.34.0: slice 37, the shell of the panel (section 18.37). The menu is in four groups (Monitoring, Protection, System, Admin) and a group with no allowed entry is hidden; the address names the screen (`#events`, back and forward work, a screen the user may not use opens Overview); the menu folds to its icons and the choice is remembered. The top bar is still to do.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v60: v0.37.2. R189 of 18.38: the card layout.
 - v59: v0.37.1. Section 17 is the assumptions only; 18.0 is the index of slices; 18.35 to 18.38 retitled and given findings tables (R173 to R188); 18.39 to 18.45 hold the specifications of the slices not started.
 - v58: v0.37.0. The traffic graph and the watchdog warnings on the Overview, D61-D62 of 18.38.
 - v57: v0.36.0. The state cards, warnings and alerts on the Overview, D58-D60 of 18.38.
 - v56: v0.35.0. `GET /api/system` (4.8), the Host section of the Overview, 18.38.
-- v55: v0.34.0. Slice 37 mostly done: the groups of the menu, routes by hash, the folded menu (18.37).
 
 ---
 
@@ -1848,6 +1848,7 @@ Tests: `panel/web/test/shell.test.mjs` (5).
 | R186 | medium | a failing extra source (a 404 of `/api/system`, a 503 of the metrics) would have been shown as an error of the whole Overview, or have signed the user out | an extra part that fails is left out; only a 401 signs the user out; tests for each source |
 | R187 | low | the existing poll test counted the new extra requests as status polls and failed | it counts only the status polls |
 | R188 | low | D60 said the stale rules update warning needed a new endpoint, but the watchdog already has `rules.age` | the Overview repeats `rules.age` and `suricata.eve_fresh` when they are warn or crit (D62) |
+| R189 | medium | the state and host cards had no layout: no padding, and the label, value, badge and note ran together in one line (seen in a screenshot from the user, then reproduced in headless Firefox). The look had been reported as "not checked in a browser" three times | `.stat` is a grid with padding in both stylesheets, `#glance-box` and the `Latest` heading have spacing; the page was rendered in headless Firefox against a mock API and looked at |
 
 Open: the interfaces page and the topology; the look of the cards, the warnings and the traffic charts was not checked in a browser; the interface counters are totals since boot (no rate); `docker_socket` and `systemd_present` only say that a file or a directory exists, not that the daemon is healthy; "Alerts, 24 h" counts the latest 200 alerts only.
 
