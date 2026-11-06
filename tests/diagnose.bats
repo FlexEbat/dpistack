@@ -60,6 +60,91 @@ teardown() {
 	[ "$status" -eq 2 ]
 }
 
+# --- the environment of an EveBox that does not start ---
+
+# evebox_down: evebox.service is failed, runs as $1, and `runuser` runs the
+# command as the current user (the tests do not run as root).
+evebox_down() {
+	local user="$1"
+	cat >"$FAKE_BIN/systemctl" <<FAKE
+#!/usr/bin/env bash
+case "\$1" in
+show)
+	case "\$*" in
+	*Result*) printf 'Result=exit-code\\nExecMainStatus=101\\n' ;;
+	*"-p User"*) echo "$user" ;;
+	*"-p Group"*) echo "$user" ;;
+	*) echo loaded ;;
+	esac
+	;;
+is-active) echo failed; exit 3 ;;
+is-enabled) exit 0 ;;
+esac
+FAKE
+	cat >"$FAKE_BIN/runuser" <<'FAKE'
+#!/usr/bin/env bash
+[[ -n "${FAKE_RUNUSER_FAIL:-}" ]] && exit 1
+shift 3
+exec "$@"
+FAKE
+	chmod +x "$FAKE_BIN"/*
+	mkdir -p "$DPISTACK_ROOT/var/lib/evebox"
+	printf 'x' >"$DPISTACK_ROOT/var/lib/evebox/events.sqlite"
+	# Run as root the directory gets another owner, so that the owner of the
+	# files is never root (a unit that runs as root is not probed).
+	[[ "$(id -u)" -eq 0 ]] && chown -R nobody "$DPISTACK_ROOT/var/lib/evebox"
+	return 0
+}
+
+# evebox_owner - the user that owns the data directory made by evebox_down.
+evebox_owner() {
+	if [[ "$(id -u)" -eq 0 ]]; then echo nobody; else id -un; fi
+}
+
+@test "an evebox that is down: the environment is looked at and nothing wrong is found" {
+	evebox_down "$(evebox_owner)"
+	run "$CTL" diagnose evebox
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"what a start of evebox depends on"* ]]
+	[[ "$output" == *"unit runs as: $(evebox_owner)"* ]]
+	[[ "$output" == *"events.sqlite:"* ]]
+	[[ "$output" == *"can create files in the directory: yes"* ]]
+	[[ "$output" == *"found: owner, permissions, space, inodes and temp directory look fine"* ]]
+}
+
+@test "an evebox data directory of another owner than the unit's user is named" {
+	evebox_down daemon
+	run "$CTL" diagnose evebox
+	[[ "$output" == *"found: the directory belongs to $(evebox_owner), the service runs as daemon"* ]]
+	[[ "$output" == *"found: events.sqlite belongs to $(evebox_owner), not to daemon"* ]]
+}
+
+@test "a service user that cannot create files next to the databases is named" {
+	evebox_down "$(evebox_owner)"
+	FAKE_RUNUSER_FAIL=1 run "$CTL" diagnose evebox
+	[[ "$output" == *"can create files in the directory: NO"* ]]
+	[[ "$output" == *"cannot create files in"* ]]
+	[[ "$output" == *"-wal and -shm"* ]]
+}
+
+@test "a unit user that does not exist is named" {
+	evebox_down no-such-user-xyz
+	run "$CTL" diagnose evebox
+	[[ "$output" == *"the unit runs as no-such-user-xyz, but there is no such user"* ]]
+}
+
+@test "a missing data directory is named" {
+	evebox_down "$(evebox_owner)"
+	rm -rf "$DPISTACK_ROOT/var/lib/evebox"
+	run "$CTL" diagnose evebox
+	[[ "$output" == *"found: the data directory does not exist"* ]]
+}
+
+@test "the environment is shown for evebox only" {
+	run "$CTL" diagnose suricata
+	[[ "$output" != *"what a start of evebox depends on"* ]]
+}
+
 # --- the installer itself (v0.29.1) ---
 
 install_with_dead_suricata() {

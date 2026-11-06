@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v60** (2026-11-05)
-**Program version: v0.37.2** (slices 0-36 are done, 37 and 38 are partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v61** (2026-11-05)
+**Program version: v0.37.3** (slices 0-36 are done, 37 and 38 are partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.37.3: `dpistack diagnose evebox` also prints the environment of a start (unit user, owner and mode of the data directory and files, whether the service user can write there, space, inodes, file system, temp directory) and says what it found (18.46). The cause of the code 14 crash on a real host is still open.
 - v0.37.2: the cards of the Overview have a layout (they ran together: no padding, label, value and badge in one line), found by rendering the page in a real browser; v0.37.1 (tech.md only) was not tagged and is part of this version.
 - v0.37.1: tech.md only: every slice has an entry in the style of 18.20, 18.0 is the index of slices (done and remaining), section 17 keeps the assumptions only.
 - v0.37.0: slice 38, third part (18.38). The Overview shows the packet and drop rate of the last hour and repeats the watchdog's stale rules and stale eve.json checks as warnings. Only the interfaces page with the topology is left of slice 38.
 - v0.36.0: slice 38, second part (18.38). The Overview opens with four state cards (protection mode, components, alerts in 24 h, packets lost on the capture interfaces), the warnings, alerts by severity and the latest five alerts. The traffic graph, the stale rules update warning and the topology page are still to do.
-- v0.35.0: slice 38, first part (section 18.38). `GET /api/system` (load, CPU share, memory, disks, uptime, interfaces with state, speed, counters and the capture flag) and a Host section with an Interfaces table on the Overview. Four state cards, the traffic graph, events by severity, recent events, warnings and the topology are still to do.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v61: v0.37.3. 18.46 (field report: EveBox code 14, the stuck panel version); `diagnose evebox` environment.
 - v60: v0.37.2. R189 of 18.38: the card layout.
 - v59: v0.37.1. Section 17 is the assumptions only; 18.0 is the index of slices; 18.35 to 18.38 retitled and given findings tables (R173 to R188); 18.39 to 18.45 hold the specifications of the slices not started.
 - v58: v0.37.0. The traffic graph and the watchdog warnings on the Overview, D61-D62 of 18.38.
 - v57: v0.36.0. The state cards, warnings and alerts on the Overview, D58-D60 of 18.38.
-- v56: v0.35.0. `GET /api/system` (4.8), the Host section of the Overview, 18.38.
 
 ---
 
@@ -1964,3 +1964,16 @@ Open: everything above. The entry is completed with the review (findings, decisi
 | | | no review yet: the table is filled in when the slice is done | |
 
 Open: everything above. The entry is completed with the review (findings, decisions, tests, what was not checked) when the slice is done.
+
+### 18.46 Field report of 2026-11-05: EveBox "code 14" and a panel that stayed on v0.32.1 (v0.37.3)
+
+**Status:** open. The cause of the EveBox crash is not found; this entry records what is known, what was ruled out and what was added so the next run finds it. Source: `dpistack_log.txt` and two screenshots from a Debian 13 host (`debian-home`).
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| R190 | high | After an update at about 17:00 EveBox exits at every start with `ExecuteMigration(... code 14 "unable to open database file", 3)` (`src/sqlite/connection.rs:212`, the events database) and keeps failing after a reboot. Before that it ran for days (last good start 12:48, bookmark found). The unit runs as `User=evebox` (the package unit). Ruled out in the lab: a fresh database does go through migrations 1 to 3 as an unprivileged user, also with an unusable temp directory; the installer never runs `evebox` itself as root; there is no hardening drop-in for EveBox; the data directory fix of v0.29.1 (`evebox_prepare_data_dir`) is in the code. Code 14 is the answer to any failed `open()` (owner, a directory the user cannot write, a full file system or no inodes, a file system without the locking SQLite's WAL needs), and the journal does not say which | `diagnose evebox` prints the environment after the journal: unit user and group, owner and mode of the directory and of every file in it, whether the service user can create a file there (the probe is made with `runuser`), file system type, free space and inodes, whether the user can write to `/tmp`, and ends with `found:` lines for each cause it can name, or says that the environment looks fine. Six bats cases. **Still open:** the output of that command on the host |
+| R191 | high | Any failed step stops the installer (`step <id> failed`), and `panel`, `watch` and `verify` come after `evebox` in `STEPS_ORDER`. If the EveBox step fails during an update, the panel is neither rebuilt nor given its new `-version`, which is one way to see "v0.32.1, latest v0.37.0". It does not explain why the screenshot of the Overview shows the new design while Build info says v0.32.1 | not changed: the owner asked for the cause to be fixed, not hidden by letting later steps run past a failure. To decide once the cause of R190 is known |
+| R192 | low | the panel takes its version from the installer that wrote its unit (`-version`), so a stale value means the unit was not re-rendered by a newer installer | none; noted for the next report |
+| R193 | low | the setup prompts show nine optional settings as `<empty>` (`BPF_FILTER`, `NTOPNG_IFACES`, `SURICATA_VERSION`, `NDPI_VERSION`, `NTOPNG_VERSION`, `EVEBOX_VERSION`, `EVE_REDIS`, `EVE_MAX_SIZE_MB`, `RULES_URLS`); it means "not set" and the prompt does not say what that does | open: the prompt should say what an empty value means for each of them |
+
+Open: ask the owner for `sudo dpistack diagnose evebox` (or, with the old version, the commands in the answer of 2026-11-05) and for the text of the update error; the slow disk is a second suspect (EveBox needed 25 s to open its databases at the boot of 07:26, a commit took 6 s at 16:07, and the first start after the boot of 10:14 ended with `pool timed out`).

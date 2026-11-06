@@ -1908,6 +1908,69 @@ diagnose_unit() {
 	echo "  $id: $unit is $state"
 	systemctl show "$unit" -p Result -p ExecMainStatus 2>/dev/null | sed 's/^/    /'
 	journalctl -u "$unit" -n 25 --no-pager 2>&1 | sed 's/^/    /'
+	[[ "$id" == evebox ]] && evebox_diagnose_env
+	return 0
+}
+
+# evebox_diagnose_env - what a start of EveBox depends on. The journal says
+# only "unable to open database file" (SQLite code 14), which is the answer to
+# any failed open(): a data directory or files of another owner, a directory the
+# service user cannot write, a full file system or no free inodes, a temp
+# directory it cannot use, a file system without the locking SQLite's WAL
+# needs. Each is looked at, and the last lines say what was found.
+evebox_diagnose_env() {
+	local unit="evebox.service" dir user group f fstype free inodes probe
+	local -a findings=()
+	dir=$(path_evebox_data_dir)
+	user=$(systemctl show -p User --value "$unit" 2>/dev/null || true)
+	group=$(systemctl show -p Group --value "$unit" 2>/dev/null || true)
+	echo "    -- what a start of evebox depends on"
+	echo "    unit runs as: ${user:-root (no User=)}${group:+, group $group}"
+	if [[ ! -d "$dir" ]]; then
+		echo "    data directory $dir: missing"
+		echo "    found: the data directory does not exist; dpistack reconfigure creates it"
+		return 0
+	fi
+	echo "    data directory $dir: $(stat -c '%U:%G mode %a' "$dir")"
+	for f in "$dir"/*; do
+		[[ -e "$f" ]] && echo "      ${f##*/}: $(stat -c '%U:%G mode %a, %s bytes' "$f")"
+	done
+	fstype=$(stat -f -c %T "$dir" 2>/dev/null || echo unknown)
+	free=$(df -Pk "$dir" 2>/dev/null | awk 'NR==2 {print $4}')
+	inodes=$(df -Pi "$dir" 2>/dev/null | awk 'NR==2 {print $4}')
+	echo "    file system: $fstype, ${free:-?} KiB free, ${inodes:-?} inodes free"
+	case "$fstype" in
+	nfs | nfs4 | cifs | smb* | 9p | vboxsf)
+		findings+=("the data directory is on a $fstype file system; SQLite's WAL needs working locks and shared memory there, which network and shared-folder file systems often lack")
+		;;
+	esac
+	[[ "$free" =~ ^[0-9]+$ ]] && ((free < 51200)) && findings+=("less than 50 MiB free on the file system of $dir")
+	[[ "$inodes" =~ ^[0-9]+$ ]] && ((inodes < 100)) && findings+=("almost no free inodes on the file system of $dir")
+	if [[ -n "$user" && "$user" != root ]]; then
+		if ! id "$user" >/dev/null 2>&1; then
+			findings+=("the unit runs as $user, but there is no such user")
+		else
+			[[ "$(stat -c %U "$dir")" == "$user" ]] ||
+				findings+=("the directory belongs to $(stat -c %U "$dir"), the service runs as $user")
+			for f in "$dir"/*; do
+				[[ -e "$f" && "$(stat -c %U "$f")" != "$user" ]] && findings+=("${f##*/} belongs to $(stat -c %U "$f"), not to $user")
+			done
+			probe="$dir/.dpistack-probe.$$"
+			if runuser -u "$user" -- sh -c ": >\"$probe\"" 2>/dev/null; then
+				rm -f "$probe"
+				echo "    $user can create files in the directory: yes"
+			else
+				echo "    $user can create files in the directory: NO"
+				findings+=("$user cannot create files in $dir (SQLite cannot create its -wal and -shm files)")
+			fi
+			runuser -u "$user" -- test -w /tmp 2>/dev/null || findings+=("$user cannot write to /tmp")
+		fi
+	fi
+	if ((${#findings[@]})); then
+		for f in "${findings[@]}"; do echo "    found: $f"; done
+	else
+		echo "    found: owner, permissions, space, inodes and temp directory look fine for the service user; if the log still says code 14, send this output and the journal"
+	fi
 	return 0
 }
 
