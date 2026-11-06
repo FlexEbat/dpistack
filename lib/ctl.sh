@@ -1955,8 +1955,7 @@ evebox_diagnose_env() {
 			for f in "$dir"/*; do
 				[[ -e "$f" && "$(stat -c %U "$f")" != "$user" ]] && findings+=("${f##*/} belongs to $(stat -c %U "$f"), not to $user")
 			done
-			probe="$dir/.dpistack-probe.$$"
-			if runuser -u "$user" -- sh -c ": >\"$probe\"" 2>/dev/null; then
+			if probe=$(runuser -u "$user" -- mktemp "$dir/.dpistack-probe.XXXXXX" 2>/dev/null); then
 				rm -f "$probe"
 				echo "    $user can create files in the directory: yes"
 			else

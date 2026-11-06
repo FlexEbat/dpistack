@@ -1505,7 +1505,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.37.3"
+DPISTACK_VERSION="0.37.4"
 
 : "${DRY_RUN:=0}"
 
@@ -4143,8 +4143,7 @@ evebox_diagnose_env() {
 			for f in "$dir"/*; do
 				[[ -e "$f" && "$(stat -c %U "$f")" != "$user" ]] && findings+=("${f##*/} belongs to $(stat -c %U "$f"), not to $user")
 			done
-			probe="$dir/.dpistack-probe.$$"
-			if runuser -u "$user" -- sh -c ": >\"$probe\"" 2>/dev/null; then
+			if probe=$(runuser -u "$user" -- mktemp "$dir/.dpistack-probe.XXXXXX" 2>/dev/null); then
 				rm -f "$probe"
 				echo "    $user can create files in the directory: yes"
 			else
