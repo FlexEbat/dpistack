@@ -9,6 +9,7 @@ import { start as startTests } from "./modules/tests.js";
 import { start as startAlerts } from "./modules/alerts.js";
 import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
+import { start as startNetwork } from "./modules/network.js";
 import * as topbar from "./modules/topbar.js";
 import { start as startSettings } from "./modules/settings.js";
 import * as account from "./modules/account.js";
@@ -48,7 +49,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts", "audit", "backups", "account"];
+const VIEWS = ["overview", "network", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts", "audit", "backups", "account"];
 let me = { name: "", role: "", perms: ["view"] };
 let stopView = null;
 
@@ -172,6 +173,8 @@ const SCREENS = {
       { error: $("tests-error"), buttons: $("tests-buttons"), note: $("tests-note"), result: $("tests-result") },
       showLogin,
     ),
+  network: () =>
+    startNetwork(api, { error: $("network-error"), topology: $("network-topology"), others: $("network-others"), ifaces: $("network-ifaces") }, showLogin),
   alerts: () =>
     startAlerts(
       api,

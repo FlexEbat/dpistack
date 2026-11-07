@@ -22,6 +22,7 @@ The server sends the stylesheet and the background script of the chosen edition,
 | Screen | What is on it |
 | --- | --- |
 | Overview | the overall status of the stack, the state of the components, key figures |
+| Network | the capture chain (host, capture interfaces, Suricata, `eve.json`, EveBox) and the table of interfaces; read only |
 | Components | start, stop and restart of every component, the IDS/IPS mode with a confirmation and a countdown, capture interfaces |
 | Settings | every `dpistack.conf` setting and the secrets |
 | Configs | an editor for `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`; check, save with a backup, and roll back |

@@ -200,6 +200,14 @@ tbody tr:hover td { background: var(--card-2); }
 .chip[data-level="ok"]::before { background: var(--ok); }
 .chip[data-level="warn"]::before { background: var(--warn); }
 .chip[data-level="crit"]::before { background: var(--bad); }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--s-75); margin: 0; padding: 0; list-style: none; }
+.stage { display: flex; flex-direction: column; gap: var(--s-50); min-width: 9rem; }
+.arrow { display: flex; align-items: center; color: var(--muted); }
+.other { margin: var(--s-50) 0; }
+@media (max-width: 40rem) {
+  .flow { flex-direction: column; }
+  .arrow { justify-content: center; transform: rotate(90deg); }
+}
 .menu-pop { position: absolute; top: 100%; right: 0; z-index: 5; display: flex; flex-direction: column; gap: var(--s-25); margin: var(--s-75) 0 0; padding: var(--s-75); min-width: 12rem; background: var(--card-2); border: 1px solid var(--edge); border-radius: var(--r-lg); }
 .menu-pop button { justify-content: flex-start; text-align: left; }
 .note { position: absolute; top: 100%; right: 0; z-index: 5; margin: var(--s-75) 0 0; padding: var(--s-75) var(--s-100); width: max-content; max-width: 16rem; color: var(--soft); background: var(--card-2); border: 1px solid var(--edge); border-radius: var(--r-lg); font-size: var(--text-xs); line-height: var(--lh-xs); }

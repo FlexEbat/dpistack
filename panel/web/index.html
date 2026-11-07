@@ -58,6 +58,7 @@
       <div class="nav-group" role="group" aria-label="Monitoring">
         <p class="nav-label">Monitoring</p>
         <button type="button" data-view="overview" aria-current="page"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M104,40H56A16,16,0,0,0,40,56v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,104,40Zm0,64H56V56h48v48Zm96-64H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Zm0,64H152V56h48v48Zm-96,32H56a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,104,136Zm0,64H56V152h48v48Zm96-64H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,200,136Zm0,64H152V152h48v48Z"/></svg><span>Overview</span></button>
+        <button type="button" data-view="network"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><circle cx="128" cy="56" r="24"/><circle cx="56" cy="192" r="24"/><circle cx="200" cy="192" r="24"/><path d="M120 76h16v48h-16z"/><path d="M133.2 126.1L122.8 113.9L56.8 169.9L67.2 182.1z"/><path d="M122.8 126.1L133.2 113.9L199.2 169.9L188.8 182.1z"/></svg>Network</button>
         <button type="button" data-view="events"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M240,128a8,8,0,0,1-8,8H204.94l-37.78,75.58A8,8,0,0,1,160,216h-.4a8,8,0,0,1-7.08-5.14L95.35,60.76,63.28,131.31A8,8,0,0,1,56,136H24a8,8,0,0,1,0-16H50.85L88.72,36.69a8,8,0,0,1,14.76.46l57.51,151,31.85-63.71A8,8,0,0,1,200,120h32A8,8,0,0,1,240,128Z"/></svg><span>Events</span></button>
         <button type="button" data-view="metrics"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M224,200h-8V40a8,8,0,0,0-8-8H152a8,8,0,0,0-8,8V80H96a8,8,0,0,0-8,8v40H48a8,8,0,0,0-8,8v64H32a8,8,0,0,0,0,16H224a8,8,0,0,0,0-16ZM160,48h40V200H160ZM104,96h40V200H104ZM56,144H88v56H56Z"/></svg><span>Metrics</span></button>
         <button type="button" data-view="alerts"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M221.8,175.94C216.25,166.38,208,139.33,208,104a80,80,0,1,0-160,0c0,35.34-8.26,62.38-13.81,71.94A16,16,0,0,0,48,200H88.81a40,40,0,0,0,78.38,0H208a16,16,0,0,0,13.8-24.06ZM128,216a24,24,0,0,1-22.62-16h45.24A24,24,0,0,1,128,216ZM48,184c7.7-13.24,16-43.92,16-80a64,64,0,1,1,128,0c0,36.05,8.28,66.73,16,80Z"/></svg><span>Alerts</span></button>
@@ -214,6 +215,15 @@
       <button id="ev-follow" type="button">Follow</button>
     </div>
     <section id="ev-list"><div class="skeleton" aria-hidden="true"></div></section>
+  </div>
+  <div id="view-network" hidden>
+    <p id="network-error" class="error" role="alert"></p>
+    <h2>Capture chain</h2>
+    <section id="network-topology"><div class="skeleton" aria-hidden="true"></div></section>
+    <section id="network-others" hidden></section>
+    <h2>Interfaces</h2>
+    <p class="muted">Adding or removing a capture interface is on Components.</p>
+    <section id="network-ifaces"><div class="skeleton" aria-hidden="true"></div></section>
   </div>
   <div id="view-metrics" hidden>
     <p id="metrics-error" class="error" role="alert"></p>
