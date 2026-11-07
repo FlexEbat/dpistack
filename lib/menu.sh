@@ -234,6 +234,15 @@ menu_group_summary() {
 	esac
 }
 
+# menu_say_empty <key> - one line under a prompt whose value is empty: what
+# empty does (R193 of 18.46).
+menu_say_empty() {
+	local meaning
+	meaning=$(schema_empty_meaning "$1")
+	[[ -n "$meaning" ]] && echo "  empty means: $meaning" >&2
+	return 0
+}
+
 # menu_edit_key <key> - the single-key editing loop (5.0): Enter keeps
 # the value, '-' resets to default, '?' repeats the hint, anything else
 # is validated immediately; an invalid value is rejected with the
@@ -244,6 +253,7 @@ menu_edit_key() {
 		local current="${CONF[$key]:-}"
 		local opts="${SCHEMA_OPTIONS[$key]}"
 		echo "$key (now: ${current:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		[[ -z "$current" ]] && menu_say_empty "$key"
 		[[ -n "$opts" ]] && echo "  options: $opts" >&2
 		local answer
 		if schema_is_secret "$key"; then
@@ -727,6 +737,7 @@ menu_wizard_ask() {
 		schema_is_secret "$key" && shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
 		echo >&2
 		echo "$key (now: ${shown:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		[[ -z "$shown" ]] && menu_say_empty "$key"
 		[[ -n "${SCHEMA_OPTIONS[$key]}" ]] && echo "  options: ${SCHEMA_OPTIONS[$key]}" >&2
 		if schema_is_secret "$key"; then
 			menu_read_secret answer "  value (Enter keeps, - default, s skip group, x leave setup, ? help): "

@@ -26,6 +26,10 @@ esac
 FAKE
 	cat >"$FAKE_BIN/journalctl" <<'FAKE'
 #!/usr/bin/env bash
+if [[ " $* " == *" -k "* ]]; then
+	[[ -n "${FAKE_KERNEL_LOG:-}" ]] && printf '%s\n' "$FAKE_KERNEL_LOG"
+	exit 0
+fi
 echo "journalctl $*"
 echo "suricata[1]: Error: the plugin could not be loaded"
 FAKE
@@ -109,7 +113,7 @@ evebox_owner() {
 	[[ "$output" == *"unit runs as: $(evebox_owner)"* ]]
 	[[ "$output" == *"events.sqlite:"* ]]
 	[[ "$output" == *"can create files in the directory: yes"* ]]
-	[[ "$output" == *"found: owner, permissions, space, inodes and temp directory look fine"* ]]
+	[[ "$output" == *"found: owner, permissions, space, inodes, temp directory and the kernel log look fine"* ]]
 }
 
 @test "an evebox data directory of another owner than the unit's user is named" {
@@ -157,7 +161,7 @@ FAKE
 	FAKE_DF_ITOTAL=0 FAKE_DF_IFREE=0 run "$CTL" diagnose evebox
 	[[ "$output" == *"no fixed number of inodes"* ]]
 	[[ "$output" != *"almost no free inodes"* ]]
-	[[ "$output" == *"found: owner, permissions, space, inodes and temp directory look fine"* ]]
+	[[ "$output" == *"found: owner, permissions, space, inodes, temp directory and the kernel log look fine"* ]]
 }
 
 @test "a file system that has an inode table and is nearly out of inodes is still named" {
@@ -251,4 +255,20 @@ FAKE
 		run bash -c "printf 'ID=ubuntu\nID_LIKE=debian\n' >'$DPISTACK_ROOT/etc/os-release' 2>/dev/null || { mkdir -p '$DPISTACK_ROOT/etc'; printf 'ID=ubuntu\nID_LIKE=debian\n' >'$DPISTACK_ROOT/etc/os-release'; }; bash '$REPO_DIR/install.sh' install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no"
 	[ "$status" -eq 0 ]
 	[[ "$output" != *"WARNING: not running"* ]]
+}
+
+@test "an AppArmor denial for evebox in the kernel log is shown and named" {
+	evebox_down "$(evebox_owner)"
+	FAKE_KERNEL_LOG='audit: type=1400 apparmor="DENIED" operation="mknod" profile="evebox" name="/var/tmp/etilqs_1" comm="evebox"' run "$CTL" diagnose evebox
+	[[ "$output" == *"kernel log: a security module refused something to evebox"* ]]
+	[[ "$output" == *'name="/var/tmp/etilqs_1"'* ]]
+	[[ "$output" == *"found: AppArmor or SELinux denied evebox an operation"* ]]
+	[[ "$output" != *"the kernel log look fine"* ]]
+}
+
+@test "denials of another program in the kernel log are not blamed on evebox" {
+	evebox_down "$(evebox_owner)"
+	FAKE_KERNEL_LOG='audit: type=1400 apparmor="DENIED" operation="open" profile="/usr/sbin/cupsd" name="/etc/x" comm="cupsd"' run "$CTL" diagnose evebox
+	[[ "$output" != *"a security module refused"* ]]
+	[[ "$output" == *"the kernel log look fine"* ]]
 }

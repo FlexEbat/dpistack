@@ -1921,8 +1921,17 @@ diagnose_unit() {
 # Inodes count only where the file system reports a total: btrfs, XFS and ZFS
 # have no fixed table and `df -i` shows 0 free for them (a real btrfs host was
 # told it had no inodes left).
+# evebox_kernel_denials - the last lines of the kernel log in which AppArmor or
+# SELinux refused something to evebox (R195 of 18.47: a profile denied the temp
+# file of SQLite, and only the kernel log said so). Empty when there are none or
+# the log cannot be read.
+evebox_kernel_denials() {
+	{ journalctl -k --no-pager -n 5000 2>/dev/null || dmesg 2>/dev/null; } |
+		grep -iE 'apparmor="DENIED"|avc: +denied' | grep -i 'evebox' | tail -n 5 | cut -c1-300 || true
+}
+
 evebox_diagnose_env() {
-	local unit="evebox.service" dir user group f fstype free inodes inodes_total probe t tmpdir tfs tfree
+	local unit="evebox.service" dir user group f fstype free inodes inodes_total probe t tmpdir tfs tfree denied
 	local -a findings=()
 	dir=$(path_evebox_data_dir)
 	user=$(systemctl show -p User --value "$unit" 2>/dev/null || true)
@@ -1993,10 +2002,16 @@ evebox_diagnose_env() {
 			fi
 		fi
 	fi
+	denied=$(evebox_kernel_denials)
+	if [[ -n "$denied" ]]; then
+		echo "    kernel log: a security module refused something to evebox:"
+		while IFS= read -r f; do echo "      $f"; done <<<"$denied"
+		findings+=("AppArmor or SELinux denied evebox an operation (lines above); allow it in the profile, and when the denied name is a SQLite temp file (etilqs_) a drop-in of evebox.service with SQLITE_TMPDIR set to the data directory moves it")
+	fi
 	if ((${#findings[@]})); then
 		for f in "${findings[@]}"; do echo "    found: $f"; done
 	else
-		echo "    found: owner, permissions, space, inodes and temp directory look fine for the service user; if the log still says code 14, send this output and the journal"
+		echo "    found: owner, permissions, space, inodes, temp directory and the kernel log look fine for the service user; if the log still says code 14, send this output and the journal"
 	fi
 	return 0
 }

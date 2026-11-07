@@ -33,8 +33,8 @@ IPS_NFQ_CHAINS|Цепочки iptables, из которых пакеты ухо�
 NTOPNG_IFACES|Интерфейсы ntopng. Пусто: те же, что у Suricata.
 EVE_FILE|Писать события в eve.json (нужен панели и watchdog).
 EVE_TYPES|Какие типы событий писать в eve.json.
-EVE_SYSLOG|Дублировать события в syslog.
-EVE_REDIS|Отправлять события в Redis (адрес вида host:port/список).
+EVE_SYSLOG|Дублировать события в syslog (facility local5).
+EVE_REDIS|Вывод в Redis. Пока не поддерживается: оставьте пустым, значение отклоняется.
 EVE_ROTATE|Как ротировать eve.json: раз в день, в неделю или по размеру.
 EVE_KEEP|Сколько ротированных файлов хранить.
 EVE_MAX_SIZE_MB|Размер файла в МБ, при котором наступает ротация (режим «по размеру»).

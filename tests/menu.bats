@@ -322,3 +322,21 @@ run_menu() {
 	[[ "$output" == *"the install was not started: a port is still busy"* ]]
 	[ ! -e "$CONF_FILE" ]
 }
+
+@test "R193: schema_empty_meaning says what an empty optional value does, and is silent otherwise" {
+	run bash -c "source '$BATS_TEST_DIRNAME/../lib/schema.sh'; schema_empty_meaning BPF_FILTER"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"all the traffic"* ]]
+	run bash -c "source '$BATS_TEST_DIRNAME/../lib/schema.sh'; schema_empty_meaning NTOPNG_IFACES"
+	[[ "$output" == *"same interfaces as Suricata"* ]]
+	run bash -c "source '$BATS_TEST_DIRNAME/../lib/schema.sh'; schema_empty_meaning IFACES"
+	[ -z "$output" ]
+}
+
+@test "R193: every optional key that has a free-text empty default has a meaning" {
+	local key
+	for key in BPF_FILTER NTOPNG_IFACES SURICATA_VERSION NDPI_VERSION NTOPNG_VERSION EVEBOX_VERSION EVE_REDIS EVE_MAX_SIZE_MB RULES_URLS; do
+		run bash -c "source '$BATS_TEST_DIRNAME/../lib/schema.sh'; schema_empty_meaning $key"
+		[ -n "$output" ]
+	done
+}

@@ -145,6 +145,11 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
+	if [[ -n "${CONF[EVE_REDIS]:-}" ]]; then
+		echo "EVE_REDIS is not supported yet: the Suricata builds of this installer have no Redis output; leave it empty"
+		errors=$((errors + 1))
+	fi
+
 	if [[ "${CONF[EVE_ROTATE]:-}" == "size" && -z "${CONF[EVE_MAX_SIZE_MB]:-}" ]]; then
 		echo "EVE_ROTATE=size needs EVE_MAX_SIZE_MB"
 		errors=$((errors + 1))

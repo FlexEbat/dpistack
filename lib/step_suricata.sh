@@ -85,6 +85,17 @@ suricata_render_eve_log_block() {
 	echo "        deployment: reverse"
 	echo "        header: X-Forwarded-For"
 	suricata_render_eve_types_block
+	# EVE_SYSLOG=yes: the same events go to syslog as well (a second eve-log
+	# output; the file stays, EveBox and the panel read it).
+	if [[ "${CONF[EVE_SYSLOG]:-no}" == "yes" ]]; then
+		echo "  - eve-log:"
+		echo "      enabled: yes"
+		echo "      filetype: syslog"
+		echo "      identity: \"suricata\""
+		echo "      facility: local5"
+		echo "      level: Info"
+		suricata_render_eve_types_block
+	fi
 }
 
 # suricata_series <X.Y.Z[-suffix]> -> "X.Y"

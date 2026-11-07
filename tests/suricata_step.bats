@@ -195,3 +195,19 @@ load_step() {
 	run load_step 'CONF[EVE_TYPES]="alert,dns"' 'suricata_render_eve_types_block'
 	[[ "$output" != *tls* ]]
 }
+
+@test "EVE_SYSLOG=yes adds a second eve-log output to syslog with the same types" {
+	run load_step 'CONF[EVE_SYSLOG]="yes"; CONF[EVE_TYPES]="alert,dns"' 'suricata_render_eve_log_block'
+	[ "$status" -eq 0 ]
+	[ "$(grep -c -- '- eve-log:' <<<"$output")" -eq 2 ]
+	[[ "$output" == *"filetype: regular"* ]]
+	[[ "$output" == *"filetype: syslog"* ]]
+	[ "$(grep -c -- '- dns' <<<"$output")" -eq 2 ]
+}
+
+@test "EVE_SYSLOG=no renders the file output only" {
+	run load_step 'CONF[EVE_SYSLOG]="no"' 'suricata_render_eve_log_block'
+	[ "$status" -eq 0 ]
+	[ "$(grep -c -- '- eve-log:' <<<"$output")" -eq 1 ]
+	[[ "$output" != *"syslog"* ]]
+}

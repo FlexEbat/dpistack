@@ -50,8 +50,8 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | --- | --- | --- | --- | --- |
 | `EVE_FILE` | yes \| no | `yes` | light | Write events to eve.json (needed by the panel and the watchdog). (advanced) |
 | `EVE_TYPES` | string | `alert,flow,dns,tls,http,stats` | light | Which event types to write to eve.json. |
-| `EVE_SYSLOG` | yes \| no | `no` | light | Duplicate events to syslog. (advanced) |
-| `EVE_REDIS` | string | empty | light | Send events to Redis (an address like host:port/list). (advanced) |
+| `EVE_SYSLOG` | yes \| no | `no` | light | Duplicate events to syslog (facility local5). (advanced) |
+| `EVE_REDIS` | string | empty | light | Redis output. Not supported yet: leave it empty, a value is refused. (advanced) |
 | `EVE_ROTATE` | daily \| weekly \| size | `daily` | light | How to rotate eve.json: daily, weekly or by size. (advanced) |
 | `EVE_KEEP` | integer 0..3650 | `14` | light | How many rotated files to keep. (advanced) |
 | `EVE_MAX_SIZE_MB` | integer 1..1000000 | empty | light | File size in MB that triggers rotation (the size mode). (advanced) |
