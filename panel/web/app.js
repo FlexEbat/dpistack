@@ -9,6 +9,7 @@ import { start as startTests } from "./modules/tests.js";
 import { start as startAlerts } from "./modules/alerts.js";
 import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
+import * as topbar from "./modules/topbar.js";
 import { start as startSettings } from "./modules/settings.js";
 import * as account from "./modules/account.js";
 import { start as startAudit } from "./modules/audit.js";
@@ -267,6 +268,7 @@ function showView(name) {
 }
 
 let stopVersion = null;
+let stopTop = null;
 
 async function showOverview() {
   // Who is signed in decides which entries of the menu are shown.
@@ -289,6 +291,11 @@ async function showOverview() {
     note.hidden = !note.hidden;
     if (!note.hidden) setTimeout(() => (note.hidden = true), 2500);
   };
+  // The top bar: the name of the signed-in user, and the host, state and mode chips.
+  $("user-name").textContent = me.name || "User";
+  $("user-account").hidden = !account.visibleViews(["account"], me.perms).length;
+  stopTop?.();
+  stopTop = topbar.start(api, { host: $("top-host"), state: $("top-state"), mode: $("top-mode") }, showLogin);
   stopVersion?.();
   stopVersion = startVersion(api, {
     badge: $("version-badge"),
@@ -308,6 +315,8 @@ async function showOverview() {
 function showLogin() {
   stopVersion?.();
   stopVersion = null;
+  stopTop?.();
+  stopTop = null;
   stopView?.();
   stopView = null;
   show("login");
@@ -367,7 +376,31 @@ window.addEventListener("hashchange", () => {
   showView(name);
 });
 
+// The theme: decided before it is applied, because an override changes the
+// colour-scheme the page reports. The full edition is dark only, so it has no switch.
+const root = document.documentElement;
+const themeBtn = $("theme-btn");
+const switchable = topbar.themeSwitchable(getComputedStyle(root).getPropertyValue("color-scheme"));
+let theme = topbar.readTheme(store);
+if (switchable) {
+  topbar.applyTheme(root, theme);
+  themeBtn.hidden = false;
+  themeBtn.textContent = topbar.themeLabel(theme);
+  themeBtn.addEventListener("click", () => {
+    theme = topbar.nextTheme(theme);
+    topbar.saveTheme(store, theme);
+    topbar.applyTheme(root, theme);
+    themeBtn.textContent = topbar.themeLabel(theme);
+  });
+}
+const userMenu = topbar.userMenu(document);
+$("user-account").addEventListener("click", () => {
+  userMenu.close();
+  showView("account");
+});
+
 $("logout").addEventListener("click", async () => {
+  userMenu.close();
   await api("/api/logout", { method: "POST" }).catch(() => {});
   showLogin();
 });

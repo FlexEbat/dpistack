@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v64** (2026-11-07)
-**Program version: v0.37.6** (slices 0-36 are done, 37 and 38 are partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v65** (2026-11-07)
+**Program version: v0.38.0** (slices 0-37 are done except the alert bell, 38 is partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.38.0: slice 37, the top bar (18.49). Host name, overall state and mode as chips on every screen; a user menu (Account, Theme where the page has both palettes, Sign out); `GET /api/system` has `hostname`.
 - v0.37.6: R202 and R193 of 18.47 and 18.46 (18.48). `diagnose evebox` reads the kernel log for AppArmor and SELinux denials naming evebox; the setup prompts say what an empty optional value means; `EVE_SYSLOG=yes` now renders a second `eve-log` output to syslog (it was never read); `EVE_REDIS` with a value is refused (it was never read either).
 - v0.37.5: field report of 2026-11-06 (18.47). EveBox code 14 was an AppArmor profile denying the temp file of SQLite; the `tls` event of Suricata is rendered with `extended: yes` (without it no `sni`, no version); the rules step refreshes the source index first and creates the three empty list files; `diagnose evebox` no longer reports btrfs as out of inodes and checks the temp directory; a suspended (Ctrl+Z) lock holder is named; the HTTPS failure message counts the other events.
 - v0.37.4: the write probe of `diagnose evebox` makes its file with `mktemp` run as the service user (the security check refuses `$$`-named temp files, R194 of 18.46).
 - v0.37.3: `dpistack diagnose evebox` also prints the environment of a start (unit user, owner and mode of the data directory and files, whether the service user can write there, space, inodes, file system, temp directory) and says what it found (18.46). The cause of the code 14 crash on a real host is still open.
-- v0.37.2: the cards of the Overview have a layout (they ran together: no padding, label, value and badge in one line), found by rendering the page in a real browser; v0.37.1 (tech.md only) was not tagged and is part of this version.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v65: v0.38.0. 18.49 (slice 37, the top bar); `hostname` in the `GET /api/system` row.
 - v64: v0.37.6. 18.48 (R202, R193, the two unread EVE keys); 18.1 note on `EVE_SYSLOG` closed.
 - v63: v0.37.5. 18.47 (field report: AppArmor and EveBox, `tls` extended, rules index, list files, diagnose fixes); 18.46 closed.
 - v62: v0.37.4. R194 of 18.46: the `$$` temp name in the diagnose probe.
 - v61: v0.37.3. 18.46 (field report: EveBox code 14, the stuck panel version); `diagnose evebox` environment.
-- v60: v0.37.2. R189 of 18.38: the card layout.
 
 ---
 
@@ -472,7 +472,7 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 | `GET /api/me`, `POST /api/me/password` | who is signed in with the permissions; a user changes their own password with the current one (their sessions end) |
 | `GET\|POST /api/users`, `PUT\|DELETE /api/users/{name}` | permission `users.manage`; the list never holds a hash; nobody can remove or disable their own account |
 | permissions | every other route needs one (table in `panel/internal/api/users_test.go`, checked for every role); reading `/api/config*` needs `configs.edit`; a missing permission is 403 `{"error":"forbidden","permission":...}` |
-| `GET /api/system` | permission `view`; the host state read from `/proc`, `/sys` and statfs: `uptime_seconds`, `load` (3 numbers), `cpu` (`cores`, `percent` since the previous call, `null` on the first), `memory` (kB), `disks` (`/`, `/var/lib/dpistack`, `/var/log`; a missing path is left out and paths on one filesystem count once), `interfaces` (`state`, `mac`, `mtu`, `speed_mbps` or `null`, byte, packet, error and drop counters, `virtual` when there is no `device` link, `capture` from `ctl iface list`, left out when that fails), `systemd_present`, `docker_socket` |
+| `GET /api/system` | permission `view`; the host state read from `/proc`, `/sys` and statfs: `uptime_seconds`, `load` (3 numbers), `cpu` (`cores`, `percent` since the previous call, `null` on the first), `memory` (kB), `disks` (`/`, `/var/lib/dpistack`, `/var/log`; a missing path is left out and paths on one filesystem count once), `interfaces` (`state`, `mac`, `mtu`, `speed_mbps` or `null`, byte, packet, error and drop counters, `virtual` when there is no `device` link, `capture` from `ctl iface list`, left out when that fails), `systemd_present`, `docker_socket`, `hostname` (from `/proc/sys/kernel/hostname`, empty when it cannot be read) |
 | `GET /api/status` | the components (`ctl status`) + `health.json` |
 | `GET /api/version` | the running version and, from the latest GitHub release of the project (checked at most every 6 hours, a failed check again after 15 minutes), `latest`, `update_available`, `release_url`, `check_error`. The version comes from the panel flag `-version`, which `panel_args` fills, so an update that changes the unit restarts the panel with the new number |
 | `POST /api/update` | the Update button after the confirmation dialog: refused with 409 unless a newer release exists, otherwise `ctl self-update run` (202) |
@@ -1197,7 +1197,7 @@ One row per slice. **Done** means the Definition of Done of section 14 was met; 
 | 34 | users, roles and permissions | done | v0.29.0 | sections 4 to 12 |
 | 35 | the audit log and login history | done | v0.30.0 | sections 4 to 12 |
 | 36 | backup and restore | done | v0.33.0 | 18.36 |
-| 37 | the shell of the panel | **partly done.** Done: the corner, Build info, the look, readable Audit actions, the menu in groups, routes by hash, the folded menu. Remaining: the top bar (host, state, mode, bell, user menu, theme) | v0.32.0, v0.32.1, v0.34.0 | 18.35, 18.37 |
+| 37 | the shell of the panel | **done except the bell.** Done: the corner, Build info, the look, readable Audit actions, the menu in groups, routes by hash, the folded menu. Top bar (host, state, mode, user menu, theme) in v0.38.0. Remaining: the alert bell (slice 43) | v0.32.0, v0.32.1, v0.34.0, v0.38.0 | 18.35, 18.37, 18.49 |
 | 38 | Overview v2, system health and topology | **partly done.** Done: `GET /api/system`, host cards, interfaces table, state cards, warnings, alerts by severity, latest alerts, traffic graph, watchdog warnings. Remaining: the interfaces page with a simple topology; docker and systemd state beyond the socket and the directory | v0.35.0 to v0.37.0 | 18.38 |
 | 39 | Traffic Explorer | not started |  | 18.39 |
 | 40 | the Events workspace and exceptions | not started |  | 18.40 |
@@ -2008,3 +2008,27 @@ Messages left as they are, with the reason: `ERROR: Bindings changed` (cbindgen 
 | R204 | low | in `step_suricata.sh` the size rotation had a fallback of 100 MB that could never run, because the config check already refuses `EVE_ROTATE=size` without `EVE_MAX_SIZE_MB` | not changed (surgical edit); the prompt hint says what really happens |
 
 Open: the real Suricata check of the syslog output (`suricata -T` on a rendered config with `EVE_SYSLOG=yes`) was not run, only the rendering is tested; the facility is not configurable; the Redis output (needs hiredis in the build and in the package check). The Go and interface tests were not run in this session (no Go 1.26 here); the CI runs them.
+
+### 18.49 Slice 37 (third part): the top bar (v0.38.0)
+
+**Status:** slice 37 is done except the alert bell, which waits for slice 43 (rule 1: nothing is shown that the program cannot do, D52).
+
+What is in the corner of every screen, left to right: the host name, the overall state of the watchdog, the mode (IDS or IPS), the translation note, the version pill, the GitHub link and the user menu. The three chips only show what the server says and have no controls (the switches stay on their screens). The user menu holds Account (hidden for a user without permission, the same rule as the menu), Theme (only where the page has both palettes) and Sign out; the `logout` element kept its id.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| R205 | medium | `GET /api/system` had no host name, so a top bar could not name the host | `Info.Hostname`, read from `proc/sys/kernel/hostname` under the configurable proc root like every other field, empty when unreadable; Go tests for the name and for a missing file (run in a throwaway module here, the CI runs them in the real one) |
+| R206 | medium | the theme override would have hidden the switch by itself: a chosen theme changes the `color-scheme` the page reports, and the check "does the page have both palettes" reads it | the check runs once, before any theme is applied |
+| R207 | low | a failing source (404 of `/api/system`, 503 of the mode) must not sign the user out or blank the other chips | each chip is painted from its own answer; only a 401 is passed on; tests for a failing source and for a 401 |
+
+Decisions ("choose yourself"):
+
+| id | decision |
+| --- | --- |
+| D65 | **The theme switch exists only in the lite edition.** The full edition is dark by design (a short list of flat dark backgrounds, 9.1), so offering "light" there would need a second palette outside the design rules; the item stays hidden (`color-scheme` of the page is `dark` only). In lite the choice is system, light or dark, kept in `localStorage` (`dpistack.theme`, read and written inside `try`), applied as `data-theme` on the root; two rules in `lite.css`, placed after the media block, win over the system colours |
+| D66 | **No bell yet.** It waits for the alert store of slice 43 |
+| D67 | **The chips poll on their own every 15 s** (`/api/status`, `/api/system`, `/api/mode`), independent of the screen shown, and stop when the user signs out |
+
+Tests: `panel/web/test/topbar.test.mjs` (13), `TestReadHostState` and `TestMissingHostnameIsEmptyNotFailure` in `panel/internal/system`.
+
+Open: nothing was rendered in a browser (none is available in the build environment); the look of the chips, the menu popover and the narrow layout is checked only by the design rules; the first request of the chips duplicates the Overview's own polls while the Overview is open.
