@@ -57,6 +57,7 @@ type CPU struct {
 }
 
 type Info struct {
+	Hostname       string    `json:"hostname"`
 	UptimeSeconds  float64   `json:"uptime_seconds"`
 	Load           []float64 `json:"load"`
 	CPU            CPU       `json:"cpu"`
@@ -103,6 +104,7 @@ func readUint(path string) uint64 {
 // fields at zero or empty; the caller decides what is worth saying.
 func (r *Reader) Read() Info {
 	info := Info{Load: []float64{}, Disks: []Disk{}, Interfaces: []Iface{}}
+	info.Hostname = strings.TrimSpace(readFile(filepath.Join(r.Proc, "sys", "kernel", "hostname")))
 	if f := strings.Fields(readFile(filepath.Join(r.Proc, "uptime"))); len(f) > 0 {
 		info.UptimeSeconds, _ = strconv.ParseFloat(f[0], 64)
 	}

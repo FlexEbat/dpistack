@@ -195,6 +195,13 @@ tbody tr:hover td { background: var(--card-2); }
 .version { font-variant-numeric: tabular-nums; color: var(--soft); }
 .version.has-update { color: var(--accent-2); border-color: var(--accent); }
 .note-anchor { position: relative; }
+.chip.static { cursor: default; }
+.chip[data-level]::before { content: ""; width: var(--s-75); height: var(--s-75); border-radius: var(--r-full); background: var(--muted); }
+.chip[data-level="ok"]::before { background: var(--ok); }
+.chip[data-level="warn"]::before { background: var(--warn); }
+.chip[data-level="crit"]::before { background: var(--bad); }
+.menu-pop { position: absolute; top: 100%; right: 0; z-index: 5; display: flex; flex-direction: column; gap: var(--s-25); margin: var(--s-75) 0 0; padding: var(--s-75); min-width: 12rem; background: var(--card-2); border: 1px solid var(--edge); border-radius: var(--r-lg); }
+.menu-pop button { justify-content: flex-start; text-align: left; }
 .note { position: absolute; top: 100%; right: 0; z-index: 5; margin: var(--s-75) 0 0; padding: var(--s-75) var(--s-100); width: max-content; max-width: 16rem; color: var(--soft); background: var(--card-2); border: 1px solid var(--edge); border-radius: var(--r-lg); font-size: var(--text-xs); line-height: var(--lh-xs); }
 
 /* ---- Build info window ---- */

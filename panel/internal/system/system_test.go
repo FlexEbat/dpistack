@@ -21,6 +21,7 @@ func fixture(t *testing.T) *Reader {
 	t.Helper()
 	d := t.TempDir()
 	put(t, d, "proc/uptime", "12345.67 9999.00\n")
+	put(t, d, "proc/sys/kernel/hostname", "ids-gw-01\n")
 	put(t, d, "proc/loadavg", "0.52 0.40 0.31 1/200 999\n")
 	put(t, d, "proc/stat", "cpu  100 0 100 700 100 0 0 0 0 0\ncpu0 50 0 50 350 50 0 0 0 0 0\ncpu1 50 0 50 350 50 0 0 0 0 0\nintr 1\n")
 	put(t, d, "proc/meminfo", "MemTotal:        8000000 kB\nMemFree:          100000 kB\nMemAvailable:    5000000 kB\nSwapTotal:       2000000 kB\nSwapFree:        1500000 kB\n")
@@ -42,6 +43,9 @@ func TestReadHostState(t *testing.T) {
 	info := fixture(t).Read()
 	if info.UptimeSeconds != 12345.67 || len(info.Load) != 3 || info.Load[0] != 0.52 {
 		t.Errorf("uptime/load: %v %v", info.UptimeSeconds, info.Load)
+	}
+	if info.Hostname != "ids-gw-01" {
+		t.Errorf("hostname = %q, want the name from proc/sys/kernel/hostname without the newline", info.Hostname)
 	}
 	if info.CPU.Cores != 2 {
 		t.Errorf("cores = %d", info.CPU.Cores)
@@ -101,5 +105,15 @@ func TestPathsOnOneFilesystemAreOneDisk(t *testing.T) {
 	got := r.Read().Disks
 	if len(got) != 1 || got[0].Path != filepath.Dir(r.Proc) {
 		t.Errorf("disks: %+v", got)
+	}
+}
+
+func TestMissingHostnameIsEmptyNotFailure(t *testing.T) {
+	r := fixture(t)
+	if err := os.Remove(filepath.Join(r.Proc, "sys", "kernel", "hostname")); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Read().Hostname; got != "" {
+		t.Errorf("hostname = %q, want empty", got)
 	}
 }
