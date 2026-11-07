@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v65** (2026-11-07)
-**Program version: v0.38.0** (slices 0-37 are done except the alert bell, 38 is partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v66** (2026-11-07)
+**Program version: v0.39.0** (slices 0-38 are done except the alert bell of 37, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.39.0: slice 38, the Network screen (18.50): the capture chain (host, capture interfaces, Suricata, eve.json, EveBox) and the interface table, from answers that exist; no new endpoint.
 - v0.38.0: slice 37, the top bar (18.49). Host name, overall state and mode as chips on every screen; a user menu (Account, Theme where the page has both palettes, Sign out); `GET /api/system` has `hostname`.
 - v0.37.6: R202 and R193 of 18.47 and 18.46 (18.48). `diagnose evebox` reads the kernel log for AppArmor and SELinux denials naming evebox; the setup prompts say what an empty optional value means; `EVE_SYSLOG=yes` now renders a second `eve-log` output to syslog (it was never read); `EVE_REDIS` with a value is refused (it was never read either).
 - v0.37.5: field report of 2026-11-06 (18.47). EveBox code 14 was an AppArmor profile denying the temp file of SQLite; the `tls` event of Suricata is rendered with `extended: yes` (without it no `sni`, no version); the rules step refreshes the source index first and creates the three empty list files; `diagnose evebox` no longer reports btrfs as out of inodes and checks the temp directory; a suspended (Ctrl+Z) lock holder is named; the HTTPS failure message counts the other events.
 - v0.37.4: the write probe of `diagnose evebox` makes its file with `mktemp` run as the service user (the security check refuses `$$`-named temp files, R194 of 18.46).
-- v0.37.3: `dpistack diagnose evebox` also prints the environment of a start (unit user, owner and mode of the data directory and files, whether the service user can write there, space, inodes, file system, temp directory) and says what it found (18.46). The cause of the code 14 crash on a real host is still open.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v66: v0.39.0. 18.50 (slice 38, the Network screen); the slice 38 row and its Open list updated.
 - v65: v0.38.0. 18.49 (slice 37, the top bar); `hostname` in the `GET /api/system` row.
 - v64: v0.37.6. 18.48 (R202, R193, the two unread EVE keys); 18.1 note on `EVE_SYSLOG` closed.
 - v63: v0.37.5. 18.47 (field report: AppArmor and EveBox, `tls` extended, rules index, list files, diagnose fixes); 18.46 closed.
 - v62: v0.37.4. R194 of 18.46: the `$$` temp name in the diagnose probe.
-- v61: v0.37.3. 18.46 (field report: EveBox code 14, the stuck panel version); `diagnose evebox` environment.
 
 ---
 
@@ -1198,7 +1198,7 @@ One row per slice. **Done** means the Definition of Done of section 14 was met; 
 | 35 | the audit log and login history | done | v0.30.0 | sections 4 to 12 |
 | 36 | backup and restore | done | v0.33.0 | 18.36 |
 | 37 | the shell of the panel | **done except the bell.** Done: the corner, Build info, the look, readable Audit actions, the menu in groups, routes by hash, the folded menu. Top bar (host, state, mode, user menu, theme) in v0.38.0. Remaining: the alert bell (slice 43) | v0.32.0, v0.32.1, v0.34.0, v0.38.0 | 18.35, 18.37, 18.49 |
-| 38 | Overview v2, system health and topology | **partly done.** Done: `GET /api/system`, host cards, interfaces table, state cards, warnings, alerts by severity, latest alerts, traffic graph, watchdog warnings. Remaining: the interfaces page with a simple topology; docker and systemd state beyond the socket and the directory | v0.35.0 to v0.37.0 | 18.38 |
+| 38 | Overview v2, system health and topology | **done.** `GET /api/system`, host cards, interfaces table, state cards, warnings, alerts by severity, latest alerts, traffic graph, watchdog warnings, and the Network screen (the capture chain and the interfaces table); docker and systemd state is decided in D70 | v0.35.0 to v0.37.0, v0.39.0 | 18.38, 18.50 |
 | 39 | Traffic Explorer | not started |  | 18.39 |
 | 40 | the Events workspace and exceptions | not started |  | 18.40 |
 | 41 | Rules v2 | not started |  | 18.41 |
@@ -1816,7 +1816,7 @@ Tests: `tests/backup.bats` (20), `panel/internal/api/backups_test.go` (9) and th
 
 ### 18.37 Slice 37 (second part): the shell of the panel (v0.34.0)
 
-**Status:** slice 37 is partly done. **Done:** the menu in groups, routes by hash, the folded menu, the permission-aware hiding of groups and entries (this entry); the corner, Build info and the look (18.35). **Remaining:** the top bar (host, state, mode, alert bell, user menu, theme). The bell waits for slice 43 and the theme switch needs a decision on a manual override of the system theme.
+**Status:** slice 37 is done except the alert bell (slice 43); the top bar is in 18.49. **Done here:** the menu in groups, routes by hash, the folded menu, the permission-aware hiding of groups and entries; the corner, Build info and the look are in 18.35.
 
 | No | Severity | Finding | Fix |
 |---|---|---|---|
@@ -1839,7 +1839,7 @@ Tests: `panel/web/test/shell.test.mjs` (5).
 
 ### 18.38 Slice 38: Overview v2, system health and topology (v0.35.0 to v0.37.0)
 
-**Status:** partly done. **Done:** `GET /api/system`; on the Overview the host cards and the interfaces table, four state cards, warnings, alerts by severity, the latest alerts, the traffic graph and the watchdog warnings. **Remaining:** the interfaces page with a simple topology (host, interfaces, Suricata, outputs); docker and systemd state beyond "the socket and the directory exist".
+**Status:** done; the last part (the Network screen) is in 18.50. **Done here:** `GET /api/system`; on the Overview the host cards and the interfaces table, four state cards, warnings, alerts by severity, the latest alerts, the traffic graph and the watchdog warnings.
 
 | No | Severity | Finding | Fix |
 |---|---|---|---|
@@ -1850,7 +1850,7 @@ Tests: `panel/web/test/shell.test.mjs` (5).
 | R188 | low | D60 said the stale rules update warning needed a new endpoint, but the watchdog already has `rules.age` | the Overview repeats `rules.age` and `suricata.eve_fresh` when they are warn or crit (D62) |
 | R189 | medium | the state and host cards had no layout: no padding, and the label, value, badge and note ran together in one line (seen in a screenshot from the user, then reproduced in headless Firefox). The look had been reported as "not checked in a browser" three times | `.stat` is a grid with padding in both stylesheets, `#glance-box` and the `Latest` heading have spacing; the page was rendered in headless Firefox against a mock API and looked at |
 
-Open: the interfaces page and the topology; the look of the cards, the warnings and the traffic charts was not checked in a browser; the interface counters are totals since boot (no rate); `docker_socket` and `systemd_present` only say that a file or a directory exists, not that the daemon is healthy; "Alerts, 24 h" counts the latest 200 alerts only.
+Open: the look of the cards, the warnings and the traffic charts was not checked in a browser; the interface counters are totals since boot (no rate); `docker_socket` and `systemd_present` only say that a file or a directory exists, not that the daemon is healthy; "Alerts, 24 h" counts the latest 200 alerts only.
 
 Decisions ("choose yourself"):
 
@@ -2032,3 +2032,26 @@ Decisions ("choose yourself"):
 Tests: `panel/web/test/topbar.test.mjs` (13), `TestReadHostState` and `TestMissingHostnameIsEmptyNotFailure` in `panel/internal/system`.
 
 Open: nothing was rendered in a browser (none is available in the build environment); the look of the chips, the menu popover and the narrow layout is checked only by the design rules; the first request of the chips duplicates the Overview's own polls while the Overview is open.
+
+### 18.50 Slice 38 (last part): the Network screen (v0.39.0)
+
+**Status:** slice 38 is done. What was left was the interfaces page and the topology; the docker and systemd state is decided in D70 and needs no new code.
+
+What the screen shows (menu group Monitoring, next to Overview, the permission `view`): the capture chain as boxes in order (host, capture interfaces, Suricata with the mode, eve.json with the freshness the watchdog already measures, EveBox), then the other installed parts with their own state and no arrow, then the table of the interfaces (the same rows as the Overview: state, speed, received, sent, dropped, errors, capturing). It reads only; adding or removing a capture interface stays on Components, where it is confirmed and applied. The Overview keeps its own interfaces table.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| R208 | medium | a topology can lie by drawing a line that does not exist: ntopng captures on its own and the panel does not know on which interfaces, so a line from the interfaces to ntopng would be a guess | the chain holds only what the stack guarantees (capture feeds Suricata, Suricata writes `eve.json`, EveBox reads it); every other installed part is listed with its state and no arrow (D68) |
+| R209 | low | a stage built from a source that failed would look healthy if drawn with defaults | `topology` leaves a stage out when its source did not answer (no host name, no capture flag, no Suricata, no freshness check); with nothing left the screen says so; tests for each omission |
+
+Decisions ("choose yourself"):
+
+| id | decision |
+| --- | --- |
+| D68 | **The chain is the guaranteed path only** (R208). The stages come from `/api/status` (components, the check `suricata.eve_fresh`), `/api/system` (host name, interfaces with `capture`) and `/api/mode`; no new endpoint, in the pattern of D58. A component that is not installed is not drawn; a stopped one that starts on boot is a warning, one that does not is shown without a level |
+| D69 | **The screen is read only and polls on its own** every 10 s while it is open; a failing source is left out and only a 401 signs the user out; when both `/api/status` and `/api/system` fail the screen says that the host state could not be read |
+| D70 | **No new docker or systemd probe.** `systemd_present` and `docker_socket` stay what D56 says they are (a directory and a file). Whether a part is healthy is the state of the part in `/api/status`, which the chain and the Overview already show, so a second, weaker probe would only add a way to disagree with it. The panel never runs `docker` or `systemctl` itself |
+
+Tests: `panel/web/test/network.test.mjs` (14): the order of the chain, the capture stage, no capture interface, an unknown capture flag, IDS and IPS wording, the freshness check, a part that is not installed, a missing source, the levels, the other parts, a failing source, a 401, both sources failing, the page and the route. The menu test "every screen is in exactly one group" covers the new entry.
+
+Open: nothing was rendered in a browser (none is available in the build environment), so the look of the boxes, the arrows and the narrow layout (where the arrows turn down) is checked only by the design rules; the interface counters are totals since boot, no rate; the Overview and this screen both read `/api/system` while each is open; ntopng's own interfaces (`NTOPNG_IFACES`) are not shown on the screen.
