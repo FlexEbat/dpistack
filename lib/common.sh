@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.37.5"
+DPISTACK_VERSION="0.37.6"
 
 : "${DRY_RUN:=0}"
 

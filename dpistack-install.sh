@@ -1505,7 +1505,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.37.5"
+DPISTACK_VERSION="0.37.6"
 
 : "${DRY_RUN:=0}"
 
@@ -1944,6 +1944,11 @@ config_validate() {
 	# same way (h, d, w, y) are allowed once a backend is installed.
 	if [[ "${CONF[METRICS_BACKEND]:-none}" != "none" && ! "${CONF[METRICS_RETENTION]:-30d}" =~ ^[0-9]+[hdwy]$ ]]; then
 		echo "METRICS_RETENTION=${CONF[METRICS_RETENTION]:-} with a metrics backend: a number with the suffix h, d, w or y is needed (for example 30d); backends read a bare number or m differently"
+		errors=$((errors + 1))
+	fi
+
+	if [[ -n "${CONF[EVE_REDIS]:-}" ]]; then
+		echo "EVE_REDIS is not supported yet: the Suricata builds of this installer have no Redis output; leave it empty"
 		errors=$((errors + 1))
 	fi
 
@@ -4117,8 +4122,17 @@ diagnose_unit() {
 # Inodes count only where the file system reports a total: btrfs, XFS and ZFS
 # have no fixed table and `df -i` shows 0 free for them (a real btrfs host was
 # told it had no inodes left).
+# evebox_kernel_denials - the last lines of the kernel log in which AppArmor or
+# SELinux refused something to evebox (R195 of 18.47: a profile denied the temp
+# file of SQLite, and only the kernel log said so). Empty when there are none or
+# the log cannot be read.
+evebox_kernel_denials() {
+	{ journalctl -k --no-pager -n 5000 2>/dev/null || dmesg 2>/dev/null; } |
+		grep -iE 'apparmor="DENIED"|avc: +denied' | grep -i 'evebox' | tail -n 5 | cut -c1-300 || true
+}
+
 evebox_diagnose_env() {
-	local unit="evebox.service" dir user group f fstype free inodes inodes_total probe t tmpdir tfs tfree
+	local unit="evebox.service" dir user group f fstype free inodes inodes_total probe t tmpdir tfs tfree denied
 	local -a findings=()
 	dir=$(path_evebox_data_dir)
 	user=$(systemctl show -p User --value "$unit" 2>/dev/null || true)
@@ -4189,10 +4203,16 @@ evebox_diagnose_env() {
 			fi
 		fi
 	fi
+	denied=$(evebox_kernel_denials)
+	if [[ -n "$denied" ]]; then
+		echo "    kernel log: a security module refused something to evebox:"
+		while IFS= read -r f; do echo "      $f"; done <<<"$denied"
+		findings+=("AppArmor or SELinux denied evebox an operation (lines above); allow it in the profile, and when the denied name is a SQLite temp file (etilqs_) a drop-in of evebox.service with SQLITE_TMPDIR set to the data directory moves it")
+	fi
 	if ((${#findings[@]})); then
 		for f in "${findings[@]}"; do echo "    found: $f"; done
 	else
-		echo "    found: owner, permissions, space, inodes and temp directory look fine for the service user; if the log still says code 14, send this output and the journal"
+		echo "    found: owner, permissions, space, inodes, temp directory and the kernel log look fine for the service user; if the log still says code 14, send this output and the journal"
 	fi
 	return 0
 }
@@ -5064,6 +5084,15 @@ menu_group_summary() {
 	esac
 }
 
+# menu_say_empty <key> - one line under a prompt whose value is empty: what
+# empty does (R193 of 18.46).
+menu_say_empty() {
+	local meaning
+	meaning=$(schema_empty_meaning "$1")
+	[[ -n "$meaning" ]] && echo "  empty means: $meaning" >&2
+	return 0
+}
+
 # menu_edit_key <key> - the single-key editing loop (5.0): Enter keeps
 # the value, '-' resets to default, '?' repeats the hint, anything else
 # is validated immediately; an invalid value is rejected with the
@@ -5074,6 +5103,7 @@ menu_edit_key() {
 		local current="${CONF[$key]:-}"
 		local opts="${SCHEMA_OPTIONS[$key]}"
 		echo "$key (now: ${current:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		[[ -z "$current" ]] && menu_say_empty "$key"
 		[[ -n "$opts" ]] && echo "  options: $opts" >&2
 		local answer
 		if schema_is_secret "$key"; then
@@ -5557,6 +5587,7 @@ menu_wizard_ask() {
 		schema_is_secret "$key" && shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
 		echo >&2
 		echo "$key (now: ${shown:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		[[ -z "$shown" ]] && menu_say_empty "$key"
 		[[ -n "${SCHEMA_OPTIONS[$key]}" ]] && echo "  options: ${SCHEMA_OPTIONS[$key]}" >&2
 		if schema_is_secret "$key"; then
 			menu_read_secret answer "  value (Enter keeps, - default, s skip group, x leave setup, ? help): "
@@ -7559,6 +7590,23 @@ schema_validate_one() {
 		;;
 	esac
 	return 0
+}
+
+# schema_empty_meaning <key> - what an empty value of an optional key does, for
+# the prompts of the menu (R193 of 18.46: they showed <empty> and nothing else).
+# Prints nothing for a key whose empty value needs no explanation.
+schema_empty_meaning() {
+	case "$1" in
+	BPF_FILTER) echo "no filter: Suricata analyzes all the traffic it sees" ;;
+	NTOPNG_IFACES) echo "ntopng watches the same interfaces as Suricata (IFACES)" ;;
+	SURICATA_VERSION) echo "the newest tested release of the stable series" ;;
+	NDPI_VERSION) echo "the nDPI release the Suricata plugin is built with" ;;
+	NTOPNG_VERSION) echo "the latest version of the package or image" ;;
+	EVEBOX_VERSION) echo "the latest version of the package or image" ;;
+	EVE_REDIS) echo "no Redis output; a value is refused, this output is not supported yet" ;;
+	EVE_MAX_SIZE_MB) echo "not used; EVE_ROTATE=size is refused without a value" ;;
+	RULES_URLS) echo "only the sources of RULES_SOURCES are used" ;;
+	esac
 }
 DPISTACK_BUNDLE_END
 put lib/state.sh 644 <<'DPISTACK_BUNDLE_END'
@@ -10467,6 +10515,17 @@ suricata_render_eve_log_block() {
 	echo "        deployment: reverse"
 	echo "        header: X-Forwarded-For"
 	suricata_render_eve_types_block
+	# EVE_SYSLOG=yes: the same events go to syslog as well (a second eve-log
+	# output; the file stays, EveBox and the panel read it).
+	if [[ "${CONF[EVE_SYSLOG]:-no}" == "yes" ]]; then
+		echo "  - eve-log:"
+		echo "      enabled: yes"
+		echo "      filetype: syslog"
+		echo "      identity: \"suricata\""
+		echo "      facility: local5"
+		echo "      level: Info"
+		suricata_render_eve_types_block
+	fi
 }
 
 # suricata_series <X.Y.Z[-suffix]> -> "X.Y"

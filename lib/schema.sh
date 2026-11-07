@@ -267,3 +267,20 @@ schema_validate_one() {
 	esac
 	return 0
 }
+
+# schema_empty_meaning <key> - what an empty value of an optional key does, for
+# the prompts of the menu (R193 of 18.46: they showed <empty> and nothing else).
+# Prints nothing for a key whose empty value needs no explanation.
+schema_empty_meaning() {
+	case "$1" in
+	BPF_FILTER) echo "no filter: Suricata analyzes all the traffic it sees" ;;
+	NTOPNG_IFACES) echo "ntopng watches the same interfaces as Suricata (IFACES)" ;;
+	SURICATA_VERSION) echo "the newest tested release of the stable series" ;;
+	NDPI_VERSION) echo "the nDPI release the Suricata plugin is built with" ;;
+	NTOPNG_VERSION) echo "the latest version of the package or image" ;;
+	EVEBOX_VERSION) echo "the latest version of the package or image" ;;
+	EVE_REDIS) echo "no Redis output; a value is refused, this output is not supported yet" ;;
+	EVE_MAX_SIZE_MB) echo "not used; EVE_ROTATE=size is refused without a value" ;;
+	RULES_URLS) echo "only the sources of RULES_SOURCES are used" ;;
+	esac
+}

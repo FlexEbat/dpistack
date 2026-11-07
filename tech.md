@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v63** (2026-11-07)
-**Program version: v0.37.5** (slices 0-36 are done, 37 and 38 are partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v64** (2026-11-07)
+**Program version: v0.37.6** (slices 0-36 are done, 37 and 38 are partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.37.6: R202 and R193 of 18.47 and 18.46 (18.48). `diagnose evebox` reads the kernel log for AppArmor and SELinux denials naming evebox; the setup prompts say what an empty optional value means; `EVE_SYSLOG=yes` now renders a second `eve-log` output to syslog (it was never read); `EVE_REDIS` with a value is refused (it was never read either).
 - v0.37.5: field report of 2026-11-06 (18.47). EveBox code 14 was an AppArmor profile denying the temp file of SQLite; the `tls` event of Suricata is rendered with `extended: yes` (without it no `sni`, no version); the rules step refreshes the source index first and creates the three empty list files; `diagnose evebox` no longer reports btrfs as out of inodes and checks the temp directory; a suspended (Ctrl+Z) lock holder is named; the HTTPS failure message counts the other events.
 - v0.37.4: the write probe of `diagnose evebox` makes its file with `mktemp` run as the service user (the security check refuses `$$`-named temp files, R194 of 18.46).
 - v0.37.3: `dpistack diagnose evebox` also prints the environment of a start (unit user, owner and mode of the data directory and files, whether the service user can write there, space, inodes, file system, temp directory) and says what it found (18.46). The cause of the code 14 crash on a real host is still open.
 - v0.37.2: the cards of the Overview have a layout (they ran together: no padding, label, value and badge in one line), found by rendering the page in a real browser; v0.37.1 (tech.md only) was not tagged and is part of this version.
-- v0.37.1: tech.md only: every slice has an entry in the style of 18.20, 18.0 is the index of slices (done and remaining), section 17 keeps the assumptions only.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v64: v0.37.6. 18.48 (R202, R193, the two unread EVE keys); 18.1 note on `EVE_SYSLOG` closed.
 - v63: v0.37.5. 18.47 (field report: AppArmor and EveBox, `tls` extended, rules index, list files, diagnose fixes); 18.46 closed.
 - v62: v0.37.4. R194 of 18.46: the `$$` temp name in the diagnose probe.
 - v61: v0.37.3. 18.46 (field report: EveBox code 14, the stuck panel version); `diagnose evebox` environment.
 - v60: v0.37.2. R189 of 18.38: the card layout.
-- v59: v0.37.1. Section 17 is the assumptions only; 18.0 is the index of slices; 18.35 to 18.38 retitled and given findings tables (R173 to R188); 18.39 to 18.45 hold the specifications of the slices not started.
 
 ---
 
@@ -1232,7 +1232,7 @@ What stayed open:
 
 - (closed in 18.3, R18) a common `apt-get update` once per run.
 - A change of `*_VERSION` of an installed package does not reinstall it (4.3).
-- The key `EVE_SYSLOG` is described in the schema but the code does not read it yet.
+- (closed in 18.48, R203) the key `EVE_SYSLOG` was described in the schema but the code did not read it.
 - `suricata.eve_fresh` relies on the modification time of `eve.json`, not on the mark of the last event: a quiet interface with `stats` on does not give a false alarm, with `stats` off the check gets `na`.
 - The image of `actionlint` is given by a tag, not a digest.
 
@@ -1974,14 +1974,14 @@ Open: everything above. The entry is completed with the review (findings, decisi
 | R190 | high | After an update at about 17:00 EveBox exits at every start with `ExecuteMigration(... code 14 "unable to open database file", 3)` (`src/sqlite/connection.rs:212`, the events database) and keeps failing after a reboot. Before that it ran for days (last good start 12:48, bookmark found). The unit runs as `User=evebox` (the package unit). Ruled out in the lab: a fresh database does go through migrations 1 to 3 as an unprivileged user, also with an unusable temp directory; the installer never runs `evebox` itself as root; there is no hardening drop-in for EveBox; the data directory fix of v0.29.1 (`evebox_prepare_data_dir`) is in the code. Code 14 is the answer to any failed `open()` (owner, a directory the user cannot write, a full file system or no inodes, a file system without the locking SQLite's WAL needs), and the journal does not say which | `diagnose evebox` prints the environment after the journal: unit user and group, owner and mode of the directory and of every file in it, whether the service user can create a file there (the probe is made with `runuser`), file system type, free space and inodes, whether the user can write to `/tmp`, and ends with `found:` lines for each cause it can name, or says that the environment looks fine. Six bats cases. **Still open:** the output of that command on the host |
 | R191 | high | Any failed step stops the installer (`step <id> failed`), and `panel`, `watch` and `verify` come after `evebox` in `STEPS_ORDER`. If the EveBox step fails during an update, the panel is neither rebuilt nor given its new `-version`, which is one way to see "v0.32.1, latest v0.37.0". It does not explain why the screenshot of the Overview shows the new design while Build info says v0.32.1 | not changed: the owner asked for the cause to be fixed, not hidden by letting later steps run past a failure. To decide once the cause of R190 is known |
 | R192 | low | the panel takes its version from the installer that wrote its unit (`-version`), so a stale value means the unit was not re-rendered by a newer installer | none; noted for the next report |
-| R193 | low | the setup prompts show nine optional settings as `<empty>` (`BPF_FILTER`, `NTOPNG_IFACES`, `SURICATA_VERSION`, `NDPI_VERSION`, `NTOPNG_VERSION`, `EVEBOX_VERSION`, `EVE_REDIS`, `EVE_MAX_SIZE_MB`, `RULES_URLS`); it means "not set" and the prompt does not say what that does | open: the prompt should say what an empty value means for each of them |
+| R193 | low | the setup prompts show nine optional settings as `<empty>` (`BPF_FILTER`, `NTOPNG_IFACES`, `SURICATA_VERSION`, `NDPI_VERSION`, `NTOPNG_VERSION`, `EVEBOX_VERSION`, `EVE_REDIS`, `EVE_MAX_SIZE_MB`, `RULES_URLS`); it means "not set" and the prompt does not say what that does | closed in 18.48: `schema_empty_meaning`, shown under the prompt as `empty means: ...` |
 | R194 | medium | the write probe of `diagnose evebox` used a file named with `$$`; the shell security check of the push (`scripts/security.sh`, no `$$`-named temp files) failed on it. Found by the CI, not by the gate that was run before the push, because that run was cut short | the probe is made with `mktemp` run as the service user (`runuser -u <user> -- mktemp`), so the name is not predictable and the file belongs to the user it tests; `scripts/security.sh` is clean and the six bats cases pass |
 
 Open: ask the owner for `sudo dpistack diagnose evebox` (or, with the old version, the commands in the answer of 2026-11-05) and for the text of the update error; the slow disk is a second suspect (EveBox needed 25 s to open its databases at the boot of 07:26, a commit took 6 s at 16:07, and the first start after the boot of 10:14 ended with `pool timed out`).
 
 ### 18.47 Field report of 2026-11-06 and 07: the cause of EveBox "code 14", the empty `tls` event, a log review (v0.37.5)
 
-**Status:** done, except R202. Source: `dpistack_log.txt` of a Debian 13 host (`debian-home`, btrfs on `md0`) and the output of the commands run on it one by one. Every cause below was proven on the host, not guessed.
+**Status:** done (R202 closed in 18.48). Source: `dpistack_log.txt` of a Debian 13 host (`debian-home`, btrfs on `md0`) and the output of the commands run on it one by one. Every cause below was proven on the host, not guessed.
 
 | No | Severity | Finding | Fix |
 |---|---|---|---|
@@ -1992,7 +1992,19 @@ Open: ask the owner for `sudo dpistack diagnose evebox` (or, with the old versio
 | R199 | medium | every `suricata-update` call warned `Source index does not exist`, and three times `does not exist` for `disable.conf`, `modify.conf`, `drop.conf`, which the update command names. D28 of 18.32 had left these as they are | `update-sources` runs before the sources are enabled (a failed download is a warning, the bundled index is used); the three list files are created empty with one comment line when missing and never touched when they exist; `rules check` is not up to date while one is missing |
 | R200 | low | the lock message said "wait for it to finish" for a holder suspended with Ctrl+Z (a build stopped at 242 of 243), which never ends | a holder in state `T` is named as suspended, with `fg` and `kill` |
 | R201 | low | the HTTPS failure said only "check that Suricata sees the interface" | it counts the other events that appeared in `eve.json` meanwhile: none points to the capture, some point to the parsing and the offloading |
-| R202 | low | `diagnose evebox` does not read the kernel log for AppArmor denials | open |
+| R202 | low | `diagnose evebox` does not read the kernel log for AppArmor denials | closed in 18.48 |
 
 Messages left as they are, with the reason: `ERROR: Bindings changed` (cbindgen `--verify` in the Suricata Makefile ends in `|| true`), the JSON-C note of the nDPI configure (unit tests only), the libtool note on a static library, `libunwind not found` (stack traces on a crash only; the package name on the RHEL family is not verified).
 
+### 18.48 R202, R193 and two keys that were never read (v0.37.6)
+
+**Status:** done. The first items of the open list of 18.46 and 18.47, taken before the remaining parts of slices 37 and 38. Decisions on the two unread keys were left to the assistant ("choose yourself") and are recorded here.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| R202 | low | `diagnose evebox` did not read the kernel log, so an AppArmor denial like R195 stayed invisible | `evebox_kernel_denials` takes the last five lines of `journalctl -k` (or `dmesg`) that hold `apparmor="DENIED"` or `avc: denied` and name evebox; they are printed and a `found:` line names the cause, with the `SQLITE_TMPDIR` drop-in as the way out for a SQLite temp file. The `SQLITE_TMPDIR` advice is still not tested on a host. Two bats cases (a denial of evebox is shown, a denial of another program is not blamed on it) |
+| R193 | low | the prompts showed `<empty>` for nine optional keys and not what it means | `schema_empty_meaning` (lib/schema.sh) gives one line per key, shown by both prompts as `empty means: ...`. Two bats cases (the text, and that every one of the nine has it) |
+| R203 | medium | `EVE_SYSLOG` was offered in the menu, the panel and the docs and nothing read it (known since 18.1, left open); checking R193 showed `EVE_REDIS` was the same. A setting that does nothing breaks the rule of 18.0 that nothing is shown that the program cannot do | `EVE_SYSLOG=yes` renders a second `eve-log` output (`filetype: syslog`, facility `local5`, level `Info`, identity `suricata`) with the same `EVE_TYPES`; the file output stays, EveBox and the panel read it. Two bats cases. Decision for `EVE_REDIS`: the Redis output needs a Suricata built with hiredis, which neither the build step (`libhiredis` is not among the build dependencies) nor the packages of every platform are known to have, and no host was available to check it, so a value is refused with exit code 2 and the hint in the panel and the docs says so; a bats case covers the refusal |
+| R204 | low | in `step_suricata.sh` the size rotation had a fallback of 100 MB that could never run, because the config check already refuses `EVE_ROTATE=size` without `EVE_MAX_SIZE_MB` | not changed (surgical edit); the prompt hint says what really happens |
+
+Open: the real Suricata check of the syslog output (`suricata -T` on a rendered config with `EVE_SYSLOG=yes`) was not run, only the rendering is tested; the facility is not configurable; the Redis output (needs hiredis in the build and in the package check). The Go and interface tests were not run in this session (no Go 1.26 here); the CI runs them.
