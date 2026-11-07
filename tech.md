@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v66** (2026-11-07)
-**Program version: v0.39.0** (slices 0-38 are done except the alert bell of 37, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v67** (2026-11-07)
+**Program version: v0.39.1** (slices 0-38 are done except the alert bell of 37, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.39.1: R210 of 18.51: the refusal of a non-empty `EVE_REDIS` (v0.37.6) stopped the update on a config that had a value; it is now a warning and the value is ignored.
 - v0.39.0: slice 38, the Network screen (18.50): the capture chain (host, capture interfaces, Suricata, eve.json, EveBox) and the interface table, from answers that exist; no new endpoint.
 - v0.38.0: slice 37, the top bar (18.49). Host name, overall state and mode as chips on every screen; a user menu (Account, Theme where the page has both palettes, Sign out); `GET /api/system` has `hostname`.
-- v0.37.6: R202 and R193 of 18.47 and 18.46 (18.48). `diagnose evebox` reads the kernel log for AppArmor and SELinux denials naming evebox; the setup prompts say what an empty optional value means; `EVE_SYSLOG=yes` now renders a second `eve-log` output to syslog (it was never read); `EVE_REDIS` with a value is refused (it was never read either).
+- v0.37.6: R202 and R193 of 18.47 and 18.46 (18.48). `diagnose evebox` reads the kernel log for AppArmor and SELinux denials naming evebox; the setup prompts say what an empty optional value means; `EVE_SYSLOG=yes` now renders a second `eve-log` output to syslog (it was never read); `EVE_REDIS` with a value was refused (it was never read either); replaced in v0.39.1 by a warning, see 18.51.
 - v0.37.5: field report of 2026-11-06 (18.47). EveBox code 14 was an AppArmor profile denying the temp file of SQLite; the `tls` event of Suricata is rendered with `extended: yes` (without it no `sni`, no version); the rules step refreshes the source index first and creates the three empty list files; `diagnose evebox` no longer reports btrfs as out of inodes and checks the temp directory; a suspended (Ctrl+Z) lock holder is named; the HTTPS failure message counts the other events.
-- v0.37.4: the write probe of `diagnose evebox` makes its file with `mktemp` run as the service user (the security check refuses `$$`-named temp files, R194 of 18.46).
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v67: v0.39.1. 18.51 (R210); the `EVE_REDIS` decision of 18.48 (D63 there) is replaced.
 - v66: v0.39.0. 18.50 (slice 38, the Network screen); the slice 38 row and its Open list updated.
 - v65: v0.38.0. 18.49 (slice 37, the top bar); `hostname` in the `GET /api/system` row.
 - v64: v0.37.6. 18.48 (R202, R193, the two unread EVE keys); 18.1 note on `EVE_SYSLOG` closed.
 - v63: v0.37.5. 18.47 (field report: AppArmor and EveBox, `tls` extended, rules index, list files, diagnose fixes); 18.46 closed.
-- v62: v0.37.4. R194 of 18.46: the `$$` temp name in the diagnose probe.
 
 ---
 
@@ -2004,7 +2004,7 @@ Messages left as they are, with the reason: `ERROR: Bindings changed` (cbindgen 
 |---|---|---|---|
 | R202 | low | `diagnose evebox` did not read the kernel log, so an AppArmor denial like R195 stayed invisible | `evebox_kernel_denials` takes the last five lines of `journalctl -k` (or `dmesg`) that hold `apparmor="DENIED"` or `avc: denied` and name evebox; they are printed and a `found:` line names the cause, with the `SQLITE_TMPDIR` drop-in as the way out for a SQLite temp file. The `SQLITE_TMPDIR` advice is still not tested on a host. Two bats cases (a denial of evebox is shown, a denial of another program is not blamed on it) |
 | R193 | low | the prompts showed `<empty>` for nine optional keys and not what it means | `schema_empty_meaning` (lib/schema.sh) gives one line per key, shown by both prompts as `empty means: ...`. Two bats cases (the text, and that every one of the nine has it) |
-| R203 | medium | `EVE_SYSLOG` was offered in the menu, the panel and the docs and nothing read it (known since 18.1, left open); checking R193 showed `EVE_REDIS` was the same. A setting that does nothing breaks the rule of 18.0 that nothing is shown that the program cannot do | `EVE_SYSLOG=yes` renders a second `eve-log` output (`filetype: syslog`, facility `local5`, level `Info`, identity `suricata`) with the same `EVE_TYPES`; the file output stays, EveBox and the panel read it. Two bats cases. Decision for `EVE_REDIS`: the Redis output needs a Suricata built with hiredis, which neither the build step (`libhiredis` is not among the build dependencies) nor the packages of every platform are known to have, and no host was available to check it, so a value is refused with exit code 2 and the hint in the panel and the docs says so; a bats case covers the refusal |
+| R203 | medium | `EVE_SYSLOG` was offered in the menu, the panel and the docs and nothing read it (known since 18.1, left open); checking R193 showed `EVE_REDIS` was the same. A setting that does nothing breaks the rule of 18.0 that nothing is shown that the program cannot do | `EVE_SYSLOG=yes` renders a second `eve-log` output (`filetype: syslog`, facility `local5`, level `Info`, identity `suricata`) with the same `EVE_TYPES`; the file output stays, EveBox and the panel read it. Two bats cases. Decision for `EVE_REDIS`: the Redis output needs a Suricata built with hiredis, which neither the build step (`libhiredis` is not among the build dependencies) nor the packages of every platform are known to have, and no host was available to check it, so a value was refused with exit code 2 (superseded in 18.51: a value is now ignored with a warning, because the refusal stopped an update) |
 | R204 | low | in `step_suricata.sh` the size rotation had a fallback of 100 MB that could never run, because the config check already refuses `EVE_ROTATE=size` without `EVE_MAX_SIZE_MB` | not changed (surgical edit); the prompt hint says what really happens |
 
 Open: the real Suricata check of the syslog output (`suricata -T` on a rendered config with `EVE_SYSLOG=yes`) was not run, only the rendering is tested; the facility is not configurable; the Redis output (needs hiredis in the build and in the package check). The Go and interface tests were not run in this session (no Go 1.26 here); the CI runs them.
@@ -2055,3 +2055,18 @@ Decisions ("choose yourself"):
 Tests: `panel/web/test/network.test.mjs` (14): the order of the chain, the capture stage, no capture interface, an unknown capture flag, IDS and IPS wording, the freshness check, a part that is not installed, a missing source, the levels, the other parts, a failing source, a 401, both sources failing, the page and the route. The menu test "every screen is in exactly one group" covers the new entry.
 
 Open: nothing was rendered in a browser (none is available in the build environment), so the look of the boxes, the arrows and the narrow layout (where the arrows turn down) is checked only by the design rules; the interface counters are totals since boot, no rate; the Overview and this screen both read `/api/system` while each is open; ntopng's own interfaces (`NTOPNG_IFACES`) are not shown on the screen.
+
+
+### 18.51 R210: the update stopped by `EVE_REDIS` (v0.39.1)
+
+**Status:** done. A field report of 2026-11-07: the Update button of the panel failed, the audit said `self-update apply error (exit 2)`, and `sudo dpistack self-update apply` printed `The config failed validation: EVE_REDIS is not supported yet`.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| R210 | **high** | v0.37.6 (18.48, R203) made a non-empty `EVE_REDIS` a validation error. The key had been in the menu, the panel and the docs since slice 1 and did nothing, so a saved config could hold a value; the update runs the new installer with `-y` on that saved config, so every such stand was stopped at validation (exit 2) and could not take any later release, the update button included. My test only checked that a fresh `--set EVE_REDIS=...` was refused and never asked what an old config would do | the refusal is removed from `config_validate`. `suricata_warn_redis_unused` (step_suricata.sh) logs `EVE_REDIS=<value> is ignored: ...` as a warning when the value is not empty, `no`, `off`, `none` or `false`, and the value changes nothing in `suricata.yaml`. Hints (panel and Russian), the prompt text and the generated docs say "ignored with a warning". Bats cases: a value does not fail validation (`install --dry-run -y --set EVE_REDIS=...`), the warning and the silent off values, and the rendered `eve-log` is the same with and without a value |
+
+Decision (D71): **a setting that does nothing is a warning, never a validation error, when it can already be in a saved config.** A new refusal is allowed only for a key that is new or for a value the program could not have accepted before; anything else must not be able to stop an update or a reconfigure. This applies to the next time a dead key is retired.
+
+Until the fix is installed, a stand in this state can empty the key by hand (`EVE_REDIS=` in `/etc/dpistack/dpistack.conf`) and run `sudo dpistack self-update apply` again.
+
+Open: no other validation added in 18.46 to 18.50 was re-checked against the configs of older releases; a test that feeds the validation a config written by an old release (the example file of an earlier tag) is not there yet. The panel's update dialog and the audit line still show only the exit code, not the refusal line.

@@ -70,7 +70,21 @@ suricata_render_plugins_block() {
 	fi
 }
 
+# suricata_warn_redis_unused - EVE_REDIS has no output behind it yet (it needs
+# a Suricata built with hiredis). A saved config may hold a value, so it is
+# ignored with a warning and never refused: the refusal of v0.37.6 stopped an
+# update on a config that had one (R210 of 18.51). "no", "off", "none" and
+# "false" mean off and say nothing.
+suricata_warn_redis_unused() {
+	local v="${CONF[EVE_REDIS]:-}"
+	case "${v,,}" in
+	"" | no | off | none | false) return 0 ;;
+	esac
+	log "WARN" "EVE_REDIS=$v is ignored: this installer has no Redis output yet (empty the value to stop this message)"
+}
+
 suricata_render_eve_log_block() {
+	suricata_warn_redis_unused
 	echo "  - eve-log:"
 	echo "      enabled: yes"
 	echo "      filetype: regular"

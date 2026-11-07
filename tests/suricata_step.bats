@@ -211,3 +211,22 @@ load_step() {
 	[ "$(grep -c -- '- eve-log:' <<<"$output")" -eq 1 ]
 	[[ "$output" != *"syslog"* ]]
 }
+
+@test "R210: an EVE_REDIS value is ignored with a warning, and off values say nothing" {
+	run load_step 'CONF[EVE_REDIS]="127.0.0.1:6379/eve"' 'suricata_render_eve_log_block'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"EVE_REDIS=127.0.0.1:6379/eve is ignored"* ]]
+	local v
+	for v in "" no No off none false; do
+		run load_step "CONF[EVE_REDIS]=\"$v\"" 'suricata_render_eve_log_block'
+		[ "$status" -eq 0 ]
+		[[ "$output" != *"ignored"* ]]
+	done
+}
+
+@test "R210: an EVE_REDIS value changes nothing in the rendered eve-log" {
+	local with without
+	with=$(load_step 'CONF[EVE_REDIS]="127.0.0.1:6379/eve"' 'suricata_render_eve_log_block' 2>/dev/null)
+	without=$(load_step 'CONF[EVE_REDIS]=""' 'suricata_render_eve_log_block' 2>/dev/null)
+	[ "$with" = "$without" ]
+}

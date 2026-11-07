@@ -40,7 +40,7 @@ export const HINTS = {
   EVE_FILE: "Write events to eve.json (needed by the panel and the watchdog).",
   EVE_TYPES: "Which event types to write to eve.json.",
   EVE_SYSLOG: "Duplicate events to syslog (facility local5).",
-  EVE_REDIS: "Redis output. Not supported yet: leave it empty, a value is refused.",
+  EVE_REDIS: "Redis output. Not supported yet: leave it empty, a value is ignored with a warning.",
   EVE_ROTATE: "How to rotate eve.json: daily, weekly or by size.",
   EVE_KEEP: "How many rotated files to keep.",
   EVE_MAX_SIZE_MB: "File size in MB that triggers rotation (the size mode).",
