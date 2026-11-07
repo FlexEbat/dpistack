@@ -1505,7 +1505,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.39.0"
+DPISTACK_VERSION="0.39.1"
 
 : "${DRY_RUN:=0}"
 
@@ -1944,11 +1944,6 @@ config_validate() {
 	# same way (h, d, w, y) are allowed once a backend is installed.
 	if [[ "${CONF[METRICS_BACKEND]:-none}" != "none" && ! "${CONF[METRICS_RETENTION]:-30d}" =~ ^[0-9]+[hdwy]$ ]]; then
 		echo "METRICS_RETENTION=${CONF[METRICS_RETENTION]:-} with a metrics backend: a number with the suffix h, d, w or y is needed (for example 30d); backends read a bare number or m differently"
-		errors=$((errors + 1))
-	fi
-
-	if [[ -n "${CONF[EVE_REDIS]:-}" ]]; then
-		echo "EVE_REDIS is not supported yet: the Suricata builds of this installer have no Redis output; leave it empty"
 		errors=$((errors + 1))
 	fi
 
@@ -7603,7 +7598,7 @@ schema_empty_meaning() {
 	NDPI_VERSION) echo "the nDPI release the Suricata plugin is built with" ;;
 	NTOPNG_VERSION) echo "the latest version of the package or image" ;;
 	EVEBOX_VERSION) echo "the latest version of the package or image" ;;
-	EVE_REDIS) echo "no Redis output; a value is refused, this output is not supported yet" ;;
+	EVE_REDIS) echo "no Redis output; a value is ignored with a warning, this output is not supported yet" ;;
 	EVE_MAX_SIZE_MB) echo "not used; EVE_ROTATE=size is refused without a value" ;;
 	RULES_URLS) echo "only the sources of RULES_SOURCES are used" ;;
 	esac
@@ -10500,7 +10495,21 @@ suricata_render_plugins_block() {
 	fi
 }
 
+# suricata_warn_redis_unused - EVE_REDIS has no output behind it yet (it needs
+# a Suricata built with hiredis). A saved config may hold a value, so it is
+# ignored with a warning and never refused: the refusal of v0.37.6 stopped an
+# update on a config that had one (R210 of 18.51). "no", "off", "none" and
+# "false" mean off and say nothing.
+suricata_warn_redis_unused() {
+	local v="${CONF[EVE_REDIS]:-}"
+	case "${v,,}" in
+	"" | no | off | none | false) return 0 ;;
+	esac
+	log "WARN" "EVE_REDIS=$v is ignored: this installer has no Redis output yet (empty the value to stop this message)"
+}
+
 suricata_render_eve_log_block() {
+	suricata_warn_redis_unused
 	echo "  - eve-log:"
 	echo "      enabled: yes"
 	echo "      filetype: regular"

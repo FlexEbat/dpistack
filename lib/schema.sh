@@ -279,7 +279,7 @@ schema_empty_meaning() {
 	NDPI_VERSION) echo "the nDPI release the Suricata plugin is built with" ;;
 	NTOPNG_VERSION) echo "the latest version of the package or image" ;;
 	EVEBOX_VERSION) echo "the latest version of the package or image" ;;
-	EVE_REDIS) echo "no Redis output; a value is refused, this output is not supported yet" ;;
+	EVE_REDIS) echo "no Redis output; a value is ignored with a warning, this output is not supported yet" ;;
 	EVE_MAX_SIZE_MB) echo "not used; EVE_ROTATE=size is refused without a value" ;;
 	RULES_URLS) echo "only the sources of RULES_SOURCES are used" ;;
 	esac

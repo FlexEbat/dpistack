@@ -145,8 +145,10 @@ EOF_T
 	[[ "$output" != *"value too great"* ]]
 }
 
-@test "EVE_REDIS with a value is refused: the output is not supported yet" {
-	run bash "$REPO_DIR/install.sh" install --dry-run -y --set EVE_REDIS=127.0.0.1:6379/eve
-	[ "$status" -ne 0 ]
-	[[ "$output" == *"EVE_REDIS is not supported yet"* ]]
+@test "an EVE_REDIS value in a saved config does not fail validation (R210: it stopped an update)" {
+	run_install --set EVE_REDIS=127.0.0.1:6379/eve
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"failed validation"* ]]
+	run_install --set EVE_REDIS=no
+	[ "$status" -eq 0 ]
 }
