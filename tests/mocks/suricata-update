@@ -25,6 +25,8 @@ for ((i = 0; i < ${#args[@]}; i++)); do
 done
 
 if [[ "$is_subcommand_run" == "1" ]]; then
+	# MOCK_UPDATE_SOURCES_FAIL: only the index download fails (no network).
+	[[ -n "${MOCK_UPDATE_SOURCES_FAIL:-}" && " $* " == *" update-sources "* ]] && exit 1
 	exit "${MOCK_EXIT:-0}"
 fi
 

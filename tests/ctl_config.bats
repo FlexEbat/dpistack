@@ -142,7 +142,8 @@ teardown() {
 	[ "$status" -eq 5 ]
 	run "$CTL" config-write ../../etc/passwd
 	[ "$status" -eq 5 ]
-	[ ! -e "$DPISTACK_ROOT/etc/suricata/disable.conf" ]
+	# the install leaves an empty disable.conf; none of the refused values is in it
+	! grep -Eqs 'abc|12;x' "$DPISTACK_ROOT/etc/suricata/disable.conf"
 }
 
 @test "criterion 4: config-read prints the current file" {

@@ -1505,7 +1505,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.37.4"
+DPISTACK_VERSION="0.37.5"
 
 : "${DRY_RUN:=0}"
 
@@ -1593,6 +1593,14 @@ lock_acquire() {
 		local holder
 		holder=$(head -n1 "$lock_file" 2>/dev/null)
 		if [[ "$holder" =~ ^[0-9]+$ ]] && kill -0 "$holder" 2>/dev/null; then
+			# State T is a process stopped with Ctrl+Z: it holds the lock and
+			# does nothing, "wait for it to finish" would never end (seen in a
+			# real install log, a build stopped at 242 of 243).
+			local pstate
+			pstate=$(awk '{print $3}' "/proc/$holder/stat" 2>/dev/null || true)
+			if [[ "$pstate" == T ]]; then
+				die 1 "another dpistack instance (pid $holder) is suspended, probably with Ctrl+Z; type fg in its terminal to continue it, or stop it with: kill $holder"
+			fi
 			die 1 "another dpistack instance is running (pid $holder, lock: $lock_file); close it or wait for it to finish"
 		fi
 		die 1 "another dpistack instance is running (lock: $lock_file); close it or wait for it to finish"
@@ -4106,8 +4114,11 @@ diagnose_unit() {
 # service user cannot write, a full file system or no free inodes, a temp
 # directory it cannot use, a file system without the locking SQLite's WAL
 # needs. Each is looked at, and the last lines say what was found.
+# Inodes count only where the file system reports a total: btrfs, XFS and ZFS
+# have no fixed table and `df -i` shows 0 free for them (a real btrfs host was
+# told it had no inodes left).
 evebox_diagnose_env() {
-	local unit="evebox.service" dir user group f fstype free inodes probe
+	local unit="evebox.service" dir user group f fstype free inodes inodes_total probe t tmpdir tfs tfree
 	local -a findings=()
 	dir=$(path_evebox_data_dir)
 	user=$(systemctl show -p User --value "$unit" 2>/dev/null || true)
@@ -4126,14 +4137,19 @@ evebox_diagnose_env() {
 	fstype=$(stat -f -c %T "$dir" 2>/dev/null || echo unknown)
 	free=$(df -Pk "$dir" 2>/dev/null | awk 'NR==2 {print $4}')
 	inodes=$(df -Pi "$dir" 2>/dev/null | awk 'NR==2 {print $4}')
-	echo "    file system: $fstype, ${free:-?} KiB free, ${inodes:-?} inodes free"
+	inodes_total=$(df -Pi "$dir" 2>/dev/null | awk 'NR==2 {print $2}')
+	if [[ "$inodes_total" =~ ^[1-9][0-9]*$ ]]; then
+		echo "    file system: $fstype, ${free:-?} KiB free, ${inodes:-?} inodes free"
+	else
+		echo "    file system: $fstype, ${free:-?} KiB free, no fixed number of inodes"
+	fi
 	case "$fstype" in
 	nfs | nfs4 | cifs | smb* | 9p | vboxsf)
 		findings+=("the data directory is on a $fstype file system; SQLite's WAL needs working locks and shared memory there, which network and shared-folder file systems often lack")
 		;;
 	esac
 	[[ "$free" =~ ^[0-9]+$ ]] && ((free < 51200)) && findings+=("less than 50 MiB free on the file system of $dir")
-	[[ "$inodes" =~ ^[0-9]+$ ]] && ((inodes < 100)) && findings+=("almost no free inodes on the file system of $dir")
+	[[ "$inodes_total" =~ ^[1-9][0-9]*$ && "$inodes" =~ ^[0-9]+$ ]] && ((inodes < 100)) && findings+=("almost no free inodes on the file system of $dir")
 	if [[ -n "$user" && "$user" != root ]]; then
 		if ! id "$user" >/dev/null 2>&1; then
 			findings+=("the unit runs as $user, but there is no such user")
@@ -4150,7 +4166,27 @@ evebox_diagnose_env() {
 				echo "    $user can create files in the directory: NO"
 				findings+=("$user cannot create files in $dir (SQLite cannot create its -wal and -shm files)")
 			fi
-			runuser -u "$user" -- test -w /tmp 2>/dev/null || findings+=("$user cannot write to /tmp")
+			# SQLite spills a big transaction (a migration of a fresh database
+			# is one) into a temp file in the first of $TMPDIR, /var/tmp, /usr/tmp
+			# and /tmp that the user can use; with none it fails with code 14.
+			tmpdir=""
+			for t in "${TMPDIR:-}" /var/tmp /usr/tmp /tmp; do
+				[[ -n "$t" && -d "$t" ]] || continue
+				# shellcheck disable=SC2016  # $1 belongs to the inner shell
+				if runuser -u "$user" -- sh -c '[ -r "$1" ] && [ -w "$1" ] && [ -x "$1" ]' _ "$t" 2>/dev/null; then
+					tmpdir="$t"
+					break
+				fi
+			done
+			if [[ -z "$tmpdir" ]]; then
+				echo "    temp directory for $user: none usable"
+				findings+=("$user can use none of /var/tmp, /usr/tmp and /tmp; SQLite needs one for large transactions")
+			else
+				tfs=$(stat -f -c %T "$tmpdir" 2>/dev/null || echo unknown)
+				tfree=$(df -Pk "$tmpdir" 2>/dev/null | awk 'NR==2 {print $4}')
+				echo "    temp directory for $user: $tmpdir ($tfs, ${tfree:-?} KiB free)"
+				[[ "$tfree" =~ ^[0-9]+$ ]] && ((tfree < 51200)) && findings+=("less than 50 MiB free in $tmpdir, the temp directory SQLite uses")
+			fi
 		fi
 	fi
 	if ((${#findings[@]})); then
@@ -10087,9 +10123,36 @@ rules_custom_source_name() {
 	printf 'dpistack-custom-%s' "$1"
 }
 
+# rules_ensure_list_files - the update command names disable.conf, modify.conf
+# and drop.conf; a file that is missing makes suricata-update warn on every run
+# ("does not exist"). An empty list with a comment is what an installation that
+# changes nothing needs. A file that exists, written by the config editor or by
+# hand, is never touched.
+rules_ensure_list_files() {
+	local f
+	for f in "$(path_suricata_disable_conf)" "$(path_suricata_modify_conf)" "$(path_suricata_drop_conf)"; do
+		[[ -e "$f" ]] && continue
+		printf '# %s: one entry per line, see the suricata-update documentation\n' "${f##*/}" | dry_run_write "$f"
+	done
+}
+
+rules_list_files_present() {
+	local f
+	for f in "$(path_suricata_disable_conf)" "$(path_suricata_modify_conf)" "$(path_suricata_drop_conf)"; do
+		[[ -e "$f" ]] || return 1
+	done
+}
+
 rules_register_sources() {
 	local data_dir
 	data_dir=$(path_rules_data_dir)
+
+	# The index of sources comes first. Without it every suricata-update call
+	# warns "Source index does not exist" and falls back to the index bundled
+	# with the package, which does not know the sources added since its release.
+	# An index that cannot be fetched is a warning: the bundled one still works.
+	run suricata-update update-sources -D "$data_dir" ||
+		echo "warning: the index of rule sources could not be updated, the index bundled with suricata-update is used" >&2
 
 	local name
 	local IFS=','
@@ -10167,6 +10230,7 @@ step_rules_check() {
 		actual_enable_hash=""
 	fi
 	[[ "$expected_enable_hash" == "$actual_enable_hash" ]] || return 1
+	rules_list_files_present || return 1
 
 	if [[ "${CONF[RULES_UPDATE]:-on}" == "on" ]]; then
 		[[ -f "$(path_rules_timer_unit)" ]] || return 1
@@ -10197,6 +10261,7 @@ step_rules_apply() {
 	rules_register_sources
 
 	write_rendered_file "$(path_suricata_enable_conf)" "$(rules_render_enable_conf)"
+	rules_ensure_list_files
 
 	# Not inside $(...): the array has to be set in this shell.
 	rules_update_argv
@@ -10368,6 +10433,15 @@ suricata_render_eve_types_block() {
 	echo "      types:"
 	for t in $types; do
 		[[ -z "$t" ]] && continue
+		if [[ "$t" == tls ]]; then
+			# A bare "- tls" makes Suricata 8.0.8 log only the certificate: no sni,
+			# no version, no ja3 (seen on a real host, replaying one capture: empty
+			# with it, "sni":"example.com" with extended: yes). The HTTPS self-test
+			# and every dashboard that reads the server name need those fields.
+			echo "        - tls:"
+			echo "            extended: yes"
+			continue
+		fi
 		echo "        - ${t}"
 	done
 }
@@ -11112,12 +11186,19 @@ verify_test_https() {
 		sleep 1
 	done
 
-	local default_if hint=""
+	local default_if hint="" seen
 	default_if=$(ip -4 route show default 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
 	if [[ -n "$default_if" && ",$VERIFY_IFACES," != *",$default_if,"* ]]; then
 		hint="curl goes through $default_if, while Suricata listens on $VERIFY_IFACES: the packets are not seen"
 	else
-		hint="check that Suricata sees the interface curl goes through (IFACES=$VERIFY_IFACES)"
+		# The count tells a capture that sees nothing from a capture whose packets
+		# are not parsed as TLS; both used to end in the same sentence.
+		seen=$(verify_eve_since "$offset" | grep -c '"event_type"' || true)
+		if [[ "${seen:-0}" == 0 ]]; then
+			hint="no event of any kind appeared in eve.json meanwhile, which points to the capture (is Suricata running on $VERIFY_IFACES, is BPF_FILTER empty) and not to the TLS parsing"
+		else
+			hint="$seen other event(s) appeared in eve.json, so packets are captured but none was parsed as this TLS handshake: check the offloading of $VERIFY_IFACES (ethtool -k: gro, lro, checksumming) and the start log of Suricata"
+		fi
 	fi
 	verify_set fail "curl passed, but there is no tls event with sni=$host within ${VERIFY_WAIT} s: $hint"
 }
