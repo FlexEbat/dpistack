@@ -86,3 +86,41 @@ install_base() {
 	run bash -c "source '$REPO_DIR/lib/paths.sh'; source '$REPO_DIR/lib/common.sh'; source '$REPO_DIR/lib/state.sh'; source '$REPO_DIR/lib/config.sh'; source '$REPO_DIR/lib/step_rules.sh'; step_rules_check"
 	[ "$status" -ne 0 ]
 }
+
+@test "the index of sources is updated before the sources are enabled" {
+	run install_base
+	[ "$status" -eq 0 ]
+	local upd en
+	upd=$(grep -n "update-sources" "$MOCK_CALLS_LOG" | head -n 1 | cut -d: -f1)
+	en=$(grep -n "enable-source" "$MOCK_CALLS_LOG" | head -n 1 | cut -d: -f1)
+	[ -n "$upd" ]
+	[ -n "$en" ]
+	[ "$upd" -lt "$en" ]
+}
+
+@test "an index that cannot be fetched is a warning, the install goes on" {
+	MOCK_UPDATE_SOURCES_FAIL=1 run install_base
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"the index of rule sources could not be updated"* ]]
+	[ -f "$RULESET" ]
+}
+
+@test "the lists that suricata-update is given exist, empty and with a comment" {
+	run install_base
+	[ "$status" -eq 0 ]
+	local f
+	for f in disable modify drop; do
+		[ -f "$DPISTACK_ROOT/etc/suricata/$f.conf" ]
+		grep -q "^# $f.conf" "$DPISTACK_ROOT/etc/suricata/$f.conf"
+		! grep -Eqs '^[[:space:]]*[^#[:space:]]' "$DPISTACK_ROOT/etc/suricata/$f.conf"
+	done
+}
+
+@test "a list file that already has entries is not touched" {
+	mkdir -p "$DPISTACK_ROOT/etc/suricata"
+	echo "2100498" >"$DPISTACK_ROOT/etc/suricata/disable.conf"
+	run install_base
+	[ "$status" -eq 0 ]
+	[ "$(cat "$DPISTACK_ROOT/etc/suricata/disable.conf")" = "2100498" ]
+	[ -f "$DPISTACK_ROOT/etc/suricata/modify.conf" ]
+}

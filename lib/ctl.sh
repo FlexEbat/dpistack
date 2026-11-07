@@ -1918,8 +1918,11 @@ diagnose_unit() {
 # service user cannot write, a full file system or no free inodes, a temp
 # directory it cannot use, a file system without the locking SQLite's WAL
 # needs. Each is looked at, and the last lines say what was found.
+# Inodes count only where the file system reports a total: btrfs, XFS and ZFS
+# have no fixed table and `df -i` shows 0 free for them (a real btrfs host was
+# told it had no inodes left).
 evebox_diagnose_env() {
-	local unit="evebox.service" dir user group f fstype free inodes probe
+	local unit="evebox.service" dir user group f fstype free inodes inodes_total probe t tmpdir tfs tfree
 	local -a findings=()
 	dir=$(path_evebox_data_dir)
 	user=$(systemctl show -p User --value "$unit" 2>/dev/null || true)
@@ -1938,14 +1941,19 @@ evebox_diagnose_env() {
 	fstype=$(stat -f -c %T "$dir" 2>/dev/null || echo unknown)
 	free=$(df -Pk "$dir" 2>/dev/null | awk 'NR==2 {print $4}')
 	inodes=$(df -Pi "$dir" 2>/dev/null | awk 'NR==2 {print $4}')
-	echo "    file system: $fstype, ${free:-?} KiB free, ${inodes:-?} inodes free"
+	inodes_total=$(df -Pi "$dir" 2>/dev/null | awk 'NR==2 {print $2}')
+	if [[ "$inodes_total" =~ ^[1-9][0-9]*$ ]]; then
+		echo "    file system: $fstype, ${free:-?} KiB free, ${inodes:-?} inodes free"
+	else
+		echo "    file system: $fstype, ${free:-?} KiB free, no fixed number of inodes"
+	fi
 	case "$fstype" in
 	nfs | nfs4 | cifs | smb* | 9p | vboxsf)
 		findings+=("the data directory is on a $fstype file system; SQLite's WAL needs working locks and shared memory there, which network and shared-folder file systems often lack")
 		;;
 	esac
 	[[ "$free" =~ ^[0-9]+$ ]] && ((free < 51200)) && findings+=("less than 50 MiB free on the file system of $dir")
-	[[ "$inodes" =~ ^[0-9]+$ ]] && ((inodes < 100)) && findings+=("almost no free inodes on the file system of $dir")
+	[[ "$inodes_total" =~ ^[1-9][0-9]*$ && "$inodes" =~ ^[0-9]+$ ]] && ((inodes < 100)) && findings+=("almost no free inodes on the file system of $dir")
 	if [[ -n "$user" && "$user" != root ]]; then
 		if ! id "$user" >/dev/null 2>&1; then
 			findings+=("the unit runs as $user, but there is no such user")
@@ -1962,7 +1970,27 @@ evebox_diagnose_env() {
 				echo "    $user can create files in the directory: NO"
 				findings+=("$user cannot create files in $dir (SQLite cannot create its -wal and -shm files)")
 			fi
-			runuser -u "$user" -- test -w /tmp 2>/dev/null || findings+=("$user cannot write to /tmp")
+			# SQLite spills a big transaction (a migration of a fresh database
+			# is one) into a temp file in the first of $TMPDIR, /var/tmp, /usr/tmp
+			# and /tmp that the user can use; with none it fails with code 14.
+			tmpdir=""
+			for t in "${TMPDIR:-}" /var/tmp /usr/tmp /tmp; do
+				[[ -n "$t" && -d "$t" ]] || continue
+				# shellcheck disable=SC2016  # $1 belongs to the inner shell
+				if runuser -u "$user" -- sh -c '[ -r "$1" ] && [ -w "$1" ] && [ -x "$1" ]' _ "$t" 2>/dev/null; then
+					tmpdir="$t"
+					break
+				fi
+			done
+			if [[ -z "$tmpdir" ]]; then
+				echo "    temp directory for $user: none usable"
+				findings+=("$user can use none of /var/tmp, /usr/tmp and /tmp; SQLite needs one for large transactions")
+			else
+				tfs=$(stat -f -c %T "$tmpdir" 2>/dev/null || echo unknown)
+				tfree=$(df -Pk "$tmpdir" 2>/dev/null | awk 'NR==2 {print $4}')
+				echo "    temp directory for $user: $tmpdir ($tfs, ${tfree:-?} KiB free)"
+				[[ "$tfree" =~ ^[0-9]+$ ]] && ((tfree < 51200)) && findings+=("less than 50 MiB free in $tmpdir, the temp directory SQLite uses")
+			fi
 		fi
 	fi
 	if ((${#findings[@]})); then

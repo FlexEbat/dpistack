@@ -50,9 +50,36 @@ rules_custom_source_name() {
 	printf 'dpistack-custom-%s' "$1"
 }
 
+# rules_ensure_list_files - the update command names disable.conf, modify.conf
+# and drop.conf; a file that is missing makes suricata-update warn on every run
+# ("does not exist"). An empty list with a comment is what an installation that
+# changes nothing needs. A file that exists, written by the config editor or by
+# hand, is never touched.
+rules_ensure_list_files() {
+	local f
+	for f in "$(path_suricata_disable_conf)" "$(path_suricata_modify_conf)" "$(path_suricata_drop_conf)"; do
+		[[ -e "$f" ]] && continue
+		printf '# %s: one entry per line, see the suricata-update documentation\n' "${f##*/}" | dry_run_write "$f"
+	done
+}
+
+rules_list_files_present() {
+	local f
+	for f in "$(path_suricata_disable_conf)" "$(path_suricata_modify_conf)" "$(path_suricata_drop_conf)"; do
+		[[ -e "$f" ]] || return 1
+	done
+}
+
 rules_register_sources() {
 	local data_dir
 	data_dir=$(path_rules_data_dir)
+
+	# The index of sources comes first. Without it every suricata-update call
+	# warns "Source index does not exist" and falls back to the index bundled
+	# with the package, which does not know the sources added since its release.
+	# An index that cannot be fetched is a warning: the bundled one still works.
+	run suricata-update update-sources -D "$data_dir" ||
+		echo "warning: the index of rule sources could not be updated, the index bundled with suricata-update is used" >&2
 
 	local name
 	local IFS=','
@@ -130,6 +157,7 @@ step_rules_check() {
 		actual_enable_hash=""
 	fi
 	[[ "$expected_enable_hash" == "$actual_enable_hash" ]] || return 1
+	rules_list_files_present || return 1
 
 	if [[ "${CONF[RULES_UPDATE]:-on}" == "on" ]]; then
 		[[ -f "$(path_rules_timer_unit)" ]] || return 1
@@ -160,6 +188,7 @@ step_rules_apply() {
 	rules_register_sources
 
 	write_rendered_file "$(path_suricata_enable_conf)" "$(rules_render_enable_conf)"
+	rules_ensure_list_files
 
 	# Not inside $(...): the array has to be set in this shell.
 	rules_update_argv

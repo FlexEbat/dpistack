@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v62** (2026-11-06)
-**Program version: v0.37.4** (slices 0-36 are done, 37 and 38 are partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v63** (2026-11-07)
+**Program version: v0.37.5** (slices 0-36 are done, 37 and 38 are partly done, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.37.5: field report of 2026-11-06 (18.47). EveBox code 14 was an AppArmor profile denying the temp file of SQLite; the `tls` event of Suricata is rendered with `extended: yes` (without it no `sni`, no version); the rules step refreshes the source index first and creates the three empty list files; `diagnose evebox` no longer reports btrfs as out of inodes and checks the temp directory; a suspended (Ctrl+Z) lock holder is named; the HTTPS failure message counts the other events.
 - v0.37.4: the write probe of `diagnose evebox` makes its file with `mktemp` run as the service user (the security check refuses `$$`-named temp files, R194 of 18.46).
 - v0.37.3: `dpistack diagnose evebox` also prints the environment of a start (unit user, owner and mode of the data directory and files, whether the service user can write there, space, inodes, file system, temp directory) and says what it found (18.46). The cause of the code 14 crash on a real host is still open.
 - v0.37.2: the cards of the Overview have a layout (they ran together: no padding, label, value and badge in one line), found by rendering the page in a real browser; v0.37.1 (tech.md only) was not tagged and is part of this version.
 - v0.37.1: tech.md only: every slice has an entry in the style of 18.20, 18.0 is the index of slices (done and remaining), section 17 keeps the assumptions only.
-- v0.37.0: slice 38, third part (18.38). The Overview shows the packet and drop rate of the last hour and repeats the watchdog's stale rules and stale eve.json checks as warnings. Only the interfaces page with the topology is left of slice 38.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v63: v0.37.5. 18.47 (field report: AppArmor and EveBox, `tls` extended, rules index, list files, diagnose fixes); 18.46 closed.
 - v62: v0.37.4. R194 of 18.46: the `$$` temp name in the diagnose probe.
 - v61: v0.37.3. 18.46 (field report: EveBox code 14, the stuck panel version); `diagnose evebox` environment.
 - v60: v0.37.2. R189 of 18.38: the card layout.
 - v59: v0.37.1. Section 17 is the assumptions only; 18.0 is the index of slices; 18.35 to 18.38 retitled and given findings tables (R173 to R188); 18.39 to 18.45 hold the specifications of the slices not started.
-- v58: v0.37.0. The traffic graph and the watchdog warnings on the Overview, D61-D62 of 18.38.
 
 ---
 
@@ -1967,7 +1967,7 @@ Open: everything above. The entry is completed with the review (findings, decisi
 
 ### 18.46 Field report of 2026-11-05: EveBox "code 14" and a panel that stayed on v0.32.1 (v0.37.3)
 
-**Status:** open. The cause of the EveBox crash is not found; this entry records what is known, what was ruled out and what was added so the next run finds it. Source: `dpistack_log.txt` and two screenshots from a Debian 13 host (`debian-home`).
+**Status:** closed by 18.47 (the cause was an AppArmor profile). This entry records what was known, what was ruled out and what was added so the next run finds it. Source: `dpistack_log.txt` and two screenshots from a Debian 13 host (`debian-home`).
 
 | No | Severity | Finding | Fix |
 |---|---|---|---|
@@ -1978,3 +1978,21 @@ Open: everything above. The entry is completed with the review (findings, decisi
 | R194 | medium | the write probe of `diagnose evebox` used a file named with `$$`; the shell security check of the push (`scripts/security.sh`, no `$$`-named temp files) failed on it. Found by the CI, not by the gate that was run before the push, because that run was cut short | the probe is made with `mktemp` run as the service user (`runuser -u <user> -- mktemp`), so the name is not predictable and the file belongs to the user it tests; `scripts/security.sh` is clean and the six bats cases pass |
 
 Open: ask the owner for `sudo dpistack diagnose evebox` (or, with the old version, the commands in the answer of 2026-11-05) and for the text of the update error; the slow disk is a second suspect (EveBox needed 25 s to open its databases at the boot of 07:26, a commit took 6 s at 16:07, and the first start after the boot of 10:14 ended with `pool timed out`).
+
+### 18.47 Field report of 2026-11-06 and 07: the cause of EveBox "code 14", the empty `tls` event, a log review (v0.37.5)
+
+**Status:** done, except R202. Source: `dpistack_log.txt` of a Debian 13 host (`debian-home`, btrfs on `md0`) and the output of the commands run on it one by one. Every cause below was proven on the host, not guessed.
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| R195 | high | EveBox exits at start with `ExecuteMigration(... code 14, 3)`. `strace` showed `open("/var/tmp/etilqs_...", O_CREAT\|O_EXCL) = -1 EACCES` and the kernel log `apparmor="DENIED" operation="mknod" profile="evebox" name="/var/tmp/etilqs_..."`. SQLite writes a temp file there when a transaction is big (the migration of a fresh events database is). A shell probe as the same user succeeded because it ran under another profile. After a reboot with AppArmor off EveBox started | the profile on that host did not come from this installer (no file in `/etc/apparmor.d`), so the installer is not changed for it. A host that keeps the profile can set `SQLITE_TMPDIR=/var/lib/evebox` in a drop-in of `evebox.service` (not tested on the host). `diagnose` should show the denial: R202 |
+| R196 | medium | `diagnose evebox` said "almost no free inodes" on btrfs. btrfs has no fixed inode table; `df -i` shows 0 | the inode count is judged only where the file system reports a total; otherwise the line says `no fixed number of inodes` |
+| R197 | medium | the temp directory check tested `/tmp` only, while SQLite tries `$TMPDIR`, `/var/tmp`, `/usr/tmp`, `/tmp` in this order | the first directory the service user can use is shown with its file system and free space; none usable, or less than 50 MiB free, is a finding |
+| R198 | high | the HTTPS self-test failed on a host where Suricata saw the traffic (319370 packets, no drops, no checksum errors, offloading off). The `tls` events had `"tls":{}` or only the certificate: no `sni`, no version. Replaying one capture: without the nDPI plugin the same; with `extended: yes` under `- tls:` the event has `sni`, `version`, `ja3` | `suricata_render_eve_types_block` renders `tls` as `- tls:` with `extended: yes` (bats cases added) |
+| R199 | medium | every `suricata-update` call warned `Source index does not exist`, and three times `does not exist` for `disable.conf`, `modify.conf`, `drop.conf`, which the update command names. D28 of 18.32 had left these as they are | `update-sources` runs before the sources are enabled (a failed download is a warning, the bundled index is used); the three list files are created empty with one comment line when missing and never touched when they exist; `rules check` is not up to date while one is missing |
+| R200 | low | the lock message said "wait for it to finish" for a holder suspended with Ctrl+Z (a build stopped at 242 of 243), which never ends | a holder in state `T` is named as suspended, with `fg` and `kill` |
+| R201 | low | the HTTPS failure said only "check that Suricata sees the interface" | it counts the other events that appeared in `eve.json` meanwhile: none points to the capture, some point to the parsing and the offloading |
+| R202 | low | `diagnose evebox` does not read the kernel log for AppArmor denials | open |
+
+Messages left as they are, with the reason: `ERROR: Bindings changed` (cbindgen `--verify` in the Suricata Makefile ends in `|| true`), the JSON-C note of the nDPI configure (unit tests only), the libtool note on a static library, `libunwind not found` (stack traces on a crash only; the package name on the RHEL family is not verified).
+

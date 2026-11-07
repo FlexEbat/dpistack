@@ -133,6 +133,75 @@ evebox_owner() {
 	[[ "$output" == *"the unit runs as no-such-user-xyz, but there is no such user"* ]]
 }
 
+# fake_df - a `df` whose answers the test sets: FAKE_DF_ITOTAL and
+# FAKE_DF_IFREE for `df -Pi`, FAKE_DF_LOW_PATH for a path that has 1 MiB free
+# (every other path 10 GiB).
+fake_df() {
+	cat >"$FAKE_BIN/df" <<'FAKE'
+#!/usr/bin/env bash
+echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+if [[ "$1" == -Pi ]]; then
+	echo "fake ${FAKE_DF_ITOTAL:-1000000} 1 ${FAKE_DF_IFREE:-999999} 1% $2"
+elif [[ -n "${FAKE_DF_LOW_PATH:-}" && "$2" == "$FAKE_DF_LOW_PATH" ]]; then
+	echo "fake 20000000 19999000 1024 99% $2"
+else
+	echo "fake 20000000 1000 10485760 1% $2"
+fi
+FAKE
+	chmod +x "$FAKE_BIN/df"
+}
+
+@test "a file system with no fixed inode table (btrfs) is not reported as out of inodes" {
+	evebox_down "$(evebox_owner)"
+	fake_df
+	FAKE_DF_ITOTAL=0 FAKE_DF_IFREE=0 run "$CTL" diagnose evebox
+	[[ "$output" == *"no fixed number of inodes"* ]]
+	[[ "$output" != *"almost no free inodes"* ]]
+	[[ "$output" == *"found: owner, permissions, space, inodes and temp directory look fine"* ]]
+}
+
+@test "a file system that has an inode table and is nearly out of inodes is still named" {
+	evebox_down "$(evebox_owner)"
+	fake_df
+	FAKE_DF_ITOTAL=1000 FAKE_DF_IFREE=5 run "$CTL" diagnose evebox
+	[[ "$output" == *"5 inodes free"* ]]
+	[[ "$output" == *"found: almost no free inodes"* ]]
+}
+
+@test "the temp directory SQLite would use is shown with its file system" {
+	evebox_down "$(evebox_owner)"
+	fake_df
+	run "$CTL" diagnose evebox
+	[[ "$output" == *"temp directory for $(evebox_owner): "* ]]
+	[[ "$output" == *"KiB free)"* ]]
+}
+
+@test "a temp directory with almost no space left is named" {
+	evebox_down "$(evebox_owner)"
+	fake_df
+	local tmp
+	tmp="$(mktemp -d)"
+	TMPDIR="$tmp" FAKE_DF_LOW_PATH="$tmp" run "$CTL" diagnose evebox
+	rmdir "$tmp"
+	[[ "$output" == *"found: less than 50 MiB free in $tmp, the temp directory SQLite uses"* ]]
+}
+
+@test "a service user that can use no temp directory is named" {
+	evebox_down "$(evebox_owner)"
+	# `runuser` succeeds for the directory probe (mktemp) and fails for the
+	# temp directory probe (sh -c).
+	cat >"$FAKE_BIN/runuser" <<'FAKE'
+#!/usr/bin/env bash
+shift 3
+[[ "$1" == sh ]] && exit 1
+exec "$@"
+FAKE
+	chmod +x "$FAKE_BIN/runuser"
+	run "$CTL" diagnose evebox
+	[[ "$output" == *"temp directory for $(evebox_owner): none usable"* ]]
+	[[ "$output" == *"can use none of /var/tmp, /usr/tmp and /tmp"* ]]
+}
+
 @test "a missing data directory is named" {
 	evebox_down "$(evebox_owner)"
 	rm -rf "$DPISTACK_ROOT/var/lib/evebox"

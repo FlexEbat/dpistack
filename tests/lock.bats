@@ -16,6 +16,7 @@ EOF
 }
 
 teardown() {
+	[[ -z "${stopped_pid:-}" ]] || kill -9 "$stopped_pid" 2>/dev/null || true
 	kill "$holder_pid" 2>/dev/null || true
 	wait "$holder_pid" 2>/dev/null || true
 	rm -rf "$DPISTACK_ROOT"
@@ -37,4 +38,28 @@ teardown() {
 	run bash "$REPO_DIR/install.sh" install --dry-run -y
 	[ "$status" -eq 1 ]
 	[[ "$output" == *"another dpistack instance is running"* ]]
+}
+
+@test "a holder stopped with Ctrl+Z is named as suspended, with how to go on" {
+	lock_file="$DPISTACK_ROOT/var/lock/dpistack.lock"
+	sleep 30 &
+	stopped_pid=$!
+	kill -STOP "$stopped_pid"
+	(
+		exec 200>"$lock_file"
+		flock 200
+		echo "$stopped_pid" >"$lock_file"
+		sleep 8
+	) &
+	holder_pid=$!
+
+	for _ in $(seq 1 30); do
+		[[ "$(head -n1 "$lock_file" 2>/dev/null)" == "$stopped_pid" ]] && break
+		sleep 0.1
+	done
+
+	run bash "$REPO_DIR/install.sh" install --dry-run -y
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"another dpistack instance (pid $stopped_pid) is suspended"* ]]
+	[[ "$output" == *"fg"* ]]
 }

@@ -51,6 +51,15 @@ suricata_render_eve_types_block() {
 	echo "      types:"
 	for t in $types; do
 		[[ -z "$t" ]] && continue
+		if [[ "$t" == tls ]]; then
+			# A bare "- tls" makes Suricata 8.0.8 log only the certificate: no sni,
+			# no version, no ja3 (seen on a real host, replaying one capture: empty
+			# with it, "sni":"example.com" with extended: yes). The HTTPS self-test
+			# and every dashboard that reads the server name need those fields.
+			echo "        - tls:"
+			echo "            extended: yes"
+			continue
+		fi
 		echo "        - ${t}"
 	done
 }

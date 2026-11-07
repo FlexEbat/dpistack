@@ -157,6 +157,13 @@ enable_p2p() {
 	[ "$(echo "$output" | jq -r '.[0].status')" = "fail" ]
 }
 
+@test "an https failure says whether eve.json got any other event meanwhile" {
+	FAKE_CURL_SNI=other.example run "$CTL" test https --json
+	[[ "$(echo "$output" | jq -r '.[0].detail')" == *"1 other event(s) appeared in eve.json"* ]]
+	run "$CTL" test https --json
+	[[ "$(echo "$output" | jq -r '.[0].detail')" == *"no event of any kind appeared in eve.json"* ]]
+}
+
 @test "criterion 4: a failed curl and a missing eve.json each give their own reason" {
 	FAKE_CURL_RC=6 run "$CTL" test https --json
 	[ "$status" -eq 1 ]

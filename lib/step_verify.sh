@@ -194,12 +194,19 @@ verify_test_https() {
 		sleep 1
 	done
 
-	local default_if hint=""
+	local default_if hint="" seen
 	default_if=$(ip -4 route show default 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
 	if [[ -n "$default_if" && ",$VERIFY_IFACES," != *",$default_if,"* ]]; then
 		hint="curl goes through $default_if, while Suricata listens on $VERIFY_IFACES: the packets are not seen"
 	else
-		hint="check that Suricata sees the interface curl goes through (IFACES=$VERIFY_IFACES)"
+		# The count tells a capture that sees nothing from a capture whose packets
+		# are not parsed as TLS; both used to end in the same sentence.
+		seen=$(verify_eve_since "$offset" | grep -c '"event_type"' || true)
+		if [[ "${seen:-0}" == 0 ]]; then
+			hint="no event of any kind appeared in eve.json meanwhile, which points to the capture (is Suricata running on $VERIFY_IFACES, is BPF_FILTER empty) and not to the TLS parsing"
+		else
+			hint="$seen other event(s) appeared in eve.json, so packets are captured but none was parsed as this TLS handshake: check the offloading of $VERIFY_IFACES (ethtool -k: gro, lro, checksumming) and the start log of Suricata"
+		fi
 	fi
 	verify_set fail "curl passed, but there is no tls event with sni=$host within ${VERIFY_WAIT} s: $hint"
 }

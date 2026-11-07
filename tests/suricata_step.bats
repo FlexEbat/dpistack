@@ -183,3 +183,15 @@ load_step() {
 	[ "$status" -eq 0 ]
 	[ "$(cat "$ruleset")" = "# real rules" ]
 }
+
+@test "tls is rendered with extended: yes, so the event carries sni and version" {
+	run load_step 'CONF[EVE_TYPES]="alert,tls,dns"' 'suricata_render_eve_types_block'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"        - tls:"$'\n'"            extended: yes"* ]]
+	[[ "$output" == *"        - dns"* ]]
+}
+
+@test "a list without tls does not get a tls entry" {
+	run load_step 'CONF[EVE_TYPES]="alert,dns"' 'suricata_render_eve_types_block'
+	[[ "$output" != *tls* ]]
+}

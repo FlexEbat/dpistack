@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.37.4"
+DPISTACK_VERSION="0.37.5"
 
 : "${DRY_RUN:=0}"
 
@@ -93,6 +93,14 @@ lock_acquire() {
 		local holder
 		holder=$(head -n1 "$lock_file" 2>/dev/null)
 		if [[ "$holder" =~ ^[0-9]+$ ]] && kill -0 "$holder" 2>/dev/null; then
+			# State T is a process stopped with Ctrl+Z: it holds the lock and
+			# does nothing, "wait for it to finish" would never end (seen in a
+			# real install log, a build stopped at 242 of 243).
+			local pstate
+			pstate=$(awk '{print $3}' "/proc/$holder/stat" 2>/dev/null || true)
+			if [[ "$pstate" == T ]]; then
+				die 1 "another dpistack instance (pid $holder) is suspended, probably with Ctrl+Z; type fg in its terminal to continue it, or stop it with: kill $holder"
+			fi
 			die 1 "another dpistack instance is running (pid $holder, lock: $lock_file); close it or wait for it to finish"
 		fi
 		die 1 "another dpistack instance is running (lock: $lock_file); close it or wait for it to finish"
