@@ -94,7 +94,7 @@ export const HINTS = {
   ALERT_MAIL_TO: "Mail recipients, comma separated.",
   ALERT_MAIL_FROM: "Sender address.",
   TEST_HTTPS_URL: "Address for the HTTPS check on the Tests screen.",
-  TEST_BT_LIVE: "Check BitTorrent on live traffic instead of a file.",
+  TEST_BT_LIVE: "Also replay the BitTorrent file out of the capture interface and look for an alert in the live log. Adds one small test rule (sid 9000100) to Suricata.",
   TEST_ON_INSTALL: "Run the checks after installation.",
   ALERT_TG_TOKEN: "Telegram bot token. Stored apart from the main configuration.",
   ALERT_SMTP_URL: "SMTP address, for example smtps://user:pass@host:465. Stored apart.",

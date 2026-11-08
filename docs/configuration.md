@@ -130,6 +130,6 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | Key | Values | Default | Change | Description |
 | --- | --- | --- | --- | --- |
 | `TEST_HTTPS_URL` | string | `https://example.com` | light | Address for the HTTPS check on the Tests screen. (advanced) |
-| `TEST_BT_LIVE` | yes \| no | `no` | light | Check BitTorrent on live traffic instead of a file. (advanced) |
+| `TEST_BT_LIVE` | yes \| no | `no` | light | Also replay the BitTorrent file out of the capture interface and look for an alert in the live log. Adds one small test rule (sid 9000100) to Suricata. (advanced) |
 | `TEST_ON_INSTALL` | yes \| no | `yes` | light | Run the checks after installation. (advanced) |
 

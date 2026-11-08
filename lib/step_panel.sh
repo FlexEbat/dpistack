@@ -295,6 +295,26 @@ step_panel_check() {
 	return 0
 }
 
+# panel_warn_unit_overrides - a drop-in of dpistack-panel.service that sets
+# ExecStart replaces the command line the installer renders, so nothing new in
+# it reaches the panel: a field report (R212 of 18.52) had an old hand-written
+# line with -version 0.32.1, which kept the corner and the update notice at
+# 0.32.1 after a clean reinstall of 0.39.1 and left out -backups-dir. Said once
+# per apply, with the file named; the file is never touched. An empty
+# "ExecStart=" line (a reset) is not a replacement by itself.
+panel_warn_unit_overrides() {
+	local dir f
+	dir="$(path_panel_service_unit).d"
+	[[ -d "$dir" ]] || return 0
+	for f in "$dir"/*.conf; do
+		[[ -e "$f" ]] || continue
+		if grep -Eq '^[[:space:]]*ExecStart=[^[:space:]]' "$f"; then
+			log "WARN" "panel: $f sets ExecStart and replaces the command line of the installer; the version, the options and the paths it renders do not reach the panel. Move the file away and use BIND_ADDR and LAN_CIDR in dpistack.conf instead"
+		fi
+	done
+	return 0
+}
+
 step_panel_apply() {
 	if ! getent passwd "$PANEL_USER" >/dev/null 2>&1; then
 		run useradd --system --no-create-home --shell /usr/sbin/nologin "$PANEL_USER" || return 1
@@ -389,6 +409,7 @@ step_panel_apply() {
 	local unit
 	unit=$(panel_render_service) || return 1
 	write_rendered_file "$(path_panel_service_unit)" "$unit"
+	panel_warn_unit_overrides
 	run systemctl daemon-reload || return 1
 	run systemctl enable --now "$PANEL_SERVICE" || return 1
 	if [[ "$restart" == "1" ]]; then

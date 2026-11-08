@@ -77,6 +77,7 @@ path_suricata_modify_conf() { echo "${DPISTACK_ROOT}/etc/suricata/modify.conf"; 
 path_suricata_drop_conf() { echo "${DPISTACK_ROOT}/etc/suricata/drop.conf"; }
 path_suricata_local_rules() { echo "${DPISTACK_ROOT}/etc/suricata/rules/local.rules"; }
 path_suricata_ruleset() { echo "${DPISTACK_ROOT}/var/lib/suricata/rules/suricata.rules"; }
+path_suricata_test_rules() { echo "${DPISTACK_ROOT}/var/lib/suricata/rules/dpistack-test.rules"; }
 path_suricata_eve_json() { echo "${DPISTACK_ROOT}/var/log/suricata/eve.json"; }
 path_suricata_logrotate() { echo "${DPISTACK_ROOT}/etc/logrotate.d/suricata"; }
 path_ndpi_src_dir() { echo "${DPISTACK_ROOT}/usr/local/src/dpistack-ndpi"; }

@@ -230,3 +230,36 @@ load_step() {
 	without=$(load_step 'CONF[EVE_REDIS]=""' 'suricata_render_eve_log_block' 2>/dev/null)
 	[ "$with" = "$without" ]
 }
+
+@test "R211: TEST_BT_LIVE=yes lists the test rule file in suricata.yaml and no stays as it was" {
+	run load_step 'CONF[TEST_BT_LIVE]="yes"' 'suricata_render_yaml'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *$'rule-files:\n  - suricata.rules\n  - dpistack-test.rules'* ]]
+	run load_step 'CONF[TEST_BT_LIVE]="no"' 'suricata_render_yaml'
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"dpistack-test.rules"* ]]
+}
+
+@test "R211: with Suricata in a container the test rule file is not listed" {
+	run load_step 'CONF[TEST_BT_LIVE]="yes"; CONF[SURICATA_RUNTIME]="docker"' 'suricata_render_yaml'
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"dpistack-test.rules"* ]]
+}
+
+@test "R211: the test rule matches the handshake that is in the test pcap, with no address condition" {
+	run load_step '' 'suricata_render_test_rules'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *'alert tcp any any -> any any'* ]]
+	[[ "$output" == *'|13|BitTorrent protocol'* ]]
+	[[ "$output" == *'BitTorrent'*'sid:9000100'* ]]
+	LC_ALL=C grep -q 'BitTorrent protocol' "$REPO_DIR/tests/data/bittorrent.pcap"
+}
+
+@test "R211: the test rule file is written only for TEST_BT_LIVE=yes" {
+	run load_step 'CONF[TEST_BT_LIVE]="no"' 'suricata_write_test_rules; [[ ! -e "$(path_suricata_test_rules)" ]] && echo none'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *none* ]]
+	run load_step 'CONF[TEST_BT_LIVE]="yes"' 'suricata_write_test_rules; cat "$(path_suricata_test_rules)"'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"sid:9000100"* ]]
+}
