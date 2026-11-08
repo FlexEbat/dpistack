@@ -2413,7 +2413,9 @@ audit_wanted() {
 	start | stop | restart | reload | config-write | config-revert | self-update | reconfigure | rules-update | rules-group | rules-sid | mode-confirm | mode-rollback | fw | panel-passwd | test) return 0 ;;
 	settings) [[ "$sub" == set || "$sub" == secret ]] ;;
 	rules-sources | iface | users) [[ -n "$sub" && "$sub" != list ]] ;;
-	exceptions) [[ "$sub" == add || "$sub" == remove || "$sub" == prune ]] ;;
+	# prune is not listed: the watchdog runs it every tick and writes its own
+	# line, only when it removed something (exc_prune).
+	exceptions) [[ "$sub" == add || "$sub" == remove ]] ;;
 	backup) [[ "$sub" == create || "$sub" == restore ]] ;;
 	mode) [[ "$sub" == ids || "$sub" == ips ]] ;;
 	*) return 1 ;;

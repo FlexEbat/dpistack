@@ -258,3 +258,16 @@ print(a["days_left"], a["expired"], b["days_left"], b["expired"], b["count"], b[
 	"$CTL" exceptions remove suppress:81:src:10.0.0.1 >/dev/null 2>&1
 	[ "$(jq -r 'select(.action == "cli exceptions") | .target' "$audit" | tr '\n' ' ')" = "add remove " ]
 }
+
+@test "criterion 14: the watchdog removes an expired entry on its own run, and logs it only when it did" {
+	{
+		echo "# dpistack: added=2020-01-01 expires=2020-02-01 by=old"
+		echo 'suppress gen_id 1, sig_id 95, track by_src, ip 10.9.9.6'
+	} >>"$THR"
+	audit="$DPISTACK_ROOT/var/lib/dpistack/audit/audit.jsonl"
+	DPISTACK_BIN="$CTL" run bash "$REPO_DIR/bin/dpistack-watch"
+	! grep -q 'sig_id 95' "$THR"
+	[ "$(jq -r 'select(.action == "cli exceptions") | .detail' "$audit" | tr '\n' '|')" = "removed 1 expired (exit 0)|" ]
+	DPISTACK_BIN="$CTL" run bash "$REPO_DIR/bin/dpistack-watch"
+	[ "$(jq -r 'select(.action == "cli exceptions")' "$audit" | grep -c action)" -eq 1 ]
+}

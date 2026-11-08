@@ -407,6 +407,7 @@ exc_prune() {
 		return 0
 	fi
 	exc_commit "$staged"
+	audit_append "${SUDO_USER:-root}" "cli exceptions" prune ok "removed $dropped expired (exit 0)"
 	echo "removed $dropped expired"
 }
 
