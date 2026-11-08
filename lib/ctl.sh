@@ -37,6 +37,8 @@ Usage: dpistack <command> [arguments]
   rules-group enable|disable <group>
   rules-sid enable|disable <sid>
   rules-search <query>              up to 50 rules by sid or msg
+  exceptions list [--json] | add suppress|limit <sid> [--track src|dst] [--ip ADDR] [--count N --seconds S] [--days N|--never] [--note TEXT] | remove <id> | prune
+                                     what Suricata stays silent about or reports less often; expiry is optional
   iface list|add|remove [name]        capture interfaces
   mode ids|ips [--confirm-timeout S] Suricata mode; ips rolls back by itself without mode-confirm (default 120 s)
   mode status [--json]               mode, method and countdown
@@ -52,7 +54,7 @@ Usage: dpistack <command> [arguments]
   version                            bundle version
 
 Config names: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
-                enable.conf disable.conf modify.conf drop.conf
+                enable.conf disable.conf modify.conf drop.conf threshold.config
 
 Components: suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana panel watch rules
 
@@ -390,6 +392,7 @@ config_path() {
 	disable.conf) path_suricata_disable_conf ;;
 	modify.conf) path_suricata_modify_conf ;;
 	drop.conf) path_suricata_drop_conf ;;
+	threshold.config) path_suricata_threshold ;;
 	*) return 1 ;;
 	esac
 }
@@ -455,6 +458,18 @@ suricata_check_set() {
 	rulepath="$tmp/rules"
 	((docker)) && rulepath="/dpistack-check/rules"
 	sed "s#^default-rule-path:.*#default-rule-path: $rulepath#" "$yaml" >"$tmp/suricata.yaml" 2>/dev/null
+	# The threshold file is checked in its own place: the candidate when that
+	# is what changes, the live one otherwise (the yaml names an absolute path).
+	local thr="$tmp/threshold.config"
+	if [[ "$name" == "threshold.config" ]]; then
+		cp "$staged" "$thr"
+	elif [[ -f "$(path_suricata_threshold)" ]]; then
+		cp "$(path_suricata_threshold)" "$thr"
+	else
+		: >"$thr"
+	fi
+	((docker)) && thr="/dpistack-check/threshold.config"
+	sed -i "s#^threshold-file:.*#threshold-file: $thr#" "$tmp/suricata.yaml"
 	if ((docker)); then
 		docker_compose_argv
 		"${DOCKER_COMPOSE_ARGV[@]}" run --rm --no-deps -v "$tmp:/dpistack-check" suricata -T -c /dpistack-check/suricata.yaml -l /dpistack-check 2>&1
@@ -524,6 +539,7 @@ apply_config() {
 	ntopng.conf)
 		cmd_control restart ntopng
 		;;
+	threshold.config) exc_reload ;;
 	*) cmd_rules_update ;;
 	esac
 }
@@ -2036,7 +2052,7 @@ cmd_diagnose() {
 # (the program version, the sha256 and the mode of every file). Logs and
 # secrets.conf are not in it.
 
-BACKUP_FILES=(dpistack.conf suricata.yaml evebox.yaml ntopng.conf local.rules enable.conf disable.conf modify.conf drop.conf users.json)
+BACKUP_FILES=(dpistack.conf suricata.yaml evebox.yaml ntopng.conf local.rules enable.conf disable.conf modify.conf drop.conf threshold.config users.json)
 
 backup_live_path() {
 	case "$1" in
@@ -2397,6 +2413,7 @@ audit_wanted() {
 	start | stop | restart | reload | config-write | config-revert | self-update | reconfigure | rules-update | rules-group | rules-sid | mode-confirm | mode-rollback | fw | panel-passwd | test) return 0 ;;
 	settings) [[ "$sub" == set || "$sub" == secret ]] ;;
 	rules-sources | iface | users) [[ -n "$sub" && "$sub" != list ]] ;;
+	exceptions) [[ "$sub" == add || "$sub" == remove || "$sub" == prune ]] ;;
 	backup) [[ "$sub" == create || "$sub" == restore ]] ;;
 	mode) [[ "$sub" == ids || "$sub" == ips ]] ;;
 	*) return 1 ;;
@@ -2473,6 +2490,7 @@ ctl_dispatch() {
 	rules-group) cmd_rules_group "$@" ;;
 	rules-sid) cmd_rules_sid "$@" ;;
 	rules-search) cmd_rules_search "$@" ;;
+	exceptions) cmd_exceptions "$@" ;;
 	iface) cmd_iface "$@" ;;
 	mode) cmd_mode "$@" ;;
 	mode-confirm) cmd_mode_confirm "$@" ;;

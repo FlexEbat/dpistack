@@ -261,6 +261,7 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `RULES_GROUPS` | `emerging-p2p,emerging-policy` | the rule groups turned on in `enable.conf` |
 | `RULES_UPDATE` | `on` | `on` `off` |
 | `RULES_UPDATE_CALENDAR` | `weekly` | the systemd `OnCalendar` syntax |
+| `EXCEPTIONS_DEFAULT_DAYS` | `30` | `0..3650`; how many days a new exception lasts when `exceptions add` gets neither `--days` nor `--never`; `0` means it never expires (slice 40) |
 | `NTOPNG_IFACES` | as `IFACES` | names, comma separated |
 | `NTOPNG_PORT` | `3000` | 1..65535 |
 | `EVEBOX_DB` | `sqlite` | `sqlite` `elasticsearch` |
@@ -373,6 +374,10 @@ The only place of the privileged actions of the panel and the watchdog. It works
 | `rules-sources list [--enabled]\|enable\|disable\|add-url\|remove <arg>` | rule sources; `list --enabled` shows the enabled ones |
 | `rules-group enable\|disable <group>` | edits `enable.conf` |
 | `rules-sid enable\|disable <sid>` | edits `disable.conf`, `sid` is a number only |
+| `exceptions list [--json]` | the entries of `threshold.config` with their data (18.40); `--json`: `{default_days,today,entries:[{id,kind,sid,track,ip,count,seconds,added,expires,days_left,expired,by,note}]}` |
+| `exceptions add suppress\|limit <sid> [--track src\|dst] [--ip ADDR] [--count N --seconds S] [--days N\|--never] [--note TEXT] [--by NAME]` | adds one entry, checks the file with `suricata -T`, reloads Suricata; prints the id. `suppress` with `--ip` and `--track` is silent for one address, without them for every address (a warning says so); `limit` allows at most N alerts per S seconds for each address of the side `--track`; no `--days` and no `--never` means `EXCEPTIONS_DEFAULT_DAYS` |
+| `exceptions remove <id>` | removes the entry with that id (`kind:sid:track:ip`, `any` for none) |
+| `exceptions prune` | removes the entries past their last day (the watchdog runs it) |
 | `rules-search <q>` | up to 50 rules by `sid` or the text of `msg` |
 | `iface list\|add\|remove <name>` | edits `IFACES`, calls `reconfigure` |
 | `mode ids\|ips [--confirm-timeout SEC]` | switches the mode; for `ips` it rolls back by itself if `mode-confirm` does not come within `SEC` (10-3600, 120 by default); `mode status [--json]` shows the mode, the method and the seconds left |
@@ -404,9 +409,9 @@ Arguments: letters, digits and `. _ : = / @ + , -` and a space are allowed (`rul
 
 `panel-passwd` calls the `argon2` CLI (the package `argon2`, installed by the installer): `-id -t 3 -m 14 -p 4 -l 32 -e` (16 MiB: the check runs inside the panel; 64 MiB did not fit into the `MemoryMax=64M` that the panel unit had before v0.23.0, and the panel keeps refusing a hash heavier than 32 MiB and asks to set the password again), a salt of 16 random bytes. The password goes to stdin, not to the arguments. The line `$argon2id$...` is written into `panel.auth`, permissions `0640`, group `dpistack`; while the user does not exist yet (the first install) the group is set by the `panel` step. The same code writes the password at an install from the menu.
 
-The allowed `<name>` for configs: `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `dpistack.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`.
+The allowed `<name>` for configs: `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `dpistack.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`, `threshold.config`.
 
-Checks at `config-write`: `suricata.yaml`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf` pass `suricata -T` on a temporary copy of the set; `dpistack.conf` passes the schema check of 4.3; `evebox.yaml` and `ntopng.conf` are checked for non-emptiness only: EveBox and ntopng have no config check mode (assumption A8 closed). For `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf` `suricata -T` checks that the set stays workable, but these files themselves are read only by `suricata-update`. A failed check: nothing changes, code `3`, the output of the check goes to stdout.
+Checks at `config-write`: `suricata.yaml`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`, `threshold.config` pass `suricata -T` on a temporary copy of the set; `dpistack.conf` passes the schema check of 4.3; `evebox.yaml` and `ntopng.conf` are checked for non-emptiness only: EveBox and ntopng have no config check mode (assumption A8 closed). For `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf` `suricata -T` checks that the set stays workable, but these files themselves are read only by `suricata-update`. A failed check: nothing changes, code `3`, the output of the check goes to stdout.
 
 Exit codes: `0` success, `1` error, `2` misuse, `3` the check failed or the action is unavailable in this mode, `4` the component is missing, `5` a name outside the list.
 
@@ -587,7 +592,7 @@ The sections of the config screen (the "group" column is the column of `lib/sche
 | `capture` | Capture and mode | `IFACES`, `BPF_FILTER`, `HOME_NET`, `SURICATA_MODE`, `IPS_METHOD`, `IPS_NFQ_CHAINS`, `NTOPNG_IFACES` |
 | `components` | Components and sources | `SURICATA_RUNTIME`, `EVEBOX_RUNTIME`, `NTOPNG_RUNTIME`, `SURICATA_SOURCE`, `SURICATA_VERSION`, `NDPI_ENABLE`, `NDPI_SOURCE`, `NDPI_VERSION`, `NTOPNG_VERSION`, `EVEBOX_VERSION`, `PIN_VERSIONS`, `PANEL_SOURCE` |
 | `eve` | EVE and storage | `EVE_FILE`, `EVE_TYPES`, `EVE_SYSLOG`, `EVE_REDIS`, `EVE_ROTATE`, `EVE_KEEP`, `EVE_MAX_SIZE_MB`, `STATS_INTERVAL_SEC`, `EVEBOX_DB`, `EVEBOX_ES_URL`, `EVEBOX_RETENTION_DAYS` |
-| `rules` | Rules | `RULES_SOURCES`, `RULES_URLS`, `RULES_GROUPS`, `RULES_UPDATE`, `RULES_UPDATE_CALENDAR` |
+| `rules` | Rules | `RULES_SOURCES`, `RULES_URLS`, `RULES_GROUPS`, `RULES_UPDATE`, `RULES_UPDATE_CALENDAR`, `EXCEPTIONS_DEFAULT_DAYS` |
 | `access` | Access | `ACCESS_MODE`, `BIND_ADDR`, `LAN_CIDR`, `PANEL_PORT`, `PANEL_RUNTIME`, `PANEL_EDITION`, `NTOPNG_PORT`, `EVEBOX_PORT`, `NGINX_MANAGE`, `NGINX_TLS`, `NGINX_CERT`, `NGINX_KEY`, `FIREWALL_MANAGE` |
 | `metrics` | Metrics | `METRICS_EXPORT`, `METRICS_BACKEND`, `METRICS_BACKEND_RUNTIME`, `METRICS_BACKEND_PORT`, `METRICS_RETENTION`, `NODE_EXPORTER_*`, `GRAFANA_*` |
 | `watch` | Watch and alerts | `WATCH_ENABLE`, every `WATCH_*`, `ALERT_CHANNELS`, `ALERT_TG_CHAT_ID`, `ALERT_TG_TOKEN`, `ALERT_MAIL_TO`, `ALERT_MAIL_FROM`, `ALERT_SMTP_URL` |

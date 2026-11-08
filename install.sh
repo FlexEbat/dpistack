@@ -53,6 +53,8 @@ step_call() {
 	fi
 	"step_${name}_${fn}" "$@"
 }
+# shellcheck source=lib/exceptions.sh
+source "$LIB_DIR/exceptions.sh"
 # shellcheck source=lib/ctl.sh
 source "$LIB_DIR/ctl.sh"
 

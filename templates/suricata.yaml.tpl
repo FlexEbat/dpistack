@@ -1833,7 +1833,7 @@ rule-files:
 
 classification-file: /etc/suricata/classification.config
 reference-config-file: /etc/suricata/reference.config
-# threshold-file: /etc/suricata/threshold.config
+threshold-file: /etc/suricata/threshold.config
 
 ##
 ## Include other configs
