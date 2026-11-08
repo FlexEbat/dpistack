@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v68** (2026-11-07)
-**Program version: v0.39.2** (slices 0-38 are done except the alert bell of 37, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v69** (2026-11-08)
+**Program version: v0.40.0** (slices 0-39 are done except the alert bell of 37, 40-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.40.0: slice 39, the Traffic screen (18.39): devices, applications, domains and connections from the newest `flow`, `dns` and `tls` events, a filter, one device in detail and a link to ntopng; no new endpoint, no change to the Suricata config.
 - v0.39.2: R211 and R212 of 18.52, from a field report: the live BitTorrent check brings its own rule (it could not pass on a healthy stand), and the installer warns about a drop-in that replaces the `ExecStart` of the panel unit.
 - v0.39.1: R210 of 18.51: the refusal of a non-empty `EVE_REDIS` (v0.37.6) stopped the update on a config that had a value; it is now a warning and the value is ignored.
 - v0.39.0: slice 38, the Network screen (18.50): the capture chain (host, capture interfaces, Suricata, eve.json, EveBox) and the interface table, from answers that exist; no new endpoint.
 - v0.38.0: slice 37, the top bar (18.49). Host name, overall state and mode as chips on every screen; a user menu (Account, Theme where the page has both palettes, Sign out); `GET /api/system` has `hostname`.
-- v0.37.6: R202 and R193 of 18.47 and 18.46 (18.48). `diagnose evebox` reads the kernel log for AppArmor and SELinux denials naming evebox; the setup prompts say what an empty optional value means; `EVE_SYSLOG=yes` now renders a second `eve-log` output to syslog (it was never read); `EVE_REDIS` with a value was refused (it was never read either); replaced in v0.39.1 by a warning, see 18.51.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v69: v0.40.0. 18.39 (slice 39, the Traffic screen) written; the slice 39 row of 18.0; decisions D74 to D77.
 - v68: v0.39.2. 18.52 (R211, R212); the description of the live BitTorrent check in section 10 and the `TEST_BT_LIVE` row.
 - v67: v0.39.1. 18.51 (R210); the `EVE_REDIS` decision of 18.48 (D63 there) is replaced.
 - v66: v0.39.0. 18.50 (slice 38, the Network screen); the slice 38 row and its Open list updated.
 - v65: v0.38.0. 18.49 (slice 37, the top bar); `hostname` in the `GET /api/system` row.
-- v64: v0.37.6. 18.48 (R202, R193, the two unread EVE keys); 18.1 note on `EVE_SYSLOG` closed.
 
 ---
 
@@ -911,7 +911,7 @@ Decisions (the owner says "choose yourself"): the fonts are bundled into the bin
 - The `status` polling is no more often than once in 10 seconds and only while the tab is visible. SSE is opened only on the logs and events screens and is closed when you leave the screen.
 - Authentication: one administrator, argon2id, a limit of sign-in attempts (5 per 5 minutes per IP), a session of 12 hours. The sign-in cannot be turned off.
 
-**The interface:** a single page, a hash router. The screens: Overview, Components, Settings, Configs, Rules, Logs, Events, Metrics, Tests, Alerts. The `full` edition is dark; `lite` follows `prefers-color-scheme`; adaptive layout. The charts are drawn by an own function on inline SVG. The static files are served with gzip. The config editor is a plain `<textarea>` with a monospace font, the buttons "Check", "Save", "Save and apply", "Roll back". Dangerous actions (stopping a component, switching to IPS) ask for a confirmation. No external fonts, scripts or images (the fonts and the icons are inside the binary) and no inline scripts or styles (the CSP policy); `textContent` instead of `innerHTML`.
+**The interface:** a single page, a hash router. The screens: Overview, Network, Traffic, Components, Settings, Configs, Rules, Logs, Events, Metrics, Tests, Alerts. The `full` edition is dark; `lite` follows `prefers-color-scheme`; adaptive layout. The charts are drawn by an own function on inline SVG. The static files are served with gzip. The config editor is a plain `<textarea>` with a monospace font, the buttons "Check", "Save", "Save and apply", "Roll back". Dangerous actions (stopping a component, switching to IPS) ask for a confirmation. No external fonts, scripts or images (the fonts and the icons are inside the binary) and no inline scripts or styles (the CSP policy); `textContent` instead of `innerHTML`.
 
 ---
 
@@ -1199,7 +1199,7 @@ One row per slice. **Done** means the Definition of Done of section 14 was met; 
 | 36 | backup and restore | done | v0.33.0 | 18.36 |
 | 37 | the shell of the panel | **done except the bell.** Done: the corner, Build info, the look, readable Audit actions, the menu in groups, routes by hash, the folded menu. Top bar (host, state, mode, user menu, theme) in v0.38.0. Remaining: the alert bell (slice 43) | v0.32.0, v0.32.1, v0.34.0, v0.38.0 | 18.35, 18.37, 18.49 |
 | 38 | Overview v2, system health and topology | **done.** `GET /api/system`, host cards, interfaces table, state cards, warnings, alerts by severity, latest alerts, traffic graph, watchdog warnings, and the Network screen (the capture chain and the interfaces table); docker and systemd state is decided in D70 | v0.35.0 to v0.37.0, v0.39.0 | 18.38, 18.50 |
-| 39 | Traffic Explorer | not started |  | 18.39 |
+| 39 | Traffic Explorer | **done.** The Traffic screen: devices, applications, domains, connections, a text filter, one device in detail, a link to ntopng; built in the browser from `/api/eve` (flow, dns, tls), no new endpoint | v0.40.0 | 18.39 |
 | 40 | the Events workspace and exceptions | not started |  | 18.40 |
 | 41 | Rules v2 | not started |  | 18.41 |
 | 42 | the IPS page | not started |  | 18.42 |
@@ -1881,17 +1881,29 @@ Third part (v0.37.0), decisions ("choose yourself"):
 
 Tests: three more cases in `overview-model.test.mjs` and `poll.test.mjs`.
 
-### 18.39 Slice 39: Traffic Explorer (not started)
+### 18.39 Slice 39: Traffic Explorer (v0.40.0)
 
-**Status:** not started. **Remaining:** all of it.
+**Status:** done. The screen is called Traffic (menu group Monitoring, between Network and Events, the permission `view`). It only reads.
 
-**What it does:** devices (by IP and MAC when seen), applications (nDPI `app_proto`/`ndpi` fields), domains (DNS, TLS SNI), connections (flow events), per-device detail, filters and a link to ntopng. The data comes only from EVE events and the counters the panel already reads; where the data is not there (no flow events, no nDPI) the page says exactly that.
+**What it does:** four tabs over the newest events. Devices: one row per address with connections, sent, received, application names, the number of other addresses and the last time seen; a click on a row opens that device (its totals, its applications, its domains) and switches to its connections. Applications: connections and traffic per `app_proto`, a connection with none is counted as `unknown` and not hidden. Domains: what DNS queries asked for and what TLS handshakes named (the SNI), with the hosts that asked. Connections: the flow events as rows. One text filter works on every tab (address, port, protocol, application, domain). A link opens ntopng for per host history. Where the data is not there the page says exactly that: the event view is off, no `eve.json` yet, no `flow` in `EVE_TYPES`, no flow ended yet, no `app_proto`, no DNS events, no TLS events, and that MAC addresses are not in the events.
 
 | No | Severity | Finding | Fix |
 |---|---|---|---|
-| | | no review yet: the table is filled in when the slice is done | |
+| R213 | medium | the ntopng link fell back to port 3000 when `/api/settings` did not answer or had no `NTOPNG_PORT`, so the link could point at a port nothing listens on; found by the test of `ntopngUrl` written for the slice | `ntopngUrl` returns no link unless `NTOPNG_PORT` is in the answer and valid; `NTOPNG_ENABLE=no` gives none either |
+| R214 | low | a screen that adds listeners to elements that stay in the page (the tabs, the filter, the switch) stacks them every time the user comes back to it | the stop function of the screen removes the three listeners, and the filter and the switch start empty |
 
-Open: everything above. The entry is completed with the review (findings, decisions, tests, what was not checked) when the slice is done.
+Decisions ("choose yourself"):
+
+| id | decision |
+| --- | --- |
+| D74 | **No new endpoint.** The screen reads `GET /api/eve?type=flow|dns|tls&limit=500` and `GET /api/settings` (for the ntopng port), polls every 10 s while it is open, and builds every table in `panel/web/modules/traffic-model.js`. The server keeps 500 events per type (4.8), so every figure means "in the newest events", never "all time"; the screen does not claim more |
+| D75 | **A device is a private address.** The panel does not read `HOME_NET`, so private, link local and loopback addresses are devices and a switch ("External addresses") adds the rest. Traffic is counted from each end's own side: in a flow event `src_ip` started the flow, so `bytes_toserver` is what it sent and `bytes_toclient` what it received, and the other end gets the opposite |
+| D76 | **No MAC addresses.** Suricata writes them only with the `ethernet` option of `eve-log`, which the installer does not set; turning it on changes the rendered `suricata.yaml` and is a decision for the owner, not part of this slice. The page says that devices are told apart by IP address only. If the option is switched on later the model can read `ether.src_mac` and `ether.dest_mac` |
+| D77 | **Application names come only from `app_proto`.** There are no separate nDPI fields in EVE (A2, 4.7); a flow whose `app_proto` is empty or `failed` is `unknown`. nDPI categories and risks are not shown on this screen |
+
+Tests: `panel/web/test/traffic.test.mjs` (15): the local address ranges, the flow rows (a flow without both addresses, a failed `app_proto`, bad byte counts), the direction of the bytes at both ends and the external switch, the order of the devices, applications and peers without repeats, the `unknown` application, domains (DNS answers do not count, TLS joins the same name, case and the trailing dot), the filters, the detail of one device, every message of `availability`, `ntopngUrl` (host, https, IPv6, disabled, bad port, no settings), the view with text, device and switch, and the page (view, menu entry in Monitoring, route, element ids). The menu test "every screen is in exactly one group" covers the new entry.
+
+Open: nothing was rendered in a browser (none is available in the build environment), so the look of the tabs, the clickable rows and the narrow layout is checked only by the design rules; it was not run against a real `eve.json` from a stand, only against events built from the documented fields; a flow event is written when the flow ends, so a long connection shows up late; the tables show 100 rows and ask for the filter beyond that; with Suricata in a container or the events view off the screen shows the reason and nothing else; the link to ntopng uses the host name of the address bar and `NTOPNG_PORT`, which was not opened on a stand.
 
 ### 18.40 Slice 40: the Events workspace and exceptions (not started)
 

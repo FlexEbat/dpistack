@@ -126,6 +126,7 @@ tr:last-child td { border-bottom: 0; }
 th { background: var(--card-2); color: var(--muted); font-weight: 500; font-size: var(--text-xs); line-height: var(--lh-xs); }
 tbody tr td { transition: background-color 300ms var(--ease); }
 tbody tr:hover td { background: var(--card-2); }
+tr.clickable { cursor: pointer; }
 .overall { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-100); padding: var(--s-300); }
 .overall-text { font-size: var(--text-xl); line-height: var(--lh-xl); font-weight: 600; letter-spacing: -0.01em; }
 .muted.empty { padding: var(--s-300); background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-2xl); }

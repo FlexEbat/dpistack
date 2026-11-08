@@ -87,7 +87,7 @@ Every setting is described in [docs/configuration.md](docs/configuration.md).
 
 ## The panel
 
-Eleven screens: Overview, Network, Components, Settings, Configs, Rules, Logs, Events, Metrics, Tests and Alerts. The Settings screen is built from the same schema as the installer, so it shows every setting, checks it before applying it, flags changes that start a rebuild and warns about busy ports with a free one to take. Both editions have exactly the same features. More: [docs/dashboard.md](docs/dashboard.md).
+Twelve screens: Overview, Network, Traffic, Components, Settings, Configs, Rules, Logs, Events, Metrics, Tests and Alerts. The Settings screen is built from the same schema as the installer, so it shows every setting, checks it before applying it, flags changes that start a rebuild and warns about busy ports with a free one to take. Both editions have exactly the same features. More: [docs/dashboard.md](docs/dashboard.md).
 
 ## Listening address and access
 
