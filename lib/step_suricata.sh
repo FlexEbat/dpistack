@@ -147,6 +147,7 @@ suricata_render_yaml() {
 		"HOME_NET=$(suricata_home_net_value)" \
 		"STATS_INTERVAL=${CONF[STATS_INTERVAL_SEC]:-30}" \
 		"EVE_LOG_BLOCK=$(suricata_render_eve_log_block)" \
+		"RULE_FILES_EXTRA=$(suricata_render_rule_files_extra)" \
 		"AF_PACKET_BLOCK=$(suricata_render_af_packet_block)" \
 		"PLUGINS_BLOCK=$(suricata_render_plugins_block)" \
 		"COMMAND_SOCKET=$(suricata_command_socket)"
@@ -155,6 +156,41 @@ suricata_render_yaml() {
 # suricata_command_socket - where Suricata creates its command socket, the
 # one `dpistack reload` and logrotate talk to. In a container it lies in
 # the mounted run directory, where docker_suricata_reload looks for it.
+# The live BitTorrent check (TEST_BT_LIVE=yes) brings its own rule. The
+# replayed pcap has private addresses on both ends, so the Emerging Threats
+# rules, written for a $HOME_NET to $EXTERNAL_NET direction, never match it on
+# a live Suricata (R211 of 18.52); the offline check passes only because it
+# adds a rule of its own to a temporary config. The rule is in a file of its
+# own, listed in suricata.yaml only while the key is "yes".
+suricata_test_rules_wanted() {
+	# Not in a container: the check is skipped there and the file would not be mounted.
+	[[ "${CONF[TEST_BT_LIVE]:-no}" == "yes" && "${CONF[SURICATA_RUNTIME]:-native}" != "docker" ]]
+}
+
+suricata_render_test_rules() {
+	cat <<'RULES'
+# dpistack: the live BitTorrent check (TEST_BT_LIVE=yes). Do not edit: the installer writes this file.
+alert tcp any any -> any any (msg:"dpistack test: BitTorrent handshake (live check)"; content:"|13|BitTorrent protocol"; sid:9000100; rev:1;)
+RULES
+}
+
+suricata_render_rule_files_extra() {
+	suricata_test_rules_wanted && echo "  - dpistack-test.rules"
+	return 0
+}
+
+# suricata_write_test_rules - writes the file before suricata -T looks at the
+# yaml that lists it; nothing when the key is not "yes".
+suricata_write_test_rules() {
+	suricata_test_rules_wanted || return 0
+	if [[ "${DRY_RUN:-0}" == "1" ]]; then
+		printf '+ write %s\n' "$(path_suricata_test_rules)"
+		return 0
+	fi
+	mkdir -p "$(dirname "$(path_suricata_test_rules)")" || return 1
+	write_rendered_file "$(path_suricata_test_rules)" "$(suricata_render_test_rules)"
+}
+
 suricata_command_socket() {
 	if docker_wanted suricata; then
 		echo "/var/run/suricata/suricata-command.socket"
@@ -447,6 +483,11 @@ step_suricata_check() {
 	actual_yaml_hash=$(state_hash_content <"$yaml_path")
 	[[ "$expected_yaml_hash" == "$actual_yaml_hash" ]] || return 1
 
+	if suricata_test_rules_wanted; then
+		[[ -f "$(path_suricata_test_rules)" ]] || return 1
+		[[ "$(suricata_render_test_rules | state_hash_content)" == "$(state_hash_content <"$(path_suricata_test_rules)")" ]] || return 1
+	fi
+
 	[[ -f "$logrotate_path" ]] || return 1
 	local expected_lr_hash actual_lr_hash
 	expected_lr_hash=$(suricata_render_logrotate | state_hash_content)
@@ -569,6 +610,7 @@ step_suricata_apply() {
 	# it replaces anything: a template written for another release series
 	# (7.0 against an 8.0 binary, say) stops the step here, with Suricata's
 	# own words, and not at the first start of the service.
+	suricata_write_test_rules || return 1
 	local rendered_yaml
 	rendered_yaml=$(suricata_render_yaml) || return 1
 	if [[ "${DRY_RUN:-0}" != "1" ]]; then

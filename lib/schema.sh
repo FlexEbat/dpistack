@@ -176,7 +176,7 @@ schema_init() {
 	_schema_add 'ALERT_MAIL_FROM|free|||advanced|watch|watch|light|no'
 
 	_schema_add 'TEST_HTTPS_URL|free|https://example.com||advanced|tests|verify|light|no'
-	_schema_add 'TEST_BT_LIVE|enum|no|yes,no|advanced|tests|verify|light|no'
+	_schema_add 'TEST_BT_LIVE|enum|no|yes,no|advanced|tests|suricata|light|no'
 	_schema_add 'TEST_ON_INSTALL|enum|yes|yes,no|advanced|tests|verify|light|no'
 
 	# Secrets: live in secrets.conf, never dpistack.conf, never printed.

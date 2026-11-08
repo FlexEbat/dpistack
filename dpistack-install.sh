@@ -1505,7 +1505,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.39.1"
+DPISTACK_VERSION="0.39.2"
 
 : "${DRY_RUN:=0}"
 
@@ -6836,6 +6836,7 @@ path_suricata_modify_conf() { echo "${DPISTACK_ROOT}/etc/suricata/modify.conf"; 
 path_suricata_drop_conf() { echo "${DPISTACK_ROOT}/etc/suricata/drop.conf"; }
 path_suricata_local_rules() { echo "${DPISTACK_ROOT}/etc/suricata/rules/local.rules"; }
 path_suricata_ruleset() { echo "${DPISTACK_ROOT}/var/lib/suricata/rules/suricata.rules"; }
+path_suricata_test_rules() { echo "${DPISTACK_ROOT}/var/lib/suricata/rules/dpistack-test.rules"; }
 path_suricata_eve_json() { echo "${DPISTACK_ROOT}/var/log/suricata/eve.json"; }
 path_suricata_logrotate() { echo "${DPISTACK_ROOT}/etc/logrotate.d/suricata"; }
 path_ndpi_src_dir() { echo "${DPISTACK_ROOT}/usr/local/src/dpistack-ndpi"; }
@@ -7495,7 +7496,7 @@ schema_init() {
 	_schema_add 'ALERT_MAIL_FROM|free|||advanced|watch|watch|light|no'
 
 	_schema_add 'TEST_HTTPS_URL|free|https://example.com||advanced|tests|verify|light|no'
-	_schema_add 'TEST_BT_LIVE|enum|no|yes,no|advanced|tests|verify|light|no'
+	_schema_add 'TEST_BT_LIVE|enum|no|yes,no|advanced|tests|suricata|light|no'
 	_schema_add 'TEST_ON_INSTALL|enum|yes|yes,no|advanced|tests|verify|light|no'
 
 	# Secrets: live in secrets.conf, never dpistack.conf, never printed.
@@ -9564,6 +9565,26 @@ step_panel_check() {
 	return 0
 }
 
+# panel_warn_unit_overrides - a drop-in of dpistack-panel.service that sets
+# ExecStart replaces the command line the installer renders, so nothing new in
+# it reaches the panel: a field report (R212 of 18.52) had an old hand-written
+# line with -version 0.32.1, which kept the corner and the update notice at
+# 0.32.1 after a clean reinstall of 0.39.1 and left out -backups-dir. Said once
+# per apply, with the file named; the file is never touched. An empty
+# "ExecStart=" line (a reset) is not a replacement by itself.
+panel_warn_unit_overrides() {
+	local dir f
+	dir="$(path_panel_service_unit).d"
+	[[ -d "$dir" ]] || return 0
+	for f in "$dir"/*.conf; do
+		[[ -e "$f" ]] || continue
+		if grep -Eq '^[[:space:]]*ExecStart=[^[:space:]]' "$f"; then
+			log "WARN" "panel: $f sets ExecStart and replaces the command line of the installer; the version, the options and the paths it renders do not reach the panel. Move the file away and use BIND_ADDR and LAN_CIDR in dpistack.conf instead"
+		fi
+	done
+	return 0
+}
+
 step_panel_apply() {
 	if ! getent passwd "$PANEL_USER" >/dev/null 2>&1; then
 		run useradd --system --no-create-home --shell /usr/sbin/nologin "$PANEL_USER" || return 1
@@ -9658,6 +9679,7 @@ step_panel_apply() {
 	local unit
 	unit=$(panel_render_service) || return 1
 	write_rendered_file "$(path_panel_service_unit)" "$unit"
+	panel_warn_unit_overrides
 	run systemctl daemon-reload || return 1
 	run systemctl enable --now "$PANEL_SERVICE" || return 1
 	if [[ "$restart" == "1" ]]; then
@@ -10572,6 +10594,7 @@ suricata_render_yaml() {
 		"HOME_NET=$(suricata_home_net_value)" \
 		"STATS_INTERVAL=${CONF[STATS_INTERVAL_SEC]:-30}" \
 		"EVE_LOG_BLOCK=$(suricata_render_eve_log_block)" \
+		"RULE_FILES_EXTRA=$(suricata_render_rule_files_extra)" \
 		"AF_PACKET_BLOCK=$(suricata_render_af_packet_block)" \
 		"PLUGINS_BLOCK=$(suricata_render_plugins_block)" \
 		"COMMAND_SOCKET=$(suricata_command_socket)"
@@ -10580,6 +10603,41 @@ suricata_render_yaml() {
 # suricata_command_socket - where Suricata creates its command socket, the
 # one `dpistack reload` and logrotate talk to. In a container it lies in
 # the mounted run directory, where docker_suricata_reload looks for it.
+# The live BitTorrent check (TEST_BT_LIVE=yes) brings its own rule. The
+# replayed pcap has private addresses on both ends, so the Emerging Threats
+# rules, written for a $HOME_NET to $EXTERNAL_NET direction, never match it on
+# a live Suricata (R211 of 18.52); the offline check passes only because it
+# adds a rule of its own to a temporary config. The rule is in a file of its
+# own, listed in suricata.yaml only while the key is "yes".
+suricata_test_rules_wanted() {
+	# Not in a container: the check is skipped there and the file would not be mounted.
+	[[ "${CONF[TEST_BT_LIVE]:-no}" == "yes" && "${CONF[SURICATA_RUNTIME]:-native}" != "docker" ]]
+}
+
+suricata_render_test_rules() {
+	cat <<'RULES'
+# dpistack: the live BitTorrent check (TEST_BT_LIVE=yes). Do not edit: the installer writes this file.
+alert tcp any any -> any any (msg:"dpistack test: BitTorrent handshake (live check)"; content:"|13|BitTorrent protocol"; sid:9000100; rev:1;)
+RULES
+}
+
+suricata_render_rule_files_extra() {
+	suricata_test_rules_wanted && echo "  - dpistack-test.rules"
+	return 0
+}
+
+# suricata_write_test_rules - writes the file before suricata -T looks at the
+# yaml that lists it; nothing when the key is not "yes".
+suricata_write_test_rules() {
+	suricata_test_rules_wanted || return 0
+	if [[ "${DRY_RUN:-0}" == "1" ]]; then
+		printf '+ write %s\n' "$(path_suricata_test_rules)"
+		return 0
+	fi
+	mkdir -p "$(dirname "$(path_suricata_test_rules)")" || return 1
+	write_rendered_file "$(path_suricata_test_rules)" "$(suricata_render_test_rules)"
+}
+
 suricata_command_socket() {
 	if docker_wanted suricata; then
 		echo "/var/run/suricata/suricata-command.socket"
@@ -10872,6 +10930,11 @@ step_suricata_check() {
 	actual_yaml_hash=$(state_hash_content <"$yaml_path")
 	[[ "$expected_yaml_hash" == "$actual_yaml_hash" ]] || return 1
 
+	if suricata_test_rules_wanted; then
+		[[ -f "$(path_suricata_test_rules)" ]] || return 1
+		[[ "$(suricata_render_test_rules | state_hash_content)" == "$(state_hash_content <"$(path_suricata_test_rules)")" ]] || return 1
+	fi
+
 	[[ -f "$logrotate_path" ]] || return 1
 	local expected_lr_hash actual_lr_hash
 	expected_lr_hash=$(suricata_render_logrotate | state_hash_content)
@@ -10994,6 +11057,7 @@ step_suricata_apply() {
 	# it replaces anything: a template written for another release series
 	# (7.0 against an 8.0 binary, say) stops the step here, with Suricata's
 	# own words, and not at the first start of the service.
+	suricata_write_test_rules || return 1
 	local rendered_yaml
 	rendered_yaml=$(suricata_render_yaml) || return 1
 	if [[ "${DRY_RUN:-0}" != "1" ]]; then
@@ -11216,7 +11280,7 @@ verify_bittorrent_live() {
 		fi
 		sleep 1
 	done
-	verify_set fail "the offline check passed, but the live eve.json has no event after tcpreplay on $iface"
+	verify_set fail "the offline check passed, but the live eve.json has no alert after tcpreplay on $iface: check that Suricata captures $iface (IFACES) and that $(path_suricata_test_rules) is loaded (run dpistack reconfigure after setting TEST_BT_LIVE=yes)"
 }
 
 verify_url_host() {
@@ -13629,6 +13693,7 @@ default-rule-path: /var/lib/suricata/rules
 
 rule-files:
   - suricata.rules
+@@RULE_FILES_EXTRA@@
 
 ##
 ## Auxiliary configuration files.

@@ -156,7 +156,7 @@ verify_bittorrent_live() {
 		fi
 		sleep 1
 	done
-	verify_set fail "the offline check passed, but the live eve.json has no event after tcpreplay on $iface"
+	verify_set fail "the offline check passed, but the live eve.json has no alert after tcpreplay on $iface: check that Suricata captures $iface (IFACES) and that $(path_suricata_test_rules) is loaded (run dpistack reconfigure after setting TEST_BT_LIVE=yes)"
 }
 
 verify_url_host() {

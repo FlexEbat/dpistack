@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v67** (2026-11-07)
-**Program version: v0.39.1** (slices 0-38 are done except the alert bell of 37, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v68** (2026-11-07)
+**Program version: v0.39.2** (slices 0-38 are done except the alert bell of 37, 39-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.39.2: R211 and R212 of 18.52, from a field report: the live BitTorrent check brings its own rule (it could not pass on a healthy stand), and the installer warns about a drop-in that replaces the `ExecStart` of the panel unit.
 - v0.39.1: R210 of 18.51: the refusal of a non-empty `EVE_REDIS` (v0.37.6) stopped the update on a config that had a value; it is now a warning and the value is ignored.
 - v0.39.0: slice 38, the Network screen (18.50): the capture chain (host, capture interfaces, Suricata, eve.json, EveBox) and the interface table, from answers that exist; no new endpoint.
 - v0.38.0: slice 37, the top bar (18.49). Host name, overall state and mode as chips on every screen; a user menu (Account, Theme where the page has both palettes, Sign out); `GET /api/system` has `hostname`.
 - v0.37.6: R202 and R193 of 18.47 and 18.46 (18.48). `diagnose evebox` reads the kernel log for AppArmor and SELinux denials naming evebox; the setup prompts say what an empty optional value means; `EVE_SYSLOG=yes` now renders a second `eve-log` output to syslog (it was never read); `EVE_REDIS` with a value was refused (it was never read either); replaced in v0.39.1 by a warning, see 18.51.
-- v0.37.5: field report of 2026-11-06 (18.47). EveBox code 14 was an AppArmor profile denying the temp file of SQLite; the `tls` event of Suricata is rendered with `extended: yes` (without it no `sni`, no version); the rules step refreshes the source index first and creates the three empty list files; `diagnose evebox` no longer reports btrfs as out of inodes and checks the temp directory; a suspended (Ctrl+Z) lock holder is named; the HTTPS failure message counts the other events.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v68: v0.39.2. 18.52 (R211, R212); the description of the live BitTorrent check in section 10 and the `TEST_BT_LIVE` row.
 - v67: v0.39.1. 18.51 (R210); the `EVE_REDIS` decision of 18.48 (D63 there) is replaced.
 - v66: v0.39.0. 18.50 (slice 38, the Network screen); the slice 38 row and its Open list updated.
 - v65: v0.38.0. 18.49 (slice 37, the top bar); `hostname` in the `GET /api/system` row.
 - v64: v0.37.6. 18.48 (R202, R193, the two unread EVE keys); 18.1 note on `EVE_SYSLOG` closed.
-- v63: v0.37.5. 18.47 (field report: AppArmor and EveBox, `tls` extended, rules index, list files, diagnose fixes); 18.46 closed.
 
 ---
 
@@ -300,7 +300,7 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `ALERT_TG_CHAT_ID` | empty | needed with `tg` |
 | `ALERT_MAIL_TO` `ALERT_MAIL_FROM` | empty | addresses, needed with `mail` |
 | `TEST_HTTPS_URL` | `https://example.com` | the URL of the live HTTPS test |
-| `TEST_BT_LIVE` | `no` | `yes` sends the pcap to a live interface with `tcpreplay` |
+| `TEST_BT_LIVE` | `no` | `yes` sends the pcap to a live interface with `tcpreplay` and adds one test rule (sid 9000100, `dpistack-test.rules`) to the live Suricata |
 | `TEST_ON_INSTALL` | `yes` | `yes` `no` |
 | secret `ALERT_TG_TOKEN` | empty | the bot token |
 | secret `ALERT_SMTP_URL` | empty | `smtp://user:pass@host:587` |
@@ -924,7 +924,7 @@ The result: `{"name","status","detail","duration_ms"}`, `status` is `pass`, `fai
 1. It runs `suricata -r tests/data/bittorrent.pcap -l <tmp>` with the config of `suricata-test.yaml.tpl`. The config connects the same rules and plugins, writes `alert` and `netflow` into a temporary directory and does not touch the main `eve.json`.
 2. `pass` if the temporary `eve.json` has an `alert` with a signature that contains `BitTorrent`. With the nDPI plugin loaded the test adds its own rule to the set: `alert tcp any any -> any any (msg:"dpistack test nDPI BitTorrent"; requires: keyword ndpi-protocol; ndpi-protocol:BitTorrent; sid:9000001;)`, so the plugin is checked even without the `emerging-p2p` group (A2: there are no separate nDPI fields in EVE).
 3. `skip` with a reason if there are neither the rules of the `emerging-p2p` group nor the nDPI plugin. The message says what exactly to turn on.
-4. `TEST_BT_LIVE=yes` additionally sends the same pcap through `tcpreplay` into the first interface of `IFACES` and looks for an event in the main `eve.json`. Off by default: spoofing traffic on a live interface is noisy.
+4. `TEST_BT_LIVE=yes` additionally sends the same pcap through `tcpreplay` into the first interface of `IFACES` and looks for an event in the main `eve.json`. Off by default: spoofing traffic on a live interface is noisy. The live Suricata gets its own rule for this (`dpistack-test.rules`, listed in `suricata.yaml` only while the key is `yes`, sid 9000100, `alert tcp any any -> any any` on the handshake `|13|BitTorrent protocol`): the Emerging Threats rules are written for a `$HOME_NET` to `$EXTERNAL_NET` direction and the pcap has private addresses on both ends, so they never match it live (18.52). The same rule alerts on a real BitTorrent client on the network, which is detection, not noise.
 
 The origin of the pcap: recorded once in slice 0. A BitTorrent client with a legal torrent in an isolated network, `tcpdump` of the first packets of the handshake, the addresses are replaced with documentation ones (`192.0.2.0/24`) through `tcprewrite`. The way of recording and the check on a real ET signature are described in `tests/data/README.md`.
 
@@ -2070,3 +2070,21 @@ Decision (D71): **a setting that does nothing is a warning, never a validation e
 Until the fix is installed, a stand in this state can empty the key by hand (`EVE_REDIS=` in `/etc/dpistack/dpistack.conf`) and run `sudo dpistack self-update apply` again.
 
 Open: no other validation added in 18.46 to 18.50 was re-checked against the configs of older releases; a test that feeds the validation a config written by an old release (the example file of an earlier tag) is not there yet. The panel's update dialog and the audit line still show only the exit code, not the refusal line.
+
+### 18.52 The live BitTorrent check and a drop-in on the panel unit (v0.39.2)
+
+**Status:** done. From a field report of 2026-11-07 (Debian 13, clean reinstall of v0.39.1). Two findings; the stand itself was healthy (13 of 13 health checks ok, the HTTPS test passed).
+
+| No | Severity | Finding | Fix |
+|---|---|---|---|
+| R211 | **high** (a test that fails on a healthy stand) | `dpistack test bittorrent` with `TEST_BT_LIVE=yes` failed: "the offline check passed, but the live eve.json has no event after tcpreplay". Measured on the stand: the replay sent 53 of 53 packets, the capture counter of `enp2s0` rose by 523 packets with no drops, 15 BitTorrent rules were loaded, and the same pcap run through the live config and live rules gave 0 alerts. The offline check passes only because, with the nDPI plugin, the test adds a rule of its own (`any any`, sid 9000001) to a temporary config; the live Suricata never had it, and the Emerging Threats rules do not match a pcap whose two hosts are both private (`10.10.10.22` and `.23`, both inside `HOME_NET`). The live part had been written as "the same test, live" and was never able to pass without luck | the live Suricata gets its own rule: `dpistack-test.rules` (one rule, sid 9000100, `any any -> any any`, on `|13|BitTorrent protocol`), written by the Suricata step before `suricata -T` and listed in `suricata.yaml` (`@@RULE_FILES_EXTRA@@`) only while `TEST_BT_LIVE=yes` and Suricata is native; the check on the step also compares the file. The key's step in the schema is now `suricata` (it was `verify`), so changing it re-renders the yaml and restarts Suricata, which a rule file needs. The failure text names the interface, the file and `dpistack reconfigure`. Bats cases: the yaml lists the file for `yes` and not for `no` or for a container, the rule text matches the handshake that is in the pcap (read from the file), the file is written only for `yes` |
+| R212 | medium | a hand-written drop-in `dpistack-panel.service.d/10-bind-lan.conf` replaced the `ExecStart` of the unit with an old command line (`-version 0.32.1`, no `-backups-dir`). After a clean reinstall of 0.39.1 the corner and the update notice said 0.32.1, the Update button said "no newer release than 0.39.1", and the Backups download was off; the installer never said that its unit was not the one that ran | `panel_warn_unit_overrides` (step_panel.sh) logs a warning that names the file when a drop-in sets a non-empty `ExecStart=`; the file is never touched; a drop-in that only resets `ExecStart=` or sets other things says nothing. Two bats cases |
+
+Decisions ("choose yourself"):
+
+| id | decision |
+| --- | --- |
+| D72 | **The live check proves capture, rules and `eve.json`, not nDPI.** It uses a content rule, so a stand where the nDPI plugin is broken still passes the live part; the plugin is covered by the offline check (the plugin rule) and by `ndpi_plugin: loaded`. A live check that relied on `ndpi-protocol` would need the plugin on every stand, and one that relied on Emerging Threats would depend on addresses |
+| D73 | **A foreign drop-in is warned about, not removed or merged.** The file belongs to the owner. The warning says what to use instead (`BIND_ADDR`, `LAN_CIDR`); `LAN_CIDR` takes a comma list, so the extra Docker network of the report fits |
+
+Open: the warning for a foreign `ExecStart` is only for the panel unit (the other units were not checked); `diagnose` does not report it, only the installer run does; with Suricata in a container the live check is still skipped; the real run of `test bittorrent` on a stand with the new rule is for the owner to confirm; the rule also alerts on a real BitTorrent client, which is stated in section 10.

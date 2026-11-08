@@ -481,3 +481,27 @@ ldflags_of() {
 	run ldflags_of "$WORK"
 	[ "$output" = "-s -w" ]
 }
+
+panel_override_warning() {
+	bash -c 'SCRIPT_DIR="$1"; source "$1/lib/paths.sh"; source "$1/lib/common.sh"; source "$1/lib/step_panel.sh"; panel_warn_unit_overrides' _ "$REPO_DIR" 2>&1
+}
+
+@test "R212: a drop-in that sets ExecStart is named in a warning and is left alone" {
+	local d="$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service.d"
+	mkdir -p "$d"
+	printf '[Service]\nExecStart=\nExecStart=/usr/local/bin/dpistack-panel -version 0.32.1\n' >"$d/10-bind-lan.conf"
+	run panel_override_warning
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"10-bind-lan.conf sets ExecStart"* ]]
+	[ -f "$d/10-bind-lan.conf" ]
+}
+
+@test "R212: a drop-in without a replacement ExecStart, and no drop-in at all, say nothing" {
+	run panel_override_warning
+	[ -z "$output" ]
+	local d="$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service.d"
+	mkdir -p "$d"
+	printf '[Service]\nEnvironment=GOGC=50\nExecStart=\n' >"$d/20-env.conf"
+	run panel_override_warning
+	[ -z "$output" ]
+}
