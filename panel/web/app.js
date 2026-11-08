@@ -10,6 +10,7 @@ import { start as startAlerts } from "./modules/alerts.js";
 import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
 import { start as startNetwork } from "./modules/network.js";
+import { start as startTraffic } from "./modules/traffic.js";
 import * as topbar from "./modules/topbar.js";
 import { start as startSettings } from "./modules/settings.js";
 import * as account from "./modules/account.js";
@@ -49,7 +50,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "network", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts", "audit", "backups", "account"];
+const VIEWS = ["overview", "network", "traffic", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts", "audit", "backups", "account"];
 let me = { name: "", role: "", perms: ["view"] };
 let stopView = null;
 
@@ -175,6 +176,12 @@ const SCREENS = {
     ),
   network: () =>
     startNetwork(api, { error: $("network-error"), topology: $("network-topology"), others: $("network-others"), ifaces: $("network-ifaces") }, showLogin),
+  traffic: () =>
+    startTraffic(
+      api,
+      { error: $("traffic-error"), notes: $("traffic-notes"), tabs: $("traffic-tabs"), text: $("traffic-q"), external: $("traffic-external"), detail: $("traffic-detail"), body: $("traffic-body") },
+      showLogin,
+    ),
   alerts: () =>
     startAlerts(
       api,

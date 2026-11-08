@@ -134,6 +134,7 @@ th, td { padding: var(--s-75) var(--s-100); text-align: left; border-bottom: 1px
 tr:last-child td { border-bottom: 0; }
 th { font-weight: 600; color: var(--muted); background: var(--card-2); font-size: var(--text-xs); line-height: var(--lh-xs); }
 tbody tr:hover td { background: var(--card-2); }
+tr.clickable { cursor: pointer; }
 .overall { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-100); padding: var(--s-200); background: var(--card); border: 1px solid var(--border); border-radius: var(--r-xl); }
 .overall-text { font-weight: 600; font-size: var(--text-lg); line-height: var(--lh-lg); }
 .badge { display: inline-block; padding: var(--s-25) var(--s-100); border-radius: var(--r-full); font-size: var(--text-xs); line-height: var(--lh-xs); font-weight: 600; border: 1px solid var(--border); background: var(--card-2); }
