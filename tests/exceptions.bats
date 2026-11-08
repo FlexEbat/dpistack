@@ -136,8 +136,10 @@ print(a["days_left"], a["expired"], b["days_left"], b["expired"], b["count"], b[
 	run "$CTL" exceptions prune
 	[ "$status" -eq 0 ]
 	[ "$output" = "removed 1 expired" ]
-	! grep -q 'sig_id 91' "$THR"
-	! grep -q 'expires=2020-02-01' "$THR"
+	run grep -q 'sig_id 91' "$THR"
+	[ "$status" -ne 0 ]
+	run grep -q 'expires=2020-02-01' "$THR"
+	[ "$status" -ne 0 ]
 	grep -q 'sig_id 92' "$THR"
 	grep -q 'sig_id 93' "$THR"
 	grep -qx '# a hand written note' "$THR"
@@ -161,8 +163,10 @@ print(a["days_left"], a["expired"], b["days_left"], b["expired"], b["count"], b[
 	"$CTL" exceptions add suppress 22 --track src --ip 10.0.0.2 --note second --never >/dev/null 2>&1
 	run "$CTL" exceptions remove suppress:21:src:10.0.0.1
 	[ "$status" -eq 0 ]
-	! grep -q 'sig_id 21' "$THR"
-	! grep -q 'note=first' "$THR"
+	run grep -q 'sig_id 21' "$THR"
+	[ "$status" -ne 0 ]
+	run grep -q 'note=first' "$THR"
+	[ "$status" -ne 0 ]
 	grep -q 'sig_id 22' "$THR"
 	grep -q 'note=second' "$THR"
 	run "$CTL" exceptions remove suppress:21:src:10.0.0.1
@@ -206,7 +210,8 @@ print(a["days_left"], a["expired"], b["days_left"], b["expired"], b["count"], b[
 	[ "$status" -ne 0 ]
 	run "$CTL" exceptions remove 'suppress:1:src:10.0.0.1;rm'
 	[ "$status" -ne 0 ]
-	! grep -q 'sig_id 1,' "$THR"
+	run grep -q 'sig_id 1,' "$THR"
+	[ "$status" -ne 0 ]
 }
 
 @test "criterion 9: a file that fails suricata -T is never written" {
@@ -222,14 +227,16 @@ print(a["days_left"], a["expired"], b["days_left"], b["expired"], b["count"], b[
 	export MOCK_THRESHOLD_LOG="$log"
 	"$CTL" exceptions add suppress 51 --track src --ip 10.0.0.1 --never >/dev/null 2>&1
 	[ -s "$log" ]
-	! grep -q "$THR" "$log"
+	run grep -q "$THR" "$log"
+	[ "$status" -ne 0 ]
 	rm -f "$log"
 }
 
 @test "criterion 11: a running Suricata is reloaded after a change, a stopped one is left alone" {
 	: >"$MOCK_CALLS_LOG"
 	"$CTL" exceptions add suppress 61 --track src --ip 10.0.0.1 --never >/dev/null 2>&1
-	! grep -q 'suricatasc' "$MOCK_CALLS_LOG"
+	run grep -q 'suricatasc' "$MOCK_CALLS_LOG"
+	[ "$status" -ne 0 ]
 	mkdir -p "$(dirname "$SOCK")"
 	python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])" "$SOCK"
 	"$CTL" exceptions add suppress 62 --track src --ip 10.0.0.2 --never >/dev/null 2>&1
@@ -244,7 +251,8 @@ print(a["days_left"], a["expired"], b["days_left"], b["expired"], b["count"], b[
 	[[ "$output" == *"sig_id 71"* ]]
 	printf '%s\n' '# edited' 'suppress gen_id 1, sig_id 72' | "$CTL" config-write threshold.config >/dev/null 2>&1
 	grep -q 'sig_id 72' "$THR"
-	printf '%s\n' 'INVALID' | run "$CTL" config-write threshold.config
+	run bash -c "printf 'INVALID\n' | '$CTL' config-write threshold.config"
+	[ "$status" -eq 3 ]
 	grep -q 'sig_id 72' "$THR"
 }
 
@@ -266,7 +274,8 @@ print(a["days_left"], a["expired"], b["days_left"], b["expired"], b["count"], b[
 	} >>"$THR"
 	audit="$DPISTACK_ROOT/var/lib/dpistack/audit/audit.jsonl"
 	DPISTACK_BIN="$CTL" run bash "$REPO_DIR/bin/dpistack-watch"
-	! grep -q 'sig_id 95' "$THR"
+	run grep -q 'sig_id 95' "$THR"
+	[ "$status" -ne 0 ]
 	[ "$(jq -r 'select(.action == "cli exceptions") | .detail' "$audit" | tr '\n' '|')" = "removed 1 expired (exit 0)|" ]
 	DPISTACK_BIN="$CTL" run bash "$REPO_DIR/bin/dpistack-watch"
 	[ "$(jq -r 'select(.action == "cli exceptions")' "$audit" | grep -c action)" -eq 1 ]
