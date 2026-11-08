@@ -55,6 +55,8 @@ Config names: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
                 enable.conf disable.conf modify.conf drop.conf
 
 Components: suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana panel watch rules
+
+Under development: dpistack is still being developed. Settings, commands and screens can change between releases.
 USAGE
 }
 

@@ -45,6 +45,7 @@ h1 { max-width: 680px; font-size: var(--text-2xl); line-height: var(--lh-2xl); f
 h2 { margin: var(--s-400) 0 var(--s-100); font-size: var(--text-base); line-height: var(--lh-base); font-weight: 600; color: var(--soft); }
 h3 { font-size: var(--text-sm); line-height: var(--lh-sm); font-weight: 600; }
 .muted { color: var(--muted); }
+.devnote { color: var(--muted); margin: var(--s-100) 0 0; }
 .error { margin: 0; min-height: var(--s-300); color: var(--bad); }
 .ico, .mark { width: 1.25rem; height: 1.25rem; flex: none; fill: currentColor; }
 .mark { width: 2rem; height: 2rem; color: var(--accent-2); }

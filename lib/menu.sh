@@ -806,6 +806,7 @@ menu_main_screen() {
 		echo >&2
 		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}") | $OS_ID ${OS_VERSION_ID:-}, $(uname -m) | systemd: $(command -v systemctl >/dev/null && echo yes || echo no)" >&2
 		echo "Install. Config: $(path_conf) (not created)" >&2
+		echo "Under development: dpistack is still being developed. Settings, commands and screens can change between releases." >&2
 		echo >&2
 		echo "  1) Quick install" >&2
 		local i=2 g

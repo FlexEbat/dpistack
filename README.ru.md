@@ -7,9 +7,11 @@
 nDPI · Suricata · EveBox · ntopng · по желанию Prometheus или VictoriaMetrics, Grafana и node_exporter; всё управляется из одной командной строки и одной веб-панели.
 
 [![CI](https://github.com/FlexEbat/dpistack/actions/workflows/ci.yml/badge.svg)](https://github.com/FlexEbat/dpistack/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
 [English](README.md) | Русский
+
+> **В разработке: dpistack всё ещё развивается. Настройки, команды и экраны могут меняться между выпусками.** Читайте заметки к выпуску перед обновлением стенда, на который вы полагаетесь.
 
 </div>
 
@@ -184,4 +186,4 @@ bash scripts/gate.sh
 
 Гейт запускает `shfmt`, `shellcheck`, проверки безопасности, `bats` и, если есть Go, `gofmt`, `go vet`, `go test`, тесты интерфейса и проверку бюджета ресурсов панели. Ветка `dev` для работы, `main` для проверенного состояния; выпуски это теги `vX.Y.Z` на `main`. См. [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Лицензия: [MIT](LICENSE).
+Лицензия: [GNU General Public License v3.0](LICENSE). Copyright (C) 2026 FlexEbat.

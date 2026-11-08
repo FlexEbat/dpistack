@@ -45,7 +45,8 @@ Changelog of this document. Only the last five entries are kept; older ones are 
 9. **Metrics:** the panel serves `/metrics` in the Prometheus format. Optionally the installer installs VictoriaMetrics or Prometheus and sets up the collection.
 10. **A personal panel:** light on resources, a modern look. Features: the status of components, start/stop/restart, a config editor with validation (`suricata -T`), rule management, running tests, viewing logs and EVE events, metrics charts.
 11. **This is a finished and full project, not an MVP.** Every declared feature is brought to a working state on every supported platform and checked on a stand; there are no "we will do it after the MVP" items in the plan. The required platforms: Ubuntu LTS from 22.04, Debian from 12, Rocky Linux and AlmaLinux from 8 (section 11, the platform matrix). Only stable versions: development builds (`master`, `nightly`, `latest`, `dev`) are not used anywhere by default. Release 1.0 is possible when all stages 0-5 are closed and every platform has passed acceptance. The order of the stages sets the order of work, not its volume; slice 26 (the RHEL family) is done out of turn because the platform is required.
-12. **Out of scope:** a multi-user panel, an own SSO, Grafana dashboards of our own (Grafana itself is an optional component since v0.24.0), ntopng Enterprise, podman, LXD, i18n, capturing the traffic of a whole network without a suitable topology.
+12. **The project says it is under development.** One sentence says so in the README (both languages), in the CLI (the usage text and the install menu) and in the dashboard (the login page and the menu): "Under development: dpistack is still being developed. Settings, commands and screens can change between releases." (the Russian README has its own wording). A test compares the sentence in every place, so the wording cannot drift. Rule 11 stays: the features that are declared work; the notice is about change between releases, not about missing parts.
+13. **Out of scope:** a multi-user panel, an own SSO, Grafana dashboards of our own (Grafana itself is an optional component since v0.24.0), ntopng Enterprise, podman, LXD, i18n, capturing the traffic of a whole network without a suitable topology.
 
 ---
 
@@ -1129,7 +1130,7 @@ The slices are not listed here: the index of slices, with what is done and what 
 | A8 | Closed (v5): EveBox and ntopng have no check mode, non-emptiness is checked (4.5) | closed |
 | A9 | The retention mechanism of EveBox (`EVEBOX_RETENTION_DAYS`): a built-in setting or a periodic cleanup | 0, 6 |
 | A10 | The source of the VictoriaMetrics and Prometheus binary for `native` and the check of the checksum. **Closed in v26:** the GitHub releases of the projects (`VictoriaMetrics/VictoriaMetrics`: `victoria-metrics-linux-<arch>-<version>.tar.gz` and `_checksums.txt`; `prometheus/prometheus`: `prometheus-<version>.linux-<arch>.tar.gz` and `sha256sums.txt`); the file names and sums were taken from the real releases, v1.153.0 and v3.15.0 are pinned (older than two weeks on 2026-10-18, a newer one is not taken). node_exporter (v1.12.1, taken the same way on 2026-10-25) follows the same rule; Grafana has no GitHub release, so its tarball sum is read from the vendor file next to it | 28 |
-| A11 | The type of the license is chosen by the owner. There is no answer: the repository holds MIT (Copyright 2026 FlexEbat), it stays until the owner says otherwise | 25 |
+| A11 | The type of the license is chosen by the owner: GNU General Public License v3.0 (said by the owner on 2026-11-08; before that the repository held MIT). `LICENSE` holds the full GPLv3 text, Copyright (C) 2026 FlexEbat. Phosphor Icons stay MIT and are listed in THIRD_PARTY.md | 25 |
 
 ---
 

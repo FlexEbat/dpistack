@@ -51,6 +51,7 @@ h1 { max-width: 680px; font-size: var(--text-xl); line-height: var(--lh-xl); fon
 h2 { margin: var(--s-300) 0 var(--s-75); font-size: var(--text-base); line-height: var(--lh-base); font-weight: 600; }
 h3 { font-weight: 600; }
 .muted { color: var(--muted); }
+.devnote { color: var(--muted); margin: var(--s-100) 0 0; }
 .error { margin: 0; min-height: var(--s-300); color: var(--bad); }
 .ico, .mark { width: 1.25rem; height: 1.25rem; flex: none; fill: currentColor; }
 .mark { display: none; }

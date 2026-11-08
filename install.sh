@@ -79,6 +79,8 @@ usage() {
 	echo "dpistack v${DPISTACK_VERSION}"
 	cat <<'EOF'
 Usage: install.sh [command] [options]
+Under development: dpistack is still being developed. Settings, commands and screens can change between releases.
+
        install.sh             (no command, on a terminal) opens the install menu
        install.sh --fast      the short questions first (interfaces, Suricata source, access, metrics, panel)
 
