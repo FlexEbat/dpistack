@@ -120,7 +120,7 @@ func TestRulesDescribeChecksTheNumbersBeforeCtl(t *testing.T) {
 			t.Errorf("%s: %d %s, want 400", name, w.Code, w.Body)
 		}
 	}
-	if strings.Count(e.calls(), "rules-describe") != strings.Count(before, "rules-describe")+1 {
+	if strings.Count(e.calls(), "rules-describe") != strings.Count(before, "rules-describe") {
 		t.Errorf("a refused value reached ctl:\n%s", e.calls())
 	}
 }
