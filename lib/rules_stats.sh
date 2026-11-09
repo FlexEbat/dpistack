@@ -248,14 +248,15 @@ rules_describe() {
 				re = "^[# \t]*(" actions ")[ \t]"
 				n = split(want, w, " "); for (i = 1; i <= n; i++) wanted[w[i]] = 1
 			}
-			function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/[\001-\037]/, " ", s); return s }
+			function unq(s) { gsub(/\\"/, "\"", s); gsub(/\\;/, ";", s); gsub(/\\\\/, "\\", s); return s }
+		function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/[\001-\037]/, " ", s); return s }
 			FNR == 1 { where = (FILENAME ~ /local\.rules$/) ? "local.rules" : "suricata.rules" }
 			$0 ~ re && match($0, /sid: *[0-9]+/) {
 				s = substr($0, RSTART, RLENGTH); sub(/sid: */, "", s)
 				if (!(s in wanted) || (s in done)) next
 				done[s] = 1
 				msg = ""
-				if (match($0, /msg: *"[^"]*"/)) { msg = substr($0, RSTART, RLENGTH); sub(/msg: *"/, "", msg); sub(/"$/, "", msg) }
+				if (match($0, /msg: *"([^"\\]|\\.)*"/)) { msg = substr($0, RSTART, RLENGTH); sub(/msg: *"/, "", msg); sub(/"$/, "", msg); msg = unq(msg) }
 				printf "%s{\"sid\":%s,\"msg\":\"%s\",\"enabled\":%s,\"where\":\"%s\"}", (c++ ? "," : ""), s, esc(msg), ($0 ~ /^[ \t]*#/) ? "false" : "true", where
 			}' "${files[@]}"
 	fi
@@ -290,12 +291,13 @@ rules_local_check() {
 					s = substr(line, RSTART, RLENGTH); sub(/sid: */, "", s)
 					if (!(s in used)) {
 						m = ""
-						if (match(line, /msg: *"[^"]*"/)) { m = substr(line, RSTART, RLENGTH); sub(/msg: *"/, "", m); sub(/"$/, "", m) }
+						if (match(line, /msg: *"([^"\\]|\\.)*"/)) { m = substr(line, RSTART, RLENGTH); sub(/msg: *"/, "", m); sub(/"$/, "", m); m = unq(m) }
 						used[s] = m
 					}
 				}
 			}
 		}
+		function unq(s) { gsub(/\\"/, "\"", s); gsub(/\\;/, ";", s); gsub(/\\\\/, "\\", s); return s }
 		function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/[\001-\037]/, " ", s); return s }
 		function problem(n, kind, text) { printf "%s{\"line\":%d,\"kind\":\"%s\",\"text\":\"%s\"}", (np++ ? "," : ""), n, kind, esc(text) }
 		function warning(n, text) { printf "%s{\"line\":%d,\"text\":\"%s\"}", (nw++ ? "," : ""), n, esc(text) > "/dev/stderr" }
@@ -336,6 +338,123 @@ rules_local_check() {
 	printf '{"ok":%s,"rules":%s,"problems":[%s],"warnings":[%s],"suricata":{"run":%s,"ok":%s,"output":"%s"}}\n' \
 		"$ok" "$rules" "$problems" "$warnings" "$check_run" "$check_ok" "$(json_escape "$(printf '%s' "$check_out" | tail -n 20)")"
 	rm -f "$tmp" "$tmp.warn"
+}
+
+RULES_FIND_MAX=50
+RULES_FACETS_MAX=200
+
+# rs_source_sids <name> - the sids of an enabled source, one per line, from
+# its newest cache file; nothing when the source is unknown or not cached.
+rs_source_sids() {
+	local name="$1" n url file
+	while IFS=$'\t' read -r n url; do
+		[[ "$n" == "$name" ]] || continue
+		[[ -n "$url" ]] || url=$(rs_index_url "$n")
+		[[ -n "$url" ]] || return 0
+		file=$(rs_cache_file "$url")
+		[[ -n "$file" ]] || return 0
+		rs_archive_rules "$file" | rs_rule_states /dev/stdin | cut -d' ' -f1
+		return 0
+	done < <(rs_enabled_sources)
+}
+
+# rules_find [--class NAME] [--source NAME] [--state enabled|disabled|any]
+#            [--text TEXT]
+# Finds rules in the merged set by their category (classtype), their source,
+# their state and their text (a number is an exact sid). Disabled rules are
+# found too: that is how one is found to be turned back on. At least one
+# criterion is needed, and at most 50 rules come back.
+rules_find() {
+	local class="" source="" state=any text=""
+	while (($#)); do
+		case "$1" in
+		--class | --source | --state | --text)
+			(($# >= 2)) || fail 2 "rules-find: $1 needs a value"
+			case "$1" in
+			--class) class="$2" ;;
+			--source) source="$2" ;;
+			--state) state="$2" ;;
+			--text) text="$2" ;;
+			esac
+			shift 2
+			;;
+		*) fail 2 "rules-find: unknown option: $1" ;;
+		esac
+	done
+	[[ -n "$class$source$text" || "$state" != any ]] || fail 2 "rules-find: give --class, --source, --state or --text"
+	[[ -z "$class" || "$class" =~ ^[A-Za-z0-9-]{1,64}$ ]] || fail 5 "rules-find: a category is letters, digits and -"
+	[[ -z "$source" || "$source" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ ]] || fail 5 "rules-find: not a source name"
+	[[ "$state" == any || "$state" == enabled || "$state" == disabled ]] || fail 5 "rules-find: --state is enabled, disabled or any"
+	[[ -z "$text" || "$text" =~ ^[A-Za-z0-9\ ._:=/@+,-]{1,100}$ ]] || fail 5 "rules-find: the text is up to 100 characters: letters, digits, space and . _ : = / @ + , -"
+	local ruleset
+	ruleset=$(path_suricata_ruleset)
+	[[ -f "$ruleset" ]] || fail 4 "no rule set"
+
+	local sids=""
+	if [[ -n "$source" ]]; then
+		sids=$(mktemp)
+		rs_source_sids "$source" >"$sids"
+		if [[ ! -s "$sids" ]]; then
+			rm -f "$sids"
+			printf '{"results":[],"truncated":false,"source_known":false}\n'
+			return 0
+		fi
+	fi
+	local out
+	out=$(RF_CLASS="$class" RF_TEXT="$text" awk -v actions="$RULE_ACTIONS" -v max="$RULES_FIND_MAX" -v state="$state" -v sidfile="$sids" '
+		BEGIN {
+			re = "^[# \t]*(" actions ")[ \t]"
+			cls = tolower(ENVIRON["RF_CLASS"]); q = tolower(ENVIRON["RF_TEXT"]); num = (q ~ /^[0-9]+$/)
+			if (sidfile != "") { while ((getline l < sidfile) > 0) want[l] = 1; filter = 1 }
+		}
+		function unq(s) { gsub(/\\"/, "\"", s); gsub(/\\;/, ";", s); gsub(/\\\\/, "\\", s); return s }
+		function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); gsub(/[\001-\037]/, " ", s); return s }
+		$0 ~ re && match($0, /sid: *[0-9]+/) {
+			sid = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", sid)
+			if (filter && !(sid in want)) next
+			on = ($0 ~ /^[ \t]*#/) ? 0 : 1
+			if (state == "enabled" && !on) next
+			if (state == "disabled" && on) next
+			c = ""
+			if (match($0, /classtype: *[A-Za-z0-9-]+/)) { c = substr($0, RSTART, RLENGTH); sub(/classtype: */, "", c) }
+			if (cls != "" && tolower(c) != cls) next
+			msg = ""
+			if (match($0, /msg: *"([^"\\]|\\.)*"/)) { msg = substr($0, RSTART, RLENGTH); sub(/msg: *"/, "", msg); sub(/"$/, "", msg); msg = unq(msg) }
+			if (q != "") { if (num ? (sid != q) : (index(tolower(msg), q) == 0)) next }
+			n++
+			if (n > max) { more = 1; exit }
+			printf "%s{\"sid\":%s,\"msg\":\"%s\",\"class\":\"%s\",\"enabled\":%s}", (n > 1 ? "," : ""), sid, esc(msg), esc(c), on ? "true" : "false"
+		}
+		END { printf "\n%s\n", more ? "true" : "false" }' "$ruleset")
+	[[ -n "$sids" ]] && rm -f "$sids"
+	printf '{"results":[%s],"truncated":%s,"source_known":true}\n' "$(head -n1 <<<"$out")" "$(tail -n1 <<<"$out")"
+}
+
+# rules_facets - what the filters of rules-find can be: the categories in
+# the merged set with their counts (the 200 largest), and the enabled sources.
+rules_facets() {
+	[[ $# -eq 0 ]] || fail 2 "rules-facets: no arguments"
+	local ruleset
+	ruleset=$(path_suricata_ruleset)
+	printf '{"classes":['
+	if [[ -f "$ruleset" ]]; then
+		awk -v actions="$RULE_ACTIONS" -v max="$RULES_FACETS_MAX" '
+			BEGIN { re = "^[# \t]*(" actions ")[ \t]" }
+			$0 ~ re && match($0, /classtype: *[A-Za-z0-9-]+/) { c = substr($0, RSTART, RLENGTH); sub(/classtype: */, "", c); n[c]++ }
+			END {
+				for (c in n) printf "%d\t%s\n", n[c], c | "sort -t\"\t\" -k1,1nr -k2,2"
+				close("sort -t\"\t\" -k1,1nr -k2,2")
+			}' "$ruleset" | head -n "$RULES_FACETS_MAX" | awk -F'\t' '{ printf "%s{\"name\":\"%s\",\"count\":%d}", (NR > 1 ? "," : ""), $2, $1 }'
+	fi
+	printf '],"sources":['
+	local first=1 name url
+	while IFS=$'\t' read -r name url; do
+		[[ -n "$name" ]] || continue
+		((first)) || printf ','
+		first=0
+		printf '"%s"' "$(json_escape "$name")"
+	done < <(rs_enabled_sources)
+	printf ']}\n'
 }
 
 cmd_rules_local() {

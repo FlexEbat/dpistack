@@ -308,3 +308,104 @@ jq_() { jq -r "$1"; }
 	audit="$DPISTACK_ROOT/var/lib/dpistack/audit/audit.jsonl"
 	[ "$(jq -r 'select(.action | test("rules-stats|rules-history|rules-describe|rules-local|config-history")) | .action' "$audit" 2>/dev/null | wc -l)" -eq 0 ]
 }
+
+crule() { printf 'alert tcp any any -> any 80 (msg:"%s"; classtype:%s; sid:%s; rev:1;)' "$3" "$2" "$1"; }
+coff() {
+	printf '# '
+	crule "$@"
+}
+
+find_fixture() {
+	source_fixture test/one 'http://example.invalid/one.rules' 'http://example.invalid/one.rules' plain \
+		"$(crule 1000001 trojan-activity 'ONE trojan')" "$(coff 1000002 trojan-activity 'ONE trojan off')" "$(crule 1000003 policy-violation 'ONE policy')"
+	{
+		crule 1000001 trojan-activity 'ONE trojan'
+		echo
+		coff 1000002 trojan-activity 'ONE trojan off'
+		echo
+		crule 1000003 policy-violation 'ONE policy'
+		echo
+		crule 2000001 Trojan-Activity 'TWO trojan \"quoted\" \\ back'
+		echo
+		crule 2000002 web-application-attack 'TWO web'
+		echo
+	} >"$MERGED"
+}
+
+@test "criterion 8: rules-find by category finds enabled and disabled rules, whatever the case of the name" {
+	find_fixture
+	run "$CTL" rules-find --class trojan-activity
+	[ "$status" -eq 0 ]
+	[ "$(jq_ '[.results[].sid] | sort | join(",")' <<<"$output")" = "1000001,1000002,2000001" ]
+	[ "$(jq_ '[.results[] | select(.sid == 1000002) | .enabled] | @csv' <<<"$output")" = "false" ]
+	[ "$(jq_ '.truncated' <<<"$output")" = "false" ]
+	[ "$(jq -r '.results[] | select(.sid == 2000001) | .msg' <<<"$output")" = 'TWO trojan "quoted" \ back' ]
+}
+
+@test "criterion 8: rules-find by source finds only what that source holds; an unknown source says so" {
+	find_fixture
+	run "$CTL" rules-find --source test/one
+	[ "$(jq_ '[.results[].sid] | sort | join(",")' <<<"$output")" = "1000001,1000002,1000003" ]
+	[ "$(jq_ '.source_known' <<<"$output")" = "true" ]
+	run "$CTL" rules-find --source test/none
+	[ "$status" -eq 0 ]
+	[ "$(jq_ '[(.results | length), .source_known] | @csv' <<<"$output")" = "0,false" ]
+}
+
+@test "criterion 8: rules-find combines state, category, source and text" {
+	find_fixture
+	run "$CTL" rules-find --state disabled
+	[ "$(jq_ '[.results[].sid] | join(",")' <<<"$output")" = "1000002" ]
+	run "$CTL" rules-find --state enabled --class trojan-activity --source test/one
+	[ "$(jq_ '[.results[].sid] | join(",")' <<<"$output")" = "1000001" ]
+	run "$CTL" rules-find --text 'trojan off'
+	[ "$(jq_ '[.results[].sid] | join(",")' <<<"$output")" = "1000002" ]
+	run "$CTL" rules-find --text 2000002
+	[ "$(jq_ '[.results[].sid] | join(",")' <<<"$output")" = "2000002" ]
+	run "$CTL" rules-find --text 200000
+	[ "$(jq_ '.results | length' <<<"$output")" = "0" ]
+}
+
+@test "criterion 8: rules-find returns at most 50 rules and says it stopped" {
+	for i in $(seq 1 60); do
+		crule $((3000000 + i)) trojan-activity "many $i"
+		echo
+	done >"$MERGED"
+	run "$CTL" rules-find --class trojan-activity
+	[ "$(jq_ '[(.results | length), .truncated] | @csv' <<<"$output")" = "50,true" ]
+}
+
+@test "criterion 8: rules-find refuses no criterion, a value that is not allowed, and a missing rule set" {
+	find_fixture
+	run "$CTL" rules-find
+	[ "$status" -eq 2 ]
+	run "$CTL" rules-find --class
+	[ "$status" -eq 2 ]
+	run "$CTL" rules-find --bogus x
+	[ "$status" -eq 2 ]
+	run "$CTL" rules-find --class 'a;b'
+	[ "$status" -eq 5 ]
+	run "$CTL" rules-find --state maybe
+	[ "$status" -eq 5 ]
+	run "$CTL" rules-find --source '-x'
+	[ "$status" -eq 5 ]
+	run "$CTL" rules-find --text 'a|b'
+	[ "$status" -eq 5 ]
+	rm -f "$MERGED"
+	run "$CTL" rules-find --class trojan-activity
+	[ "$status" -eq 4 ]
+}
+
+@test "criterion 9: rules-facets lists the categories with their counts, largest first, and the enabled sources" {
+	find_fixture
+	run "$CTL" rules-facets
+	[ "$status" -eq 0 ]
+	[ "$(jq_ '.classes[0] | [.name, .count] | @csv' <<<"$output")" = '"trojan-activity",2' ]
+	[ "$(jq_ '[.classes[] | .name] | sort | join(",")' <<<"$output")" = "Trojan-Activity,policy-violation,trojan-activity,web-application-attack" ]
+	[ "$(jq_ '.sources | join(",")' <<<"$output")" = "test/one" ]
+	run "$CTL" rules-facets extra
+	[ "$status" -eq 2 ]
+	rm -f "$MERGED"
+	run "$CTL" rules-facets
+	[ "$(jq_ '.classes | length' <<<"$output")" = "0" ]
+}
