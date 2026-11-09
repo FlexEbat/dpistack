@@ -214,9 +214,24 @@
     <div class="toolbar">
       <select id="ev-type" aria-label="Event type"><option value="alert">alert</option></select>
       <input id="ev-q" type="text" class="wide" placeholder="part of the event text" aria-label="Filter by text" autocomplete="off">
+      <label>Time <select id="ev-range"><option value="">all loaded</option><option value="15m">last 15 minutes</option><option value="1h">last hour</option><option value="24h">last 24 hours</option><option value="7d">last 7 days</option></select></label>
       <label>Show <select id="ev-limit"><option>50</option><option>100</option><option>200</option><option>500</option></select></label>
       <button id="ev-show" type="button">Refresh</button>
       <button id="ev-follow" type="button">Follow</button>
+    </div>
+    <div class="toolbar">
+      <input id="ev-ip" type="text" placeholder="address" aria-label="Filter by address" autocomplete="off">
+      <input id="ev-sid" type="text" inputmode="numeric" placeholder="rule number (sid)" aria-label="Filter by rule number" autocomplete="off">
+      <input id="ev-category" type="text" placeholder="category" aria-label="Filter by category" autocomplete="off">
+      <input id="ev-proto" type="text" placeholder="protocol" aria-label="Filter by protocol" autocomplete="off">
+      <label>Severity <select id="ev-severity"><option value="">any</option><option value="1">1 high</option><option value="2">2 medium</option><option value="3">3 low</option></select></label>
+      <input id="ev-domain" type="text" placeholder="domain" aria-label="Filter by domain" autocomplete="off">
+    </div>
+    <div class="toolbar">
+      <label>Group by <select id="ev-group"><option value="">no grouping</option><option value="signature">rule</option><option value="source">source address</option><option value="destination">destination address</option><option value="category">category</option></select></label>
+      <button id="ev-export-json" type="button">Export JSON</button>
+      <button id="ev-export-csv" type="button">Export CSV</button>
+      <span id="ev-status" class="muted" aria-live="polite"></span>
     </div>
     <section id="ev-list"><div class="skeleton" aria-hidden="true"></div></section>
   </div>

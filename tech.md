@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v69** (2026-11-08)
-**Program version: v0.40.0** (slices 0-39 are done except the alert bell of 37, 40-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v70** (2026-11-09)
+**Program version: v0.41.0** (slices 0-40 are done except the alert bell of 37, 41-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.41.0: slice 40, the Events workspace and exceptions (18.40): filters, grouping, the events of one flow, the history of one rule and JSON/CSV export on the Events screen; the Exceptions screen and `dpistack exceptions` (suppress and rate limit entries in `threshold.config`, optional expiry, a bare SID allowed); `EXCEPTIONS_DEFAULT_DAYS`; the project is GNU GPL v3.0 and says it is under development (rule 12). Findings R215 to R217.
 - v0.40.0: slice 39, the Traffic screen (18.39): devices, applications, domains and connections from the newest `flow`, `dns` and `tls` events, a filter, one device in detail and a link to ntopng; no new endpoint, no change to the Suricata config.
 - v0.39.2: R211 and R212 of 18.52, from a field report: the live BitTorrent check brings its own rule (it could not pass on a healthy stand), and the installer warns about a drop-in that replaces the `ExecStart` of the panel unit.
 - v0.39.1: R210 of 18.51: the refusal of a non-empty `EVE_REDIS` (v0.37.6) stopped the update on a config that had a value; it is now a warning and the value is ignored.
 - v0.39.0: slice 38, the Network screen (18.50): the capture chain (host, capture interfaces, Suricata, eve.json, EveBox) and the interface table, from answers that exist; no new endpoint.
-- v0.38.0: slice 37, the top bar (18.49). Host name, overall state and mode as chips on every screen; a user menu (Account, Theme where the page has both palettes, Sign out); `GET /api/system` has `hostname`.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v70: v0.41.0. 18.40 (slice 40) written; the slice 40 row of 18.0; rule 12 and A11 (GPL v3.0, the under development notice); 4.3 `EXCEPTIONS_DEFAULT_DAYS`; 4.5 the `exceptions` verb and `threshold.config`; 4.8 the `/api/exceptions` routes; decisions D78 to D83.
 - v69: v0.40.0. 18.39 (slice 39, the Traffic screen) written; the slice 39 row of 18.0; decisions D74 to D77.
 - v68: v0.39.2. 18.52 (R211, R212); the description of the live BitTorrent check in section 10 and the `TEST_BT_LIVE` row.
 - v67: v0.39.1. 18.51 (R210); the `EVE_REDIS` decision of 18.48 (D63 there) is replaced.
 - v66: v0.39.0. 18.50 (slice 38, the Network screen); the slice 38 row and its Open list updated.
-- v65: v0.38.0. 18.49 (slice 37, the top bar); `hostname` in the `GET /api/system` row.
 
 ---
 
@@ -1209,7 +1209,7 @@ One row per slice. **Done** means the Definition of Done of section 14 was met; 
 | 37 | the shell of the panel | **done except the bell.** Done: the corner, Build info, the look, readable Audit actions, the menu in groups, routes by hash, the folded menu. Top bar (host, state, mode, user menu, theme) in v0.38.0. Remaining: the alert bell (slice 43) | v0.32.0, v0.32.1, v0.34.0, v0.38.0 | 18.35, 18.37, 18.49 |
 | 38 | Overview v2, system health and topology | **done.** `GET /api/system`, host cards, interfaces table, state cards, warnings, alerts by severity, latest alerts, traffic graph, watchdog warnings, and the Network screen (the capture chain and the interfaces table); docker and systemd state is decided in D70 | v0.35.0 to v0.37.0, v0.39.0 | 18.38, 18.50 |
 | 39 | Traffic Explorer | **done.** The Traffic screen: devices, applications, domains, connections, a text filter, one device in detail, a link to ntopng; built in the browser from `/api/eve` (flow, dns, tls), no new endpoint | v0.40.0 | 18.39 |
-| 40 | the Events workspace and exceptions | not started |  | 18.40 |
+| 40 | the Events workspace and exceptions | **done.** Events: filters (address, rule, category, protocol, severity, domain, time), grouping, the events of one flow, the history of one rule, JSON and CSV export, Create exception; Exceptions screen; `dpistack exceptions`; `EXCEPTIONS_DEFAULT_DAYS` | v0.41.0 | 18.40 |
 | 41 | Rules v2 | not started |  | 18.41 |
 | 42 | the IPS page | not started |  | 18.42 |
 | 43 | the Alert Center | not started |  | 18.43 |
@@ -1914,17 +1914,41 @@ Tests: `panel/web/test/traffic.test.mjs` (15): the local address ranges, the flo
 
 Open: nothing was rendered in a browser (none is available in the build environment), so the look of the tabs, the clickable rows and the narrow layout is checked only by the design rules; it was not run against a real `eve.json` from a stand, only against events built from the documented fields; a flow event is written when the flow ends, so a long connection shows up late; the tables show 100 rows and ask for the filter beyond that; with Suricata in a container or the events view off the screen shows the reason and nothing else; the link to ntopng uses the host name of the address bar and `NTOPNG_PORT`, which was not opened on a stand.
 
-### 18.40 Slice 40: the Events workspace and exceptions (not started)
+### 18.40 Slice 40: the Events workspace and exceptions (v0.41.0)
 
-**Status:** not started. **Remaining:** all of it.
+**Status:** done. Two screens and one command, and the command is the only writer, so the CLI and the dashboard cannot differ.
 
-**What it does:** filters (IP, SID, category, protocol, severity, domain, time), grouping, related events by `flow_id`, a detail panel, the history of one SID, export JSON/CSV, and "create an exception" from an event: a threshold or suppress entry with an expiry and the narrowest scope (SID plus source or destination), stored in the exceptions file that the rules step renders.
+**Events workspace (Events screen):** filters by address, rule number, category, protocol, severity, domain and time (15 minutes to 7 days, sent to the server as `since`); grouping by rule, source, destination or category (a click on a group filters by it); for one event, the events of the same flow (`flow_id`), the history of its rule (how often, first and last time, the most frequent addresses) and Create exception (for an alert); export of what is shown as JSON or CSV. The line above the list says how many of the loaded events pass; the filters other than type, text and time work on the loaded events (at most 500), and the screen says so.
+
+**Exceptions (Exceptions screen, group Protection; `dpistack exceptions list|add|remove|prune`):** an entry is a line of Suricata's own `threshold.config`, with one comment line before it that holds when, by whom, until when and why:
+
+```
+# dpistack: added=2026-11-08 expires=2026-12-08 by=admin note=printer scans
+suppress gen_id 1, sig_id 2001219, track by_src, ip 10.0.0.5
+```
+
+Kinds: `suppress` for one address (`--track src|dst --ip ADDR`) or, with no address, for every address; `limit` (at most N alerts per S seconds for each address of one side). A change is checked with `suricata -T` on the candidate file before anything is written, backed up, and a running Suricata is reloaded. The file is created by the Suricata step (a header only), named in `suricata.yaml` (`threshold-file`), part of backups and an editable name in Configs (ten files now). Lines that are not entries (hand written) are kept as they are and listed as `not managed`.
 
 | No | Severity | Finding | Fix |
 |---|---|---|---|
-| | | no review yet: the table is filled in when the slice is done | |
+| R215 | **high** | the CSV export carries text an attacker controls (the rule name, a DNS name, an SNI): a value that starts with `=`, `+`, `-` or `@` is run as a formula when the file is opened in a spreadsheet | `cell()` of `events-model.js` puts an apostrophe before such a value (and before a tab or a carriage return) and quotes commas, quotes and line breaks; the test feeds `=cmd|' /C calc'!A0` and `=HYPERLINK(...)` |
+| R216 | low | a `flow_id` above 2^53 loses digits in the browser, so the server's text search for it can find nothing | Related events adds the events already on the screen to the answer of the search, and the limit is stated in Open |
+| R217 | low | `tests/exceptions.bats` used a bare `! command` before its last line, which bats ignores; the repository test R138 caught it in CI (Ubuntu 22.04) and the check of `config-write` piped into `run`, so its status was never asserted | each negation is `run` plus a status check; the `config-write` check asserts exit 3 |
 
-Open: everything above. The entry is completed with the review (findings, decisions, tests, what was not checked) when the slice is done.
+Decisions (\"choose yourself\", and the owner's answers of 2026-11-08):
+
+| id | decision |
+| --- | --- |
+| D78 | **One writer, Suricata's own format.** Exceptions live in `threshold.config` in Suricata's syntax; nothing is rendered, so there is nothing to drift. The CLI, the panel (through `/api/exceptions`) and the watchdog all call `dpistack exceptions`. Settings parity: the one setting, `EXCEPTIONS_DEFAULT_DAYS`, is in the schema, so Settings, `dpistack settings` and the install menu all have it |
+| D79 | **Expiry is optional.** `--never` (the screen: Expiry, never) or `EXCEPTIONS_DEFAULT_DAYS=0` make an entry that stays until removed; `--days N` is 1 to 3650; with neither the key decides (30 out of the box). An expiry is a UTC date and that day is the last one in force. Suricata does not know dates, so the watchdog runs `exceptions prune` on every tick; until then an expired entry still works. An entry whose comment is missing or damaged never expires: it is not dpistack's to drop. `prune` writes one audit line, only when it removed something |
+| D80 | **A bare SID is allowed.** `suppress` with no `--ip` silences the rule for every address; the CLI prints a warning and the screen asks for a confirmation. The narrowest scope is what Create exception offers first: the rule and the source address of the alert |
+| D81 | **No new endpoint for the workspace.** Events are read with `GET /api/eve` (type, text, `since`, limit up to 500); everything else is the browser's. The exceptions routes are in 4.8; reading needs `view`, changing needs `rules.edit`, and `--by` is the signed in user, never a field of the body |
+| D82 | **No interactive menu entry for exceptions.** The install menu builds its sections from the schema, so the key is there; the entries are managed with the verb, as `rules-sid` is. The audit log records `add` and `remove` (and a `prune` that removed something) |
+| D83 | **Hand written lines stay.** A line of `threshold.config` that is not a suppress or limit entry of the form above is listed as `not managed`, never removed by `remove` or `prune`, and kept by every rewrite |
+
+Tests: `tests/exceptions.bats` (19): the file and the yaml line after install, a second install keeps edits, the syntax and data of suppress, a bare SID, a limit, `--never`, `EXCEPTIONS_DEFAULT_DAYS` 0 and 7 and the default 30, list as text and JSON, prune (only the expired, hand lines kept, the last day still in force), remove, a duplicate, every refused argument with its exit code (5 for a value, 2 for a combination), a file that fails `suricata -T` is never written (3), the check sees the candidate file, a running Suricata is reloaded and a stopped one is left alone, backup and `config-read`/`config-write` of the file, the usage text and the audit log, the watchdog pruning on its run and logging only then. `panel/internal/api/exceptions_test.go` (5): the list, the exact arguments the verb receives (the user from the session, never from the body), every value checked before ctl, every exit code mapped (400, 500, 422 with the output, 409), permissions (401, 403 for a viewer and an analyst, 200 for operator, admin and a custom role with `rules.edit`). `panel/web/test/exceptions.test.mjs` (12) and `events-workspace.test.mjs` (13): the words for scope and expiry, the order, the summary, the form checks and warnings, the defaults taken from an alert, every filter, grouping, related events, the history of a rule, CSV quoting and the formula guard, the export names, the page and its element ids, no `innerHTML` and no browser storage. `devnote.test.mjs` (4): the under development sentence is the same everywhere (rule 12).
+
+Open: nothing ran against a real Suricata: the tests use a fake `suricata -T` that rejects a line with `INVALID`, so it is not confirmed that Suricata accepts a bare `suppress gen_id 1, sig_id N` line, that a live reload (`ruleset-reload-nonblocking`) re-reads `threshold.config`, or that a container Suricata sees the file at `/etc/suricata/threshold.config`; nothing was rendered in a browser, so the layout of the two screens, the show and hide of the form fields and the file download are checked by tests of the code only; the filters work on the newest 500 events, not on the whole file, and a `flow_id` above 2^53 can lose digits (R216); the history of a rule reads the newest 500 alerts that contain the number; a threshold entry written by hand with `type threshold` or `both` is kept but shown as `not managed`; the interactive CLI shows no list of exceptions (the verb does).
 
 ### 18.41 Slice 41: Rules v2 (not started)
 

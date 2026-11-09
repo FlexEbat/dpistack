@@ -1,4 +1,5 @@
 import { fromEvent, setDraft } from "./exceptions-model.js";
+import { activeFilters, exportName, filterEvents, groupBy, related, since, sidHistory, toCSV, toJSON } from "./events-model.js";
 
 // The Events screen: the newest events of eve.json by type, a text filter,
 // and a live tail (SSE) that adds only new events of the chosen type.
@@ -56,11 +57,78 @@ function when(iso) {
 export function start(api, els, onError) {
   let source = null;
   let running = true;
+  let loaded = []; // the events of the last load, newest first
+  let timer = null;
 
   function stopFollow() {
     source?.close();
     source = null;
     els.follow.textContent = "Follow";
+  }
+
+  const filters = () => ({
+    ip: els.ip.value,
+    sid: els.sid.value,
+    category: els.category.value,
+    proto: els.proto.value,
+    severity: els.severity.value,
+    domain: els.domain.value,
+  });
+
+  function note(text) {
+    els.list.replaceChildren(el("p", "muted", text));
+    els.status.textContent = "";
+  }
+
+  // inline puts a small block under an event: its related events, the history
+  // of its rule. It is replaced when asked again.
+  function inline(details, name, lines) {
+    details.querySelector(`[data-inline="${name}"]`)?.remove();
+    const box = el("div", "muted");
+    box.dataset.inline = name;
+    for (const l of lines) box.append(el("div", "", l));
+    details.append(box);
+  }
+
+  async function showRelated(ev, details) {
+    const id = ev.event && ev.event.flow_id;
+    if (id === undefined || id === null) {
+      inline(details, "related", ["This event has no flow id, so there is no flow to follow."]);
+      return;
+    }
+    try {
+      // The server finds the lines holding the id; the events already on the
+      // screen are added, because a very large id loses digits in the browser.
+      const res = await api(`/api/eve?limit=500&q=${encodeURIComponent(String(id))}`);
+      const seen = new Set();
+      const merged = [...(res.events || []), ...loaded].filter((x) => {
+        const k = `${x.time}|${x.type}|${JSON.stringify(x.event)}`;
+        return seen.has(k) ? false : (seen.add(k), true);
+      });
+      const rel = related(merged, id);
+      inline(details, "related", rel.length ? [`${rel.length} events of flow ${id}, oldest first:`, ...rel.map((x) => `${when(x.time)}  ${x.type}  ${summarize(x.type, x.event)}`)] : ["No other events of this flow in the newest events."]);
+    } catch (err) {
+      if (err.status === 401) onError(err);
+      else els.error.textContent = err.message;
+    }
+  }
+
+  async function showHistory(ev, details) {
+    const sid = ev.event.alert.signature_id;
+    try {
+      const res = await api(`/api/eve?type=alert&limit=500&q=${encodeURIComponent(String(sid))}`);
+      const h = sidHistory(res.events || [], sid);
+      const list = (xs) => xs.map((x) => `${x.value} (${x.count})`).join(", ") || "none";
+      inline(details, "history", [
+        `Rule ${h.sid}${h.signature ? ": " + h.signature : ""}`,
+        `${h.count} alerts in the newest events, first ${when(h.first)}, last ${when(h.last)}.`,
+        `Most often from: ${list(h.sources)}`,
+        `Most often to: ${list(h.destinations)}`,
+      ]);
+    } catch (err) {
+      if (err.status === 401) onError(err);
+      else els.error.textContent = err.message;
+    }
   }
 
   function row(ev) {
@@ -70,36 +138,81 @@ export function start(api, els, onError) {
     const details = el("details");
     details.append(el("summary", "", summarize(ev.type, ev.event) || "(no description)"));
     details.append(el("pre", "log", JSON.stringify(ev.event, null, 2)));
+    const actions = el("div", "toolbar");
+    const add = (label, fn) => {
+      const b = el("button", "", label);
+      b.type = "button";
+      b.addEventListener("click", fn);
+      actions.append(b);
+    };
+    if (ev.event && ev.event.flow_id !== undefined) add("Related events", () => showRelated(ev, details));
+    if (ev.event && ev.event.alert && Number.isInteger(ev.event.alert.signature_id)) add("History of this rule", () => showHistory(ev, details));
     // An alert has a rule number, so an exception can start from it: the
     // Exceptions screen opens with the rule and the source address filled in.
     if (fromEvent(ev)) {
-      const make = el("button", "", "Create exception");
-      make.type = "button";
-      make.addEventListener("click", () => {
+      add("Create exception", () => {
         setDraft(fromEvent(ev));
         location.hash = "#exceptions";
       });
-      details.append(make);
     }
+    details.append(actions);
     td.append(details);
     tr.append(td);
     return tr;
   }
 
-  function table() {
-    let t = els.list.querySelector("table");
-    if (!t) {
-      t = el("table");
-      const head = el("tr");
-      for (const h of ["Time", "Type", "Event"]) head.append(el("th", "", h));
-      t.append(head);
-      els.list.replaceChildren(t);
+  function renderGroups(events, by) {
+    const groups = groupBy(events, by);
+    if (!groups.length) {
+      els.list.replaceChildren(el("p", "muted empty", "Nothing to group here: this grouping needs alerts or addresses in the loaded events."));
+      return;
     }
-    return t;
+    const t = el("table");
+    const head = el("tr");
+    for (const h of ["Group", "Events", "Worst severity", "Last seen"]) head.append(el("th", "", h));
+    t.append(head);
+    for (const g of groups.slice(0, 200)) {
+      const tr = el("tr");
+      tr.className = "clickable";
+      tr.tabIndex = 0;
+      const open = () => {
+        // A click on a group filters by it and shows its events.
+        els[g.field === "sid" ? "sid" : g.field === "category" ? "category" : "ip"].value = g.value;
+        els.group.value = "";
+        render();
+      };
+      tr.addEventListener("click", open);
+      tr.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      });
+      tr.append(el("td", "", g.key), el("td", "", String(g.count)), el("td", "", g.severity ? String(g.severity) : ""), el("td", "", when(g.last)));
+      t.append(tr);
+    }
+    els.list.replaceChildren(t);
   }
 
-  function note(text) {
-    els.list.replaceChildren(el("p", "muted", text));
+  function shownEvents() {
+    return filterEvents(loaded, filters());
+  }
+
+  function render() {
+    const shown = shownEvents();
+    const n = activeFilters(filters());
+    els.status.textContent = `Showing ${shown.length} of ${loaded.length} loaded events` + (n ? `, ${n} ${n === 1 ? "filter" : "filters"} on the loaded events` : "") + ".";
+    if (!loaded.length) return;
+    if (!shown.length) {
+      els.list.replaceChildren(el("p", "muted empty", "No loaded event passes these filters. They work on the newest events that were loaded; raise Show or widen the time."));
+      return;
+    }
+    if (els.group.value) return renderGroups(shown, els.group.value);
+    const t = el("table");
+    const head = el("tr");
+    for (const h of ["Time", "Type", "Event"]) head.append(el("th", "", h));
+    t.append(head, ...shown.slice(0, MAX_ROWS).map(row));
+    els.list.replaceChildren(t);
   }
 
   function fillTypes(types) {
@@ -115,6 +228,8 @@ export function start(api, els, onError) {
     const query = new URLSearchParams({ limit: els.limit.value });
     if (els.type.value) query.set("type", els.type.value);
     if (els.q.value.trim()) query.set("q", els.q.value.trim());
+    const from = since(els.range.value);
+    if (from) query.set("since", from);
     try {
       const res = await api(`/api/eve?${query}`);
       if (!running) return false;
@@ -129,21 +244,40 @@ export function start(api, els, onError) {
         note("eve.json does not exist yet: Suricata has not created it.");
         return true;
       }
+      loaded = res.events;
       if (res.events.length === 0) {
         note("No events match this query.");
         return true;
       }
-      const t = el("table");
-      const head = el("tr");
-      for (const h of ["Time", "Type", "Event"]) head.append(el("th", "", h));
-      t.append(head, ...res.events.map(row));
-      els.list.replaceChildren(t);
+      render();
       return true;
     } catch (err) {
       if (err.status === 401) onError(err);
       else els.error.textContent = err.message;
       return false;
     }
+  }
+
+  function download(kind, ext, mime, text) {
+    const blob = new Blob([text], { type: mime });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = exportName(kind, ext);
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  function exportAs(ext) {
+    const shown = shownEvents();
+    if (!shown.length) {
+      els.error.textContent = "There is nothing to export: no loaded event passes the filters.";
+      return;
+    }
+    els.error.textContent = "";
+    if (ext === "csv") download("events", "csv", "text/csv;charset=utf-8", toCSV(shown));
+    else download("events", "json", "application/json", toJSON(shown));
   }
 
   async function follow() {
@@ -160,11 +294,18 @@ export function start(api, els, onError) {
       } catch {
         return;
       }
-      // The stream filters by type only; the text filter is applied here.
+      // The stream filters by type only; the text filter is applied here and
+      // the others by render().
       if (text && !JSON.stringify(ev.event).toLowerCase().includes(text)) return;
-      const t = table();
-      t.insertBefore(row(ev), t.rows[1] || null);
-      while (t.rows.length > MAX_ROWS + 1) t.deleteRow(-1);
+      loaded.unshift(ev);
+      if (loaded.length > MAX_ROWS) loaded.length = MAX_ROWS;
+      // Many events in a burst draw once.
+      if (timer === null) {
+        timer = setTimeout(() => {
+          timer = null;
+          if (running) render();
+        }, 300);
+      }
     };
     source.addEventListener("error", (event) => {
       els.error.textContent = event.data || "The event stream connection was lost";
@@ -172,9 +313,17 @@ export function start(api, els, onError) {
     });
   }
 
+  const onFilter = () => render();
+  const filterEls = [els.ip, els.sid, els.category, els.proto, els.severity, els.domain, els.group];
+  for (const f of filterEls) f.addEventListener("input", onFilter);
+  const onJSON = () => exportAs("json");
+  const onCSV = () => exportAs("csv");
+  els.exportJSON.addEventListener("click", onJSON);
+  els.exportCSV.addEventListener("click", onCSV);
   els.show.onclick = load;
   els.follow.onclick = follow;
   els.type.onchange = load;
+  els.range.onchange = load;
   els.q.onkeydown = (event) => {
     if (event.key === "Enter") load();
   };
@@ -183,5 +332,9 @@ export function start(api, els, onError) {
   return () => {
     running = false;
     stopFollow();
+    if (timer !== null) clearTimeout(timer);
+    for (const f of filterEls) f.removeEventListener("input", onFilter);
+    els.exportJSON.removeEventListener("click", onJSON);
+    els.exportCSV.removeEventListener("click", onCSV);
   };
 }
