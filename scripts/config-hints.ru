@@ -44,6 +44,7 @@ RULES_URLS|Свои адреса наборов правил, через про�
 RULES_GROUPS|Включённые группы правил, через запятую.
 RULES_UPDATE|Обновлять правила по расписанию.
 RULES_UPDATE_CALENDAR|Когда обновлять: daily, weekly или выражение systemd.
+EXCEPTIONS_DEFAULT_DAYS|Сколько дней действует новое исключение, если срок не задан; 0 значит бессрочно.
 EVEBOX_DB|Где EveBox хранит события.
 EVEBOX_ES_URL|Адрес Elasticsearch для режима elasticsearch.
 EVEBOX_PORT|Порт EveBox.

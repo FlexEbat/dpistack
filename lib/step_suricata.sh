@@ -451,6 +451,7 @@ suricata_mode_files_apply() {
 step_suricata_check() {
 	if docker_wanted suricata; then
 		[[ -f "$(path_suricata_yaml)" ]] || return 1
+		[[ -f "$(path_suricata_threshold)" ]] || return 1
 		[[ "$(suricata_render_yaml | state_hash_content)" == "$(state_hash_content <"$(path_suricata_yaml)")" ]] || return 1
 		[[ -f "$(path_suricata_logrotate)" ]] || return 1
 		[[ "$(suricata_render_logrotate | state_hash_content)" == "$(state_hash_content <"$(path_suricata_logrotate)")" ]] || return 1
@@ -478,6 +479,7 @@ step_suricata_check() {
 	logrotate_path=$(path_suricata_logrotate)
 
 	[[ -f "$yaml_path" ]] || return 1
+	[[ -f "$(path_suricata_threshold)" ]] || return 1
 	local expected_yaml_hash actual_yaml_hash
 	expected_yaml_hash=$(suricata_render_yaml | state_hash_content)
 	actual_yaml_hash=$(state_hash_content <"$yaml_path")
@@ -571,10 +573,26 @@ suricata_ensure_ruleset() {
 	chmod 0644 "$rules"
 }
 
+# suricata_ensure_threshold - suricata.yaml names threshold.config, so the
+# file must exist; one that exists (entries, hand edits) is never touched.
+suricata_ensure_threshold() {
+	local f
+	f=$(path_suricata_threshold)
+	[[ -e "$f" ]] && return 0
+	if [[ "${DRY_RUN:-0}" == "1" ]]; then
+		printf '+ create %s\n' "$f"
+		return 0
+	fi
+	run mkdir -p "$(dirname "$f")" || return 1
+	exc_header >"$f" || return 1
+	chmod 0644 "$f"
+}
+
 step_suricata_apply() {
 	if docker_wanted suricata; then
 		runtime_release_native "$SURICATA_UNIT" || return 1
 		suricata_log_access || return 1
+		suricata_ensure_threshold || return 1
 		write_rendered_file "$(path_suricata_yaml)" "$(suricata_render_yaml)" || return 1
 		write_rendered_file "$(path_suricata_logrotate)" "$(suricata_render_logrotate)" || return 1
 		docker_service_apply suricata
@@ -610,6 +628,7 @@ step_suricata_apply() {
 	# it replaces anything: a template written for another release series
 	# (7.0 against an 8.0 binary, say) stops the step here, with Suricata's
 	# own words, and not at the first start of the service.
+	suricata_ensure_threshold || return 1
 	suricata_write_test_rules || return 1
 	local rendered_yaml
 	rendered_yaml=$(suricata_render_yaml) || return 1

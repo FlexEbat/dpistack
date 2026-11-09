@@ -75,6 +75,7 @@ path_suricata_enable_conf() { echo "${DPISTACK_ROOT}/etc/suricata/enable.conf"; 
 path_suricata_disable_conf() { echo "${DPISTACK_ROOT}/etc/suricata/disable.conf"; }
 path_suricata_modify_conf() { echo "${DPISTACK_ROOT}/etc/suricata/modify.conf"; }
 path_suricata_drop_conf() { echo "${DPISTACK_ROOT}/etc/suricata/drop.conf"; }
+path_suricata_threshold() { echo "${DPISTACK_ROOT}/etc/suricata/threshold.config"; }
 path_suricata_local_rules() { echo "${DPISTACK_ROOT}/etc/suricata/rules/local.rules"; }
 path_suricata_ruleset() { echo "${DPISTACK_ROOT}/var/lib/suricata/rules/suricata.rules"; }
 path_suricata_test_rules() { echo "${DPISTACK_ROOT}/var/lib/suricata/rules/dpistack-test.rules"; }

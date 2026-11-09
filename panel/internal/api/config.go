@@ -22,7 +22,7 @@ const writeAllowance = 4 * time.Minute
 // outside it is refused before any privileged call is made.
 var configNames = []string{
 	"dpistack.conf", "suricata.yaml", "local.rules", "enable.conf",
-	"disable.conf", "modify.conf", "drop.conf", "ntopng.conf", "evebox.yaml",
+	"disable.conf", "modify.conf", "drop.conf", "threshold.config", "ntopng.conf", "evebox.yaml",
 }
 
 func knownConfig(name string) bool {

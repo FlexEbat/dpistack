@@ -11,6 +11,7 @@ import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
 import { start as startNetwork } from "./modules/network.js";
 import { start as startTraffic } from "./modules/traffic.js";
+import { start as startExceptions } from "./modules/exceptions.js";
 import * as topbar from "./modules/topbar.js";
 import { start as startSettings } from "./modules/settings.js";
 import * as account from "./modules/account.js";
@@ -50,7 +51,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "network", "traffic", "components", "settings", "configs", "rules", "logs", "events", "metrics", "tests", "alerts", "audit", "backups", "account"];
+const VIEWS = ["overview", "network", "traffic", "components", "settings", "configs", "rules", "exceptions", "logs", "events", "metrics", "tests", "alerts", "audit", "backups", "account"];
 let me = { name: "", role: "", perms: ["view"] };
 let stopView = null;
 
@@ -176,6 +177,17 @@ const SCREENS = {
     ),
   network: () =>
     startNetwork(api, { error: $("network-error"), topology: $("network-topology"), others: $("network-others"), ifaces: $("network-ifaces") }, showLogin),
+  exceptions: () =>
+    startExceptions(
+      api,
+      {
+        error: $("exc-error"), message: $("exc-message"), summary: $("exc-summary"), hint: $("exc-hint"), list: $("exc-list"),
+        kind: $("exc-kind"), sid: $("exc-sid"), scope: $("exc-scope"), scopeBox: $("exc-scope-box"), side: $("exc-side"), sideBox: $("exc-side-box"),
+        ip: $("exc-ip"), ipBox: $("exc-ip-box"), count: $("exc-count"), countBox: $("exc-count-box"), seconds: $("exc-seconds"), secondsBox: $("exc-seconds-box"),
+        expiry: $("exc-expiry"), days: $("exc-days"), daysBox: $("exc-days-box"), note: $("exc-note"), add: $("exc-add"),
+      },
+      showLogin,
+    ),
   traffic: () =>
     startTraffic(
       api,
@@ -255,6 +267,17 @@ const SCREENS = {
         show: $("ev-show"),
         follow: $("ev-follow"),
         list: $("ev-list"),
+        range: $("ev-range"),
+        ip: $("ev-ip"),
+        sid: $("ev-sid"),
+        category: $("ev-category"),
+        proto: $("ev-proto"),
+        severity: $("ev-severity"),
+        domain: $("ev-domain"),
+        group: $("ev-group"),
+        exportJSON: $("ev-export-json"),
+        exportCSV: $("ev-export-csv"),
+        status: $("ev-status"),
       },
       showLogin,
     ),

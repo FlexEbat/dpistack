@@ -69,6 +69,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `RULES_GROUPS` | string | `emerging-p2p,emerging-policy` | light | Enabled rule groups, comma separated. (advanced) |
 | `RULES_UPDATE` | on \| off | `on` | light | Update the rules on a schedule. (advanced) |
 | `RULES_UPDATE_CALENDAR` | string | `weekly` | light | When to update: daily, weekly or a systemd expression. (advanced) |
+| `EXCEPTIONS_DEFAULT_DAYS` | integer 0..3650 | `30` | light | Days a new exception lasts when none is given; 0 means it never expires. (advanced) |
 
 ## Access and ports
 

@@ -50,6 +50,7 @@ export const HINTS = {
   RULES_GROUPS: "Enabled rule groups, comma separated.",
   RULES_UPDATE: "Update the rules on a schedule.",
   RULES_UPDATE_CALENDAR: "When to update: daily, weekly or a systemd expression.",
+  EXCEPTIONS_DEFAULT_DAYS: "Days a new exception lasts when none is given; 0 means it never expires.",
   EVEBOX_DB: "Where EveBox stores events.",
   EVEBOX_ES_URL: "Elasticsearch address for the elasticsearch mode.",
   EVEBOX_PORT: "EveBox port.",

@@ -251,7 +251,7 @@ func TestUnknownNamesAndHugeBodies(t *testing.T) {
 
 	w := e.do(req{method: "GET", path: "/api/config", cookies: cookies})
 	var list struct{ Names []string }
-	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || len(list.Names) != 9 || list.Names[0] != "dpistack.conf" {
+	if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || len(list.Names) != 10 || list.Names[0] != "dpistack.conf" || list.Names[7] != "threshold.config" {
 		t.Errorf("name list: %d %s", w.Code, w.Body)
 	}
 }

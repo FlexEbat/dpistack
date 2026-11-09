@@ -462,6 +462,13 @@ autorestart() {
 	done
 }
 
+# prune_exceptions - the exceptions past their last day are removed (tech.md
+# 18.40). Suricata does not know about dates, so someone has to take them out.
+# A failure is not a health problem of the stand: it is left for the next run.
+prune_exceptions() {
+	"$CTL" exceptions prune >/dev/null 2>&1 || true
+}
+
 main() {
 	mkdir -p "$(path_state_dir)"
 	exec 9>"$(path_state_dir)/.watch.lock"
@@ -485,6 +492,7 @@ main() {
 	check_drop_rate
 	check_disk_free
 	check_rules_age
+	prune_exceptions
 
 	write_health
 	autorestart

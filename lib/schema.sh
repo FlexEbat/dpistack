@@ -127,6 +127,7 @@ schema_init() {
 	_schema_add 'RULES_GROUPS|free|emerging-p2p,emerging-policy||advanced|rules|rules|light|no'
 	_schema_add 'RULES_UPDATE|enum|on|on,off|advanced|rules|rules|light|no'
 	_schema_add 'RULES_UPDATE_CALENDAR|free|weekly||advanced|rules|rules|light|no'
+	_schema_add 'EXCEPTIONS_DEFAULT_DAYS|int|30|0..3650|advanced|rules|rules|light|no'
 
 	_schema_add 'EVEBOX_DB|enum|sqlite|sqlite,elasticsearch|advanced|eve|evebox|heavy|no'
 	_schema_add 'EVEBOX_ES_URL|free|||advanced|eve|evebox access|light|no'
