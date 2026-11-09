@@ -89,7 +89,7 @@ sudo ./install.sh install --dry-run -y        # показать план, ни�
 
 ## Панель
 
-Двенадцать экранов: Overview, Network, Traffic, Components, Settings, Configs, Rules, Logs, Events, Metrics, Tests и Alerts. Экран Settings строится из той же схемы, что и установщик, поэтому показывает каждый параметр, проверяет его перед применением, отмечает изменения, запускающие пересборку, и предупреждает о занятых портах, предлагая свободный. У обеих редакций совершенно одинаковые функции. Подробнее: [docs/dashboard.ru.md](docs/dashboard.ru.md).
+Тринадцать экранов: Overview, Network, Traffic, Components, Settings, Configs, Rules, Exceptions, Logs, Events, Metrics, Tests и Alerts. Экран Settings строится из той же схемы, что и установщик, поэтому показывает каждый параметр, проверяет его перед применением, отмечает изменения, запускающие пересборку, и предупреждает о занятых портах, предлагая свободный. У обеих редакций совершенно одинаковые функции. Подробнее: [docs/dashboard.ru.md](docs/dashboard.ru.md).
 
 ## Адрес прослушивания и доступ
 

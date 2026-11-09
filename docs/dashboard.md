@@ -28,6 +28,7 @@ The server sends the stylesheet and the background script of the chosen edition,
 | Settings | every `dpistack.conf` setting and the secrets |
 | Configs | an editor for `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`; check, save with a backup, and roll back |
 | Rules | rule sources, groups, single rules by sid, search, an update with a rollback on error |
+| Exceptions | what Suricata stays silent about or reports less often: one rule for one address or for every address, or a rate limit per address; each with an optional expiry (a number of days, the default, or never) and a note; started from an alert with Create exception on the Events screen; the same `dpistack exceptions` command as in the CLI |
 | Logs | component logs with live following |
 | Events | events from `eve.json` with filters |
 | Metrics | charts of the Suricata statistics and the state of the host |

@@ -1,3 +1,5 @@
+import { fromEvent, setDraft } from "./exceptions-model.js";
+
 // The Events screen: the newest events of eve.json by type, a text filter,
 // and a live tail (SSE) that adds only new events of the chosen type.
 
@@ -68,6 +70,17 @@ export function start(api, els, onError) {
     const details = el("details");
     details.append(el("summary", "", summarize(ev.type, ev.event) || "(no description)"));
     details.append(el("pre", "log", JSON.stringify(ev.event, null, 2)));
+    // An alert has a rule number, so an exception can start from it: the
+    // Exceptions screen opens with the rule and the source address filled in.
+    if (fromEvent(ev)) {
+      const make = el("button", "", "Create exception");
+      make.type = "button";
+      make.addEventListener("click", () => {
+        setDraft(fromEvent(ev));
+        location.hash = "#exceptions";
+      });
+      details.append(make);
+    }
     td.append(details);
     tr.append(td);
     return tr;
