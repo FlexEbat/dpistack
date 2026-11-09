@@ -132,6 +132,8 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/rules/stats", s.need(auth.PermView, s.rulesStats))
 	mux.HandleFunc("GET /api/rules/history", s.need(auth.PermView, s.rulesHistory))
 	mux.HandleFunc("GET /api/rules/describe", s.need(auth.PermView, s.rulesDescribe))
+	mux.HandleFunc("GET /api/rules/find", s.need(auth.PermView, s.rulesFind))
+	mux.HandleFunc("GET /api/rules/facets", s.need(auth.PermView, s.rulesFacets))
 	mux.HandleFunc("POST /api/rules/local/check", s.need(auth.PermRulesEdit, s.rulesLocalCheck))
 	mux.HandleFunc("GET /api/config/{name}/history", s.need(auth.PermConfigsEdit, s.configHistory))
 	mux.HandleFunc("GET /api/config/{name}/history/{id}", s.need(auth.PermConfigsEdit, s.configVersion))

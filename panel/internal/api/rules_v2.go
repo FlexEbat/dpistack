@@ -8,14 +8,18 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 )
 
 // Rules v2 (tech.md 18.41). The routes run one verb each and send its JSON on
 // as it is; the screen and `dpistack rules-stats` and friends therefore show
 // the same numbers.
 var (
-	sidNumber = regexp.MustCompile(`^[0-9]{1,10}$`)
-	versionID = regexp.MustCompile(`^[0-9]{8}T[0-9]{6}Z(\.[0-9]+)?$`)
+	findClass  = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+	findSource = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$`)
+	sidNumber  = regexp.MustCompile(`^[0-9]{1,10}$`)
+	versionID  = regexp.MustCompile(`^[0-9]{8}T[0-9]{6}Z(\.[0-9]+)?$`)
 )
 
 // passJSON sends what a verb printed, after checking that it is JSON: a verb
@@ -132,4 +136,56 @@ func (s *server) configVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"name": name, "id": id, "content": text})
+}
+
+// rulesFind handles GET /api/rules/find?class=&source=&state=&q=: rules by
+// category, source, state and text, disabled ones included. At least one
+// filter is needed.
+func (s *server) rulesFind(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	o := ctl.RulesFindOptions{
+		Class:  strings.TrimSpace(q.Get("class")),
+		Source: strings.TrimSpace(q.Get("source")),
+		State:  strings.TrimSpace(q.Get("state")),
+		Text:   strings.TrimSpace(q.Get("q")),
+	}
+	if o.State == "any" {
+		o.State = ""
+	}
+	if o.Class == "" && o.Source == "" && o.State == "" && o.Text == "" {
+		writeError(w, http.StatusBadRequest, "choose a category, a source, a state or enter some text")
+		return
+	}
+	if o.Class != "" && !findClass.MatchString(o.Class) {
+		writeError(w, http.StatusBadRequest, "a category is letters, digits and hyphens")
+		return
+	}
+	if o.Source != "" && !findSource.MatchString(o.Source) {
+		writeError(w, http.StatusBadRequest, "that is not a source name")
+		return
+	}
+	if o.State != "" && o.State != "enabled" && o.State != "disabled" {
+		writeError(w, http.StatusBadRequest, "the state is enabled, disabled or any")
+		return
+	}
+	if o.Text != "" && !searchQuery.MatchString(o.Text) {
+		writeError(w, http.StatusBadRequest, "the text may contain Latin letters, digits, space and the characters . _ : = / @ + , - (up to 100 characters)")
+		return
+	}
+	out, err := s.cfg.Ctl.RulesFind(r.Context(), o)
+	if err != nil {
+		opError(w, err)
+		return
+	}
+	passJSON(w, out)
+}
+
+// rulesFacets handles GET /api/rules/facets.
+func (s *server) rulesFacets(w http.ResponseWriter, r *http.Request) {
+	out, err := s.cfg.Ctl.RulesFacets(r.Context())
+	if err != nil {
+		opError(w, err)
+		return
+	}
+	passJSON(w, out)
 }

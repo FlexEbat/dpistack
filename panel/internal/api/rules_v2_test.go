@@ -19,6 +19,8 @@ echo "$*" >> "$dir/calls.log"
 case "$1" in
 rules-stats) cat "$dir/stats.json" ;;
 rules-history) cat "$dir/history.json" ;;
+rules-find) cat "$dir/find.json" ;;
+rules-facets) cat "$dir/facets.json" ;;
 rules-describe) printf '{"rules":[],"asked":%s}\n' "$(($# - 1))" ;;
 rules-local)
   cat > "$dir/stdin.txt"
@@ -38,6 +40,8 @@ var rulesV2Files = map[string]string{
 	"stats.json":    `{"ruleset":{"present":true,"updated":"2026-11-09T06:43:33Z","total":5,"enabled":3,"disabled":2},"local":{"total":2,"enabled":1,"disabled":1},"sources":[{"name":"test/one","cached":true,"total":3,"enabled":2,"disabled":1,"missing":0,"fetched":"2026-11-09T06:43:33Z"}]}`,
 	"history.json":  `{"updates":[{"time":"2026-11-09T06:00:00Z","result":"ok","loaded":5,"total":5,"enabled":3,"added":4,"removed":1,"modified":2,"parsed":true}]}`,
 	"local.json":    `{"ok":false,"rules":2,"problems":[{"line":1,"kind":"conflict","text":"sid 1000001 is already used by the rule set: ONE a"}],"warnings":[],"suricata":{"run":true,"ok":true,"output":""}}`,
+	"find.json":     `{"results":[{"sid":1000002,"msg":"ONE trojan off","class":"trojan-activity","enabled":false}],"truncated":false,"source_known":true}`,
+	"facets.json":   `{"classes":[{"name":"trojan-activity","count":2}],"sources":["test/one"]}`,
 	"versions.json": `{"name":"local.rules","versions":[{"id":"20261108T101010Z","time":"2026-11-08T10:10:10Z","size":120,"lines":2}]}`,
 }
 
@@ -211,5 +215,61 @@ func TestConfigHistoryNeedsConfigsEdit(t *testing.T) {
 	}
 	if w := e.do(req{method: "GET", path: "/api/config/local.rules/history"}); w.Code != http.StatusUnauthorized {
 		t.Errorf("no session: %d", w.Code)
+	}
+}
+
+func TestRulesFindBuildsTheVerbArgumentsFromTheFilters(t *testing.T) {
+	e := rulesV2Env(t)
+	w := e.as("vi", "GET", "/api/rules/find?class=trojan-activity&source=test/one&state=disabled&q=ONE%20trojan", "")
+	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != rulesV2Files["find.json"] {
+		t.Fatalf("find: %d %s", w.Code, w.Body)
+	}
+	if !strings.Contains(e.calls(), "rules-find --class trojan-activity --source test/one --state disabled --text ONE trojan\n") {
+		t.Errorf("arguments: %q", e.calls())
+	}
+	// "any" is no filter, and one filter is enough.
+	if w := e.as("vi", "GET", "/api/rules/find?state=any&q=2008581", ""); w.Code != 200 {
+		t.Errorf("one filter: %d %s", w.Code, w.Body)
+	}
+	if !strings.Contains(e.calls(), "rules-find --text 2008581\n") {
+		t.Errorf("state=any must not be sent: %q", e.calls())
+	}
+}
+
+func TestRulesFindChecksTheFiltersBeforeCtl(t *testing.T) {
+	e := rulesV2Env(t)
+	before := e.calls()
+	for name, q := range map[string]string{
+		"no filter":      "",
+		"only any":       "?state=any",
+		"class shell":    "?class=a;b",
+		"class space":    "?class=a%20b",
+		"source dash":    "?source=-x",
+		"source shell":   "?source=a$(b)",
+		"state":          "?state=maybe",
+		"text pipe":      "?q=a|b",
+		"text too long":  "?q=" + strings.Repeat("a", 101),
+		"class too long": "?class=" + strings.Repeat("a", 65),
+	} {
+		if w := e.as("vi", "GET", "/api/rules/find"+q, ""); w.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d %s, want 400", name, w.Code, w.Body)
+		}
+	}
+	if e.calls() != before {
+		t.Errorf("a refused filter reached ctl:\n%s", e.calls())
+	}
+	if w := e.do(req{method: "GET", path: "/api/rules/find?q=1"}); w.Code != http.StatusUnauthorized {
+		t.Errorf("no session: %d", w.Code)
+	}
+}
+
+func TestRulesFacets(t *testing.T) {
+	e := rulesV2Env(t)
+	w := e.as("vi", "GET", "/api/rules/facets", "")
+	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != rulesV2Files["facets.json"] {
+		t.Errorf("facets: %d %s", w.Code, w.Body)
+	}
+	if !strings.Contains(e.calls(), "rules-facets\n") {
+		t.Errorf("arguments: %q", e.calls())
 	}
 }

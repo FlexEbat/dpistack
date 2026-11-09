@@ -45,3 +45,27 @@ func (r *Runner) ConfigVersion(ctx context.Context, name, id string) (string, er
 	out, err := r.runWith(ctx, maxOutput, rulesTimeout, nil, "config-history", name, id)
 	return strings.TrimRight(string(out), "\n") + "\n", err
 }
+
+// RulesFindOptions are the filters of `rules-find`; an empty one is not sent.
+type RulesFindOptions struct {
+	Class  string
+	Source string
+	State  string
+	Text   string
+}
+
+// RulesFind runs `rules-find` with the filters given.
+func (r *Runner) RulesFind(ctx context.Context, o RulesFindOptions) ([]byte, error) {
+	args := []string{"rules-find"}
+	for _, f := range []struct{ flag, value string }{{"--class", o.Class}, {"--source", o.Source}, {"--state", o.State}, {"--text", o.Text}} {
+		if f.value != "" {
+			args = append(args, f.flag, f.value)
+		}
+	}
+	return r.runWith(ctx, maxOutput, rulesTimeout, nil, args...)
+}
+
+// RulesFacets runs `rules-facets`: the categories and sources the filters offer.
+func (r *Runner) RulesFacets(ctx context.Context) ([]byte, error) {
+	return r.runWith(ctx, maxOutput, rulesTimeout, nil, "rules-facets")
+}
