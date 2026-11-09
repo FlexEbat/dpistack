@@ -496,6 +496,9 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 | `GET /api/rules/search?q=` | `{results:[{sid,msg}], truncated}`, up to 50 rules: `ctl rules-search` |
 | `POST /api/rules/groups/{group}/{enable\|disable}` | `ctl rules-group` |
 | `POST /api/rules/sid/{sid}/{enable\|disable}` | `ctl rules-sid` |
+| `GET /api/exceptions` | `ctl exceptions list --json`; permission `view`; the answer is `{default_days,today,entries:[...]}` of 4.5 |
+| `POST /api/exceptions` | `ctl exceptions add`; permission `rules.edit`; JSON body `{kind,sid,track,ip,count,seconds,days,never,note}`; `--by` is the signed in user, never a body field; 400 for a value ctl refuses (exit 2 or 5), 422 with the `suricata -T` output when the file does not pass (exit 3), 409 when a tool is missing (exit 4), 500 with the reason for exit 1 such as a duplicate |
+| `POST /api/exceptions/remove` | `ctl exceptions remove <id>`; permission `rules.edit`; body `{id}` (the id holds `:` and `/`, so it travels in the body) |
 | `GET /api/logs/{id}?lines=N` | the last lines |
 | `GET /api/logs/{id}/stream` | SSE, a live tail (at most 4 streams at once) |
 | `GET /api/eve?type=&q=&since=&limit=` | `{available, reason?, file_present, types, events:[{id,type,time,event}]}`, newest first; `limit` 1-500 (50 by default), `since` in RFC 3339; with `EVE_FILE=no` `available` is false with a reason |
