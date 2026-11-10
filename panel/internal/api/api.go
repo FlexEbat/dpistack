@@ -155,6 +155,8 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/mode", s.need(auth.PermView, s.modeGet))
 	mux.HandleFunc("POST /api/mode", s.need(auth.PermIPSManage, s.modeSet))
 	mux.HandleFunc("POST /api/mode/confirm", s.need(auth.PermIPSManage, s.modeConfirm))
+	mux.HandleFunc("GET /api/ips", s.need(auth.PermView, s.ipsStatus))
+	mux.HandleFunc("POST /api/ips/test", s.need(auth.PermTestsRun, s.ipsTest))
 	mux.HandleFunc("GET /api/eve", s.need(auth.PermView, s.eveList))
 	mux.HandleFunc("GET /api/eve/stream", s.need(auth.PermView, s.eveStream))
 	mux.HandleFunc("GET /api/logs/{id}", s.need(auth.PermView, s.logs))

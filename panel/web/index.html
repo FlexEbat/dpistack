@@ -69,6 +69,7 @@
         <p class="nav-label">Protection</p>
         <button type="button" data-view="rules"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M208,40H48A16,16,0,0,0,32,56v56c0,52.72,25.52,84.67,46.93,102.19,23.06,18.86,46,25.26,47,25.53a8,8,0,0,0,4.2,0c1-.27,23.91-6.67,47-25.53C198.48,196.67,224,164.72,224,112V56A16,16,0,0,0,208,40Zm0,72c0,37.07-13.66,67.16-40.6,89.42A129.3,129.3,0,0,1,128,223.62a128.25,128.25,0,0,1-38.92-21.81C61.82,179.51,48,149.3,48,112l0-56,160,0ZM82.34,141.66a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32l-56,56a8,8,0,0,1-11.32,0Z"/></svg><span>Rules</span></button>
         <button type="button" data-view="exceptions"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><circle cx="128" cy="128" r="88" fill="none" stroke="currentColor" stroke-width="16"/><path d="M72 184L184 72" stroke="currentColor" stroke-width="16" fill="none"/></svg>Exceptions</button>
+        <button type="button" data-view="ips"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M128 24l88 32v64c0 56-36 88-88 112C76 208 40 176 40 120V56z"/></svg>IPS</button>
       </div>
       <div class="nav-group" role="group" aria-label="System">
         <p class="nav-label">System</p>
@@ -270,6 +271,27 @@
     <h2>Interfaces</h2>
     <p class="muted">Adding or removing a capture interface is on Components.</p>
     <section id="network-ifaces"><div class="skeleton" aria-hidden="true"></div></section>
+  </div>
+  <div id="view-ips" hidden>
+    <p id="ips-error" class="error" role="alert"></p>
+    <section id="ips-summary"><div class="skeleton" aria-hidden="true"></div></section>
+    <p class="muted">Switching between IDS and IPS is on Components, where it is confirmed and counted down.</p>
+    <h2>Readiness</h2>
+    <section id="ips-checks"><div class="skeleton" aria-hidden="true"></div></section>
+    <h2>Counters</h2>
+    <section id="ips-counters"></section>
+    <h2>Drop rules</h2>
+    <section id="ips-rules"></section>
+    <h2>Latest blocked</h2>
+    <section id="ips-blocked"></section>
+    <h2>Rule test</h2>
+    <p class="muted">Replays a sample capture through Suricata offline with the drop rules (or the rule numbers given). Live traffic is never touched.</p>
+    <div class="toolbar">
+      <label>Rule numbers (optional) <input id="ips-sids" type="text" placeholder="1000002, 9000001" autocomplete="off"></label>
+      <button id="ips-run" type="button">Run rule test</button>
+    </div>
+    <p id="ips-test-note" class="muted" aria-live="polite"></p>
+    <section id="ips-test-result"></section>
   </div>
   <div id="view-traffic" hidden>
     <p id="traffic-error" class="error" role="alert"></p>
