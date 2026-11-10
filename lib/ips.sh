@@ -163,7 +163,7 @@ ips_last_stats() {
 		echo null
 		return 0
 	}
-	line=$(tail -c 4194304 "$eve" 2>/dev/null | grep -F '"event_type":"stats"' | tail -n 1)
+	line=$(tail -c 4194304 "$eve" 2>/dev/null | grep -F '"event_type":"stats"' | tail -n 2 | jq -cR 'fromjson? | select(.stats)' 2>/dev/null | tail -n 1)
 	[[ -n "$line" ]] || {
 		echo null
 		return 0
@@ -181,7 +181,7 @@ ips_last_blocked() {
 		return 0
 	}
 	tail -c 8388608 "$eve" 2>/dev/null | grep -F '"blocked"' |
-		jq -c 'select(.event_type == "alert" and .alert.action == "blocked")
+		jq -cR 'fromjson? | select(.event_type == "alert" and .alert.action == "blocked")
 			| {time: .timestamp, src: .src_ip, dest: .dest_ip, proto: .proto, sid: .alert.signature_id, msg: .alert.signature}' 2>/dev/null |
 		tail -n "$IPS_BLOCKED_SHOW" | jq -sc 'reverse' 2>/dev/null || echo '[]'
 }

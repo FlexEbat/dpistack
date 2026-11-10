@@ -45,6 +45,11 @@ Usage: dpistack <command> [arguments]
   rules-facets                       the categories and sources the filters of rules-find offer
   rules-local check                  checks a local.rules given on stdin: not a rule, no sid, a sid used twice or by the rule set, suricata -T
   config-history <name> [<version>]  the saved versions of a config file, or the content of one
+  alerts list [--state S] [--source S] [--severity S] [--json]
+                                     the alerts of the watchdog and of Suricata with their states
+  alerts history [--limit N] [--json]  what people did and the status changes of the watchdog, newest first
+  alerts ack|resolve|reopen <key> [--note T] [--by NAME] | snooze <key> --for 1h|4h|24h|7d
+                                     set the state of an alert (key: watch:<check> or sid:<number>)
   exceptions list [--json] | add suppress|limit <sid> [--track src|dst] [--ip ADDR] [--count N --seconds S] [--days N|--never] [--note TEXT] | remove <id> | prune
                                      what Suricata stays silent about or reports less often; expiry is optional
   iface list|add|remove [name]        capture interfaces
@@ -2432,6 +2437,7 @@ audit_wanted() {
 	# prune is not listed: the watchdog runs it every tick and writes its own
 	# line, only when it removed something (exc_prune).
 	exceptions) [[ "$sub" == add || "$sub" == remove ]] ;;
+	alerts) [[ "$sub" == ack || "$sub" == snooze || "$sub" == resolve || "$sub" == reopen ]] ;;
 	backup) [[ "$sub" == create || "$sub" == restore ]] ;;
 	mode) [[ "$sub" == ids || "$sub" == ips ]] ;;
 	*) return 1 ;;
@@ -2509,6 +2515,7 @@ ctl_dispatch() {
 	rules-sid) cmd_rules_sid "$@" ;;
 	rules-search) cmd_rules_search "$@" ;;
 	exceptions) cmd_exceptions "$@" ;;
+	alerts) cmd_alerts "$@" ;;
 	rules-stats) rules_stats "$@" ;;
 	rules-history) rules_history "$@" ;;
 	rules-describe) rules_describe "$@" ;;

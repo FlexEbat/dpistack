@@ -233,7 +233,27 @@ fixture_rules() {
 
 @test "ips test and ips status are not audited, they only read" {
 	fixture_rules
+	AUDIT="$DPISTACK_ROOT/var/lib/dpistack/audit/audit.jsonl"
+	# a control: an audited verb does write to this file, so an empty file below means something
+	"$CTL" alerts ack sid:1 >/dev/null 2>&1 || true
+	"$CTL" mode ids >/dev/null 2>&1 || true
+	[ -s "$AUDIT" ]
+	: >"$AUDIT"
 	run "$CTL" ips status --json
 	run "$CTL" ips test --json
-	[ ! -s "$DPISTACK_ROOT/var/lib/dpistack/audit.jsonl" ]
+	[ ! -s "$AUDIT" ]
+}
+
+@test "ips status: a broken line in eve.json hides neither the counters nor the blocked events" {
+	{
+		echo '{"timestamp":"t0","event_type":"stats","stats":{"ips":{"accepted":1'
+		echo '{"timestamp":"t1","event_type":"stats","stats":{"ips":{"accepted":10,"blocked":20,"rejected":30,"replaced":40}}}'
+		echo '{"timestamp":"t2","event_type":"alert","alert":{"action":"blocked","signature_id":5,"signature":"b"'
+		echo '{"timestamp":"t3","event_type":"alert","src_ip":"1.1.1.1","dest_ip":"2.2.2.2","proto":"TCP","alert":{"action":"blocked","signature_id":6,"signature":"six"}}'
+	} >"$EVE"
+	run "$CTL" ips status --json
+	[ "$status" -eq 0 ]
+	[ "$(jq -r .counters.blocked <<<"$output")" = 20 ]
+	[ "$(jq -r '.blocked | length' <<<"$output")" = 1 ]
+	[ "$(jq -r '.blocked[0].sid' <<<"$output")" = 6 ]
 }
