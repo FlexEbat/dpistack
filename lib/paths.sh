@@ -15,6 +15,7 @@ path_metrics_token() { echo "$(path_etc)/metrics.token"; }
 
 path_sys_class_net() { echo "${DPISTACK_ROOT}/sys/class/net"; }
 path_proc_net_route() { echo "${DPISTACK_ROOT}/proc/net/route"; }
+path_proc_nfqueue() { echo "${DPISTACK_ROOT}/proc/net/netfilter/nfnetlink_queue"; }
 path_state_dir() { echo "${DPISTACK_ROOT}/var/lib/dpistack"; }
 path_state_file() { echo "$(path_state_dir)/state"; }
 path_health_json() { echo "$(path_state_dir)/health.json"; }
