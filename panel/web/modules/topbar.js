@@ -24,6 +24,15 @@ export function modeChip(mode) {
   return { text: ips ? (mode.pending ? "IPS, waiting for confirmation" : "IPS") : "IDS", level: ips ? "warn" : "ok" };
 }
 
+// bellChip is the count of new alerts of the Alert Center; critical ones make
+// it red, others yellow, none green. It is a link to the Alerts screen.
+export function bellChip(list) {
+  const c = list && list.counts;
+  if (!c || typeof c.new !== "number") return null;
+  const text = c.new === 0 ? "No new alerts" : `${c.new} new alert${c.new === 1 ? "" : "s"}`;
+  return { text, level: c.new_crit > 0 ? "crit" : c.new > 0 ? "warn" : "ok" };
+}
+
 // Theme: "system" follows the colour scheme of the system, "light" and "dark"
 // override it. Only the lite stylesheet has both palettes; the full edition is
 // dark by design, so the switch is not offered there (see themeSwitchable).
@@ -77,7 +86,7 @@ function paintChip(node, chip) {
   node.dataset.level = chip.level || "";
 }
 
-// start polls the three sources and paints the chips. An answer that fails
+// start polls the four sources and paints the chips. An answer that fails
 // leaves its chip as it was, or hidden when it never had one; only a 401 is
 // passed on (the session ended).
 export function start(api, els, onError) {
@@ -88,10 +97,10 @@ export function start(api, els, onError) {
   async function once() {
     if (busy) return;
     busy = true;
-    const [status, system, mode] = await Promise.allSettled([api("/api/status"), api("/api/system"), api("/api/mode")]);
+    const [status, system, mode, bell] = await Promise.allSettled([api("/api/status"), api("/api/system"), api("/api/mode"), api("/api/alert-center?state=new")]);
     busy = false;
     if (!running) return;
-    for (const r of [status, system, mode]) {
+    for (const r of [status, system, mode, bell]) {
       if (r.status === "rejected" && r.reason && r.reason.status === 401) return onError(r.reason);
     }
     if (status.status === "fulfilled") paintChip(els.state, stateChip(status.value));
@@ -100,6 +109,7 @@ export function start(api, els, onError) {
       paintChip(els.host, host ? { text: host, level: "" } : null);
     }
     if (mode.status === "fulfilled") paintChip(els.mode, modeChip(mode.value));
+    if (bell.status === "fulfilled") paintChip(els.bell, bellChip(bell.value));
   }
 
   once();

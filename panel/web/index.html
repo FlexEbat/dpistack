@@ -34,6 +34,7 @@
       <span id="top-host" class="chip static" hidden></span>
       <span id="top-state" class="chip static" role="status" hidden></span>
       <span id="top-mode" class="chip static" hidden></span>
+      <a id="top-bell" class="chip" href="#alerts" hidden></a>
       <div class="note-anchor">
         <button id="translate-btn" class="icon-btn" type="button" aria-label="Translation" title="Translation" aria-describedby="translate-note"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3.2 3.4 3.2 14.6 0 18M12 3c-3.2 3.4-3.2 14.6 0 18"/></svg></button>
         <p id="translate-note" class="note" role="status" hidden>Translation is not available yet.</p>
@@ -347,6 +348,21 @@
     <section id="tests-result"></section>
   </div>
   <div id="view-alerts" hidden>
+    <h2>Alert Center</h2>
+    <p id="ac-error" class="error" role="alert"></p>
+    <p id="ac-summary" class="muted" aria-live="polite"></p>
+    <p class="muted">Acknowledging or snoozing changes only what this page shows. To stop Suricata from alerting on a rule, use Exceptions.</p>
+    <div class="toolbar">
+      <select id="ac-state" aria-label="State"><option value="">any state</option><option value="new">new</option><option value="acknowledged">acknowledged</option><option value="snoozed">snoozed</option><option value="resolved">resolved</option></select>
+      <select id="ac-source" aria-label="Source"><option value="">any source</option><option value="watchdog">watchdog</option><option value="suricata">Suricata</option></select>
+      <select id="ac-severity" aria-label="Severity"><option value="">any level</option><option value="crit">critical</option><option value="warn">warning</option><option value="info">info</option></select>
+      <label>Note for the next change (optional) <input id="ac-note" type="text" maxlength="80" autocomplete="off"></label>
+      <button id="ac-refresh" type="button">Refresh</button>
+    </div>
+    <section id="ac-list"><div class="skeleton" aria-hidden="true"></div></section>
+    <h2>Decisions</h2>
+    <section id="ac-history"></section>
+    <h2>Status changes</h2>
     <p id="alerts-error" class="error" role="alert"></p>
     <div class="toolbar">
       <select id="al-check" aria-label="Check"><option value="">All checks</option></select>
