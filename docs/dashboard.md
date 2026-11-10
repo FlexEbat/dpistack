@@ -27,7 +27,7 @@ The server sends the stylesheet and the background script of the chosen edition,
 | Components | start, stop and restart of every component, the IDS/IPS mode with a confirmation and a countdown, capture interfaces |
 | Settings | every `dpistack.conf` setting and the secrets |
 | Configs | an editor for `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`; check, save with a backup, and roll back |
-| Rules | rule sources, groups, single rules by sid, search, an update with a rollback on error |
+| Rules | rule sources, groups, single rules by sid, search, an update with a rollback on error; the counts per rule source (total, enabled, disabled), the history of updates, a search by category, source, state and text (disabled rules included), an editor for `local.rules` with a check (no rule, no sid, a sid used twice or by the rule set, `suricata -T`) and the earlier versions of the file with a comparison |
 | Exceptions | what Suricata stays silent about or reports less often: one rule for one address or for every address, or a rate limit per address; each with an optional expiry (a number of days, the default, or never) and a note; started from an alert with Create exception on the Events screen; the same `dpistack exceptions` command as in the CLI |
 | Logs | component logs with live following |
 | Events | events from `eve.json`: filters by address, rule number, category, protocol, severity, domain and time; grouping by rule, address or category; the events of one flow; the history of one rule; export of what is shown as JSON or CSV; Create exception for an alert. The filters other than type, text and time work on the newest events that were loaded (at most 500) |

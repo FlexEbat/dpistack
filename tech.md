@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v70** (2026-11-09)
-**Program version: v0.41.0** (slices 0-40 are done except the alert bell of 37, 41-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v71** (2026-11-09)
+**Program version: v0.42.0** (slices 0-41 are done except the alert bell of 37, 42-45 are not started; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.42.0: slice 41, Rules v2 (18.41): the counts per rule source, the history of updates, a rule search by category, source, state and text (disabled rules included), a check of `local.rules` (not a rule, no sid, a sid used twice or by the rule set, `suricata -T`) and the history of changes of a config file with a comparison. New verbs `rules-stats`, `rules-history`, `rules-describe`, `rules-find`, `rules-facets`, `rules-local check`, `config-history`; `rules-update` records each update. Findings R218 and R219.
 - v0.41.0: slice 40, the Events workspace and exceptions (18.40): filters, grouping, the events of one flow, the history of one rule and JSON/CSV export on the Events screen; the Exceptions screen and `dpistack exceptions` (suppress and rate limit entries in `threshold.config`, optional expiry, a bare SID allowed); `EXCEPTIONS_DEFAULT_DAYS`; the project is GNU GPL v3.0 and says it is under development (rule 12). Findings R215 to R217.
 - v0.40.0: slice 39, the Traffic screen (18.39): devices, applications, domains and connections from the newest `flow`, `dns` and `tls` events, a filter, one device in detail and a link to ntopng; no new endpoint, no change to the Suricata config.
 - v0.39.2: R211 and R212 of 18.52, from a field report: the live BitTorrent check brings its own rule (it could not pass on a healthy stand), and the installer warns about a drop-in that replaces the `ExecStart` of the panel unit.
 - v0.39.1: R210 of 18.51: the refusal of a non-empty `EVE_REDIS` (v0.37.6) stopped the update on a config that had a value; it is now a warning and the value is ignored.
-- v0.39.0: slice 38, the Network screen (18.50): the capture chain (host, capture interfaces, Suricata, eve.json, EveBox) and the interface table, from answers that exist; no new endpoint.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v71: v0.42.0. 18.41 (slice 41) written; the slice 41 row of 18.0; 4.5 the verbs of Rules v2; 4.8 the routes of Rules v2; decisions D84 to D89.
 - v70: v0.41.0. 18.40 (slice 40) written; the slice 40 row of 18.0; rule 12 and A11 (GPL v3.0, the under development notice); 4.3 `EXCEPTIONS_DEFAULT_DAYS`; 4.5 the `exceptions` verb and `threshold.config`; 4.8 the `/api/exceptions` routes; decisions D78 to D83.
 - v69: v0.40.0. 18.39 (slice 39, the Traffic screen) written; the slice 39 row of 18.0; decisions D74 to D77.
 - v68: v0.39.2. 18.52 (R211, R212); the description of the live BitTorrent check in section 10 and the `TEST_BT_LIVE` row.
 - v67: v0.39.1. 18.51 (R210); the `EVE_REDIS` decision of 18.48 (D63 there) is replaced.
-- v66: v0.39.0. 18.50 (slice 38, the Network screen); the slice 38 row and its Open list updated.
 
 ---
 
@@ -379,6 +379,13 @@ The only place of the privileged actions of the panel and the watchdog. It works
 | `exceptions remove <id>` | removes the entry with that id (`kind:sid:track:ip`, `any` for none) |
 | `exceptions prune` | removes the entries past their last day (the watchdog runs it) |
 | `rules-search <q>` | up to 50 rules by `sid` or the text of `msg` |
+| `rules-stats [--json]` | `{ruleset:{present,updated,total,enabled,disabled}, local:{total,enabled,disabled}, sources:[{name,cached,total,enabled,disabled,missing,fetched}]}`; a source is counted from its newest cache file and each rule has its state in the merged set (18.41) |
+| `rules-history [--json]` | `{updates:[{time,result,loaded,total,enabled,added,removed,modified,parsed}]}`, the last 50 updates, newest first; `rules-update` writes one line per update (the last 100 are kept) |
+| `rules-describe <sid>...` | 1 to 20 sids: `{rules:[{sid,msg,enabled,where}], asked}`, from the merged set and `local.rules` |
+| `rules-find [--class C] [--source S] [--state enabled\|disabled\|any] [--text T]` | `{results:[{sid,msg,class,enabled}], truncated, source_known}`, up to 50 rules, disabled ones too; at least one filter; a number as the text is an exact sid |
+| `rules-facets` | `{classes:[{name,count}], sources:[name]}`: what the filters of `rules-find` offer (the 200 largest categories) |
+| `rules-local check` | the candidate `local.rules` on stdin (1 MiB at most); `{ok,rules,problems:[{line,kind,text}],warnings:[{line,text}],suricata:{run,ok,output}}`; kinds `not_a_rule`, `no_sid`, `duplicate`, `conflict`; a sid outside 9000000 to 9999999 is a warning; writes nothing |
+| `config-history <name> [<version>]` | `{name,versions:[{id,time,size,lines}]}` newest first (the backups of every change), or the content of one version; ids look like `20261108T101010Z` |
 | `iface list\|add\|remove <name>` | edits `IFACES`, calls `reconfigure` |
 | `mode ids\|ips [--confirm-timeout SEC]` | switches the mode; for `ips` it rolls back by itself if `mode-confirm` does not come within `SEC` (10-3600, 120 by default); `mode status [--json]` shows the mode, the method and the seconds left |
 | `mode-confirm` | confirms the switch to IPS; with no pending switch, or after the time is over, code 3 |
@@ -493,6 +500,13 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 | `GET /api/rules/sources` | `{sources:[{name,vendor,summary,license,enabled,custom}], last_update, updating}`: `ctl rules-sources list` and `list --enabled` together |
 | `POST /api/rules/sources` | the body `{action:"enable\|disable\|remove", name}` or `{action:"add-url", url}`; the answer is `{ok, output}` |
 | `POST /api/rules/update` | `ctl rules-update`; the answer is `{ok, output, last_update}`, on a failure 500 with `{error, output}` |
+| `GET /api/rules/stats` | `ctl rules-stats --json`, passed on as it is; permission `view` |
+| `GET /api/rules/history` | `ctl rules-history --json`; permission `view` |
+| `GET /api/rules/describe?sids=1,2,3` | `ctl rules-describe`; up to 20 numbers, each checked before ctl; permission `view` |
+| `GET /api/rules/find?class=&source=&state=&q=` | `ctl rules-find`; at least one filter, each checked before ctl (400); permission `view` |
+| `GET /api/rules/facets` | `ctl rules-facets`; permission `view` |
+| `POST /api/rules/local/check` | the body is the candidate `local.rules` as text (1 MiB, 413 above); `ctl rules-local check`; permission `rules.edit`; writes nothing |
+| `GET /api/config/{name}/history` and `/history/{id}` | `ctl config-history`; permission `configs.edit`; an id that is not `YYYYMMDDTHHMMSSZ` is 400, a version that is not there is 409 |
 | `GET /api/rules/search?q=` | `{results:[{sid,msg}], truncated}`, up to 50 rules: `ctl rules-search` |
 | `POST /api/rules/groups/{group}/{enable\|disable}` | `ctl rules-group` |
 | `POST /api/rules/sid/{sid}/{enable\|disable}` | `ctl rules-sid` |
@@ -1210,7 +1224,7 @@ One row per slice. **Done** means the Definition of Done of section 14 was met; 
 | 38 | Overview v2, system health and topology | **done.** `GET /api/system`, host cards, interfaces table, state cards, warnings, alerts by severity, latest alerts, traffic graph, watchdog warnings, and the Network screen (the capture chain and the interfaces table); docker and systemd state is decided in D70 | v0.35.0 to v0.37.0, v0.39.0 | 18.38, 18.50 |
 | 39 | Traffic Explorer | **done.** The Traffic screen: devices, applications, domains, connections, a text filter, one device in detail, a link to ntopng; built in the browser from `/api/eve` (flow, dns, tls), no new endpoint | v0.40.0 | 18.39 |
 | 40 | the Events workspace and exceptions | **done.** Events: filters (address, rule, category, protocol, severity, domain, time), grouping, the events of one flow, the history of one rule, JSON and CSV export, Create exception; Exceptions screen; `dpistack exceptions`; `EXCEPTIONS_DEFAULT_DAYS` | v0.41.0 | 18.40 |
-| 41 | Rules v2 | not started |  | 18.41 |
+| 41 | Rules v2 | **done.** Counts per rule source, the history of updates, rule search by category, source, state and text, a check and editor of `local.rules`, the history of changes of a config file with a comparison | v0.42.0 | 18.41 |
 | 42 | the IPS page | not started |  | 18.42 |
 | 43 | the Alert Center | not started |  | 18.43 |
 | 44 | Settings v2 | not started |  | 18.44 |
@@ -1950,17 +1964,31 @@ Tests: `tests/exceptions.bats` (19): the file and the yaml line after install, a
 
 Open: nothing ran against a real Suricata: the tests use a fake `suricata -T` that rejects a line with `INVALID`, so it is not confirmed that Suricata accepts a bare `suppress gen_id 1, sig_id N` line, that a live reload (`ruleset-reload-nonblocking`) re-reads `threshold.config`, or that a container Suricata sees the file at `/etc/suricata/threshold.config`; nothing was rendered in a browser, so the layout of the two screens, the show and hide of the form fields and the file download are checked by tests of the code only; the filters work on the newest 500 events, not on the whole file, and a `flow_id` above 2^53 can lose digits (R216); the history of a rule reads the newest 500 alerts that contain the number; a threshold entry written by hand with `type threshold` or `both` is kept but shown as `not managed`; the interactive CLI shows no list of exceptions (the verb does).
 
-### 18.41 Slice 41: Rules v2 (not started)
+### 18.41 Slice 41: Rules v2 (v0.42.0)
 
-**Status:** not started. **Remaining:** all of it.
+**Status:** done. It is a part of the Rules screen (same view, its own module `rules2.js`); every number is the answer of a `dpistack` verb, so the CLI shows the same.
 
-**What it does:** counts per source (total, enabled, disabled), the date and the history of updates, SID descriptions, search by category, provider and text, a custom rules editor (`local.rules`) with validation by `suricata -T` on a temporary copy, a SID conflict check and a change history.
+**What it does:** the rule sets with their counts (the rules in use, `local.rules`, every enabled source: total, enabled, disabled, not loaded, when downloaded); the history of the last 10 updates (time, updated or failed and restored, the numbers); a rule search by category (`classtype`), source, state and text, with disabled rules included; an editor for `local.rules` with Check (a line that is no rule, a rule with no sid, a sid used twice, a sid the rule set already uses, what `suricata -T` says) and Save or Save and apply through the same `/api/config/local.rules` as Configs; the saved versions of the file with a comparison against the editor and a way to put one back in the editor.
 
 | No | Severity | Finding | Fix |
 |---|---|---|---|
-| | | no review yet: the table is filled in when the slice is done | |
+| R218 | medium | the description of a rule was cut at the first `"` inside `msg`, but a rule writes a quote in its text as `\"` and a semicolon as `\;`; found by the test of `rules-find` with such a rule | the extraction in `rules-describe`, `rules-find` and the conflict message of `rules-local check` reads escapes and shows the text unescaped; `rules-search` (older, documented in 4.5) has the same limit and is left as it is, see Open |
+| R219 | low | `rules-search` skips every rule that is commented out, so a rule disabled by default or by `disable.conf` can never be found from the screen, and that is exactly the rule one looks for to turn on | `rules-find` searches disabled rules too and says the state of each |
 
-Open: everything above. The entry is completed with the review (findings, decisions, tests, what was not checked) when the slice is done.
+Decisions (\"choose yourself\"):
+
+| id | decision |
+| --- | --- |
+| D84 | **Counts per source come from what suricata-update itself keeps.** It stores each source in `<data dir>/update/cache` as `<md5 of the URL>-<file name of the URL>` and writes the merged set with a disabled rule as `# alert ...`; the URL comes from the source index (`cache/index.yaml`) or from the `url` of a custom source file, and the newest cache file with that file name is counted. The state of each rule is read from the merged set by sid, so a rule turned off in `disable.conf` counts as disabled. A source that was never downloaded has no numbers and says so (not zero). All of this was checked by running suricata-update 1.3.3 offline on a built cache |
+| D85 | **The history is written by `rules-update`.** One JSON line per update in `/var/lib/dpistack/rules-updates.jsonl`, the last 100 kept, with the numbers of the line `Writing rules to ...: total: N; enabled: N; added: N; removed N; modified: N` and `parsed:false` when the tool did not print it; a failed update (rolled back) is recorded as `failed`. The history starts with the first update after the upgrade; nothing is invented for the past. A history that cannot be written never makes an update fail |
+| D86 | **The check of `local.rules` is strict on the screen and the CLI keeps the old rule.** `rules-local check` reports problems (no rule, no sid, duplicate, conflict with the rule set, `suricata -T` refusing) and warnings (a sid outside 9000000 to 9999999, Suricata not installed). The screen enables Save only after a check with no problems of the exact text in the editor; `config-write` itself still needs only `suricata -T` to pass, so a script can save what the screen would stop. The verb never writes |
+| D87 | **The history of changes is the backups that already exist.** Every change of a config file makes `backups/<file>.<time>`; `config-history` lists them and prints one, and the screen compares a version with the editor in the browser (up to 2000 lines, a longer file is said not to be compared). Nothing new is stored |
+| D88 | **`rules-find` is a new verb; `rules-search` is not changed.** The text of 4.5 for `rules-search` and its tests stay true. Category is the `classtype` of the rule, provider is the source |
+| D89 | **One screen, two modules.** The Rules view starts `rules.js` (sources, groups, one rule) and `rules2.js` (the rest) and stops both when it is left |
+
+Tests: `tests/rules_v2.bats` (24): the counts of the merged set, `local.rules` and each source by the state in the merged set (a tar.gz and a plain cache file named as suricata-update names them), a source never downloaded, a custom source with its own url and a rule the set lacks, the newest cache file and a checksum file ignored, text output; `rules-describe` from both files, JSON safe messages, every refused argument; `rules-local check` for a sound file, each kind of problem with its line, the warning for the sid range, what `suricata -T` says, nothing written, the size limit and bad arguments; the history after an update with the numbers, a failed update, the cap of 100 lines and the text form; `config-history` newest first, one version, refusals; `rules-find` by category (case, disabled rules), source (and an unknown one), the combination of filters, the cap of 50, every refusal; `rules-facets`; the usage text and that none of these reads is audited. `panel/internal/api/rules_v2_test.go` (10): the JSON of each verb passed on unchanged, an answer that is not JSON is a 500, the arguments built from the filters, every value checked before ctl, the body of the check on stdin, the 1 MiB limit, the refusal mapped, the permissions (401, 403 for a viewer, an analyst and an operator on config history). `panel/web/test/rules2-model.test.mjs` (12) and `rules2-page.test.mjs` (4): the rows and words, no numbers for a source never downloaded, the query of the search, the report of the check and when Save is allowed, the line comparison and its limit, the page wiring, no `innerHTML`, the save request identical to Configs.
+
+Open: nothing ran against a real, running Suricata or a real download: the cache naming and the merged set format were checked with suricata-update 1.3.3 offline on a built cache, not with the real et/open source, whose file layout inside the archive is assumed to hold plain `.rules` files; a source whose URL has a file name shared with another enabled source can be counted from the wrong cache file; `rules-search` still stops a description at the first `\"` (R218) and still skips disabled rules (R219) and the screens use `rules-find` instead; the history of updates starts empty after the upgrade; nothing was rendered in a browser; the comparison is line by line, so a moved block shows as removed and added.
 
 ### 18.42 Slice 42: the IPS page (not started)
 
