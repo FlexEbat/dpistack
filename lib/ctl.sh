@@ -51,6 +51,9 @@ Usage: dpistack <command> [arguments]
   mode ids|ips [--confirm-timeout S] Suricata mode; ips rolls back by itself without mode-confirm (default 120 s)
   mode status [--json]               mode, method and countdown
   mode-confirm                       confirm the switch to ips
+  ips status [--json]                the IPS page: readiness, counters, drop rules, latest blocked events
+  ips test [--sid N,...] [--pcap NAME] [--json]
+                                     replays a shipped pcap offline and reports which rules would drop
   fw apply|remove|restore            DPISTACK chain (restore: at boot)
   panel-passwd                       panel password from stdin
   test bittorrent|https|all [--json] check tests (section 10)
@@ -2516,6 +2519,7 @@ ctl_dispatch() {
 	iface) cmd_iface "$@" ;;
 	mode) cmd_mode "$@" ;;
 	mode-confirm) cmd_mode_confirm "$@" ;;
+	ips) cmd_ips "$@" ;;
 	mode-rollback) cmd_mode_rollback "$@" ;;
 	fw) cmd_fw "$@" ;;
 	panel-passwd) cmd_panel_passwd "$@" ;;

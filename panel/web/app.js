@@ -10,6 +10,7 @@ import { start as startAlerts } from "./modules/alerts.js";
 import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
 import { start as startNetwork } from "./modules/network.js";
+import { start as startIps } from "./modules/ips.js";
 import { start as startTraffic } from "./modules/traffic.js";
 import { start as startRules2 } from "./modules/rules2.js";
 import { start as startExceptions } from "./modules/exceptions.js";
@@ -52,7 +53,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "network", "traffic", "components", "settings", "configs", "rules", "exceptions", "logs", "events", "metrics", "tests", "alerts", "audit", "backups", "account"];
+const VIEWS = ["overview", "network", "traffic", "components", "ips", "settings", "configs", "rules", "exceptions", "logs", "events", "metrics", "tests", "alerts", "audit", "backups", "account"];
 let me = { name: "", role: "", perms: ["view"] };
 let stopView = null;
 
@@ -190,6 +191,12 @@ const SCREENS = {
     startTests(
       api,
       { error: $("tests-error"), buttons: $("tests-buttons"), note: $("tests-note"), result: $("tests-result") },
+      showLogin,
+    ),
+  ips: () =>
+    startIps(
+      api,
+      { error: $("ips-error"), summary: $("ips-summary"), checks: $("ips-checks"), counters: $("ips-counters"), rules: $("ips-rules"), blocked: $("ips-blocked"), sids: $("ips-sids"), run: $("ips-run"), note: $("ips-test-note"), result: $("ips-test-result") },
       showLogin,
     ),
   network: () =>
