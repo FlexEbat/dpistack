@@ -37,6 +37,14 @@ Usage: dpistack <command> [arguments]
   rules-group enable|disable <group>
   rules-sid enable|disable <sid>
   rules-search <query>              up to 50 rules by sid or msg
+  rules-stats [--json]               rules in the merged set, in local.rules and per enabled source (total, enabled, disabled)
+  rules-history [--json]             the last rule updates: time, result, totals
+  rules-describe <sid>...            what up to 20 rules say, and whether they are enabled
+  rules-find [--class C] [--source S] [--state enabled|disabled|any] [--text T]
+                                     finds rules (disabled ones too) by category, source, state and text; 50 at most
+  rules-facets                       the categories and sources the filters of rules-find offer
+  rules-local check                  checks a local.rules given on stdin: not a rule, no sid, a sid used twice or by the rule set, suricata -T
+  config-history <name> [<version>]  the saved versions of a config file, or the content of one
   exceptions list [--json] | add suppress|limit <sid> [--track src|dst] [--ip ADDR] [--count N --seconds S] [--days N|--never] [--note TEXT] | remove <id> | prune
                                      what Suricata stays silent about or reports less often; expiry is optional
   iface list|add|remove [name]        capture interfaces
@@ -1516,6 +1524,11 @@ cmd_rules_update() {
 		}
 	fi
 	tail -n "$RULES_UPDATE_TAIL" "$log"
+	# The history keeps what suricata-update printed as numbers; a history
+	# that cannot be written must not turn a good update into a failure.
+	local result=failed
+	((ok)) && result=ok
+	rules_history_record "$result" "$log" 2>/dev/null || true
 	rm -f "$log"
 
 	if ((!ok)); then
@@ -2493,6 +2506,13 @@ ctl_dispatch() {
 	rules-sid) cmd_rules_sid "$@" ;;
 	rules-search) cmd_rules_search "$@" ;;
 	exceptions) cmd_exceptions "$@" ;;
+	rules-stats) rules_stats "$@" ;;
+	rules-history) rules_history "$@" ;;
+	rules-describe) rules_describe "$@" ;;
+	rules-find) rules_find "$@" ;;
+	rules-facets) rules_facets "$@" ;;
+	rules-local) cmd_rules_local "$@" ;;
+	config-history) config_history "$@" ;;
 	iface) cmd_iface "$@" ;;
 	mode) cmd_mode "$@" ;;
 	mode-confirm) cmd_mode_confirm "$@" ;;

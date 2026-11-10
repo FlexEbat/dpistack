@@ -198,6 +198,33 @@
     <section id="rules-results"></section>
     <h2>Disabled rules</h2>
     <section id="rules-disabled"></section>
+    <h2>Rule sets</h2>
+    <section id="r2-stats"><div class="skeleton" aria-hidden="true"></div></section>
+    <h2>Update history</h2>
+    <section id="r2-history"><div class="skeleton" aria-hidden="true"></div></section>
+    <h2>Find rules</h2>
+    <div class="toolbar">
+      <label>Category <select id="r2-class"><option value="">any category</option></select></label>
+      <label>Source <select id="r2-source"><option value="">any source</option></select></label>
+      <label>State <select id="r2-state"><option value="any">any</option><option value="enabled">enabled</option><option value="disabled">disabled</option></select></label>
+      <input id="r2-text" type="text" class="wide" placeholder="rule number or part of the description" aria-label="Rule number or text" autocomplete="off">
+      <button id="r2-find" type="button">Find</button>
+    </div>
+    <p id="r2-find-note" class="muted" aria-live="polite"></p>
+    <section id="r2-find-results"></section>
+    <h2>Custom rules</h2>
+    <p class="muted">The file local.rules. Check it before saving: the check finds a line that is no rule, a rule with no sid, a sid used twice or already used by the rule set, and asks Suricata to load the file. Use sids from 9000000 to 9999999.</p>
+    <textarea id="r2-editor" class="editor" rows="12" spellcheck="false" aria-label="local.rules"></textarea>
+    <div class="toolbar">
+      <button id="r2-reload" type="button">Reload from the server</button>
+      <button id="r2-check" type="button">Check</button>
+      <button id="r2-save" type="button" disabled>Save</button>
+      <button id="r2-apply" type="button" disabled>Save and apply</button>
+    </div>
+    <section id="r2-report"></section>
+    <h3>Earlier versions</h3>
+    <section id="r2-versions"></section>
+    <section id="r2-diff"></section>
   </div>
   <div id="view-logs" hidden>
     <p id="logs-error" class="error" role="alert"></p>

@@ -11,6 +11,7 @@ import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
 import { start as startNetwork } from "./modules/network.js";
 import { start as startTraffic } from "./modules/traffic.js";
+import { start as startRules2 } from "./modules/rules2.js";
 import { start as startExceptions } from "./modules/exceptions.js";
 import * as topbar from "./modules/topbar.js";
 import { start as startSettings } from "./modules/settings.js";
@@ -133,8 +134,8 @@ const SCREENS = {
       },
       showLogin,
     ),
-  rules: () =>
-    startRules(
+  rules: () => {
+    const stopRules = startRules(
       api,
       {
         root: $("view-rules"),
@@ -155,7 +156,23 @@ const SCREENS = {
         disabled: $("rules-disabled"),
       },
       showLogin,
-    ),
+    );
+    const stopRules2 = startRules2(
+      api,
+      {
+        error: $("rules-error"), message: $("rules-message"), stats: $("r2-stats"), history: $("r2-history"),
+        class: $("r2-class"), source: $("r2-source"), state: $("r2-state"), text: $("r2-text"), find: $("r2-find"),
+        findNote: $("r2-find-note"), findResults: $("r2-find-results"),
+        editor: $("r2-editor"), reload: $("r2-reload"), check: $("r2-check"), save: $("r2-save"), apply: $("r2-apply"),
+        report: $("r2-report"), versions: $("r2-versions"), diff: $("r2-diff"),
+      },
+      showLogin,
+    );
+    return () => {
+      stopRules();
+      stopRules2();
+    };
+  },
   logs: () =>
     startLogs(
       api,

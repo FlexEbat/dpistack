@@ -55,6 +55,8 @@ step_call() {
 }
 # shellcheck source=lib/exceptions.sh
 source "$LIB_DIR/exceptions.sh"
+# shellcheck source=lib/rules_stats.sh
+source "$LIB_DIR/rules_stats.sh"
 # shellcheck source=lib/ctl.sh
 source "$LIB_DIR/ctl.sh"
 
