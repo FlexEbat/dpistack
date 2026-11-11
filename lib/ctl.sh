@@ -30,6 +30,8 @@ Usage: dpistack <command> [arguments]
   config-read <name>                 prints the current file
   config-write <name> [--apply|--check] new content from stdin; --check only validates
   settings list [--json] | check K=V... | set [--apply|--apply-heavy] [--confirm-access] K=V... | secret KEY | job
+  settings profile list|show|save|delete|apply
+                                     named sets of keys: save NAME [K=V...] (stdin when none), apply NAME [--apply|--apply-heavy] [--confirm-access]
   config-revert <name>               restores the latest backup
   reconfigure [--dry-run]            applies the current dpistack.conf
   rules-update                       update the rules, roll back on error
@@ -692,6 +694,43 @@ settings_lines_json() {
 	printf ']'
 }
 
+# settings_touches_json <key> - the labels of what a change of the key touches.
+settings_touches_json() {
+	local step first=1
+	printf '['
+	for step in ${SCHEMA_STEPS[$1]}; do
+		((first)) || printf ','
+		first=0
+		printf '"%s"' "$(json_escape "${SCHEMA_STEP_LABEL[$step]:-$step}")"
+	done
+	printf ']'
+}
+
+# settings_depends_json <key> - [{"key":K,"op":"=","values":[...]}, ...].
+settings_depends_json() {
+	local c k op vals first=1
+	printf '['
+	for c in ${SCHEMA_DEPENDS[$1]:-}; do
+		if [[ "$c" == *'!='* ]]; then
+			k="${c%%!=*}"
+			op='!='
+			vals="${c#*!=}"
+		elif [[ "$c" == *'='* ]]; then
+			k="${c%%=*}"
+			op='='
+			vals="${c#*=}"
+		else
+			k="${c%%\~*}"
+			op='~'
+			vals="${c#*\~}"
+		fi
+		((first)) || printf ','
+		first=0
+		printf '{"key":"%s","op":"%s","values":%s}' "$k" "$op" "$(settings_json_array "${vals//|/,}")"
+	done
+	printf ']'
+}
+
 # settings_secret_set <key> - whether secrets.conf holds a value for it.
 settings_secret_set() {
 	[[ -r "$(path_secrets)" ]] && grep -q "^$1=." "$(path_secrets)"
@@ -731,11 +770,12 @@ settings_list() {
 			max="${SCHEMA_OPTIONS[$key]##*..}"
 		fi
 		pattern="${SCHEMA_PATTERN[$key]:-}"
-		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s"}' \
+		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s","steps":%s,"touches":%s,"depends":%s}' \
 			"$key" "$type" "$opts" "$min" "$max" "$(json_escape "${SCHEMA_DEFAULT[$key]}")" \
 			"${SCHEMA_LEVEL[$key]}" "${SCHEMA_GROUP[$key]}" "${SCHEMA_WEIGHT[$key]}" \
 			"$([[ $secret == yes ]] && echo true || echo false)" "$set" \
-			"$(json_escape "$value")" "$(json_escape "$pattern")"
+			"$(json_escape "$value")" "$(json_escape "$pattern")" \
+			"$(settings_json_array "${SCHEMA_STEPS[$key]// /,}")" "$(settings_touches_json "$key")" "$(settings_depends_json "$key")"
 	done
 	if ((json)); then printf ']}\n'; fi
 }
@@ -991,8 +1031,9 @@ cmd_settings() {
 	check) settings_check "$@" ;;
 	set) settings_set "$@" ;;
 	secret) settings_secret "$@" ;;
+	profile) settings_profile "$@" ;;
 	job) settings_job ;;
-	*) fail 2 "settings: list [--json] | check KEY=VALUE... | set [--apply|--apply-heavy] [--confirm-access] KEY=VALUE... | secret KEY | job" ;;
+	*) fail 2 "settings: list [--json] | check KEY=VALUE... | set [--apply|--apply-heavy] [--confirm-access] KEY=VALUE... | secret KEY | profile list|show|save|delete|apply | job" ;;
 	esac
 }
 
@@ -2432,7 +2473,7 @@ audit_wanted() {
 	local sub="${2:-}"
 	case "$1" in
 	start | stop | restart | reload | config-write | config-revert | self-update | reconfigure | rules-update | rules-group | rules-sid | mode-confirm | mode-rollback | fw | panel-passwd | test) return 0 ;;
-	settings) [[ "$sub" == set || "$sub" == secret ]] ;;
+	settings) [[ "$sub" == set || "$sub" == secret || ("$sub" == profile && "${3:-}" =~ ^(save|delete|apply)$) ]] ;;
 	rules-sources | iface | users) [[ -n "$sub" && "$sub" != list ]] ;;
 	# prune is not listed: the watchdog runs it every tick and writes its own
 	# line, only when it removed something (exc_prune).

@@ -92,6 +92,8 @@ step_call() {
 source "$LIB_DIR/exceptions.sh"
 # shellcheck source=lib/alerts.sh
 source "$LIB_DIR/alerts.sh"
+# shellcheck source=lib/profiles.sh
+source "$LIB_DIR/profiles.sh"
 # shellcheck source=lib/rules_stats.sh
 source "$LIB_DIR/rules_stats.sh"
 # shellcheck source=lib/ctl.sh
@@ -1802,7 +1804,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.44.0"
+DPISTACK_VERSION="0.45.0"
 
 : "${DRY_RUN:=0}"
 
@@ -2523,6 +2525,8 @@ Usage: dpistack <command> [arguments]
   config-read <name>                 prints the current file
   config-write <name> [--apply|--check] new content from stdin; --check only validates
   settings list [--json] | check K=V... | set [--apply|--apply-heavy] [--confirm-access] K=V... | secret KEY | job
+  settings profile list|show|save|delete|apply
+                                     named sets of keys: save NAME [K=V...] (stdin when none), apply NAME [--apply|--apply-heavy] [--confirm-access]
   config-revert <name>               restores the latest backup
   reconfigure [--dry-run]            applies the current dpistack.conf
   rules-update                       update the rules, roll back on error
@@ -3185,6 +3189,43 @@ settings_lines_json() {
 	printf ']'
 }
 
+# settings_touches_json <key> - the labels of what a change of the key touches.
+settings_touches_json() {
+	local step first=1
+	printf '['
+	for step in ${SCHEMA_STEPS[$1]}; do
+		((first)) || printf ','
+		first=0
+		printf '"%s"' "$(json_escape "${SCHEMA_STEP_LABEL[$step]:-$step}")"
+	done
+	printf ']'
+}
+
+# settings_depends_json <key> - [{"key":K,"op":"=","values":[...]}, ...].
+settings_depends_json() {
+	local c k op vals first=1
+	printf '['
+	for c in ${SCHEMA_DEPENDS[$1]:-}; do
+		if [[ "$c" == *'!='* ]]; then
+			k="${c%%!=*}"
+			op='!='
+			vals="${c#*!=}"
+		elif [[ "$c" == *'='* ]]; then
+			k="${c%%=*}"
+			op='='
+			vals="${c#*=}"
+		else
+			k="${c%%\~*}"
+			op='~'
+			vals="${c#*\~}"
+		fi
+		((first)) || printf ','
+		first=0
+		printf '{"key":"%s","op":"%s","values":%s}' "$k" "$op" "$(settings_json_array "${vals//|/,}")"
+	done
+	printf ']'
+}
+
 # settings_secret_set <key> - whether secrets.conf holds a value for it.
 settings_secret_set() {
 	[[ -r "$(path_secrets)" ]] && grep -q "^$1=." "$(path_secrets)"
@@ -3224,11 +3265,12 @@ settings_list() {
 			max="${SCHEMA_OPTIONS[$key]##*..}"
 		fi
 		pattern="${SCHEMA_PATTERN[$key]:-}"
-		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s"}' \
+		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s","steps":%s,"touches":%s,"depends":%s}' \
 			"$key" "$type" "$opts" "$min" "$max" "$(json_escape "${SCHEMA_DEFAULT[$key]}")" \
 			"${SCHEMA_LEVEL[$key]}" "${SCHEMA_GROUP[$key]}" "${SCHEMA_WEIGHT[$key]}" \
 			"$([[ $secret == yes ]] && echo true || echo false)" "$set" \
-			"$(json_escape "$value")" "$(json_escape "$pattern")"
+			"$(json_escape "$value")" "$(json_escape "$pattern")" \
+			"$(settings_json_array "${SCHEMA_STEPS[$key]// /,}")" "$(settings_touches_json "$key")" "$(settings_depends_json "$key")"
 	done
 	if ((json)); then printf ']}\n'; fi
 }
@@ -3484,8 +3526,9 @@ cmd_settings() {
 	check) settings_check "$@" ;;
 	set) settings_set "$@" ;;
 	secret) settings_secret "$@" ;;
+	profile) settings_profile "$@" ;;
 	job) settings_job ;;
-	*) fail 2 "settings: list [--json] | check KEY=VALUE... | set [--apply|--apply-heavy] [--confirm-access] KEY=VALUE... | secret KEY | job" ;;
+	*) fail 2 "settings: list [--json] | check KEY=VALUE... | set [--apply|--apply-heavy] [--confirm-access] KEY=VALUE... | secret KEY | profile list|show|save|delete|apply | job" ;;
 	esac
 }
 
@@ -4925,7 +4968,7 @@ audit_wanted() {
 	local sub="${2:-}"
 	case "$1" in
 	start | stop | restart | reload | config-write | config-revert | self-update | reconfigure | rules-update | rules-group | rules-sid | mode-confirm | mode-rollback | fw | panel-passwd | test) return 0 ;;
-	settings) [[ "$sub" == set || "$sub" == secret ]] ;;
+	settings) [[ "$sub" == set || "$sub" == secret || ("$sub" == profile && "${3:-}" =~ ^(save|delete|apply)$) ]] ;;
 	rules-sources | iface | users) [[ -n "$sub" && "$sub" != list ]] ;;
 	# prune is not listed: the watchdog runs it every tick and writes its own
 	# line, only when it removed something (exc_prune).
@@ -7859,6 +7902,7 @@ path_audit_dir() { echo "$(path_state_dir)/audit"; }
 path_audit_jsonl() { echo "$(path_audit_dir)/audit.jsonl"; }
 path_events_jsonl() { echo "$(path_state_dir)/events.jsonl"; }
 path_alerts_state() { echo "$(path_state_dir)/alerts-state.json"; }
+path_profiles_json() { echo "$(path_state_dir)/profiles.json"; }
 path_tests_last_json() { echo "$(path_state_dir)/tests-last.json"; }
 path_metrics_json() { echo "$(path_state_dir)/metrics.json"; }
 path_backups_dir() { echo "$(path_state_dir)/backups"; }
@@ -7945,6 +7989,232 @@ path_os_release() { echo "${DPISTACK_ROOT}/etc/os-release"; }
 path_systemd_marker() { echo "${DPISTACK_ROOT}/run/systemd/system"; }
 path_rules_data_dir() { echo "${DPISTACK_ROOT}/var/lib/suricata"; }
 path_ndpi_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib"; }
+DPISTACK_BUNDLE_END
+put lib/profiles.sh 644 <<'DPISTACK_BUNDLE_END'
+#!/usr/bin/env bash
+# Settings profiles (tech.md 18.44): a profile is a name for a set of
+# KEY=VALUE pairs of dpistack.conf, saved in /var/lib/dpistack/profiles.json
+# and applied later through the same path as `settings set`, so a profile gets
+# the same checks, the same light or heavy weight and the same confirmation of
+# a wider access as any change. Secrets are never part of a profile. The file
+# has one writer, `dpistack settings profile` as root, under a lock and
+# replaced atomically. Sourced by install.sh; it defines functions only.
+#
+#   {"version":1,"profiles":{"lan-watch":{"created":"...","by":"admin",
+#    "keys":{"ACCESS_MODE":"lan","WATCH_INTERVAL_SEC":"30"}}}}
+
+PROFILE_NAME_RE='^[a-z0-9][a-z0-9_-]{0,31}$'
+PROFILE_BY_RE='^[A-Za-z0-9][A-Za-z0-9._@-]{0,31}$'
+PROFILE_MAX=50
+PROFILE_MAX_KEYS=100
+
+profiles_read() {
+	local f
+	f=$(path_profiles_json)
+	if [[ -r "$f" ]] && jq -e 'type == "object" and (.profiles | type == "object")' "$f" >/dev/null 2>&1; then
+		cat "$f"
+	else
+		echo '{"version":1,"profiles":{}}'
+	fi
+}
+
+# profile_name_check <verb> <name> - the name is a short lowercase word.
+profile_name_check() {
+	[[ -n "${2:-}" ]] || fail 2 "settings profile $1: a profile name is needed"
+	[[ "$2" =~ $PROFILE_NAME_RE ]] || fail 5 "settings profile $1: the name is 1 to 32 characters: lowercase letters, digits, - and _, starting with a letter or digit"
+}
+
+# profile_write <json> - under the lock the caller holds.
+profile_write() {
+	local dir tmp
+	dir=$(path_state_dir)
+	tmp=$(mktemp "$dir/profiles.XXXXXX") || fail 1 "settings profile: cannot write in $dir"
+	printf '%s\n' "$1" >"$tmp"
+	chmod 0644 "$tmp"
+	mv -f "$tmp" "$(path_profiles_json)"
+}
+
+# profile_lock - takes the lock on fd 9 of the caller's shell.
+profile_lock() {
+	local dir
+	dir=$(path_state_dir)
+	mkdir -p "$dir" || fail 1 "settings profile: cannot create $dir"
+	command -v flock >/dev/null 2>&1 || fail 1 "settings profile: flock is needed"
+	exec {PROFILE_LOCK_FD}>"$dir/profiles.lock" || fail 1 "settings profile: cannot open the lock"
+	flock -x "$PROFILE_LOCK_FD"
+}
+
+profile_unlock() { exec {PROFILE_LOCK_FD}>&-; }
+
+# settings_profile_list [--json]
+settings_profile_list() {
+	local json=0
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "settings profile list: only --json is accepted" ;;
+	esac
+	command -v jq >/dev/null 2>&1 || fail 1 "settings profile: jq is needed"
+	local doc
+	doc=$(profiles_read | jq -c '{profiles: (.profiles | to_entries | sort_by(.key)
+		| map({name: .key, created: .value.created, by: .value.by, count: (.value.keys | length)}))}')
+	if ((json)); then
+		printf '%s\n' "$doc"
+		return 0
+	fi
+	jq -r '(.profiles[] | "\(.name)\t\(.count) keys\t\(.created) by \(.by)"), (if (.profiles | length) == 0 then "no profiles" else empty end)' <<<"$doc"
+}
+
+# settings_profile_show <name> [--json]
+settings_profile_show() {
+	local name="${1:-}" json=0
+	profile_name_check show "$name"
+	shift
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "settings profile show: only --json is accepted" ;;
+	esac
+	command -v jq >/dev/null 2>&1 || fail 1 "settings profile: jq is needed"
+	local one
+	one=$(profiles_read | jq -c --arg n "$name" '.profiles[$n] // null')
+	[[ "$one" != null ]] || fail 5 "settings profile show: no such profile: $name"
+	if ((json)); then
+		jq -c --arg n "$name" '{name: $n} + .' <<<"$one"
+		return 0
+	fi
+	jq -r '.keys | to_entries[] | "\(.key)=\(.value)"' <<<"$one"
+}
+
+# profile_pairs <name> - the pairs of a profile, one KEY=VALUE per line.
+profile_pairs() {
+	profiles_read | jq -r --arg n "$1" '.profiles[$n].keys // empty | to_entries[] | "\(.key)=\(.value)"'
+}
+
+# settings_profile_save <name> [--by NAME] [KEY=VALUE...] - pairs from the
+# arguments or, with none, from stdin (a value may hold characters that the
+# argument check of a verb refuses). A profile that the checks of `settings
+# check` refuse is not saved. Saving a name again replaces that profile.
+settings_profile_save() {
+	local name="${1:-}" by="${SUDO_USER:-root}" arg
+	profile_name_check save "$name"
+	shift
+	local -a rest=()
+	while (($#)); do
+		case "$1" in
+		--by)
+			[[ $# -ge 2 ]] || fail 2 "settings profile save: --by needs a value"
+			by="$2"
+			shift 2
+			;;
+		*)
+			rest+=("$1")
+			shift
+			;;
+		esac
+	done
+	[[ "$by" =~ $PROFILE_BY_RE ]] || fail 5 "settings profile save: --by is a user name"
+	command -v jq >/dev/null 2>&1 || fail 1 "settings profile: jq is needed"
+	settings_collect_pairs "${rest[@]}"
+	local -a pairs=("${SETTINGS_PAIRS[@]}")
+	((${#pairs[@]} >= 1)) || fail 2 "settings profile save: at least one KEY=VALUE is needed"
+	((${#pairs[@]} <= PROFILE_MAX_KEYS)) || fail 5 "settings profile save: at most $PROFILE_MAX_KEYS keys"
+	local key seen=" "
+	for arg in "${pairs[@]}"; do
+		[[ "$arg" == *=* ]] || fail 5 "settings profile save: not KEY=VALUE: $arg"
+		key="${arg%%=*}"
+		schema_known "$key" || fail 5 "settings profile save: unknown key: $key"
+		schema_is_secret "$key" && fail 5 "settings profile save: $key is a secret and never goes into a profile"
+		[[ "$seen" == *" $key "* ]] && fail 5 "settings profile save: $key is given twice"
+		seen+="$key "
+	done
+	# The same checks as `settings check`, against the config as it is now.
+	local out rc=0
+	out=$(settings_check "${pairs[@]}" 2>&1) || rc=$?
+	if ((rc != 0)); then
+		[[ -n "$out" ]] && printf '%s\n' "$out" >&2
+		fail "$([[ $rc -eq 5 ]] && echo 5 || echo 3)" "settings profile save: the values are refused, nothing saved"
+	fi
+	local keys='{}' pair
+	for pair in "${pairs[@]}"; do
+		keys=$(jq -c --arg k "${pair%%=*}" --arg v "${pair#*=}" '. + {($k): $v}' <<<"$keys")
+	done
+	profile_lock
+	local doc new
+	doc=$(profiles_read)
+	if [[ "$(jq -r --arg n "$name" '.profiles | has($n)' <<<"$doc")" != true ]] &&
+		(($(jq '.profiles | length' <<<"$doc") >= PROFILE_MAX)); then
+		profile_unlock
+		fail 5 "settings profile save: at most $PROFILE_MAX profiles; delete one first"
+	fi
+	new=$(jq -c --arg n "$name" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg by "$by" --argjson keys "$keys" \
+		'.profiles[$n] = {created: $at, by: $by, keys: $keys} | .version = 1' <<<"$doc")
+	profile_write "$new"
+	profile_unlock
+	log INFO "settings profile $name saved by $by (${#pairs[@]} keys)"
+}
+
+# settings_profile_delete <name> [--by NAME]
+settings_profile_delete() {
+	local name="${1:-}" by="${SUDO_USER:-root}"
+	profile_name_check delete "$name"
+	shift
+	if [[ "${1:-}" == --by ]]; then
+		[[ $# -ge 2 ]] || fail 2 "settings profile delete: --by needs a value"
+		by="$2"
+		shift 2
+	fi
+	[[ $# -eq 0 ]] || fail 2 "settings profile delete: unknown argument: $1"
+	[[ "$by" =~ $PROFILE_BY_RE ]] || fail 5 "settings profile delete: --by is a user name"
+	command -v jq >/dev/null 2>&1 || fail 1 "settings profile: jq is needed"
+	profile_lock
+	local doc
+	doc=$(profiles_read)
+	if [[ "$(jq -r --arg n "$name" '.profiles | has($n)' <<<"$doc")" != true ]]; then
+		profile_unlock
+		fail 5 "settings profile delete: no such profile: $name"
+	fi
+	profile_write "$(jq -c --arg n "$name" 'del(.profiles[$n])' <<<"$doc")"
+	profile_unlock
+	log INFO "settings profile $name deleted by $by"
+}
+
+# settings_profile_apply <name> [--apply|--apply-heavy] [--confirm-access]
+# sets the keys of the profile as `settings set` would, with the same flags.
+settings_profile_apply() {
+	local name="${1:-}"
+	profile_name_check apply "$name"
+	shift
+	command -v jq >/dev/null 2>&1 || fail 1 "settings profile: jq is needed"
+	local -a pairs=() flags=()
+	local line
+	while IFS= read -r line; do
+		[[ -n "$line" ]] && pairs+=("$line")
+	done < <(profile_pairs "$name")
+	((${#pairs[@]} >= 1)) || fail 5 "settings profile apply: no such profile: $name"
+	while (($#)); do
+		case "$1" in
+		--apply | --apply-heavy | --confirm-access) flags+=("$1") ;;
+		*) fail 2 "settings profile apply: unknown argument: $1" ;;
+		esac
+		shift
+	done
+	settings_set "${flags[@]}" "${pairs[@]}"
+}
+
+# settings_profile list|show|save|delete|apply
+settings_profile() {
+	local sub="${1:-}"
+	[[ $# -ge 1 ]] && shift
+	case "$sub" in
+	list) settings_profile_list "$@" ;;
+	show) settings_profile_show "$@" ;;
+	save) settings_profile_save "$@" ;;
+	delete) settings_profile_delete "$@" ;;
+	apply) settings_profile_apply "$@" ;;
+	*) fail 2 "settings profile: list [--json] | show NAME [--json] | save NAME [KEY=VALUE...] | delete NAME | apply NAME [--apply|--apply-heavy] [--confirm-access]" ;;
+	esac
+}
 DPISTACK_BUNDLE_END
 put lib/render.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
@@ -9090,6 +9360,105 @@ schema_init() {
 }
 
 schema_init
+
+# --- settings v2 (tech.md 18.44): when a key applies, and what a change touches ---
+#
+# SCHEMA_DEPENDS[KEY] holds the conditions under which the key means anything,
+# separated by spaces, all of which must hold. A condition is
+#   OTHER=v1|v2   the value of OTHER is one of these
+#   OTHER!=v1|v2  the value of OTHER is none of these
+#   OTHER~item    OTHER is a comma list that holds item
+# An empty entry means the key always applies. The rules are those of
+# menu_key_skipped in lib/menu.sh (the guided setup skips a key that does not
+# apply); a test checks that the two agree. The Settings screen reads them
+# from `settings list --json` and shows or dims a key as its edits change.
+declare -A SCHEMA_DEPENDS SCHEMA_STEP_LABEL
+
+# _schema_depend <conditions> <glob...> - the first rule that names a key wins,
+# so the specific keys go before the globs that also match them.
+_schema_depend() {
+	local cond="$1" glob key
+	shift
+	for glob in "$@"; do
+		for key in "${SCHEMA_KEYS[@]}"; do
+			# shellcheck disable=SC2053 # the glob is the point
+			[[ "$key" == $glob ]] || continue
+			[[ -n "${SCHEMA_DEPENDS[$key]+x}" ]] && continue
+			SCHEMA_DEPENDS[$key]="$cond"
+		done
+	done
+}
+
+schema_depends_init() {
+	SCHEMA_DEPENDS=()
+	_schema_depend 'SURICATA_ENABLE=yes SURICATA_MODE=ips' 'IPS_METHOD' 'IPS_NFQ_CHAINS'
+	_schema_depend 'SURICATA_ENABLE=yes' NDPI_ENABLE RULES_ENABLE
+	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
+	_schema_depend 'SURICATA_ENABLE=yes RULES_ENABLE=yes' 'RULES_*'
+	_schema_depend 'SURICATA_ENABLE=yes' SURICATA_RUNTIME SURICATA_SOURCE SURICATA_VERSION SURICATA_MODE IFACES \
+		BPF_FILTER HOME_NET EVE_SYSLOG EVE_REDIS EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
+	_schema_depend '' EVEBOX_ENABLE NTOPNG_ENABLE PANEL_ENABLE NODE_EXPORTER_ENABLE GRAFANA_ENABLE WATCH_ENABLE METRICS_BACKEND
+	_schema_depend 'EVEBOX_ENABLE=yes EVEBOX_DB=elasticsearch' EVEBOX_ES_URL
+	_schema_depend 'EVEBOX_ENABLE=yes' 'EVEBOX_*'
+	_schema_depend 'NTOPNG_ENABLE=yes' 'NTOPNG_*'
+	_schema_depend 'PANEL_ENABLE=yes' 'PANEL_*' METRICS_EXPORT
+	_schema_depend 'ACCESS_MODE=lan' LAN_CIDR
+	_schema_depend 'ACCESS_MODE=nginx' NGINX_MANAGE NGINX_TLS
+	_schema_depend 'ACCESS_MODE=nginx NGINX_TLS=existing' NGINX_CERT NGINX_KEY
+	_schema_depend 'METRICS_BACKEND!=none' METRICS_BACKEND_RUNTIME METRICS_BACKEND_PORT METRICS_RETENTION
+	_schema_depend 'NODE_EXPORTER_ENABLE=yes' 'NODE_EXPORTER_*'
+	_schema_depend 'GRAFANA_ENABLE=yes' 'GRAFANA_*'
+	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~tg' 'ALERT_TG_*'
+	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~mail' 'ALERT_MAIL_*' ALERT_SMTP_URL
+	_schema_depend 'WATCH_ENABLE=yes' 'WATCH_*' 'ALERT_*'
+}
+
+schema_depends_init
+
+SCHEMA_STEP_LABEL=(
+	[suricata]="Suricata"
+	[ndpi]="the nDPI plugin"
+	[rules]="the rules and their updater"
+	[verify]="the test checks"
+	[evebox]="EveBox"
+	[access]="nginx, the firewall and the listen addresses"
+	[redis]="Redis"
+	[ntopng]="ntopng"
+	[panel]="this panel"
+	[watch]="the watchdog"
+	[metrics]="the metrics storage and export"
+	[nodeexp]="node_exporter"
+	[grafana]="Grafana"
+)
+
+# schema_depends_ok <key> <function> - 0 when the key applies. <function> is
+# called with a key name and prints its current value (the saved one, or the
+# one a draft holds).
+schema_depends_ok() {
+	local c k op vals val
+	for c in ${SCHEMA_DEPENDS[$1]:-}; do
+		if [[ "$c" == *'!='* ]]; then
+			k="${c%%!=*}"
+			op='!='
+			vals="${c#*!=}"
+		elif [[ "$c" == *'='* ]]; then
+			k="${c%%=*}"
+			op='='
+			vals="${c#*=}"
+		else
+			k="${c%%\~*}"
+			op='~'
+			vals="${c#*\~}"
+		fi
+		val=$("$2" "$k")
+		case "$op" in
+		'=') [[ "|$vals|" == *"|$val|"* ]] || return 1 ;;
+		'!=') [[ "|$vals|" != *"|$val|"* ]] || return 1 ;;
+		'~') [[ ",$val," == *",$vals,"* ]] || return 1 ;;
+		esac
+	done
+	return 0
+}
 
 schema_known() { [[ -n "${SCHEMA_TYPE[$1]+x}" ]]; }
 

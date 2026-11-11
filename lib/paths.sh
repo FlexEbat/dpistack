@@ -23,6 +23,7 @@ path_audit_dir() { echo "$(path_state_dir)/audit"; }
 path_audit_jsonl() { echo "$(path_audit_dir)/audit.jsonl"; }
 path_events_jsonl() { echo "$(path_state_dir)/events.jsonl"; }
 path_alerts_state() { echo "$(path_state_dir)/alerts-state.json"; }
+path_profiles_json() { echo "$(path_state_dir)/profiles.json"; }
 path_tests_last_json() { echo "$(path_state_dir)/tests-last.json"; }
 path_metrics_json() { echo "$(path_state_dir)/metrics.json"; }
 path_backups_dir() { echo "$(path_state_dir)/backups"; }
