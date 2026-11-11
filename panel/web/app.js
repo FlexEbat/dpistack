@@ -11,6 +11,7 @@ import { start as startIfaces } from "./modules/ifaces.js";
 import { start as startMode } from "./modules/mode.js";
 import { start as startNetwork } from "./modules/network.js";
 import { start as startIps } from "./modules/ips.js";
+import { start as startAlertCenter } from "./modules/alertcenter.js";
 import { start as startTraffic } from "./modules/traffic.js";
 import { start as startRules2 } from "./modules/rules2.js";
 import { start as startExceptions } from "./modules/exceptions.js";
@@ -218,12 +219,23 @@ const SCREENS = {
       { error: $("traffic-error"), notes: $("traffic-notes"), tabs: $("traffic-tabs"), text: $("traffic-q"), external: $("traffic-external"), detail: $("traffic-detail"), body: $("traffic-body") },
       showLogin,
     ),
-  alerts: () =>
-    startAlerts(
+  alerts: () => {
+    const center = startAlertCenter(
+      api,
+      { error: $("ac-error"), summary: $("ac-summary"), state: $("ac-state"), source: $("ac-source"), severity: $("ac-severity"), note: $("ac-note"), refresh: $("ac-refresh"), list: $("ac-list"), history: $("ac-history") },
+      showLogin,
+      me.perms.includes("events.ack"),
+    );
+    const feed = startAlerts(
       api,
       { error: $("alerts-error"), check: $("al-check"), limit: $("al-limit"), refresh: $("al-refresh"), list: $("al-list") },
       showLogin,
-    ),
+    );
+    return () => {
+      center();
+      feed();
+    };
+  },
   audit: () =>
     startAudit(
       api,
@@ -352,7 +364,7 @@ async function showOverview() {
   $("user-name").textContent = me.name || "User";
   $("user-account").hidden = !account.visibleViews(["account"], me.perms).length;
   stopTop?.();
-  stopTop = topbar.start(api, { host: $("top-host"), state: $("top-state"), mode: $("top-mode") }, showLogin);
+  stopTop = topbar.start(api, { host: $("top-host"), state: $("top-state"), mode: $("top-mode"), bell: $("top-bell") }, showLogin);
   stopVersion?.();
   stopVersion = startVersion(api, {
     badge: $("version-badge"),
