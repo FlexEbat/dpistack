@@ -149,3 +149,110 @@ export function needsAccessConfirm(changed, keys) {
   const k = keys.find((x) => x.key === "ACCESS_MODE");
   return Boolean(k && "ACCESS_MODE" in changed && changed.ACCESS_MODE !== "localhost");
 }
+
+// ---- Settings v2 (slice 44): search, when a key applies, the staged change,
+// profiles. Pure functions again: the screen only draws what they return.
+
+const lower = (s) => String(s || "").toLowerCase();
+
+// searchKeys finds keys by name, hint or group title. Advanced keys are left
+// out unless asked for, and their number is reported so the screen can say so.
+export function searchKeys(keys, query, showAdvanced) {
+  const q = lower(query).trim();
+  if (!q) return { items: [], hiddenAdvanced: 0 };
+  const title = Object.fromEntries(GROUPS);
+  const hit = (k) => lower(k.key).includes(q) || lower(HINTS[k.key]).includes(q) || lower(title[k.group]).includes(q);
+  const all = keys.filter(hit);
+  const items = all.filter((k) => showAdvanced || k.level === "basic");
+  return { items, hiddenAdvanced: all.length - items.length };
+}
+
+// categories lists the groups for the left column: how many keys each shows,
+// and how many of them have an unsaved edit.
+export function categories(keys, showAdvanced, edits) {
+  const changed = changedValues(keys, edits);
+  return GROUPS.map(([id, title]) => {
+    const items = keys.filter((k) => k.group === id && (showAdvanced || k.level === "basic"));
+    return { id, title, count: items.length, changed: items.filter((k) => k.key in changed).length };
+  }).filter((c) => c.count > 0);
+}
+
+// applies tells whether a key means anything with the values as they are now.
+// valueOf(key) gives the saved or the edited value. The rules come from the
+// schema (`depends`), the same as those of the guided setup.
+export function applies(k, valueOf) {
+  for (const c of k.depends || []) {
+    const v = valueOf(c.key);
+    if (c.op === "=" && !c.values.includes(v)) return false;
+    if (c.op === "!=" && c.values.includes(v)) return false;
+    if (c.op === "~" && !String(v).split(",").includes(c.values[0])) return false;
+  }
+  return true;
+}
+
+// dependencyText says it in words: "Used when ACCESS_MODE is lan".
+export function dependencyText(k) {
+  const parts = (k.depends || []).map((c) => {
+    if (c.op === "=") return `${c.key} is ${c.values.join(" or ")}`;
+    if (c.op === "!=") return `${c.key} is not ${c.values.join(" or ")}`;
+    return `${c.key} has ${c.values[0]}`;
+  });
+  return parts.length ? "Used when " + parts.join(" and ") : "";
+}
+
+export const shown = (v) => (v === "" ? "(empty)" : v);
+
+// diffRows is the staged change: every edited non secret key as old to new,
+// with its weight and what it touches.
+export function diffRows(keys, edits) {
+  const changed = changedValues(keys, edits);
+  return keys
+    .filter((k) => k.key in changed)
+    .map((k) => ({ key: k.key, from: k.value, to: changed[k.key], weight: k.weight, touches: k.touches || [] }));
+}
+
+// stageSummary: the weight of the whole change and the components it touches.
+export function stageSummary(rows) {
+  const touches = [...new Set(rows.flatMap((r) => r.touches))].sort();
+  return { weight: rows.some((r) => r.weight === "heavy") ? "heavy" : "light", touches, count: rows.length };
+}
+
+export function stageText(sum) {
+  if (!sum.count) return "No changes are staged.";
+  const what = sum.touches.length ? " It touches " + sum.touches.join(", ") + "." : "";
+  const how = sum.weight === "heavy" ? "A heavy change: it starts a reinstall or a rebuild." : "A light change: files are written again and the components restart.";
+  return how + what;
+}
+
+// stageSig identifies the staged values, so a passed check belongs to exactly
+// these and an edit afterwards takes the Apply button away again.
+export function stageSig(values) {
+  return JSON.stringify(Object.keys(values).sort().map((k) => [k, values[k]]));
+}
+
+// profileAll is every non secret key with the value it has on the screen now.
+export function profileAll(keys, edits) {
+  const out = {};
+  for (const k of keys) if (!k.secret) out[k.key] = k.key in edits ? edits[k.key] : k.value;
+  return out;
+}
+
+export const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+
+// loadProfile turns a saved profile into edits: only the keys whose value
+// differs from the saved config become changes; keys this version does not
+// know, or that are secrets, are reported and left out.
+export function loadProfile(keys, profileKeys) {
+  const byKey = new Map(keys.map((k) => [k.key, k]));
+  const edits = {};
+  const skipped = [];
+  for (const [key, value] of Object.entries(profileKeys || {})) {
+    const k = byKey.get(key);
+    if (!k || k.secret) {
+      skipped.push(key);
+      continue;
+    }
+    if (value !== k.value) edits[key] = value;
+  }
+  return { edits, skipped };
+}

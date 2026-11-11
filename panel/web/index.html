@@ -146,20 +146,47 @@
   </div>
   <div id="view-settings" hidden>
     <p id="settings-error" class="error" role="alert"></p>
-    <div class="toolbar settings-bar">
-      <label class="switch"><input id="settings-advanced" type="checkbox"> Advanced settings</label>
-      <span id="settings-count" class="muted"></span>
-      <button id="settings-check" type="button">Check</button>
-      <button id="settings-apply" type="button" class="primary">Apply</button>
-      <button id="settings-revert" type="button">Reset</button>
-    </div>
     <p id="settings-message" class="muted" aria-live="polite"></p>
-    <div id="settings-result" role="status"></div>
     <div id="settings-job-box" hidden>
       <h2>Apply progress</h2>
       <pre id="settings-job" class="log"></pre>
     </div>
-    <div id="settings-groups"></div>
+    <div class="settings-cols">
+      <nav class="settings-cats" aria-label="Settings categories">
+        <input id="settings-search" type="search" placeholder="Search settings" aria-label="Search settings" autocomplete="off" spellcheck="false">
+        <div id="settings-cats"></div>
+        <label class="switch"><input id="settings-advanced" type="checkbox"> Show advanced settings</label>
+      </nav>
+      <div id="settings-groups" class="settings-main"></div>
+      <aside class="settings-side">
+        <section class="card">
+          <h2>Details</h2>
+          <div id="settings-details"></div>
+        </section>
+        <section class="card">
+          <h2>Staged change</h2>
+          <div id="settings-diff"></div>
+          <p id="settings-count" class="muted"></p>
+          <div class="toolbar">
+            <button id="settings-check" type="button">Check</button>
+            <button id="settings-apply" type="button" class="primary">Apply</button>
+            <button id="settings-revert" type="button">Reset</button>
+          </div>
+          <p class="muted">Apply opens after a check of exactly these values has passed.</p>
+          <div id="settings-result" role="status"></div>
+        </section>
+        <section class="card">
+          <h2>Profiles</h2>
+          <p class="muted">A profile is a named set of settings. Loading one stages its values, so you see the change and check it before applying. Secrets are never saved in a profile.</p>
+          <div id="settings-profiles"></div>
+          <div class="toolbar">
+            <input id="settings-profile-name" type="text" maxlength="32" placeholder="profile name" aria-label="Profile name" autocomplete="off" spellcheck="false">
+            <button id="settings-profile-save" type="button">Save staged changes</button>
+            <button id="settings-profile-save-all" type="button">Save all values</button>
+          </div>
+        </section>
+      </aside>
+    </div>
   </div>
   <div id="view-configs" hidden>
     <div class="toolbar">

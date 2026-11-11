@@ -188,6 +188,105 @@ schema_init() {
 
 schema_init
 
+# --- settings v2 (tech.md 18.44): when a key applies, and what a change touches ---
+#
+# SCHEMA_DEPENDS[KEY] holds the conditions under which the key means anything,
+# separated by spaces, all of which must hold. A condition is
+#   OTHER=v1|v2   the value of OTHER is one of these
+#   OTHER!=v1|v2  the value of OTHER is none of these
+#   OTHER~item    OTHER is a comma list that holds item
+# An empty entry means the key always applies. The rules are those of
+# menu_key_skipped in lib/menu.sh (the guided setup skips a key that does not
+# apply); a test checks that the two agree. The Settings screen reads them
+# from `settings list --json` and shows or dims a key as its edits change.
+declare -A SCHEMA_DEPENDS SCHEMA_STEP_LABEL
+
+# _schema_depend <conditions> <glob...> - the first rule that names a key wins,
+# so the specific keys go before the globs that also match them.
+_schema_depend() {
+	local cond="$1" glob key
+	shift
+	for glob in "$@"; do
+		for key in "${SCHEMA_KEYS[@]}"; do
+			# shellcheck disable=SC2053 # the glob is the point
+			[[ "$key" == $glob ]] || continue
+			[[ -n "${SCHEMA_DEPENDS[$key]+x}" ]] && continue
+			SCHEMA_DEPENDS[$key]="$cond"
+		done
+	done
+}
+
+schema_depends_init() {
+	SCHEMA_DEPENDS=()
+	_schema_depend 'SURICATA_ENABLE=yes SURICATA_MODE=ips' 'IPS_METHOD' 'IPS_NFQ_CHAINS'
+	_schema_depend 'SURICATA_ENABLE=yes' NDPI_ENABLE RULES_ENABLE
+	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
+	_schema_depend 'SURICATA_ENABLE=yes RULES_ENABLE=yes' 'RULES_*'
+	_schema_depend 'SURICATA_ENABLE=yes' SURICATA_RUNTIME SURICATA_SOURCE SURICATA_VERSION SURICATA_MODE IFACES \
+		BPF_FILTER HOME_NET EVE_SYSLOG EVE_REDIS EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
+	_schema_depend '' EVEBOX_ENABLE NTOPNG_ENABLE PANEL_ENABLE NODE_EXPORTER_ENABLE GRAFANA_ENABLE WATCH_ENABLE METRICS_BACKEND
+	_schema_depend 'EVEBOX_ENABLE=yes EVEBOX_DB=elasticsearch' EVEBOX_ES_URL
+	_schema_depend 'EVEBOX_ENABLE=yes' 'EVEBOX_*'
+	_schema_depend 'NTOPNG_ENABLE=yes' 'NTOPNG_*'
+	_schema_depend 'PANEL_ENABLE=yes' 'PANEL_*' METRICS_EXPORT
+	_schema_depend 'ACCESS_MODE=lan' LAN_CIDR
+	_schema_depend 'ACCESS_MODE=nginx' NGINX_MANAGE NGINX_TLS
+	_schema_depend 'ACCESS_MODE=nginx NGINX_TLS=existing' NGINX_CERT NGINX_KEY
+	_schema_depend 'METRICS_BACKEND!=none' METRICS_BACKEND_RUNTIME METRICS_BACKEND_PORT METRICS_RETENTION
+	_schema_depend 'NODE_EXPORTER_ENABLE=yes' 'NODE_EXPORTER_*'
+	_schema_depend 'GRAFANA_ENABLE=yes' 'GRAFANA_*'
+	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~tg' 'ALERT_TG_*'
+	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~mail' 'ALERT_MAIL_*' ALERT_SMTP_URL
+	_schema_depend 'WATCH_ENABLE=yes' 'WATCH_*' 'ALERT_*'
+}
+
+schema_depends_init
+
+SCHEMA_STEP_LABEL=(
+	[suricata]="Suricata"
+	[ndpi]="the nDPI plugin"
+	[rules]="the rules and their updater"
+	[verify]="the test checks"
+	[evebox]="EveBox"
+	[access]="nginx, the firewall and the listen addresses"
+	[redis]="Redis"
+	[ntopng]="ntopng"
+	[panel]="this panel"
+	[watch]="the watchdog"
+	[metrics]="the metrics storage and export"
+	[nodeexp]="node_exporter"
+	[grafana]="Grafana"
+)
+
+# schema_depends_ok <key> <function> - 0 when the key applies. <function> is
+# called with a key name and prints its current value (the saved one, or the
+# one a draft holds).
+schema_depends_ok() {
+	local c k op vals val
+	for c in ${SCHEMA_DEPENDS[$1]:-}; do
+		if [[ "$c" == *'!='* ]]; then
+			k="${c%%!=*}"
+			op='!='
+			vals="${c#*!=}"
+		elif [[ "$c" == *'='* ]]; then
+			k="${c%%=*}"
+			op='='
+			vals="${c#*=}"
+		else
+			k="${c%%\~*}"
+			op='~'
+			vals="${c#*\~}"
+		fi
+		val=$("$2" "$k")
+		case "$op" in
+		'=') [[ "|$vals|" == *"|$val|"* ]] || return 1 ;;
+		'!=') [[ "|$vals|" != *"|$val|"* ]] || return 1 ;;
+		'~') [[ ",$val," == *",$vals,"* ]] || return 1 ;;
+		esac
+	done
+	return 0
+}
+
 schema_known() { [[ -n "${SCHEMA_TYPE[$1]+x}" ]]; }
 
 schema_is_basic() { [[ "${SCHEMA_LEVEL[$1]}" == "basic" ]]; }
