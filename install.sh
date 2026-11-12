@@ -59,6 +59,10 @@ source "$LIB_DIR/exceptions.sh"
 source "$LIB_DIR/alerts.sh"
 # shellcheck source=lib/profiles.sh
 source "$LIB_DIR/profiles.sh"
+# shellcheck source=lib/tokens.sh
+source "$LIB_DIR/tokens.sh"
+# shellcheck source=lib/security.sh
+source "$LIB_DIR/security.sh"
 # shellcheck source=lib/rules_stats.sh
 source "$LIB_DIR/rules_stats.sh"
 # shellcheck source=lib/ctl.sh

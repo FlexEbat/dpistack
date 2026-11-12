@@ -94,6 +94,10 @@ source "$LIB_DIR/exceptions.sh"
 source "$LIB_DIR/alerts.sh"
 # shellcheck source=lib/profiles.sh
 source "$LIB_DIR/profiles.sh"
+# shellcheck source=lib/tokens.sh
+source "$LIB_DIR/tokens.sh"
+# shellcheck source=lib/security.sh
+source "$LIB_DIR/security.sh"
 # shellcheck source=lib/rules_stats.sh
 source "$LIB_DIR/rules_stats.sh"
 # shellcheck source=lib/ctl.sh
@@ -2542,6 +2546,11 @@ Usage: dpistack <command> [arguments]
   rules-facets                       the categories and sources the filters of rules-find offer
   rules-local check                  checks a local.rules given on stdin: not a rule, no sid, a sid used twice or by the rule set, suricata -T
   config-history <name> [<version>]  the saved versions of a config file, or the content of one
+  tokens create --user U --name N [--scope read|viewer|analyst|operator|admin] [--days D] [--json]
+                                     an API token for a script (shown once, only its hash is kept)
+  tokens list [--user U] [--json] | revoke ID [--user U]
+                                     the tokens (never the secret) and ending one
+  security check [--json]            the security of the panel as a list: access, TLS, default ports, stale accounts, file permissions
   alerts list [--state S] [--source S] [--severity S] [--json]
                                      the alerts of the watchdog and of Suricata with their states
   alerts history [--limit N] [--json]  what people did and the status changes of the watchdog, newest first
@@ -4973,6 +4982,7 @@ audit_wanted() {
 	# prune is not listed: the watchdog runs it every tick and writes its own
 	# line, only when it removed something (exc_prune).
 	exceptions) [[ "$sub" == add || "$sub" == remove ]] ;;
+	tokens) [[ "$sub" == create || "$sub" == revoke ]] ;;
 	alerts) [[ "$sub" == ack || "$sub" == snooze || "$sub" == resolve || "$sub" == reopen ]] ;;
 	backup) [[ "$sub" == create || "$sub" == restore ]] ;;
 	mode) [[ "$sub" == ids || "$sub" == ips ]] ;;
@@ -5052,6 +5062,8 @@ ctl_dispatch() {
 	rules-search) cmd_rules_search "$@" ;;
 	exceptions) cmd_exceptions "$@" ;;
 	alerts) cmd_alerts "$@" ;;
+	tokens) cmd_tokens "$@" ;;
+	security) cmd_security "$@" ;;
 	rules-stats) rules_stats "$@" ;;
 	rules-history) rules_history "$@" ;;
 	rules-describe) rules_describe "$@" ;;
@@ -7890,6 +7902,7 @@ path_conf_draft() { echo "$(path_etc)/dpistack.conf.draft"; }
 path_secrets() { echo "$(path_etc)/secrets.conf"; }
 path_panel_auth() { echo "$(path_etc)/panel.auth"; }
 path_users() { echo "$(path_etc)/users.json"; }
+path_api_tokens() { echo "$(path_etc)/api-tokens.json"; }
 path_metrics_token() { echo "$(path_etc)/metrics.token"; }
 
 path_sys_class_net() { echo "${DPISTACK_ROOT}/sys/class/net"; }
@@ -9555,6 +9568,181 @@ schema_empty_meaning() {
 	EVE_REDIS) echo "no Redis output; a value is ignored with a warning, this output is not supported yet" ;;
 	EVE_MAX_SIZE_MB) echo "not used; EVE_ROTATE=size is refused without a value" ;;
 	RULES_URLS) echo "only the sources of RULES_SOURCES are used" ;;
+	esac
+}
+DPISTACK_BUNDLE_END
+put lib/security.sh 644 <<'DPISTACK_BUNDLE_END'
+#!/usr/bin/env bash
+# The security check of the panel (tech.md 18.45): `dpistack security check
+# [--json]`. It reads the settings, the modes of a few files and the audit log,
+# changes nothing, and answers with a list, each item with a level (ok, warn,
+# crit or na) and a hint for the fix. The panel shows the same list. Sourced by
+# install.sh; it defines functions only.
+
+SECURITY_STALE_DAYS=90
+
+security_val() { conf_get "$1" "${SCHEMA_DEFAULT[$1]:-}"; }
+
+# security_row <id> <level> <title> <detail> <fix> - one JSON object.
+security_row() {
+	jq -nc --arg id "$1" --arg level "$2" --arg title "$3" --arg detail "$4" --arg fix "$5" \
+		'{id: $id, level: $level, title: $title, detail: $detail, fix: $fix}'
+}
+
+# security_mode <path> - the permission bits as octal, empty when not there.
+security_mode() { stat -c %a "$1" 2>/dev/null; }
+
+security_check_access() {
+	local mode
+	mode=$(security_val ACCESS_MODE)
+	case "$mode" in
+	localhost) security_row access-mode ok "Who can reach the panel" "Only this machine: the panel and the components listen on 127.0.0.1." "" ;;
+	lan) security_row access-mode warn "Who can reach the panel" "The panel is open to the local network ($(security_val LAN_CIDR))." "dpistack settings set ACCESS_MODE=localhost, or ACCESS_MODE=nginx with NGINX_TLS set" ;;
+	nginx) security_row access-mode ok "Who can reach the panel" "Through nginx, which is where the access rules and the TLS are." "" ;;
+	*) security_row access-mode warn "Who can reach the panel" "ACCESS_MODE is $mode, which this check does not know." "dpistack settings set ACCESS_MODE=localhost" ;;
+	esac
+}
+
+security_check_tls() {
+	local mode tls
+	mode=$(security_val ACCESS_MODE)
+	tls=$(security_val NGINX_TLS)
+	if [[ "$mode" == localhost ]]; then
+		security_row tls ok "Encryption of the panel connection" "Nothing crosses a network, so there is nothing to encrypt." ""
+	elif [[ "$mode" == nginx && "$tls" != none ]]; then
+		security_row tls ok "Encryption of the panel connection" "nginx serves the panel over TLS ($tls)." ""
+	elif [[ "$mode" == nginx ]]; then
+		security_row tls warn "Encryption of the panel connection" "nginx serves plain HTTP: passwords and sessions cross the network in clear." "dpistack settings set NGINX_TLS=selfsigned (or existing, with NGINX_CERT and NGINX_KEY)"
+	else
+		security_row tls warn "Encryption of the panel connection" "The panel speaks plain HTTP to the local network: passwords and sessions cross it in clear." "dpistack settings set ACCESS_MODE=nginx NGINX_TLS=selfsigned"
+	fi
+}
+
+# The ports that are still the ones in the manual, for a component that is on.
+security_check_ports() {
+	local mode key def val hits=""
+	mode=$(security_val ACCESS_MODE)
+	if [[ "$mode" == localhost ]]; then
+		security_row default-ports ok "Ports left at their defaults" "Closed to the network anyway: everything listens on 127.0.0.1." ""
+		return 0
+	fi
+	for key in "${SCHEMA_KEYS[@]}"; do
+		[[ "$key" == *_PORT ]] || continue
+		schema_depends_ok "$key" security_val || continue
+		def="${SCHEMA_DEFAULT[$key]}"
+		val=$(security_val "$key")
+		[[ -n "$def" && "$val" == "$def" ]] && hits+="$key=$val "
+	done
+	if [[ -z "$hits" ]]; then
+		security_row default-ports ok "Ports left at their defaults" "Every port of a component that is on has been changed." ""
+	else
+		security_row default-ports warn "Ports left at their defaults" "Open to the network on the port of the manual: ${hits% }." "dpistack settings set PANEL_PORT=<another port> (the same for each key named)"
+	fi
+}
+
+# Accounts that have not signed in for a long time, from the audit log.
+security_check_users() {
+	local users audit now cutoff stale n
+	users=$(users_load | jq -c '[.users[]? | select((.disabled // false) | not) | {name, created: (.created // "")}]')
+	if [[ "$users" == "[]" ]]; then
+		security_row stale-users na "Accounts that do not sign in" "There are no accounts." ""
+		return 0
+	fi
+	audit=$(path_audit_jsonl)
+	if [[ ! -r "$audit" ]]; then
+		security_row stale-users na "Accounts that do not sign in" "There is no audit log yet, so the last sign in of an account is not known." ""
+		return 0
+	fi
+	now=$(alerts_now)
+	cutoff=$(alerts_iso $((now - SECURITY_STALE_DAYS * 86400)))
+	stale=$(cat "$audit" "$audit".[1-9] 2>/dev/null |
+		jq -cR 'fromjson? | select(.action == "POST /api/login" and .result == "ok") | {user, ts}' 2>/dev/null |
+		jq -sc --argjson users "$users" --arg cutoff "$cutoff" '
+			(group_by(.user) | map({key: .[0].user, value: (map(.ts) | max)}) | from_entries) as $last
+			| [$users[] | . as $u | ($last[$u.name] // $u.created // "") as $seen
+				| select($seen == "" or $seen[0:19] < $cutoff[0:19]) | $u.name]')
+	n=$(jq 'length' <<<"$stale")
+	if ((n == 0)); then
+		security_row stale-users ok "Accounts that do not sign in" "Every account signed in within $SECURITY_STALE_DAYS days, or is newer than that." ""
+	else
+		security_row stale-users warn "Accounts that do not sign in" "No sign in for $SECURITY_STALE_DAYS days: $(jq -r 'join(", ")' <<<"$stale")." "dpistack users disable <name>, or dpistack users remove <name>"
+	fi
+}
+
+# Who may change the rules: a world writable file is a way to turn them off.
+security_check_rules() {
+	local f mode owner bad="" seen=0
+	for f in "$(path_suricata_ruleset)" "$(path_suricata_local_rules)" "$(dirname "$(path_suricata_local_rules)")"; do
+		[[ -e "$f" ]] || continue
+		seen=1
+		mode=$(security_mode "$f")
+		owner=$(stat -c %U "$f" 2>/dev/null)
+		if ((8#$mode & 8#002)); then
+			bad+="$f is writable by everyone ($mode); "
+		elif [[ "$owner" != root ]]; then
+			bad+="$f belongs to $owner, not root; "
+		fi
+	done
+	if ((seen == 0)); then
+		security_row rules-files na "Permissions of the rule files" "There are no rule files yet." ""
+	elif [[ -z "$bad" ]]; then
+		security_row rules-files ok "Permissions of the rule files" "The rules and their directory belong to root and nobody else may write them." ""
+	else
+		security_row rules-files crit "Permissions of the rule files" "${bad% }" "chown root: <path> and chmod o-w <path> for each file named"
+	fi
+}
+
+# The files that hold secrets or hashes must not be open to every account.
+security_check_secrets() {
+	local f mode bad=""
+	for f in "$(path_secrets)" "$(path_users)" "$(path_api_tokens)"; do
+		[[ -e "$f" ]] || continue
+		mode=$(security_mode "$f")
+		((8#$mode & 8#007)) && bad+="$f is open to everyone ($mode); "
+	done
+	if [[ -z "$bad" ]]; then
+		security_row secret-files ok "Files with secrets and hashes" "secrets.conf, users.json and api-tokens.json cannot be read by other accounts." ""
+	else
+		security_row secret-files crit "Files with secrets and hashes" "${bad% }" "chmod o-rwx <path> for each file named"
+	fi
+}
+
+# security_check [--json]
+security_check() {
+	local json=0
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "security check: only --json is accepted" ;;
+	esac
+	command -v jq >/dev/null 2>&1 || fail 1 "security: jq is needed"
+	local rows doc
+	rows=$({
+		security_check_access
+		security_check_tls
+		security_check_ports
+		security_check_users
+		security_check_rules
+		security_check_secrets
+	} | jq -sc .)
+	doc=$(jq -nc --arg ts "$(alerts_iso "$(alerts_now)")" --argjson c "$rows" \
+		'{ts: $ts, checks: $c, counts: {ok: ($c | map(select(.level == "ok")) | length), warn: ($c | map(select(.level == "warn")) | length),
+			crit: ($c | map(select(.level == "crit")) | length), na: ($c | map(select(.level == "na")) | length)}}')
+	if ((json)); then
+		printf '%s\n' "$doc"
+		return 0
+	fi
+	jq -r '(.checks[] | "[\(.level)] \(.id): \(.detail)" + (if .fix != "" then "  fix: \(.fix)" else "" end)),
+		"\(.counts.ok) ok, \(.counts.warn) warnings, \(.counts.crit) critical, \(.counts.na) not applicable"' <<<"$doc"
+}
+
+# cmd_security check
+cmd_security() {
+	local sub="${1:-}"
+	[[ $# -ge 1 ]] && shift
+	case "$sub" in
+	check) security_check "$@" ;;
+	*) fail 2 "security: check [--json]" ;;
 	esac
 }
 DPISTACK_BUNDLE_END
@@ -13477,6 +13665,217 @@ step_watch_plan() {
 	else
 		echo "watch: WATCH_ENABLE=no, no timer is needed"
 	fi
+}
+DPISTACK_BUNDLE_END
+put lib/tokens.sh 644 <<'DPISTACK_BUNDLE_END'
+#!/usr/bin/env bash
+# API tokens (tech.md 18.45): `dpistack tokens create|list|revoke`. A token
+# lets a script call the panel API as `Authorization: Bearer dpt_...`. The
+# secret is printed once, by `create`; /etc/dpistack/api-tokens.json (0640,
+# root:dpistack, beside users.json) keeps only its SHA-256, so a copy of the
+# file does not let anyone in. The panel reads the file and never writes it;
+# this verb is its one writer, under a lock, replaced atomically. Sourced by
+# install.sh; it defines functions only.
+#
+#   {"tokens":[{"id":"1a2b3c4d","name":"ci","user":"admin","scope":"read",
+#    "hash":"<sha256 hex>","created":"...","expires":"..."}]}
+
+TOKEN_NAME_RE='^[a-z0-9][a-z0-9 ._-]{0,31}$'
+TOKEN_SCOPES=(read viewer analyst operator admin)
+TOKEN_DAYS_DEFAULT=90
+TOKEN_DAYS_MAX=365
+TOKEN_PER_USER=10
+TOKEN_MAX=100
+
+tokens_read() {
+	local f
+	f=$(path_api_tokens)
+	if [[ -r "$f" ]] && jq -e 'type == "object" and (.tokens | type == "array")' "$f" >/dev/null 2>&1; then
+		cat "$f"
+	else
+		echo '{"tokens":[]}'
+	fi
+}
+
+# tokens_store - writes the file from stdin: 0640, root:dpistack.
+tokens_store() {
+	atomic_write "$(path_api_tokens)" 0640 || return 1
+	if getent group dpistack >/dev/null 2>&1; then
+		chown root:dpistack "$(path_api_tokens)" || return 1
+	fi
+}
+
+# tokens_user_perms <name> - the permissions of an account as a JSON array;
+# nothing and a failure when the account is not there or is disabled.
+tokens_user_perms() {
+	users_load | jq -ce --arg n "$1" --argjson presets "$(users_presets)" '
+		(.users[] | select(.name == $n and ((.disabled // false) | not))) as $u
+		| if $u.role == "custom" then ($u.perms // []) else ($presets[$u.role] // []) end' 2>/dev/null
+}
+
+# tokens_scope_perms <scope> <owner perms JSON> - what the token would hold:
+# the owner's permissions for `read`, else the role's that the owner also has.
+tokens_scope_ok() {
+	local scope="$1" owner="$2"
+	[[ "$scope" == read ]] && return 0
+	jq -ne --arg s "$scope" --argjson owner "$owner" --argjson presets "$(users_presets)" \
+		'($presets[$s] // []) as $p | ($p | length) > 0 and ($p | all(. as $x | $owner | index($x) != null))' >/dev/null
+}
+
+tokens_lock() {
+	local dir
+	dir=$(path_etc)
+	mkdir -p "$dir" || fail 1 "tokens: cannot create $dir"
+	command -v flock >/dev/null 2>&1 || fail 1 "tokens: flock is needed"
+	exec {TOKENS_LOCK_FD}>"$dir/.api-tokens.lock" || fail 1 "tokens: cannot open the lock"
+	flock -x "$TOKENS_LOCK_FD"
+}
+
+tokens_unlock() { exec {TOKENS_LOCK_FD}>&-; }
+
+# tokens_create --user U --name N [--scope S] [--days D] [--json]
+tokens_create() {
+	local user="" name="" scope=read days="$TOKEN_DAYS_DEFAULT" json=0
+	while (($#)); do
+		case "$1" in
+		--user | --name | --scope | --days)
+			[[ $# -ge 2 ]] || fail 2 "tokens create: $1 needs a value"
+			case "$1" in
+			--user) user="$2" ;;
+			--name) name="$2" ;;
+			--scope) scope="$2" ;;
+			--days) days="$2" ;;
+			esac
+			shift 2
+			;;
+		--json)
+			json=1
+			shift
+			;;
+		*) fail 2 "tokens create: unknown argument: $1" ;;
+		esac
+	done
+	[[ -n "$user" ]] || fail 2 "tokens create: --user is needed"
+	[[ -n "$name" ]] || fail 2 "tokens create: --name is needed"
+	command -v jq >/dev/null 2>&1 || fail 1 "tokens: jq is needed"
+	users_check_name "$user"
+	[[ "$name" =~ $TOKEN_NAME_RE ]] || fail 5 "tokens create: the name is 1 to 32 characters: lowercase letters, digits, space and . _ -, starting with a letter or digit"
+	in_list "$scope" "${TOKEN_SCOPES[@]}" || fail 5 "tokens create: the scope is one of: ${TOKEN_SCOPES[*]}"
+	if ! [[ "$days" =~ ^[0-9]{1,3}$ ]]; then
+		fail 5 "tokens create: --days is 1 to $TOKEN_DAYS_MAX"
+	fi
+	days=$((10#$days)) # 08 is eight days, not an octal error
+	if ((days < 1 || days > TOKEN_DAYS_MAX)); then
+		fail 5 "tokens create: --days is 1 to $TOKEN_DAYS_MAX"
+	fi
+	local owner
+	owner=$(tokens_user_perms "$user") || fail 5 "tokens create: no such user, or the user is disabled: $user"
+	tokens_scope_ok "$scope" "$owner" || fail 5 "tokens create: the scope $scope holds more than $user may do"
+
+	local secret id hash now exp epoch
+	secret="dpt_$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')"
+	id=$(head -c 4 /dev/urandom | od -An -tx1 | tr -d ' \n')
+	hash=$(printf '%s' "$secret" | sha256sum | cut -d' ' -f1)
+	epoch=$(alerts_now)
+	now=$(alerts_iso "$epoch")
+	exp=$(alerts_iso $((epoch + days * 86400)))
+
+	tokens_lock
+	local doc
+	doc=$(tokens_read)
+	if (($(jq '.tokens | length' <<<"$doc") >= TOKEN_MAX)); then
+		tokens_unlock
+		fail 5 "tokens create: at most $TOKEN_MAX tokens; revoke one first"
+	fi
+	if (($(jq --arg u "$user" '[.tokens[] | select(.user == $u)] | length' <<<"$doc") >= TOKEN_PER_USER)); then
+		tokens_unlock
+		fail 5 "tokens create: $user has $TOKEN_PER_USER tokens already; revoke one first"
+	fi
+	jq -c --arg id "$id" --arg name "$name" --arg user "$user" --arg scope "$scope" --arg hash "$hash" --arg now "$now" --arg exp "$exp" \
+		'.tokens += [{id: $id, name: $name, user: $user, scope: $scope, hash: $hash, created: $now, expires: $exp}]' <<<"$doc" | tokens_store ||
+		{
+			tokens_unlock
+			fail 1 "tokens create: cannot write $(path_api_tokens)"
+		}
+	tokens_unlock
+	log INFO "api token $id ($name) made for $user, scope $scope, $days days"
+	# The secret goes to stdout and nowhere else: not to the log, not to the audit.
+	if ((json)); then
+		jq -nc --arg id "$id" --arg token "$secret" --arg exp "$exp" '{id: $id, token: $token, expires: $exp}'
+	else
+		printf 'id: %s\ntoken: %s\nexpires: %s\nThe token is shown once; only its hash is kept.\n' "$id" "$secret" "$exp"
+	fi
+}
+
+# tokens_list [--user U] [--json] - never the hash.
+tokens_list() {
+	local user="" json=0
+	while (($#)); do
+		case "$1" in
+		--user)
+			[[ $# -ge 2 ]] || fail 2 "tokens list: --user needs a value"
+			user="$2"
+			shift 2
+			;;
+		--json)
+			json=1
+			shift
+			;;
+		*) fail 2 "tokens list: unknown argument: $1" ;;
+		esac
+	done
+	command -v jq >/dev/null 2>&1 || fail 1 "tokens: jq is needed"
+	[[ -z "$user" ]] || users_check_name "$user"
+	local now doc
+	now=$(alerts_iso "$(alerts_now)")
+	doc=$(tokens_read | jq -c --arg u "$user" --arg now "$now" '{tokens: ([.tokens[] | select($u == "" or .user == $u)
+		| {id, name, user, scope, created, expires, expired: (.expires[0:19] <= $now[0:19])}] | sort_by(.created) | reverse)}')
+	if ((json)); then
+		printf '%s\n' "$doc"
+		return 0
+	fi
+	jq -r '(.tokens[] | "\(.id)\t\(.name)\t\(.user)\t\(.scope)\texpires \(.expires)" + (if .expired then " (expired)" else "" end)), (if (.tokens | length) == 0 then "no tokens" else empty end)' <<<"$doc"
+}
+
+# tokens_revoke <id> [--user U] - with --user the token must be that user's.
+tokens_revoke() {
+	local id="${1:-}" user=""
+	[[ -n "$id" ]] || fail 2 "tokens revoke: a token id is needed"
+	[[ "$id" =~ ^[0-9a-f]{8}$ ]] || fail 5 "tokens revoke: an id is 8 hex digits"
+	shift
+	if [[ "${1:-}" == --user ]]; then
+		[[ $# -ge 2 ]] || fail 2 "tokens revoke: --user needs a value"
+		user="$2"
+		shift 2
+		users_check_name "$user"
+	fi
+	[[ $# -eq 0 ]] || fail 2 "tokens revoke: unknown argument: $1"
+	command -v jq >/dev/null 2>&1 || fail 1 "tokens: jq is needed"
+	tokens_lock
+	local doc
+	doc=$(tokens_read)
+	if [[ "$(jq -r --arg id "$id" --arg u "$user" '[.tokens[] | select(.id == $id and ($u == "" or .user == $u))] | length' <<<"$doc")" == 0 ]]; then
+		tokens_unlock
+		fail 5 "tokens revoke: no such token: $id"
+	fi
+	jq -c --arg id "$id" '.tokens |= map(select(.id != $id))' <<<"$doc" | tokens_store || {
+		tokens_unlock
+		fail 1 "tokens revoke: cannot write $(path_api_tokens)"
+	}
+	tokens_unlock
+	log INFO "api token $id revoked"
+}
+
+# cmd_tokens create|list|revoke
+cmd_tokens() {
+	local sub="${1:-}"
+	[[ $# -ge 1 ]] && shift
+	case "$sub" in
+	create) tokens_create "$@" ;;
+	list) tokens_list "$@" ;;
+	revoke) tokens_revoke "$@" ;;
+	*) fail 2 "tokens: create --user U --name N [--scope read|viewer|analyst|operator|admin] [--days D] [--json] | list [--user U] [--json] | revoke ID [--user U]" ;;
+	esac
 }
 DPISTACK_BUNDLE_END
 put templates/compose.yaml.tpl 644 <<'DPISTACK_BUNDLE_END'
