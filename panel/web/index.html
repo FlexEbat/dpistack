@@ -5,13 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>dpistack control panel</title>
 <meta name="description" content="Control panel for dpistack: components, settings, rules, events and checks of the traffic inspection stack.">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#070b16">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="app.css">
 <script src="fx.js" defer></script>
 <script type="module" src="app.js"></script>
 </head>
 <body>
+<canvas id="fx" aria-hidden="true"></canvas>
 <button id="skip" class="skip" type="button">Skip to content</button>
 <main id="login" hidden>
   <h1>dpistack</h1>
@@ -31,6 +32,7 @@
       <h1 id="page-title" tabindex="-1">Overview</h1>
     </div>
     <div class="corner">
+      <span class="chip static live" data-level="ok"><i class="dot tone-ok"></i>Live</span>
       <span id="top-host" class="chip static" hidden></span>
       <span id="top-state" class="chip static" role="status" hidden></span>
       <span id="top-mode" class="chip static" hidden></span>
@@ -45,7 +47,6 @@
         <button id="user-btn" class="chip" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg><span id="user-name">User</span></button>
         <div id="user-menu" class="menu-pop" role="menu" hidden>
           <button id="user-account" type="button" role="menuitem">Account</button>
-          <button id="theme-btn" type="button" role="menuitem" hidden>Theme: system</button>
           <button id="logout" type="button" role="menuitem">Sign out</button>
         </div>
       </div>
@@ -93,31 +94,43 @@
   </nav>
   <div id="view-overview">
     <p id="overview-error" class="error" role="alert"></p>
-    <section id="overall" class="overall" aria-live="polite"><div class="skeleton" aria-hidden="true"></div></section>
+    <section id="overall" class="hero" aria-live="polite"><div class="skeleton" aria-hidden="true"></div></section>
     <div id="glance-box" hidden>
-      <section id="glance-cards" class="stats"></section>
+      <section id="glance-cards" class="kpis"></section>
       <section id="glance-warnings" class="warnings" role="status" hidden></section>
     </div>
-    <div id="traffic-box" hidden>
-      <h2>Traffic, last hour</h2>
-      <section id="traffic" class="charts"></section>
-    </div>
-    <div id="alerts-box" hidden>
-      <h2>Alerts</h2>
-      <section id="alerts-severity"></section>
-      <h3>Latest</h3>
-      <section id="alerts-recent"></section>
-    </div>
     <div id="host-box" hidden>
-      <h2>Host</h2>
-      <section id="host" class="stats"></section>
-      <h2>Interfaces</h2>
-      <section id="host-ifaces"></section>
+      <div class="section-head"><h2>Host health</h2></div>
+      <section id="host" class="gauges"></section>
+      <div class="section-head"><h2>Interfaces</h2><a href="#components" class="link">Capture setup</a></div>
+      <section id="host-ifaces" class="card panel"></section>
     </div>
-    <h2>Components</h2>
-    <section id="components"><div class="skeleton" aria-hidden="true"></div></section>
-    <h2>Checks</h2>
-    <section id="checks"><div class="skeleton" aria-hidden="true"></div></section>
+    <div class="grid two">
+      <div id="traffic-box" hidden>
+        <div class="section-head"><h2>Traffic, last hour</h2><a href="#metrics" class="link">All metrics</a></div>
+        <section id="traffic" class="charts"></section>
+      </div>
+      <div id="alerts-box" hidden>
+        <div class="section-head"><h2>Alerts</h2><a href="#alerts" class="link">Alert Center</a></div>
+        <div class="grid tight">
+          <section id="alerts-severity" class="card panel"></section>
+          <section id="alerts-recent" class="card panel"></section>
+        </div>
+      </div>
+    </div>
+    <div class="grid two">
+      <div>
+        <div class="section-head"><h2>Components</h2><a href="#components" class="link">Manage</a></div>
+        <div class="grid mix">
+          <section id="components-mix" class="card panel"></section>
+          <section id="components" class="card panel"><div class="skeleton" aria-hidden="true"></div></section>
+        </div>
+      </div>
+      <div>
+        <div class="section-head"><h2>Checks</h2></div>
+        <section id="checks" class="card panel"><div class="skeleton" aria-hidden="true"></div></section>
+      </div>
+    </div>
   </div>
   <div id="view-components" hidden>
     <p id="components-error" class="error" role="alert"></p>

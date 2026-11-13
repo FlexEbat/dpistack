@@ -25,12 +25,12 @@ As a single file: `dpistack-install.sh` in the repository root. It is built by `
 
 ## The menu, and no questions
 
-On a terminal `install` opens a text menu. "Quick install" asks for the interfaces, the way to install Suricata, the access mode, the listen address (one of the addresses of this host, if you want the panels on your network), the optional metrics stack (a storage, Grafana and node_exporter, each on its own), which panel to use (`full` or `lite`) and the panel password; the other sections (capture, components, EVE, rules, access, metrics, watch, tests) open if you want them, and `--advanced` asks every key. The install starts with its own menu item.
+On a terminal `install` opens a text menu. "Quick install" asks for the interfaces, the way to install Suricata, the access mode, the listen address (one of the addresses of this host, if you want the panels on your network), the optional metrics stack (a storage, Grafana and node_exporter, each on its own) and the panel password; the other sections (capture, components, EVE, rules, access, metrics, watch, tests) open if you want them, and `--advanced` asks every key. The install starts with its own menu item.
 
 Without a terminal, or with `-y`, there are no questions and missing values take their defaults:
 
 ```
-sudo ./install.sh install -y --set IFACES=eth0 --set ACCESS_MODE=localhost --set PANEL_EDITION=lite
+sudo ./install.sh install -y --set IFACES=eth0 --set ACCESS_MODE=localhost
 ```
 
 The plan with no changes to the system:

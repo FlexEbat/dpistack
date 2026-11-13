@@ -397,8 +397,8 @@ test("the page has the three columns, the search, the details, the diff and the 
     assert.ok(app.includes(`$("${id}")`), id);
   }
   assert.match(html, /Show advanced settings/);
-  assert.match(here("full.css"), /\.settings-cols/);
-  assert.match(here("lite.css"), /\.settings-cols/);
-  assert.match(here("full.css"), /\.setting\.inactive/);
-  assert.match(here("lite.css"), /\.setting\.inactive/);
+  assert.match(here("app.css"), /\.settings-cols/);
+  assert.match(here("app.css"), /\.settings-cols/);
+  assert.match(here("app.css"), /\.setting\.inactive/);
+  assert.match(here("app.css"), /\.setting\.inactive/);
 });

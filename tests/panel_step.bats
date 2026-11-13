@@ -407,31 +407,16 @@ release_binary_name() {
 	grep -q "^go build" "$MOCK_CALLS_LOG"
 }
 
-@test "PANEL_EDITION=lite passes -lite to the panel, full (the default) does not, and both keep the same flags otherwise" {
+@test "an old dpistack.conf with PANEL_EDITION still loads: the retired key is dropped and no -lite flag is passed" {
+	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
+	printf 'PANEL_EDITION=lite\n' >"$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
 	run install_base
 	[ "$status" -eq 0 ]
 	run grep -q -- ' -lite' "$(unit_file)"
 	[ "$status" -ne 0 ]
 	grep -q -- ' -metrics-file ' "$(unit_file)"
-	run install_base --set PANEL_EDITION=lite
-	[ "$status" -eq 0 ]
-	grep -q -- ' -lite' "$(unit_file)"
-	grep -q -- ' -metrics-file ' "$(unit_file)"
 	run grep -qE '^(MemoryMax|CPUQuota)=' "$(unit_file)"
 	[ "$status" -ne 0 ]
-}
-
-@test "switching PANEL_EDITION back to full drops -lite again" {
-	run install_base --set PANEL_EDITION=lite
-	run install_base --set PANEL_EDITION=full
-	[ "$status" -eq 0 ]
-	run grep -q -- ' -lite' "$(unit_file)"
-	[ "$status" -ne 0 ]
-}
-
-@test "PANEL_EDITION rejects a value that is neither full nor lite" {
-	run install_base --set PANEL_EDITION=huge
-	[ "$status" -eq 2 ]
 }
 
 @test "an old dpistack.conf with PANEL_MODE still loads: the retired key is dropped" {

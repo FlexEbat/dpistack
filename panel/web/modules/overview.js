@@ -1,7 +1,9 @@
-// The Overview screen: overall health, components and watchdog checks.
+// The Overview screen: overall health, the state cards, host gauges, traffic
+// charts, alerts, components and watchdog checks.
 import { tickets } from "./poll.js";
 import { statCards, ifaceRows } from "./system.js";
 import { SERIES, seriesCard } from "./metrics.js";
+import { donut, radar, ringGauge } from "./charts.js";
 import { alertsOf, since, severityCounts, stateCards, warnings } from "./overview-model.js";
 
 const ALERT_LIMIT = 200;
@@ -23,83 +25,111 @@ function badge(status) {
   return el("span", "badge " + (status || "na"), status || "na");
 }
 
-function table(headers, rows) {
-  const t = el("table");
-  const head = el("tr");
-  for (const h of headers) head.append(el("th", "", h));
-  t.append(head);
-  for (const cells of rows) {
-    const tr = el("tr");
-    for (const c of cells) {
-      const td = el("td");
-      if (c instanceof Node) td.append(c);
-      else td.textContent = c;
-      tr.append(td);
-    }
-    t.append(tr);
-  }
-  return t;
-}
-
 function fmtTime(ts) {
   const d = new Date(ts);
   return Number.isNaN(d.getTime()) ? ts || "" : d.toLocaleString();
 }
 
+// A row of a list: a coloured dot, a main line, a small line, a badge.
+function row(tone, title, note, trailing) {
+  const li = el("li", "row " + tone);
+  li.append(el("i", "dot tone-" + tone));
+  const body = el("span", "row-body");
+  body.append(el("strong", "", title));
+  if (note) body.append(el("span", "muted", note));
+  li.append(body);
+  if (trailing) li.append(trailing);
+  return li;
+}
+
+const COMPONENT_TONE = { active: "ok", inactive: "warn", failed: "crit", absent: "na" };
+
 // render fills the three overview areas from one /api/status answer.
 export function render(status, areas) {
   const health = status.health;
   const overall = health ? health.overall : "na";
+  areas.overall.className = "hero " + overall;
   areas.overall.replaceChildren(
+    el("i", "pulse tone-" + overall),
+    (() => {
+      const box = el("div", "hero-text");
+      box.append(el("strong", "overall-text", OVERALL[overall] || overall), el("span", "muted", health ? "Checked " + fmtTime(health.ts) : "The watchdog has not written a report yet"));
+      return box;
+    })(),
     badge(overall),
-    el("span", "overall-text", OVERALL[overall] || overall),
-    el("span", "muted", health ? "checked " + fmtTime(health.ts) : "the watchdog has not written a report yet"),
   );
 
-  const rows = status.components.map((c) => [
-    c.id,
-    c.runtime,
-    STATE[c.state] || c.state,
-    c.enabled ? "yes" : "no",
-    c.version || "",
-  ]);
-  const comps = [table(["Component", "Start", "State", "Autostart", "Version"], rows)];
+  const grid = el("ul", "inventory");
+  for (const c of status.components) {
+    const tone = COMPONENT_TONE[c.state] || "na";
+    const meta = [c.runtime, c.version, c.state !== "absent" && c.enabled ? "starts on boot" : ""].filter(Boolean).join(" · ");
+    grid.append(row(tone, c.id, meta, el("span", "badge " + tone, STATE[c.state] || c.state)));
+  }
+  const comps = [grid];
   if (status.ndpi_plugin) comps.push(el("p", "muted", "nDPI plugin: " + status.ndpi_plugin));
   areas.components.replaceChildren(...comps);
 
+  const live = status.components.filter((c) => c.state !== "absent");
+  if (areas.mix) {
+    const count = (state) => live.filter((c) => c.state === state).length;
+    areas.mix.replaceChildren(
+      live.length
+        ? donut({
+            caption: "Components by state",
+            center: count("active") + "/" + live.length,
+            parts: [
+              { label: "Running", value: count("active"), tone: "ok" },
+              { label: "Stopped", value: count("inactive"), tone: "warn" },
+              { label: "Failed", value: count("failed"), tone: "crit" },
+            ],
+          })
+        : el("p", "muted empty", "Nothing is installed yet."),
+    );
+  }
+
   const checks = health ? health.checks : [];
-  areas.checks.replaceChildren(
-    checks.length
-      ? table(
-          ["Check", "Status", "Details", "Since"],
-          checks.map((c) => [c.id, badge(c.status), c.detail || c.value || "", fmtTime(c.since)]),
-        )
-      : el("p", "muted empty", "No checks yet."),
-  );
+  const list = el("ul", "inventory checks-list");
+  for (const c of checks) list.append(row(c.status || "na", c.id, (c.detail || c.value || "") + (c.since ? " · since " + fmtTime(c.since) : ""), badge(c.status)));
+  areas.checks.replaceChildren(checks.length ? list : el("p", "muted empty", "No checks yet."));
 }
 
-// renderSystem fills the host cards and the interface table. A host that
+// renderSystem fills the host gauges and the interface chips. A host that
 // gave nothing leaves the section empty and hidden.
 export function renderSystem(info, areas) {
   const cards = statCards(info);
-  areas.host.replaceChildren(
-    ...cards.map((c) => {
-      const card = el("div", "card stat");
-      card.append(el("span", "muted", c.label), el("strong", "stat-value", c.value));
-      if (c.level !== "na") card.append(badge(c.level));
-      if (c.note) card.append(el("span", "muted", c.note));
-      return card;
-    }),
-  );
+  const gauges = [];
+  const facts = [];
+  for (const c of cards) {
+    const percent = /^\d+ %$/.test(c.value) ? parseInt(c.value, 10) : null;
+    const gauge = percent !== null && (c.label === "CPU" || c.label === "Memory" || c.label.startsWith("Disk "));
+    if (gauge) {
+      const box = el("div", "gauge card");
+      const disk = c.label.startsWith("Disk ");
+      box.append(ringGauge({ value: percent, label: disk ? "Disk" : c.label, text: c.value, tone: c.level === "na" ? "ok" : c.level }));
+      const note = [disk ? c.label.slice(5) : "", c.note].filter(Boolean).join(" · ");
+      if (note) box.append(el("span", "muted", note));
+      gauges.push(box);
+    } else {
+      const box = el("div", "card stat");
+      box.append(el("span", "muted", c.label), el("strong", "stat-value", c.value));
+      if (c.note) box.append(el("span", "muted", c.note));
+      facts.push(box);
+    }
+  }
+  areas.host.replaceChildren(...gauges, ...facts);
   const rows = ifaceRows(info);
-  areas.ifaces.replaceChildren(
-    rows.length
-      ? table(
-          ["Interface", "State", "Speed", "Received", "Sent", "Dropped", "Errors", ""],
-          rows.map((r) => [r.name, r.state, r.speed, r.rx, r.tx, String(r.lost), String(r.errors), r.capture]),
-        )
-      : el("p", "muted empty", "No interfaces."),
-  );
+  const chips = el("ul", "iface-chips");
+  for (const r of rows) {
+    const up = r.state === "up";
+    const li = el("li", "iface" + (r.capture ? " capturing" : ""));
+    li.append(el("i", "dot tone-" + (up ? "ok" : "na")), el("strong", "", r.name));
+    li.append(el("span", "muted", [r.state, r.speed].filter(Boolean).join(" · ")));
+    li.append(el("span", "iface-flow", "↓ " + r.rx + "  ↑ " + r.tx));
+    if (r.lost || r.errors) li.append(el("span", "badge warn", r.lost + " dropped, " + r.errors + " errors"));
+    if (r.capture) li.append(el("span", "badge ok", r.capture));
+    chips.append(li);
+  }
+  areas.ifaces.replaceChildren(rows.length ? chips : el("p", "muted empty", "No interfaces."));
   areas.hostBox.hidden = !cards.length && !rows.length;
 }
 
@@ -109,8 +139,10 @@ export function renderTraffic(res, areas) {
   const defs = SERIES.filter((d) => d.name === "pps" || d.name === "drops");
   const ok = res && res.series && defs.every((d) => res.series[d.name]);
   areas.trafficBox.hidden = !ok;
-  if (ok) areas.traffic.replaceChildren(...defs.map((d) => seriesCard(d, res.series[d.name])));
+  if (ok) areas.traffic.replaceChildren(...defs.map((d) => seriesCard(d, res.series[d.name], res)));
 }
+
+const SEVERITY_TONE = { 1: "crit", 2: "warn", 3: "a", 0: "na" };
 
 // renderGlance fills the cards, the warnings, the alerts by severity and
 // the latest alerts. A source that did not answer is null and its part is
@@ -120,10 +152,12 @@ export function renderGlance({ status, system, mode, eve }, areas, now = Date.no
   const cards = stateCards({ status, system, mode, alerts, now });
   areas.cards.replaceChildren(
     ...cards.map((c) => {
-      const card = el("div", "card stat");
-      card.append(el("span", "muted", c.label), el("strong", "stat-value", c.value));
-      if (c.level !== "na") card.append(badge(c.level));
-      if (c.note) card.append(el("span", "muted", c.note));
+      const card = el("div", "card kpi " + c.level);
+      card.append(el("span", "muted kpi-label", c.label), el("strong", "kpi-value", c.value));
+      const foot = el("span", "kpi-foot");
+      if (c.level !== "na") foot.append(badge(c.level));
+      if (c.note) foot.append(el("span", "muted", c.note));
+      card.append(foot);
       return card;
     }),
   );
@@ -134,17 +168,24 @@ export function renderGlance({ status, system, mode, eve }, areas, now = Date.no
   const day = alerts ? since(alerts, DAY_MS, now) : [];
   if (alerts) {
     const c = severityCounts(day);
+    const top = Math.max(c.high, c.medium, c.low, c.unknown, 1);
     const capped = alerts.length >= ALERT_LIMIT ? " (of the latest " + ALERT_LIMIT + " alerts)" : "";
     areas.severity.replaceChildren(
       el("p", "muted", "Alerts in the last 24 hours" + capped),
-      table(["High", "Medium", "Low", "Unknown"], [[String(c.high), String(c.medium), String(c.low), String(c.unknown)]]),
+      radar({
+        caption: "Alerts by severity",
+        axes: [
+          { label: "High", value: c.high / top, text: String(c.high) },
+          { label: "Medium", value: c.medium / top, text: String(c.medium) },
+          { label: "Low", value: c.low / top, text: String(c.low) },
+          { label: "Unknown", value: c.unknown / top, text: String(c.unknown) },
+        ],
+      }),
     );
-    const latest = alerts.slice(0, 5);
-    areas.recent.replaceChildren(
-      latest.length
-        ? table(["Time", "Alert"], latest.map((a) => [a.time ? fmtTime(a.time) : "", a.text]))
-        : el("p", "muted empty", "No alerts yet."),
-    );
+    const latest = alerts.slice(0, 6);
+    const list = el("ul", "inventory");
+    for (const a of latest) list.append(row(SEVERITY_TONE[a.severity], a.text, a.time ? fmtTime(a.time) : ""));
+    areas.recent.replaceChildren(latest.length ? list : el("p", "muted empty", "No alerts yet."));
   }
   areas.alertsBox.hidden = !alerts;
   areas.glanceBox.hidden = !cards.length && !warn.length && !alerts;

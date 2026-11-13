@@ -1,6 +1,6 @@
-// The design rules of tech.md 9.1 (the landing page design skill) as tests:
+// The design rules of tech.md 9.1 (the Aurora NOC design, v0.47.0) as tests:
 // they read the stylesheets and the page and fail when a rule is broken, so
-// the look cannot drift back to ad hoc values. There is no browser in CI, so
+// the look cannot drift into ad hoc values. There is no browser in CI, so
 // what a browser would render is checked by the rules, not by pixels.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const web = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (f) => readFileSync(join(web, f), "utf8");
-const SHEETS = { "full.css": read("full.css"), "lite.css": read("lite.css") };
+const SHEETS = { "app.css": read("app.css") };
 
 // parse reads a stylesheet into rules {selector, decls, atrule}. Only what
 // these sheets use: nested @media, @font-face and @keyframes.
@@ -53,184 +53,101 @@ const PARSED = Object.fromEntries(Object.entries(SHEETS).map(([k, v]) => [k, par
 const each = (fn) => {
   for (const [name, rules] of Object.entries(PARSED)) for (const r of rules) fn(name, r);
 };
-const SPACING = ["0", "2px", "4px", "8px", "12px", "16px", "24px", "32px", "40px", "48px", "64px", "80px", "96px"];
-const TYPE = {
-  xs: ["0.75rem", "1rem"], sm: ["0.875rem", "1.25rem"], base: ["1rem", "1.5rem"], lg: ["1.125rem", "1.75rem"],
-  xl: ["1.25rem", "1.75rem"], "2xl": ["1.5rem", "2rem"], "3xl": ["1.875rem", "2.25rem"],
-};
-const RADII = ["2px", "4px", "6px", "8px", "12px", "16px", "24px", "32px", "9999px"];
-const DARK_BG = ["#000000", "#181818", "#1F1F1F", "#272727", "#313131", "#131209"];
 
-test("the fonts: Geist only in the full edition, no banned family anywhere, no italics", () => {
+const BANNED_FONTS = /\b(Inter|Roboto|Arial|Open Sans|Helvetica)\b/i;
+const TOKEN_RULES = ["--bg", "--card", "--edge", "--text", "--muted", "--blue", "--cyan", "--green", "--amber", "--red", "--violet", "--ease"];
+const classesOf = (css) => new Set([...css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\{[^}]*\}/g, "{}").matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1]));
+
+test("the fonts: Geist and Geist Mono bundled, no banned family, no italics", () => {
   for (const [name, css] of Object.entries(SHEETS)) {
-    assert.doesNotMatch(css, /\b(Inter|Roboto|Arial|Open Sans|Helvetica)\b/i, name);
+    assert.doesNotMatch(css, BANNED_FONTS, name);
     assert.doesNotMatch(css, /font-style:\s*(italic|oblique)/, name);
   }
-  assert.match(SHEETS["full.css"], /--sans:\s*"Geist"/);
-  assert.match(SHEETS["full.css"], /--mono:\s*"Geist Mono"/);
+  assert.match(SHEETS["app.css"], /--sans:\s*"Geist"/);
+  assert.match(SHEETS["app.css"], /--mono:\s*"Geist Mono"/);
+  assert.match(SHEETS["app.css"], /url\("fonts\/geist\.woff2"\)/);
   for (const f of ["fonts/geist.woff2", "fonts/geist-mono.woff2", "fonts/OFL.txt"]) assert.ok(existsSync(join(web, f)), f);
-  assert.match(SHEETS["full.css"], /url\("fonts\/geist\.woff2"\)/);
 });
 
-test("no weight above bold (700), no ultra bold", () => {
+test("no weight above bold (700)", () => {
   each((name, r) => {
     if (r.selector.startsWith("@font-face")) return;
+    for (const [p, v] of r.decls) if (p === "font-weight") assert.ok(Number(v) <= 700, `${name} ${r.selector}: ${p} ${v}`);
+  });
+});
+
+test("every colour of the design is a token: both sheets define the palette and the scheme", () => {
+  for (const [name, css] of Object.entries(SHEETS)) for (const t of TOKEN_RULES) assert.match(css, new RegExp(`${t}:`), `${name} ${t}`);
+  assert.match(SHEETS["app.css"], /color-scheme:\s*dark/, "the panel is dark by design");
+});
+
+test("the type scale: font sizes are tokens, except inside the SVG drawings", () => {
+  each((name, r) => {
+    if (r.selector.startsWith("@")) return;
     for (const [p, v] of r.decls) {
-      const w = p === "font-weight" ? v : p === "font" ? v.match(/^(\d{3})\b/)?.[1] : null;
-      if (w) assert.ok(Number(w) <= 700, `${name} ${r.selector}: ${p} ${v}`);
+      if (p !== "font-size") continue;
+      if (/^\.(chart|ring|radar)/.test(r.selector)) continue;
+      assert.match(v, /^(0|var\(--t-[a-z0-9]+\))$/, `${name} ${r.selector}: ${v}`);
     }
   });
 });
 
-test("the type scale: tokens are the Tailwind steps, every size resolves to a token", () => {
-  for (const [name, css] of Object.entries(SHEETS)) {
-    for (const [step, [size, lh]] of Object.entries(TYPE)) {
-      if (css.includes(`--text-${step}:`)) {
-        assert.match(css, new RegExp(`--text-${step}:\\s*${size.replace(".", "\\.")}`), `${name} ${step} size`);
-        assert.match(css, new RegExp(`--lh-${step}:\\s*${lh.replace(".", "\\.")}`), `${name} ${step} line height`);
+test("spacing and radius stay on the grid: 4px steps (and 2px) for spacing, token radii", () => {
+  const SPACING = ["padding", "margin", "gap", "row-gap", "column-gap"];
+  each((name, r) => {
+    for (const [p, v] of r.decls) {
+      if (SPACING.some((s) => p === s || p.startsWith(s + "-")) && !p.startsWith("scroll")) {
+        for (const px of v.matchAll(/(-?[\d.]+)px/g)) assert.ok(Number(px[1]) % 4 === 0 || Number(px[1]) === 2 || Number(px[1]) === 1, `${name} ${r.selector}: ${p} ${v}`);
       }
-    }
-  }
-  each((name, r) => {
-    if (r.selector === ":root") return;
-    for (const [p, v] of r.decls) {
-      if (p === "font-size") assert.match(v, /^var\(--text-(xs|sm|base|lg|xl|2xl|3xl)\)$/, `${name} ${r.selector}`);
-      if (p === "font" && /\//.test(v)) assert.match(v, /var\(--text-[\w]+\)\/var\(--lh-[\w]+\)/, `${name} ${r.selector}: ${v}`);
+      if (p === "border-radius") assert.match(v, /^(0|50%|6px|var\(--r-(sm|md|lg|full)\))$/, `${name} ${r.selector}: ${v}`);
     }
   });
 });
 
-test("the spacing table: the tokens are exactly the table, spacing properties use only tokens", () => {
-  for (const [name, css] of Object.entries(SHEETS)) {
-    const got = [...css.matchAll(/--s-\d+:\s*([^;]+);/g)].map((m) => m[1].trim());
-    assert.deepEqual(got, SPACING, name);
-  }
-  const prop = /^(padding|margin|gap|row-gap|column-gap)(-(top|right|bottom|left))?$/;
+test("motion: colour and position changes take 200ms or more, nothing animates all, reduced motion is honoured", () => {
   each((name, r) => {
-    if (r.selector === ":root") return;
+    if (r.atrule && r.atrule.includes("prefers-reduced-motion")) return;
     for (const [p, v] of r.decls) {
-      if (!prop.test(p)) continue;
-      const parts = v.replace(/calc\(var\(--s-\d+\) \* -1\)/g, "var(--s-0)").split(/\s+/);
-      for (const part of parts) {
-        assert.ok(part === "0" || part === "auto" || /^var\(--s-(0|25|50|75|100|200|300|400|500|600|700|800|900)\)$/.test(part), `${name} ${r.selector}: ${p} ${v}`);
-      }
-    }
-  });
-});
-
-test("main buttons: 8px by 12px padding and the base size", () => {
-  for (const [name, rules] of Object.entries(PARSED)) {
-    const base = rules.find((r) => /(^|,\s*)button(,|$)/.test(r.selector) && r.decls.some(([p]) => p === "padding"));
-    assert.ok(base, name);
-    assert.equal(base.decls.find(([p]) => p === "padding")[1], "var(--s-75) var(--s-100)", name);
-    assert.match(base.decls.find(([p]) => p === "font")[1], /var\(--text-base\)\/var\(--lh-base\)/, name);
-  }
-});
-
-test("radius: Tailwind values only", () => {
-  for (const [name, css] of Object.entries(SHEETS)) {
-    for (const m of css.matchAll(/--r-[\w]+:\s*([^;]+);/g)) assert.ok(RADII.includes(m[1].trim()), `${name} ${m[0]}`);
-  }
-  each((name, r) => {
-    for (const [p, v] of r.decls) {
-      if (p === "border-radius") assert.match(v, /^(0|var\(--r-(lg|xl|2xl|full)\))$/, `${name} ${r.selector}: ${v}`);
-    }
-  });
-});
-
-test("backgrounds are flat and text is solid: no gradient anywhere (unslop, tech.md 18.35)", () => {
-  each((name, r) => {
-    assert.ok(r.decls.every(([, v]) => !/gradient\(/.test(v)), `${name} ${r.selector}`);
-    assert.ok(r.decls.every(([p, v]) => !(p === "background-clip" && v === "text")), `${name} ${r.selector}`);
-  });
-});
-
-test("controls are not pills: the shared control rule uses the 8px radius, the menu stays square", () => {
-  for (const [name, rules] of Object.entries(PARSED)) {
-    const base = rules.find((r) => /(^|,\s*)button(,|$)/.test(r.selector) && r.decls.some(([p]) => p === "padding"));
-    assert.equal(base.decls.find(([p]) => p === "border-radius")[1], "var(--r-lg)", name);
-  }
-  const nav = PARSED["full.css"].find((r) => r.selector === "nav .nav-links button" && !r.atrule);
-  assert.equal(nav.decls.find(([p]) => p === "justify-content")[1], "flex-start");
-});
-
-test("dark backgrounds come from the list of six", () => {
-  const full = SHEETS["full.css"];
-  for (const t of ["bg", "card", "card-2", "hover", "edge", "well"]) {
-    const m = full.match(new RegExp(`--${t}:\\s*(#[0-9A-Fa-f]{6})`));
-    assert.ok(m && DARK_BG.includes(m[1].toUpperCase()), `full ${t}`);
-  }
-  const darkBlock = SHEETS["lite.css"].match(/prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([^}]*)\}/)[1];
-  for (const t of ["bg", "card", "card-2", "border"]) {
-    const m = darkBlock.match(new RegExp(`--${t}:\\s*(#[0-9A-Fa-f]{6})`));
-    assert.ok(m && DARK_BG.includes(m[1].toUpperCase()), `lite dark ${t}`);
-  }
-  each((name, r) => {
-    for (const [p, v] of r.decls) {
-      if (p === "background" || p === "background-color") {
-        assert.doesNotMatch(v, /#[0-9A-Fa-f]{3,6}\b/, `${name} ${r.selector}: literal colour in a background`);
+      if (p !== "transition") continue;
+      assert.doesNotMatch(v, /\ball\b/, `${name} ${r.selector}: animates all`);
+      for (const one of v.split(/,(?![^(]*\))/)) {
+        const dur = one.trim().match(/\s(\d+)ms\b/);
+        assert.ok(dur && Number(dur[1]) >= 200, `${name} ${r.selector}: ${one.trim()}`);
       }
     }
   });
+  for (const [name, css] of Object.entries(SHEETS)) assert.match(css, /prefers-reduced-motion:\s*reduce/, name);
 });
 
-test("borders: never on one side of a card", () => {
-  const sideOk = new Set(["nav", "th, td", ".setting", ".setting:first-of-type", "tr:last-child td"]);
-  each((name, r) => {
-    for (const [p] of r.decls) {
-      if (/^border-(left|right|top|bottom)$/.test(p)) assert.ok(sideOk.has(r.selector), `${name} ${r.selector}: ${p}`);
-    }
-    for (const [p, v] of r.decls) {
-      if (p === "box-shadow") assert.doesNotMatch(v, /inset\s+\d+px\s+0\s+0/, `${name} ${r.selector}: a one sided inset edge`);
-    }
-  });
-});
-
-test("motion: one curve, nothing under 200ms, only transform, opacity and colour change", () => {
-  const ALLOWED = new Set(["transform", "opacity", "background-color", "border-color", "color", "visibility"]);
-  each((name, r) => {
-    for (const [p, v] of r.decls) {
-      if (p === "transition" || p === "transition-property" || p === "animation" || p === "transition-timing-function" || p === "animation-timing-function") {
-        assert.doesNotMatch(v, /(^|[\s,])(ease|ease-in|ease-out|ease-in-out|linear)(?=[\s,;]|$)/, `${name} ${r.selector}: ${v}`);
-      }
-      if (p === "transition") {
-        assert.doesNotMatch(v, /\ball\b/, `${name} ${r.selector}`);
-        for (const one of v.split(/,(?![^(]*\))/)) {
-          const prop = one.trim().split(/\s+/)[0];
-          assert.ok(ALLOWED.has(prop), `${name} ${r.selector}: animates ${prop}`);
-          const dur = one.trim().split(/\s+/)[1];
-          const ms = dur.endsWith("ms") ? parseFloat(dur) : parseFloat(dur) * 1000;
-          if (prop !== "visibility") assert.ok(ms >= 200, `${name} ${r.selector}: ${dur}`);
-        }
-        assert.match(v, /var\(--ease\)/, `${name} ${r.selector}: no curve`);
-      }
-      if (p === "animation" && !/^none\b/.test(v)) assert.match(v, /var\(--ease\)/, `${name} ${r.selector}`);
-    }
-    if (r.atrule === "keyframes") {
-      for (const f of r.frames) for (const [p] of f.decls) assert.ok(p === "opacity" || p === "transform", `${name} keyframes ${p}`);
-    }
-  });
-  assert.match(SHEETS["full.css"], /--ease:\s*cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
-  assert.match(SHEETS["full.css"], /prefers-reduced-motion: reduce/);
-});
-
-test("the hero heading and its subheading are capped at 680px; headings balance, paragraphs stay pretty", () => {
-  for (const [name, rules] of Object.entries(PARSED)) {
-    const h1 = rules.find((r) => r.selector === "h1" && !r.atrule);
-    assert.ok(h1.decls.some(([p, v]) => p === "max-width" && v === "680px"), name);
-    const sub = rules.find((r) => r.selector === "header .titles p");
-    assert.ok(sub.decls.some(([p, v]) => p === "max-width" && v === "680px"), name);
-    assert.ok(rules.find((r) => r.selector === "h1, h2, h3").decls.some(([p, v]) => p === "text-wrap" && v === "balance"), name);
-    assert.ok(rules.find((r) => r.selector === "p").decls.some(([p, v]) => p === "text-wrap" && v === "pretty"), name);
-  }
-});
-
-test("states: focus ring, active press, skeleton, empty state", () => {
+test("states: focus ring, active press, skeleton, empty state, hidden stays hidden", () => {
   for (const [name, css] of Object.entries(SHEETS)) {
     assert.match(css, /:focus-visible/, name);
     assert.match(css, /button:active:not\(:disabled\)\s*\{[^}]*scale\(0\.98\)/, name);
     assert.match(css, /\.skeleton/, name);
-    assert.match(css, /\.muted\.empty/, name);
+    assert.match(css, /\.empty/, name);
+    assert.match(css, /\[hidden\]\s*\{\s*display:\s*none\s*!important/, name);
+  }
+});
+
+test("the sheets load nothing from the network", () => {
+  for (const [name, css] of Object.entries(SHEETS)) {
+    assert.doesNotMatch(css, /@import|url\(\s*["']?https?:/, name);
+  }
+});
+
+test("the page and the scripts use only classes that the stylesheet knows", () => {
+  const known = classesOf(SHEETS["app.css"]);
+  // names that mark state or behaviour for scripts, or are set by the models
+  const plain = new Set(["fill", "in", "js-reveal", "static", "bad", "inactive", "na", "ok", "warn", "crit", "wide", "ico", "editor", "result", "log", "has-update", "bar-a", "bar-b", "bar-c", "mark", "version", "primary", "small", "clickable", "switch", "actions"]);
+  const html = read("index.html");
+  for (const m of html.matchAll(/class="([^"]+)"/g)) for (const c of m[1].split(/\s+/)) assert.ok(known.has(c) || plain.has(c), `index.html: .${c} has no style`);
+});
+
+test("the charts are drawn by the chart kit and styled by classes, never inline", () => {
+  const charts = read("modules/charts.js");
+  assert.doesNotMatch(charts, /setAttribute\(["']style["']|innerHTML|\bfetch\(/);
+  for (const c of ["chart-line", "chart-area", "chart-grid", "chart-cursor", "chart-band", "chart-tip", "ring-fill", "donut-seg", "radar-shape", "stop-top", "stop-bottom"]) {
+    assert.match(SHEETS["app.css"], new RegExp(`\\.${c}\\b`), c);
   }
 });
 

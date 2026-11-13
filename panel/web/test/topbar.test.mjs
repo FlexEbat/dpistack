@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { hostText, stateChip, modeChip, nextTheme, readTheme, saveTheme, applyTheme, themeSwitchable, themeLabel, start, userMenu } from "../modules/topbar.js";
+import { hostText, stateChip, modeChip, start, userMenu } from "../modules/topbar.js";
 
 const here = (f) => readFileSync(new URL("../" + f, import.meta.url), "utf8");
 
@@ -26,53 +26,18 @@ test("the mode chip: IDS is calm, IPS is a warning and a pending IPS says so", (
   assert.equal(modeChip(undefined), null);
 });
 
-test("the theme cycles system, light, dark and an unknown stored value means system", () => {
-  assert.deepEqual(["system", "light", "dark"].map((t) => nextTheme(t)), ["light", "dark", "system"]);
-  const store = (v) => ({ getItem: () => v });
-  assert.equal(readTheme(store("dark")), "dark");
-  assert.equal(readTheme(store("purple")), "system");
-  assert.equal(readTheme(store(null)), "system");
-  assert.equal(themeLabel("light"), "Theme: light");
+test("the panel is dark by design: the stylesheet offers no light palette and no theme switch exists", () => {
+  const css = here("app.css");
+  assert.match(css, /color-scheme:\s*dark/);
+  assert.doesNotMatch(css, /data-theme|color-scheme:\s*light/);
+  assert.doesNotMatch(here("index.html"), /theme-btn/);
 });
 
-test("a browser that refuses storage does not break the theme", () => {
-  const broken = { getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); } };
-  assert.equal(readTheme(broken), "system");
-  assert.doesNotThrow(() => saveTheme(broken, "dark"));
-});
-
-test("a chosen theme is an attribute on the root and system removes it", () => {
-  const attrs = new Map();
-  const root = { setAttribute: (k, v) => attrs.set(k, v), removeAttribute: (k) => attrs.delete(k) };
-  applyTheme(root, "dark");
-  assert.equal(attrs.get("data-theme"), "dark");
-  applyTheme(root, "light");
-  assert.equal(attrs.get("data-theme"), "light");
-  applyTheme(root, "system");
-  assert.equal(attrs.has("data-theme"), false);
-});
-
-test("the theme switch is offered only where both palettes exist", () => {
-  assert.equal(themeSwitchable("light dark"), true);
-  assert.equal(themeSwitchable("dark"), false);
-  assert.equal(themeSwitchable(""), false);
-});
-
-test("the lite stylesheet has both overrides and the full one stays dark only", () => {
-  const lite = here("lite.css");
-  assert.match(lite, /:root\[data-theme="light"\]\s*\{[^}]*color-scheme: light/);
-  assert.match(lite, /:root\[data-theme="dark"\]\s*\{[^}]*color-scheme: dark/);
-  assert.match(lite, /color-scheme: light dark/);
-  assert.doesNotMatch(here("full.css"), /data-theme/);
-  assert.doesNotMatch(here("full.css"), /color-scheme: light/);
-});
-
-test("the page has the chips, the user menu with Sign out and the theme item hidden until the script decides", () => {
+test("the page has the chips, the user menu with Sign out", () => {
   const html = here("index.html");
-  for (const id of ["top-host", "top-state", "top-mode", "user-btn", "user-menu", "user-account", "theme-btn", "logout"]) {
+  for (const id of ["top-host", "top-state", "top-mode", "user-btn", "user-menu", "user-account", "logout"]) {
     assert.match(html, new RegExp(`id="${id}"`), id);
   }
-  assert.match(html, /id="theme-btn"[^>]*hidden/);
   assert.match(html, /id="user-menu"[^>]*hidden/);
 });
 

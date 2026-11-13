@@ -33,7 +33,7 @@ Putting a traffic-analysis stack together by hand means a dozen packages, three 
 | **Suricata** + **nDPI** | the engine: IDS or IPS, with application detection (BitTorrent, TLS names and so on) |
 | **EveBox** | browse and triage Suricata alerts and events |
 | **ntopng** (+ Redis) | live traffic, hosts and flows |
-| **Panel** | the control web UI, in two editions: `full` and `lite` |
+| **Panel** | the control web UI (a dark network operations console) |
 | **Watchdog** | health checks, alerts, optional automatic restarts |
 | **Prometheus** or **VictoriaMetrics** (optional) | metrics storage that scrapes the panel |
 | **Grafana** (optional) | dashboards, with the storage wired in as the default data source |
@@ -66,7 +66,7 @@ sudo ./install.sh --fast       # the short questionnaire instead of the guided s
 On a terminal a menu opens and first offers the guided setup, which asks every setting that applies. Press `m` in the menu to choose the parts one by one (Suricata, nDPI, rules, EveBox, ntopng, panel, watchdog, Grafana, node_exporter); every action asks for a confirmation and every screen has an exit. The quick install asks only what matters: the capture interfaces, how to get Suricata, who may open the panels (and on which address), the optional metrics stack and which panel you want. Everything else keeps a sensible default. Without a terminal, or with `-y`, nothing is asked:
 
 ```
-sudo ./install.sh install -y --set IFACES=eth0 --set PANEL_EDITION=lite
+sudo ./install.sh install -y --set IFACES=eth0
 sudo ./install.sh install --dry-run -y        # show the plan, change nothing
 ```
 
@@ -78,7 +78,6 @@ At the end you get a report with the addresses, the results of the check tests a
 
 | Choice | Options | Key |
 | --- | --- | --- |
-| Which panel | `full` (rich dark console with a quiet particle background) or `lite` (the same features on a plain, light page for small hosts) | `PANEL_EDITION` |
 | Who may open the panels | `localhost` (this machine only, the default), `lan` (your network) or `nginx` (a reverse proxy, optionally with TLS) | `ACCESS_MODE` |
 | On which address | `auto` or one address of this host, picked from the list the installer prints (for example `192.168.1.156` on `enp2s0`) | `BIND_ADDR` |
 | Where each component runs | the host or Docker, independently, for Suricata, EveBox, ntopng, the metrics storage, Grafana, node_exporter and the panel | `*_RUNTIME` |
@@ -89,7 +88,7 @@ Every setting is described in [docs/configuration.md](docs/configuration.md).
 
 ## The panel
 
-Thirteen screens: Overview, Network, Traffic, Components, Settings, Configs, Rules, Exceptions, Logs, Events, Metrics, Tests and Alerts. The Settings screen is built from the same schema as the installer, so it shows every setting, checks it before applying it, flags changes that start a rebuild and warns about busy ports with a free one to take. Both editions have exactly the same features. More: [docs/dashboard.md](docs/dashboard.md).
+Thirteen screens: Overview, Network, Traffic, Components, Settings, Configs, Rules, Exceptions, Logs, Events, Metrics, Tests and Alerts. The Settings screen is built from the same schema as the installer, so it shows every setting, checks it before applying it, flags changes that start a rebuild and warns about busy ports with a free one to take. More: [docs/dashboard.md](docs/dashboard.md).
 
 ## Listening address and access
 
@@ -170,7 +169,7 @@ The README and the guides come in English and Russian (`*.ru.md`).
 | [docs/installation.md](docs/installation.md) | install, upgrade, uninstall, busy ports |
 | [docs/configuration.md](docs/configuration.md) | reference of every `dpistack.conf` setting |
 | [docs/runtimes.md](docs/runtimes.md) | Docker or native: what can run where and how the parts find each other |
-| [docs/dashboard.md](docs/dashboard.md) | the panel: screens, editions, settings, security |
+| [docs/dashboard.md](docs/dashboard.md) | the panel: screens, settings, security |
 | [docs/deployment.md](docs/deployment.md) | runtimes, the panel in Docker, access and the listen address |
 | [docs/platforms.md](docs/platforms.md) | supported distributions |
 | [docs/operations.md](docs/operations.md) | commands, rules, IPS, watchdog, metrics stack |

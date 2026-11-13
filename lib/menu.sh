@@ -446,8 +446,8 @@ menu_pick_monitoring() {
 }
 
 # menu_quick_install - 5.1 "Quick install": interfaces (ip -o link,
-# no lo, default-route one marked), Suricata source, access mode, which
-# panel (full or lite), panel password; everything else keeps its default.
+# no lo, default-route one marked), Suricata source, access mode, panel
+# password; everything else keeps its default.
 menu_quick_install() {
 	echo >&2
 	menu_bold "Quick install" >&2
@@ -518,19 +518,6 @@ menu_quick_install() {
 	fi
 
 	menu_pick_monitoring
-
-	echo "  Panel: full (rich design, effects) or lite (same features, plain light page)" >&2
-	local edition
-	menu_read edition "Panel [full/lite, Enter=${CONF[PANEL_EDITION]}]: "
-	if [[ -n "$edition" ]]; then
-		local err3
-		if err3=$(schema_validate_one PANEL_EDITION "$edition"); then
-			config_set_kv PANEL_EDITION "$edition"
-			MENU_DIRTY=1
-		else
-			echo "  $err3" >&2
-		fi
-	fi
 
 	menu_panel_password_screen
 	menu_draft_save

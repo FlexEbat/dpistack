@@ -40,7 +40,7 @@ If `install.sh`, `lib/`, `templates/` or `bin/` changed, rebuild the single file
 
 - Shell: tabs, `shfmt`, `shellcheck -x -S style` with no remarks. Functions are small, with a comment on the purpose. Messages to the user are in English.
 - Go: `gofmt`, `go vet`; only the dependencies that are really needed.
-- Interface: plain JavaScript without a build, modules in `panel/web/modules/`, logic that does not touch the DOM goes to a separate file covered by `node --test`. Both panel editions keep the same features.
+- Interface: plain JavaScript without a build, modules in `panel/web/modules/`, logic that does not touch the DOM goes to a separate file covered by `node --test`.
 - Bats: `! command` outside the last line of a test does not work, use `run` and check `$status`.
 
 ## Dependencies and releases
