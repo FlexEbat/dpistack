@@ -17,7 +17,6 @@ Start with the report: `sudo dpistack diag`. It collects the platform, versions,
 | `applying is already running` | a heavy `dpistack-apply` job is running: `dpistack settings job` shows the progress |
 | IPS went back to IDS | the switch was not confirmed in time: `dpistack mode ips`, then `dpistack mode-confirm` |
 | the panel does not open | `dpistack status`, then `dpistack logs panel`; check `ACCESS_MODE` and the panel port |
-| the page looks plain | you are on the `lite` edition: it is meant to; set `PANEL_EDITION=full` for the rich console |
 | no events | `dpistack status` (Suricata, `eve.json`), `dpistack logs suricata`, the interface in `IFACES` and the `BPF_FILTER` filter |
 | rules do not update | `dpistack rules-update` prints the reason; the previous set is restored on an error |
 

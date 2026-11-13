@@ -84,12 +84,6 @@ compose_cmd="docker compose -p dpistack -f"
 	[ -f "$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service" ]
 }
 
-@test "PANEL_RUNTIME=docker with PANEL_EDITION=lite passes -lite to the container" {
-	run install_base --set PANEL_RUNTIME=docker --set PANEL_EDITION=lite
-	[ "$status" -eq 0 ]
-	grep -q -- '"-lite"' "$COMPOSE"
-}
-
 @test "the panel container asks for the verbs only: DPISTACK_CALLER=panel refuses installer commands" {
 	DPISTACK_CALLER=panel run bash "$REPO_DIR/install.sh" uninstall
 	[ "$status" -eq 2 ]

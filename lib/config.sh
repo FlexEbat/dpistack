@@ -44,9 +44,10 @@ config_load_kv_file() {
 		[[ "$line" == *=* ]] || continue
 		key="${line%%=*}"
 		value="${line#*=}"
-		# PANEL_MODE (limited/unlimited) is gone since v0.23.0: an old file
-		# still loads, the key is dropped.
-		[[ "$key" == "PANEL_MODE" ]] && continue
+		# PANEL_MODE (limited/unlimited) is gone since v0.23.0 and PANEL_EDITION
+		# (full/lite) since v0.47.0: an old file still loads, the keys are
+		# dropped.
+		[[ "$key" == "PANEL_MODE" || "$key" == "PANEL_EDITION" ]] && continue
 		config_set_kv "$key" "$value"
 	done <"$file"
 }

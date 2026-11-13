@@ -6,17 +6,9 @@ The web panel shows the state of the stack and lets you control it without the c
 
 The interface is responsive: on a wide screen the navigation is on the left, on a narrow one it is a floating bar with a menu that opens over the whole screen. The page loads no external fonts, scripts or images (the Geist fonts and the Phosphor icons come from the panel itself) and works on a network without internet access.
 
-## Editions
+## Look
 
-`PANEL_EDITION` chooses which panel is served. Both editions have exactly the same screens, API and features; only the look and the work done in the browser differ. The installer menu asks which one you want, and you can change it later on the Settings screen.
-
-| Edition | Look | When to choose it |
-| --- | --- | --- |
-| `full` (default) | a dark console: flat surfaces, one cool-blue accent, the Geist font, a sidebar, blocks that rise into view once and a quiet particle background (it stops when the tab is hidden and respects `prefers-reduced-motion`) | a workstation or any host where the browser has room to spare |
-| `lite` | a plain, light page: system fonts, no background canvas, no animations, a small stylesheet | a small host, an old browser or a slow remote link |
-
-The server sends the stylesheet and the background script of the chosen edition, so a lite page never downloads the full one.
-
+The panel is one dark console. A sidebar in groups (it collapses to icons), a top bar with the live state, and cards on a navy canvas. The Overview shows the health banner, four state cards, ring gauges for CPU, memory and disks, the interfaces, traffic charts, alerts by severity and the components. Charts show the values under the pointer, you can drag over a stretch to zoom and double click to reset. A quiet background of drifting points stops when the tab is hidden, and everything that moves stops under `prefers-reduced-motion`.
 ## Screens
 
 | Screen | What is on it |

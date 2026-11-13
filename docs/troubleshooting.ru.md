@@ -16,7 +16,6 @@
 | `heavy changes ... need --force` | изменение запускает установку или пересборку: примените с `--force` (или `settings set --apply-heavy`) |
 | `applying is already running` | идёт тяжёлая задача `dpistack-apply`: `dpistack settings job` показывает ход |
 | IPS вернулся в IDS | переключение не подтверждено за отведённое время: `dpistack mode ips`, затем `dpistack mode-confirm` |
-| страница выглядит простой | вы на редакции `lite`: так и задумано; для насыщенной консоли задайте `PANEL_EDITION=full` |
 | панель не открывается | `dpistack status`, затем `dpistack logs panel`; проверьте `ACCESS_MODE` и порт панели |
 | нет событий | `dpistack status` (Suricata, `eve.json`), `dpistack logs suricata`, интерфейс в `IFACES` и фильтр `BPF_FILTER` |
 | правила не обновляются | `dpistack rules-update` печатает причину; прежний набор при ошибке возвращается |

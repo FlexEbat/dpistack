@@ -42,7 +42,6 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `PIN_VERSIONS` | yes \| no | `no` | heavy | Pin the installed versions so a system update does not change them. |
 | `PANEL_SOURCE` | auto \| build \| prebuilt | `auto` | heavy | How to get the panel program: build it, take a ready one or choose automatically. (advanced) |
 | `PANEL_RUNTIME` | native \| docker | `native` | heavy | Where the panel runs: as a service on the host or as a Docker container (host commands go through nsenter). |
-| `PANEL_EDITION` | full \| lite | `full` | light | Which panel to install: full (rich design, background effects) or lite (the same features on a plain, light page). |
 
 ## Events and storage
 

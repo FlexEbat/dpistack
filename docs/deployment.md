@@ -52,11 +52,11 @@ The installer creates the file `/opt/dpistack/compose/compose.yaml`; you do not 
 
 The panel has root rights on the host: just as with `sudo`, a hacked panel is a hacked host. The `DPISTACK_CALLER` limit protects against mistakes, not against an attacker who has access to the container.
 
-## Panel edition
+## Panel resources
 
-`PANEL_EDITION` is `full` (the default) or `lite`. It does not change what the panel can do, only the page it serves: `full` is the rich dark console with the particle background, `lite` is a plain, light page for small hosts (see [dashboard.md](dashboard.md)). The panel unit has no `MemoryMax` or `CPUQuota`, in a container or on the host, and the number of open log streams is fixed at 4. Switch the edition on the Settings screen or with `dpistack settings set --apply PANEL_EDITION=lite`.
+The panel unit has no `MemoryMax` or `CPUQuota`: the panel takes the memory and the CPU it needs.
 
-An old `dpistack.conf` that still has `PANEL_MODE` (the limited/unlimited switch of earlier versions) keeps loading: the key is ignored.
+An old `dpistack.conf` that still has `PANEL_MODE` (the limited/unlimited switch of earlier versions) or `PANEL_EDITION` (the full/lite switch, removed in v0.47.0) keeps loading: the keys are ignored.
 
 ## Listen address
 

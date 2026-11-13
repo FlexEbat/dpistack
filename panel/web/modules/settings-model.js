@@ -61,7 +61,6 @@ export const HINTS = {
   PANEL_PORT: "Port of this panel.",
   NTOPNG_PORT: "ntopng port.",
   PANEL_RUNTIME: "Where the panel runs: as a service on the host or as a Docker container (host commands go through nsenter).",
-  PANEL_EDITION: "Which panel to install: full (rich design, background effects) or lite (the same features on a plain, light page).",
   PANEL_SOURCE: "How to get the panel program: build it, take a ready one or choose automatically.",
   NGINX_MANAGE: "How to manage nginx: replace the configuration or only drop in a fragment.",
   NGINX_TLS: "TLS on nginx: none, self signed or your own certificate.",

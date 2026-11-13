@@ -2,8 +2,7 @@
 # "panel" step: the system user `dpistack`, the sudoers rule that lets it
 # run only dpistack (tech.md 4.2, 4.5), the panel binary (PANEL_SOURCE:
 # built from panel/ with Go, or a ready dpistack-panel next to install.sh)
-# and the systemd unit (tech.md 9). PANEL_EDITION picks the panel: full, or
-# lite with the same features and a plain, light page.
+# and the systemd unit (tech.md 9).
 
 PANEL_USER="dpistack"
 PANEL_SERVICE="dpistack-panel.service"
@@ -73,11 +72,6 @@ panel_token_matches() {
 	fi
 }
 
-# panel_is_lite - 0 when PANEL_EDITION=lite.
-panel_is_lite() {
-	[[ "${CONF[PANEL_EDITION]:-full}" == "lite" ]]
-}
-
 # panel_args - the flags of the panel (tech.md 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
@@ -99,7 +93,6 @@ panel_args() {
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
 	args+=" -auth-file $(path_panel_auth) -users-file $(path_users) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json) -audit-file $(path_audit_jsonl) -backups-dir $(path_backup_archives_dir)"
 	args+=" -version ${DPISTACK_VERSION}"
-	panel_is_lite && args+=" -lite"
 	# Without the flag the panel shows that viewing events is off.
 	[[ "${CONF[EVE_FILE]:-yes}" == "yes" ]] && args+=" -eve-file $(path_suricata_eve_json)"
 	# The Tests and Alerts screens read these two files whatever /metrics does.

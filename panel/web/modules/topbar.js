@@ -33,51 +33,6 @@ export function bellChip(list) {
   return { text, level: c.new_crit > 0 ? "crit" : c.new > 0 ? "warn" : "ok" };
 }
 
-// Theme: "system" follows the colour scheme of the system, "light" and "dark"
-// override it. Only the lite stylesheet has both palettes; the full edition is
-// dark by design, so the switch is not offered there (see themeSwitchable).
-export const THEMES = ["system", "light", "dark"];
-const THEME_KEY = "dpistack.theme";
-const THEME_LABEL = { system: "Theme: system", light: "Theme: light", dark: "Theme: dark" };
-
-export function nextTheme(theme) {
-  return THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
-}
-
-export function themeLabel(theme) {
-  return THEME_LABEL[theme] || THEME_LABEL.system;
-}
-
-export function readTheme(storage) {
-  try {
-    const v = storage.getItem(THEME_KEY);
-    return THEMES.includes(v) ? v : "system";
-  } catch {
-    return "system";
-  }
-}
-
-export function saveTheme(storage, theme) {
-  try {
-    storage.setItem(THEME_KEY, theme);
-  } catch {
-    // a browser that refuses storage just forgets the choice
-  }
-}
-
-// applyTheme puts the choice on the root element; "system" removes it, so the
-// stylesheet follows the system again.
-export function applyTheme(root, theme) {
-  if (theme === "light" || theme === "dark") root.setAttribute("data-theme", theme);
-  else root.removeAttribute("data-theme");
-}
-
-// themeSwitchable: the page offers both a light and a dark palette when its
-// colour-scheme names both (lite.css); the full edition says "dark" only.
-export function themeSwitchable(colorScheme) {
-  return /\blight\b/.test(colorScheme || "") && /\bdark\b/.test(colorScheme || "");
-}
-
 function paintChip(node, chip) {
   if (!node) return;
   node.hidden = !chip || !chip.text;

@@ -1,23 +1,21 @@
-// The Metrics screen: six small line charts of the last 1, 6 or 24 hours.
-// Charts are plain SVG; a series that cannot exist is shown as a note with
+// The Metrics screen: six area charts of the last 1, 6 or 24 hours.
+// Charts are plain SVG (charts.js); a series that cannot exist is shown as a note with
 // the reason, never as a flat line at zero, and a gap in the data is a gap
 // in the line.
 import { tickets } from "./poll.js";
+import { areaChart } from "./charts.js";
 
 const POLL_MS = 30000; // the server samples every 30 s, so asking more often shows nothing new
-const W = 300;
-const H = 90;
-const NS = "http://www.w3.org/2000/svg";
 
 // What the screen shows per series, in order. Conversions keep the numbers
 // readable: bytes become megabytes, the free share becomes percent.
 export const SERIES = [
-  { name: "pps", title: "Packets per second", format: (v) => `${Math.round(v).toLocaleString("en-US")} pkt/s` },
-  { name: "drops", title: "Packet drops per second", format: (v) => `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })} pkt/s` },
-  { name: "cpu", title: "Panel CPU", format: (v) => `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} %` },
-  { name: "rss", title: "Panel memory", format: bytes },
-  { name: "eve_size", title: "eve.json size", format: bytes },
-  { name: "disk", title: "Free space on the log disk", scale: 100, format: (v) => `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} %` },
+  { name: "pps", tone: "a", title: "Packets per second", format: (v) => `${Math.round(v).toLocaleString("en-US")} pkt/s` },
+  { name: "drops", tone: "c", title: "Packet drops per second", format: (v) => `${v.toLocaleString("en-US", { maximumFractionDigits: 2 })} pkt/s` },
+  { name: "cpu", tone: "b", title: "Panel CPU", format: (v) => `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} %` },
+  { name: "rss", tone: "d", title: "Panel memory", format: bytes },
+  { name: "eve_size", tone: "a", title: "eve.json size", format: bytes },
+  { name: "disk", tone: "b", title: "Free space on the log disk", scale: 100, format: (v) => `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} %` },
 ];
 
 function bytes(v) {
@@ -37,49 +35,25 @@ function el(tag, className, text) {
   return node;
 }
 
-function svg(tag, attrs) {
-  const node = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
-  return node;
-}
-
-// segments splits the values at the gaps: each run of known values is one
-// polyline, so a missing stretch is not bridged by a line.
-export function segments(values, max) {
-  const n = values.length;
-  const runs = [];
-  let run = [];
-  values.forEach((v, i) => {
-    if (v === null || v === undefined) {
-      if (run.length) runs.push(run);
-      run = [];
-      return;
-    }
-    const x = n > 1 ? (i / (n - 1)) * W : 0;
-    const y = H - 4 - (max > 0 ? (v / max) * (H - 8) : 0);
-    run.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+// clock labels one point of a series: the grid starts at meta.start and
+// every value covers meta.step seconds.
+export function labelsOf(count, meta) {
+  if (!meta || !meta.start || !meta.step) return [];
+  const t0 = Date.parse(meta.start);
+  if (Number.isNaN(t0)) return [];
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(t0 + i * meta.step * 1000);
+    return d.toLocaleTimeString("en-GB", { hour12: false });
   });
-  if (run.length) runs.push(run);
-  return runs;
 }
 
-function chart(values) {
-  const known = values.filter((v) => v !== null && v !== undefined);
-  const max = known.length ? Math.max(...known) * 1.1 : 0;
-  const box = svg("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart", role: "img", preserveAspectRatio: "none" });
-  box.append(svg("line", { x1: 0, y1: H - 4, x2: W, y2: H - 4, class: "chart-axis" }));
-  for (const run of segments(values, max)) {
-    // A single point has no line; draw it as a short stroke so it is seen.
-    const points = run.length === 1 ? [run[0], run[0].replace(/^[\d.]+/, (x) => String(+x + 1))] : run;
-    box.append(svg("polyline", { points: points.join(" "), class: "chart-line" }));
-  }
-  return box;
-}
-
-// seriesCard is one chart card; the Overview draws two of them.
-export function seriesCard(def, series) {
-  const c = el("div", "chart-card");
-  c.append(el("h3", "", def.title));
+// seriesCard is one chart card; the Overview draws some of them. meta is
+// the {start, step} of the answer, so the chart can name the time.
+export function seriesCard(def, series, meta) {
+  const c = el("div", "chart-card card");
+  const head = el("div", "chart-head");
+  head.append(el("h3", "", def.title));
+  c.append(head);
   if (!series || !series.available) {
     // Unavailable is said in words: a zero line would claim the opposite.
     c.append(el("p", "muted empty", `No data: ${(series && series.reason) || "series unavailable"}.`));
@@ -87,11 +61,17 @@ export function seriesCard(def, series) {
   }
   const scale = def.scale || 1;
   const values = series.values.map((v) => (v === null ? null : v * scale));
-  const last = [...values].reverse().find((v) => v !== null && v !== undefined);
-  c.append(el("p", "chart-last", last === undefined ? "no values in this period" : `now ${def.format(last)}`));
-  c.append(chart(values));
   const known = values.filter((v) => v !== null && v !== undefined);
-  if (known.length) c.append(el("p", "muted", `in this period: from ${def.format(Math.min(...known))} to ${def.format(Math.max(...known))}`));
+  const last = [...values].reverse().find((v) => v !== null && v !== undefined);
+  head.append(el("strong", "chart-last", last === undefined ? "no values" : def.format(last)));
+  if (!known.length) {
+    c.append(el("p", "muted empty", "No values in this period."));
+    return c;
+  }
+  c.append(areaChart({ series: [{ name: def.title, tone: def.tone || "a", values, format: def.format }], labels: labelsOf(values.length, meta), format: def.format }));
+  const stats = el("p", "chart-stats muted");
+  stats.append(el("span", "", `low ${def.format(Math.min(...known))}`), el("span", "", `average ${def.format(known.reduce((n, v) => n + v, 0) / known.length)}`), el("span", "", `high ${def.format(Math.max(...known))}`));
+  c.append(stats);
   return c;
 }
 
@@ -114,7 +94,7 @@ export function start(api, els, onError) {
     try {
       const res = await api(`/api/metrics?range=${range}`);
       if (!running || !seq.current(ticket)) return;
-      els.charts.replaceChildren(...SERIES.map((def) => seriesCard(def, res.series[def.name])));
+      els.charts.replaceChildren(...SERIES.map((def) => seriesCard(def, res.series[def.name], res)));
       els.error.textContent = "";
     } catch (err) {
       if (!running || !seq.current(ticket)) return;

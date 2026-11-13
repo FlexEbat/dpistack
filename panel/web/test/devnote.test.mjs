@@ -31,5 +31,5 @@ test("both READMEs say it and both name the GNU General Public License v3.0", ()
 });
 
 test("the CSS styles the notice in both stylesheets", () => {
-  for (const f of ["lite.css", "full.css"]) assert.match(read("panel/web/" + f), /\.devnote\s*\{/, f);
+  for (const f of ["app.css"]) assert.match(read("panel/web/" + f), /\.devnote\s*\{/, f);
 });

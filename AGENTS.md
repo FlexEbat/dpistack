@@ -15,7 +15,7 @@ dpistack: an installer and a panel for the nDPI, Suricata, EveBox and ntopng sta
 | `lib/*.sh` | libraries: `schema.sh` (the key schema), `config.sh`, `os.sh` (distribution families), `step_*.sh` (install steps), `ctl.sh` (control commands), `menu.sh`, `runtime_docker.sh`, `ips.sh` |
 | `bin/dpistack-watch` | the watchdog (started by a timer) |
 | `templates/` | config and unit templates (`@@KEY@@` is filled in by `lib/render.sh`) |
-| `panel/` | the panel: Go (`cmd/`, `internal/`) and the static interface (`web/`, no external resources; `full.css` and `fx.js` are the full edition, `lite.css` the lite one) |
+| `panel/` | the panel: Go (`cmd/`, `internal/`) and the static interface (`web/`, no external resources; `app.css`, `fx.js` and `modules/charts.js` carry the look, see tech.md 9.1) |
 | `tests/` | bats tests, stubs of external commands in `tests/mocks/`, helpers in `tests/helpers/` |
 | `scripts/` | the gate, the single-file build, the security checks, the reference generator |
 | `dpistack-install.sh` | the single-file installer; **generated** by `scripts/bundle.sh`, never edited by hand |
@@ -41,7 +41,7 @@ dpistack: an installer and a panel for the nDPI, Suricata, EveBox and ntopng sta
 - Values from the config and from a request are not put into a command line without a check against the schema; the panel sends `KEY=VALUE` pairs on stdin.
 - In bats a `! command` that is not the last line of a test is ignored: write `run command; [ "$status" -ne 0 ]` (checked in `tests/ci_config.bats`).
 - Tests do not touch the system: external commands are replaced by stubs from `tests/mocks/` through `PATH`, and `DPISTACK_ROOT` sets the root of the file system.
-- The panel interface: no external fonts, scripts or images, no inline scripts or styles (the CSP policy). The lite edition must keep every feature of the full one; only the look differs.
+- The panel interface: no external fonts, scripts or images, no inline scripts or styles (the CSP policy). There is one panel and one look; no edition.
 - Go modules may be unavailable without a network: the panel tests run in CI.
 
 ## What not to do

@@ -63,9 +63,6 @@ type Config struct {
 	ExportToken string           // the bearer token of GET /metrics
 	Web         fs.FS
 	Now         func() time.Time // nil means time.Now
-	// Lite is PANEL_EDITION=lite: the same API and screens, served with the
-	// plain stylesheet and without the background effects.
-	Lite bool
 	// Version is the version of dpistack that started this panel ("0.25.2").
 	Version string
 	// Build says which sources and when the running binary was built from; it
@@ -197,7 +194,7 @@ func New(cfg Config) http.Handler {
 		writeError(w, http.StatusNotFound, "no such method")
 	}))
 	if cfg.Web != nil {
-		mux.Handle("/", static(edition(cfg.Lite, http.FileServerFS(cfg.Web))))
+		mux.Handle("/", static(http.FileServerFS(cfg.Web)))
 	}
 	return s.guard(s.audited(mux))
 }
@@ -218,29 +215,6 @@ func static(next http.Handler) http.Handler {
 			w.Header().Set("Cache-Control", "public, max-age=86400")
 		} else {
 			w.Header().Set("Cache-Control", "no-cache")
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// edition picks the page's look: the full edition gets full.css and the
-// background effects, lite gets lite.css and an empty script. The page always
-// asks for app.css and fx.js, so nothing else differs between the two.
-func edition(lite bool, next http.Handler) http.Handler {
-	css, js := "/full.css", "/fx.js"
-	if lite {
-		css, js = "/lite.css", "/nofx.js"
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/app.css":
-			r2 := r.Clone(r.Context())
-			r2.URL.Path = css
-			r = r2
-		case "/fx.js":
-			r2 := r.Clone(r.Context())
-			r2.URL.Path = js
-			r = r2
 		}
 		next.ServeHTTP(w, r)
 	})

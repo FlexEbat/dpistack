@@ -288,6 +288,6 @@ test("the page has the Security screen: the menu entry in Admin, every element, 
   assert.match(html, /id="sec-secret-box" class="secret-box" hidden/, "the secret box starts hidden");
   assert.match(html, /id="sec-token-days"[^>]*value="90"/);
   assert.match(html, /There is no session key to rotate/);
-  assert.match(here("full.css"), /\.secret-box/);
-  assert.match(here("lite.css"), /\.secret-box/);
+  assert.match(here("app.css"), /\.secret-box/);
+  assert.match(here("app.css"), /\.secret-box/);
 });

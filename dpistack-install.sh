@@ -1808,7 +1808,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.46.0"
+DPISTACK_VERSION="0.47.0"
 
 : "${DRY_RUN:=0}"
 
@@ -2149,9 +2149,10 @@ config_load_kv_file() {
 		[[ "$line" == *=* ]] || continue
 		key="${line%%=*}"
 		value="${line#*=}"
-		# PANEL_MODE (limited/unlimited) is gone since v0.23.0: an old file
-		# still loads, the key is dropped.
-		[[ "$key" == "PANEL_MODE" ]] && continue
+		# PANEL_MODE (limited/unlimited) is gone since v0.23.0 and PANEL_EDITION
+		# (full/lite) since v0.47.0: an old file still loads, the keys are
+		# dropped.
+		[[ "$key" == "PANEL_MODE" || "$key" == "PANEL_EDITION" ]] && continue
 		config_set_kv "$key" "$value"
 	done <"$file"
 }
@@ -6422,8 +6423,8 @@ menu_pick_monitoring() {
 }
 
 # menu_quick_install - 5.1 "Quick install": interfaces (ip -o link,
-# no lo, default-route one marked), Suricata source, access mode, which
-# panel (full or lite), panel password; everything else keeps its default.
+# no lo, default-route one marked), Suricata source, access mode, panel
+# password; everything else keeps its default.
 menu_quick_install() {
 	echo >&2
 	menu_bold "Quick install" >&2
@@ -6494,19 +6495,6 @@ menu_quick_install() {
 	fi
 
 	menu_pick_monitoring
-
-	echo "  Panel: full (rich design, effects) or lite (same features, plain light page)" >&2
-	local edition
-	menu_read edition "Panel [full/lite, Enter=${CONF[PANEL_EDITION]}]: "
-	if [[ -n "$edition" ]]; then
-		local err3
-		if err3=$(schema_validate_one PANEL_EDITION "$edition"); then
-			config_set_kv PANEL_EDITION "$edition"
-			MENU_DIRTY=1
-		else
-			echo "  $err3" >&2
-		fi
-	fi
 
 	menu_panel_password_screen
 	menu_draft_save
@@ -9327,7 +9315,6 @@ schema_init() {
 	_schema_add 'NTOPNG_PORT|int|3000|1..65535|advanced|access|ntopng access|light|no'
 	_schema_add 'PANEL_SOURCE|enum|auto|auto,build,prebuilt|advanced|components|panel|heavy|no'
 	_schema_add 'PANEL_RUNTIME|enum|native|native,docker|basic|components|panel|heavy|no'
-	_schema_add 'PANEL_EDITION|enum|full|full,lite|basic|components|panel|light|no'
 	_schema_add 'NGINX_MANAGE|enum|snippet|yes,snippet|advanced|access|access panel|light|no'
 	_schema_add 'NGINX_TLS|enum|none|none,selfsigned,existing|advanced|access|access panel|light|no'
 	_schema_add 'NGINX_CERT|free|||advanced|access|access panel|light|no'
@@ -11413,8 +11400,7 @@ put lib/step_panel.sh 644 <<'DPISTACK_BUNDLE_END'
 # "panel" step: the system user `dpistack`, the sudoers rule that lets it
 # run only dpistack (tech.md 4.2, 4.5), the panel binary (PANEL_SOURCE:
 # built from panel/ with Go, or a ready dpistack-panel next to install.sh)
-# and the systemd unit (tech.md 9). PANEL_EDITION picks the panel: full, or
-# lite with the same features and a plain, light page.
+# and the systemd unit (tech.md 9).
 
 PANEL_USER="dpistack"
 PANEL_SERVICE="dpistack-panel.service"
@@ -11484,11 +11470,6 @@ panel_token_matches() {
 	fi
 }
 
-# panel_is_lite - 0 when PANEL_EDITION=lite.
-panel_is_lite() {
-	[[ "${CONF[PANEL_EDITION]:-full}" == "lite" ]]
-}
-
 # panel_args - the flags of the panel (tech.md 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
@@ -11510,7 +11491,6 @@ panel_args() {
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
 	args+=" -auth-file $(path_panel_auth) -users-file $(path_users) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json) -audit-file $(path_audit_jsonl) -backups-dir $(path_backup_archives_dir)"
 	args+=" -version ${DPISTACK_VERSION}"
-	panel_is_lite && args+=" -lite"
 	# Without the flag the panel shows that viewing events is off.
 	[[ "${CONF[EVE_FILE]:-yes}" == "yes" ]] && args+=" -eve-file $(path_suricata_eve_json)"
 	# The Tests and Alerts screens read these two files whatever /metrics does.
@@ -13926,8 +13906,7 @@ Group=@@USER@@
 ExecStart=@@PANEL_BIN@@ @@ARGS@@
 Restart=on-failure
 RestartSec=5
-# No MemoryMax or CPUQuota: the lite edition (PANEL_EDITION=lite) is the way
-# to a lighter panel (tech.md 9). NoNewPrivileges and ProtectSystem are left
+# No MemoryMax or CPUQuota. NoNewPrivileges and ProtectSystem are left
 # out on purpose: sudo inherits the unit's restrictions, and dpistack
 # could not write to /etc under them.
 ProtectHome=yes
