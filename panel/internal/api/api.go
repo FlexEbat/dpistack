@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -33,11 +34,14 @@ const (
 	// csrfCookie is readable by the page script, which echoes it in the
 	// X-CSRF-Token header. The server compares the header with the token
 	// stored for the session, so a forged cookie proves nothing.
-	csrfCookie  = "dpistack_csrf"
-	sessionTTL  = 12 * time.Hour
-	loginMax    = 5
-	loginWindow = 5 * time.Minute
-	maxBody     = 4096
+	csrfCookie = "dpistack_csrf"
+	sessionTTL = 12 * time.Hour
+	loginMax   = 5
+	// tokenFailMax is how many wrong API tokens one address may send in the
+	// login window before it is turned away, a right token included.
+	tokenFailMax = 30
+	loginWindow  = 5 * time.Minute
+	maxBody      = 4096
 )
 
 // Config is everything the server needs from the outside.
@@ -46,6 +50,7 @@ type Config struct {
 	AuthFile    string
 	Audit       *audit.Log     // nil: no audit log
 	UsersFile   string         // users.json (slice 34); AuthFile is the fallback of the old one-password panel
+	TokensFile  string         // api-tokens.json (slice 45), beside users.json; empty means no API tokens
 	System      *system.Reader // the host state of /api/system; nil switches it off
 	BackupsDir  string         // the archives of `dpistack backup`, for downloading them; empty: no download
 	HealthFile  string
@@ -75,9 +80,15 @@ type server struct {
 	sessions *auth.Sessions
 	users    *auth.Users
 	limiter  *auth.Limiter
-	streams  atomic.Int32 // open log streams, capped at maxStreams (logs.go)
-	rules    rulesState   // the last rules update started from this panel
-	ops      opState      // tests and interface changes, one at a time
+	tokens   *auth.Tokens
+	// tokenLimiter counts wrong API tokens per address (a right one is not
+	// counted), lastUsed is when each token was last used since this panel
+	// started; the panel never writes a file, so that is all it can know.
+	tokenLimiter *auth.Limiter
+	lastUsed     sync.Map     // token id -> time.Time
+	streams      atomic.Int32 // open log streams, capped at maxStreams (logs.go)
+	rules        rulesState   // the last rules update started from this panel
+	ops          opState      // tests and interface changes, one at a time
 }
 
 type ctxKey struct{}
@@ -94,6 +105,9 @@ func New(cfg Config) http.Handler {
 		sessions: auth.NewSessions(sessionTTL, cfg.Now),
 		users:    &auth.Users{File: cfg.UsersFile, Legacy: cfg.AuthFile},
 		limiter:  auth.NewLimiter(loginMax, loginWindow, cfg.Now),
+		tokens:   &auth.Tokens{File: cfg.TokensFile, Now: cfg.Now},
+
+		tokenLimiter: auth.NewLimiter(tokenFailMax, loginWindow, cfg.Now),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/login", s.login)
@@ -160,6 +174,15 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/mode", s.need(auth.PermIPSManage, s.modeSet))
 	mux.HandleFunc("POST /api/mode/confirm", s.need(auth.PermIPSManage, s.modeConfirm))
 	mux.HandleFunc("GET /api/ips", s.need(auth.PermView, s.ipsStatus))
+	mux.HandleFunc("GET /api/security/sessions", s.need(auth.PermView, s.securitySessions))
+	mux.HandleFunc("DELETE /api/security/sessions/{handle}", s.need(auth.PermView, s.securitySessionEnd))
+	mux.HandleFunc("POST /api/security/sessions/revoke-others", s.need(auth.PermView, s.securitySessionsOthers))
+	mux.HandleFunc("POST /api/security/sessions/revoke-all", s.need(auth.PermUsersManage, s.securitySessionsAll))
+	mux.HandleFunc("GET /api/security/tokens", s.need(auth.PermView, s.securityTokens))
+	mux.HandleFunc("POST /api/security/tokens", s.need(auth.PermView, s.securityTokenCreate))
+	mux.HandleFunc("DELETE /api/security/tokens/{id}", s.need(auth.PermView, s.securityTokenRevoke))
+	mux.HandleFunc("GET /api/security/logins", s.need(auth.PermView, s.securityLogins))
+	mux.HandleFunc("GET /api/security/check", s.need(auth.PermAuditView, s.securityCheck))
 	mux.HandleFunc("GET /api/alert-center", s.need(auth.PermView, s.alertCenterList))
 	mux.HandleFunc("GET /api/alert-center/history", s.need(auth.PermView, s.alertCenterHistory))
 	mux.HandleFunc("POST /api/alert-center", s.need(auth.PermEventsAck, s.alertCenterAct))
@@ -249,6 +272,10 @@ func (s *server) guard(next http.Handler) http.Handler {
 // session's CSRF token in X-CSRF-Token.
 func (s *server) authed(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if h := r.Header.Get("Authorization"); h != "" {
+			s.bearer(next, w, r, h)
+			return
+		}
 		var csrf string
 		var user auth.User
 		ok := false
@@ -335,7 +362,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.limiter.Reset(o.client)
-	id, csrf := s.sessions.CreateFor(user.Name)
+	id, csrf := s.sessions.CreateMeta(user.Name, o.client.String(), r.UserAgent())
 	secure := r.TLS != nil || (o.peer.IsLoopback() && r.Header.Get("X-Forwarded-Proto") == "https")
 	setCookie(w, sessionCookie, id, true, secure)
 	setCookie(w, csrfCookie, csrf, false, secure)

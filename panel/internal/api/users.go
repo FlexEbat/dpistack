@@ -22,7 +22,12 @@ const (
 )
 
 // principal is who a request belongs to, set by authed.
-type principal struct{ user auth.User }
+// principal is who a request acts as. token is the id of the API token when it
+// came with one, and "" for a session.
+type principal struct {
+	user  auth.User
+	token string
+}
 
 type principalKey struct{}
 

@@ -14,6 +14,7 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -134,6 +135,7 @@ func run(args []string) error {
 		Policy:      policy,
 		AuthFile:    *authFile,
 		UsersFile:   *usersFile,
+		TokensFile:  filepath.Join(filepath.Dir(*usersFile), "api-tokens.json"),
 		BackupsDir:  *backupsDir,
 		System:      system.NewReader([]string{"/", "/var/lib/dpistack", "/var/log"}),
 		Audit:       auditLog(*auditFile),

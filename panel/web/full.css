@@ -190,6 +190,8 @@ tr.clickable { cursor: pointer; }
 table.diff { margin-bottom: var(--s-100); }
 .profile { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-75); padding: var(--s-50) 0; }
 .profile .profile-name { font: 400 var(--text-xs)/var(--lh-xs) var(--mono); margin-right: auto; }
+.secret-box { margin: var(--s-100) 0; padding: var(--s-100); border: 1px solid var(--warn); border-radius: var(--r-lg); }
+.secret-box code { display: block; overflow-wrap: anywhere; user-select: all; font: 400 var(--text-sm)/var(--lh-sm) var(--mono); padding: var(--s-75) 0; }
 @media (max-width: 70rem) { .settings-cols { grid-template-columns: minmax(0, 1fr); } .settings-cats { position: static; } }
 
 /* ---- login ---- */

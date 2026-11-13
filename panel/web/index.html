@@ -84,6 +84,7 @@
         <p class="nav-label">Admin</p>
         <button type="button" data-view="settings"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M40,88H73a32,32,0,0,0,62,0h81a8,8,0,0,0,0-16H135a32,32,0,0,0-62,0H40a8,8,0,0,0,0,16Zm64-24A16,16,0,1,1,88,80,16,16,0,0,1,104,64ZM216,168H199a32,32,0,0,0-62,0H40a8,8,0,0,0,0,16h97a32,32,0,0,0,62,0h17a8,8,0,0,0,0-16Zm-48,24a16,16,0,1,1,16-16A16,16,0,0,1,168,192Z"/></svg><span>Settings</span></button>
         <button type="button" data-view="audit"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M200,24H56A16,16,0,0,0,40,40V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V40A16,16,0,0,0,200,24Zm0,192H56V40H200ZM96,88a8,8,0,0,1,8-8h48a8,8,0,0,1,0,16H104A8,8,0,0,1,96,88Zm0,40a8,8,0,0,1,8-8h48a8,8,0,0,1,0,16H104A8,8,0,0,1,96,128Zm0,40a8,8,0,0,1,8-8h28a8,8,0,0,1,0,16H104A8,8,0,0,1,96,168Z"/></svg><span>Audit</span></button>
+        <button type="button" data-view="security"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M208,40H48A16,16,0,0,0,32,56v58.78c0,89.61,75.82,119.34,91,124.39a15.53,15.53,0,0,0,10,0c15.2-5.05,91-34.78,91-124.39V56A16,16,0,0,0,208,40Zm0,74.79c0,78.42-66.35,104.62-80,109.18-13.53-4.51-80-30.69-80-109.18V56H208ZM82.34,141.66a8,8,0,0,1,11.32-11.32L112,148.68l50.34-50.34a8,8,0,0,1,11.32,11.32l-56,56a8,8,0,0,1-11.32,0Z"/></svg>Security</button>
         <button type="button" data-view="account"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M230.92,212c-15.23-26.33-38.7-45.21-66.09-54.16a72,72,0,1,0-73.66,0C63.78,166.78,40.31,185.66,25.08,212a8,8,0,1,0,13.85,8c18.84-32.56,52.14-52,89.07-52s70.23,19.44,89.07,52a8,8,0,1,0,13.85-8ZM72,96a56,56,0,1,1,56,56A56.06,56.06,0,0,1,72,96Z"/></svg><span>Account</span></button>
       </div>
       <button id="nav-collapse" class="nav-collapse" type="button" aria-expanded="true" aria-label="Collapse the menu" title="Collapse the menu"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z"/></svg><span>Collapse</span></button>
@@ -420,6 +421,44 @@
     </div>
     <section id="backups-list"><div class="skeleton" aria-hidden="true"></div></section>
     <pre id="backups-result" class="result" aria-live="polite"></pre>
+  </div>
+  <div id="view-security" hidden>
+    <p id="sec-error" class="error" role="alert"></p>
+    <p id="sec-message" class="muted" aria-live="polite"></p>
+    <section id="sec-check-box">
+      <h2>Security check</h2>
+      <p id="sec-check-summary" class="muted"></p>
+      <div id="sec-check-list"><div class="skeleton" aria-hidden="true"></div></div>
+      <div class="toolbar"><button id="sec-run" type="button">Run the check again</button></div>
+    </section>
+    <h2>Your sessions</h2>
+    <div id="sec-sessions"><div class="skeleton" aria-hidden="true"></div></div>
+    <div class="toolbar">
+      <button id="sec-others" type="button">End all my other sessions</button>
+      <button id="sec-signout-all" type="button">Sign everyone out</button>
+    </div>
+    <p class="muted">There is no session key to rotate: a session is a random token that lives in the memory of the panel. Signing everyone out makes every cookie that was ever given out worthless.</p>
+    <h2>API tokens</h2>
+    <p class="muted">A token lets a script call the API as you, with <code>Authorization: Bearer ...</code>. A read token may only read. A token with a role never holds more than you may do, and it expires. Tokens and sessions can be managed only from here, never with a token.</p>
+    <label id="sec-token-all-box" class="switch"><input id="sec-token-all" type="checkbox"> Show everyone's tokens</label>
+    <div id="sec-tokens"></div>
+    <div class="toolbar">
+      <label>Name <input id="sec-token-name" type="text" maxlength="32" placeholder="backup script" autocomplete="off" spellcheck="false"></label>
+      <label>Scope <select id="sec-token-scope"></select></label>
+      <label>Days <input id="sec-token-days" type="number" min="1" max="365" value="90"></label>
+      <button id="sec-token-create" type="button">Make a token</button>
+    </div>
+    <div id="sec-secret-box" class="secret-box" hidden>
+      <p id="sec-secret-note" class="muted"></p>
+      <code id="sec-secret"></code>
+      <div class="toolbar">
+        <button id="sec-secret-copy" type="button">Copy</button>
+        <button id="sec-secret-hide" type="button">I have copied it</button>
+      </div>
+    </div>
+    <h2>Sign in history</h2>
+    <label id="sec-login-scope-box">Show <select id="sec-login-scope"><option value="mine">my sign ins</option><option value="all">everyone's</option></select></label>
+    <div id="sec-logins"><div class="skeleton" aria-hidden="true"></div></div>
   </div>
   <div id="view-account" hidden>
     <p id="account-error" class="error" role="alert"></p>
