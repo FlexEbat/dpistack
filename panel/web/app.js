@@ -18,6 +18,7 @@ import { start as startExceptions } from "./modules/exceptions.js";
 import * as topbar from "./modules/topbar.js";
 import { start as startSettings } from "./modules/settings.js";
 import * as account from "./modules/account.js";
+import * as security from "./modules/security.js";
 import { start as startAudit } from "./modules/audit.js";
 import { start as startBackups } from "./modules/backups.js";
 import * as shell from "./modules/shell.js";
@@ -54,7 +55,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "network", "traffic", "components", "ips", "settings", "configs", "rules", "exceptions", "logs", "events", "metrics", "tests", "alerts", "audit", "backups", "account"];
+const VIEWS = ["overview", "network", "traffic", "components", "ips", "settings", "configs", "rules", "exceptions", "logs", "events", "metrics", "tests", "alerts", "audit", "security", "backups", "account"];
 let me = { name: "", role: "", perms: ["view"] };
 let stopView = null;
 
@@ -272,6 +273,38 @@ const SCREENS = {
         list: $("backups-list"),
       },
       showLogin,
+    ),
+  security: () =>
+    security.start(
+      api,
+      {
+        error: $("sec-error"),
+        message: $("sec-message"),
+        checkBox: $("sec-check-box"),
+        checkSummary: $("sec-check-summary"),
+        checkList: $("sec-check-list"),
+        run: $("sec-run"),
+        sessions: $("sec-sessions"),
+        endOthers: $("sec-others"),
+        signOutAll: $("sec-signout-all"),
+        tokens: $("sec-tokens"),
+        tokenAllBox: $("sec-token-all-box"),
+        tokenAll: $("sec-token-all"),
+        tokenName: $("sec-token-name"),
+        tokenScope: $("sec-token-scope"),
+        tokenDays: $("sec-token-days"),
+        tokenCreate: $("sec-token-create"),
+        secretBox: $("sec-secret-box"),
+        secret: $("sec-secret"),
+        secretNote: $("sec-secret-note"),
+        secretCopy: $("sec-secret-copy"),
+        secretHide: $("sec-secret-hide"),
+        logins: $("sec-logins"),
+        loginScopeBox: $("sec-login-scope-box"),
+        loginScope: $("sec-login-scope"),
+      },
+      showLogin,
+      me.perms,
     ),
   account: () =>
     account.start(

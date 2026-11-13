@@ -47,6 +47,11 @@ Usage: dpistack <command> [arguments]
   rules-facets                       the categories and sources the filters of rules-find offer
   rules-local check                  checks a local.rules given on stdin: not a rule, no sid, a sid used twice or by the rule set, suricata -T
   config-history <name> [<version>]  the saved versions of a config file, or the content of one
+  tokens create --user U --name N [--scope read|viewer|analyst|operator|admin] [--days D] [--json]
+                                     an API token for a script (shown once, only its hash is kept)
+  tokens list [--user U] [--json] | revoke ID [--user U]
+                                     the tokens (never the secret) and ending one
+  security check [--json]            the security of the panel as a list: access, TLS, default ports, stale accounts, file permissions
   alerts list [--state S] [--source S] [--severity S] [--json]
                                      the alerts of the watchdog and of Suricata with their states
   alerts history [--limit N] [--json]  what people did and the status changes of the watchdog, newest first
@@ -2478,6 +2483,7 @@ audit_wanted() {
 	# prune is not listed: the watchdog runs it every tick and writes its own
 	# line, only when it removed something (exc_prune).
 	exceptions) [[ "$sub" == add || "$sub" == remove ]] ;;
+	tokens) [[ "$sub" == create || "$sub" == revoke ]] ;;
 	alerts) [[ "$sub" == ack || "$sub" == snooze || "$sub" == resolve || "$sub" == reopen ]] ;;
 	backup) [[ "$sub" == create || "$sub" == restore ]] ;;
 	mode) [[ "$sub" == ids || "$sub" == ips ]] ;;
@@ -2557,6 +2563,8 @@ ctl_dispatch() {
 	rules-search) cmd_rules_search "$@" ;;
 	exceptions) cmd_exceptions "$@" ;;
 	alerts) cmd_alerts "$@" ;;
+	tokens) cmd_tokens "$@" ;;
+	security) cmd_security "$@" ;;
 	rules-stats) rules_stats "$@" ;;
 	rules-history) rules_history "$@" ;;
 	rules-describe) rules_describe "$@" ;;
