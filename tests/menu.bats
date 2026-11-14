@@ -340,3 +340,116 @@ run_menu() {
 		[ -n "$output" ]
 	done
 }
+
+# Step 1 of the menu review (18.54): the install screen says what is wrong
+# and what to do next.
+
+@test "the install screen counts the missing panel password as a problem and says the next step" {
+	run_menu "q\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Problems (1): the panel password is not set (item 10)"* ]]
+	[[ "$output" == *"Next: set the panel password (item 10), then press i to install."* ]]
+}
+
+@test "with the password set the install screen has no problem and says to press i" {
+	run_menu "10\nsecret-pass1\nsecret-pass1\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Problems (0)"* ]]
+	[[ "$output" == *"Next: press i to install."* ]]
+}
+
+@test "e lists every problem, a cross-check problem and the missing password both" {
+	run_menu "4\na\n9\nelasticsearch\n0\ne\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"(e = show all)"* ]]
+	[[ "$output" == *"  - "*"needs EVEBOX_ES_URL"* ]]
+	[[ "$output" == *"  - the panel password is not set"* ]]
+}
+
+@test "i without the password names the item to open" {
+	run_menu "i\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"unavailable without a panel password: set it with item 10"* ]]
+	[ ! -e "$CONF_FILE" ]
+}
+
+@test "the under development note is printed once, not on every redraw" {
+	run_menu "c\n\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[ "$(grep -c 'Under development: dpistack is still being developed' <<<"$output")" -eq 1 ]
+}
+
+@test "the install screen has a help of its own and every item is on one column" {
+	run_menu "?\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Quick install: five short questions"* ]]
+	[[ "$output" == *"   1) Quick install"* ]]
+	[[ "$output" == *"  10) Panel password"* ]]
+}
+
+@test "a section explains the markers that are on the screen, and only those" {
+	run_menu "6\n1\nlan\n0\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"* differs from the default"* ]]
+	[[ "$output" != *"~ differs from the applied value"* ]]
+}
+
+@test "an unclear choice says what to type" {
+	run_menu "zz\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"unclear choice: zz (type a number or a letter from the list, ? for help)"* ]]
+}
+
+@test "0 is not a Back on a reconfigure that was opened directly, and the answer says what to type" {
+	local in
+	in="$(mktemp)"
+	printf '0\nq\ny\n' >"$in"
+	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
+	printf 'SURICATA_SOURCE=oisf\nNDPI_ENABLE=no\n' >"$CONF_FILE"
+	run env DPISTACK_INPUT="$in" bash "$REPO_DIR/install.sh" reconfigure
+	rm -f "$in"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"unclear choice: 0 (type a number"* ]]
+}
+
+# Step 2 of the menu review (18.54): a section says what each key is for.
+
+@test "a section prints the hint of every key under it, and the count of the advanced keys" {
+	run_menu "2\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Interfaces Suricata captures from, comma separated."* ]]
+	[[ "$output" == *"show advanced (6 more)"* ]]
+}
+
+@test "a key that the other settings switch off says so in the list" {
+	run_menu "2\na\n0\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"(not used with the current settings) How IPS gets packets"* ]]
+}
+
+@test "the key editor shows the hint and ? adds the level" {
+	run_menu "2\n1\n?\n\n0\nq\ny\n"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"IFACES (now:"* ]]
+	[[ "$output" == *"IFACES: group capture, type free, basic level"* ]]
+}
+
+@test "lib/key_hints.sh is the generated copy of the panel hints and every key has one" {
+	run bash "$REPO_DIR/scripts/gen-key-hints.sh" --check
+	[ "$status" -eq 0 ]
+}
+
+@test "gen-key-hints --check fails when the generated file is stale" {
+	local work
+	work="$(mktemp -d)"
+	mkdir -p "$work/scripts" "$work/lib" "$work/panel/web/modules"
+	cp "$REPO_DIR/scripts/gen-key-hints.sh" "$work/scripts/"
+	cp "$REPO_DIR/lib/schema.sh" "$work/lib/"
+	cp "$REPO_DIR/panel/web/modules/settings-model.js" "$work/panel/web/modules/"
+	cp "$REPO_DIR/lib/key_hints.sh" "$work/lib/"
+	sed -i 's/Install this control panel\./Install the panel./' "$work/panel/web/modules/settings-model.js"
+	run bash "$work/scripts/gen-key-hints.sh" --check
+	rm -rf "$work"
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"out of date"* ]]
+}

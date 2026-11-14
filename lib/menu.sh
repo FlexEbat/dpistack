@@ -21,6 +21,7 @@ MENU_DIRTY=0
 declare -A MENU_OLD_CONF # snapshot for reconfigure's "~" marker and diff
 MENU_PANEL_PASSWORD=""   # plaintext, held only in memory until hashed
 MENU_PANEL_PASSWORD_SET=0
+MENU_BANNER_SHOWN=0 # the 'under development' note is printed once per run
 
 menu_color_on() {
 	[[ -z "${NO_COLOR:-}" && "${CLI_NO_COLOR:-0}" != "1" && -t 1 ]]
@@ -216,6 +217,30 @@ menu_problems_count() {
 	printf '%s\n' "$out" | wc -l
 }
 
+# menu_install_problems - what stops "Install" on the install screen: the
+# schema and cross checks, plus the panel password that the install needs.
+menu_install_problems() {
+	config_validate
+	[[ "$MENU_PANEL_PASSWORD_SET" == "1" ]] ||
+		echo "the panel password is not set (item $((${#MENU_GROUPS[@]} + 2)))"
+	return 0
+}
+
+# menu_unclear <input> - the answer to an input no screen item matches.
+menu_unclear() {
+	echo "  unclear choice: $1 (type a number or a letter from the list, ? for help)" >&2
+}
+
+# menu_legend <marks> - explains the markers that are on the screen now.
+menu_legend() {
+	local marks="$1" out=""
+	[[ "$marks" == *"*"* ]] && out+="  * differs from the default"
+	[[ "$marks" == *"~"* ]] && out+="  ~ differs from the applied value"
+	[[ "$marks" == *"!"* ]] && out+="  ! invalid, fix it"
+	[[ -n "$out" ]] && echo "$out" >&2
+	return 0
+}
+
 menu_group_summary() {
 	# One short line per group for the main screen's right column.
 	case "$1" in
@@ -253,6 +278,7 @@ menu_edit_key() {
 		local current="${CONF[$key]:-}"
 		local opts="${SCHEMA_OPTIONS[$key]}"
 		echo "$key (now: ${current:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$current" ]] && menu_say_empty "$key"
 		[[ -n "$opts" ]] && echo "  options: $opts" >&2
 		local answer
@@ -265,7 +291,8 @@ menu_edit_key() {
 		case "$answer" in
 		"" | cancel) return 0 ;;
 		"?")
-			echo "  ${key}: group ${SCHEMA_GROUP[$key]}, type ${SCHEMA_TYPE[$key]}" >&2
+			[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
+			echo "  ${key}: group ${SCHEMA_GROUP[$key]}, type ${SCHEMA_TYPE[$key]}, $(schema_is_basic "$key" && echo basic || echo advanced) level" >&2
 			continue
 			;;
 		"-")
@@ -290,6 +317,36 @@ menu_edit_key() {
 	done
 }
 
+# menu_hint_line <key> - the one-line hint of a key for the list of a section:
+# cut to the width of the terminal, with "not used now" first for a key that
+# the other settings switch off (the same table the guided setup uses).
+menu_hint_line() {
+	local key="$1" text width cols
+	text="${KEY_HINT[$key]:-}"
+	[[ -n "$text" ]] || return 0
+	if menu_key_skipped "$key"; then
+		text="(not used with the current settings) $text"
+	fi
+	cols="${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}"
+	[[ "$cols" =~ ^[0-9]+$ ]] || cols=80
+	((cols < 60)) && cols=60
+	((cols > 120)) && cols=120
+	width=$((cols - 9))
+	((${#text} > width)) && text="${text:0:$((width - 3))}..."
+	printf '       %s\n' "$(menu_c 2 "$text")" >&2
+}
+
+# menu_advanced_count <group> - how many advanced keys the section has.
+menu_advanced_count() {
+	local group="$1" key n=0
+	for key in "${SCHEMA_KEYS[@]}"; do
+		[[ "${SCHEMA_GROUP[$key]}" == "$group" ]] || continue
+		[[ "$key" == "METRICS_TOKEN" ]] && continue
+		schema_is_basic "$key" || n=$((n + 1))
+	done
+	echo "$n"
+}
+
 menu_section_keys() {
 	local group="$1" key
 	for key in "${SCHEMA_KEYS[@]}"; do
@@ -310,10 +367,11 @@ menu_section_screen() {
 		echo >&2
 		local -a keys=()
 		mapfile -t keys < <(menu_section_keys "$group")
-		local i=1 key
+		local i=1 key seen_marks=""
 		for key in "${keys[@]}"; do
 			local mark
 			mark=$(menu_mark_for_key "$key")
+			seen_marks+="$mark"
 			local shown
 			if schema_is_secret "$key"; then
 				shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
@@ -321,9 +379,15 @@ menu_section_screen() {
 				shown="${CONF[$key]:-}"
 			fi
 			printf '  %2d) %-28s = %s %s\n' "$i" "$key" "$shown" "$mark" >&2
+			menu_hint_line "$key"
 			i=$((i + 1))
 		done
-		echo "  a) $([[ $MENU_SHOW_ADVANCED == 1 ]] && echo "hide" || echo "show") advanced   0) back (Enter too)   ?) help   q) quit" >&2
+		menu_legend "$seen_marks"
+		[[ "$group" == "components" ]] && echo "  Tip: m on the main screen switches whole parts on or off in one place." >&2
+		local adv_label
+		adv_label="show advanced ($(menu_advanced_count "$group") more)"
+		[[ "$MENU_SHOW_ADVANCED" == "1" ]] && adv_label="hide advanced"
+		echo "  a) $adv_label   0) back (Enter too)   ?) help   q) quit" >&2
 		local problems
 		problems=$(menu_problems_count)
 		if [[ "$problems" -gt 0 ]]; then
@@ -343,7 +407,7 @@ menu_section_screen() {
 			continue
 			;;
 		'?')
-			echo "  Number - edit a key; Enter/0 - back; a - show/hide advanced." >&2
+			echo "  Number - edit a key (Enter keeps the value, - resets it to the default); Enter or 0 - back; a - show or hide the advanced keys." >&2
 			continue
 			;;
 		*)
@@ -351,7 +415,7 @@ menu_section_screen() {
 			if [[ "$choice" =~ ^[0-9]+$ ]] && ((10#$choice >= 1 && 10#$choice <= ${#keys[@]})); then
 				menu_edit_key "${keys[$((10#$choice - 1))]}"
 			else
-				echo "  unclear choice: $choice" >&2
+				menu_unclear "$choice"
 			fi
 			;;
 		esac
@@ -654,7 +718,7 @@ menu_components_screen() {
 			elif [[ "$choice" =~ ^[0-9]+$ ]] && ((10#$choice == ${#MENU_COMPONENTS[@]} + 1)); then
 				menu_edit_key METRICS_BACKEND
 			else
-				echo "  unclear choice: $choice" >&2
+				menu_unclear "$choice"
 			fi
 			;;
 		esac
@@ -788,14 +852,31 @@ menu_wizard() {
 }
 
 # menu_main_screen -> 0 (user chose "Install") or exits the process.
+menu_main_help() {
+	cat >&2 <<'EOF_HELP'
+  1          Quick install: five short questions (interfaces, Suricata source, access, metrics, panel password).
+  2-9        One section of settings: a number edits a key, Enter keeps the value, - resets it to the default.
+  10         The panel password, typed twice without echo. Install needs it.
+  m          Choose which components to install.
+  w          Guided setup: every setting, one by one (s skips a group, x leaves).
+  c, p       Check the system / show the plan. Neither changes anything.
+  s, l       Save the settings to a file / load them from a file.
+  e          Show all the problems that keep Install off.
+  i          Install (a summary and a confirmation come first).   q  Quit.
+EOF_HELP
+}
+
 menu_main_screen() {
 	while true; do
 		echo >&2
 		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}") | $OS_ID ${OS_VERSION_ID:-}, $(uname -m) | systemd: $(command -v systemctl >/dev/null && echo yes || echo no)" >&2
 		echo "Install. Config: $(path_conf) (not created)" >&2
-		echo "Under development: dpistack is still being developed. Settings, commands and screens can change between releases." >&2
+		if [[ "$MENU_BANNER_SHOWN" != "1" ]]; then
+			echo "Under development: dpistack is still being developed. Settings, commands and screens can change between releases." >&2
+			MENU_BANNER_SHOWN=1
+		fi
 		echo >&2
-		echo "  1) Quick install" >&2
+		printf '  %2d) %-30s %s\n' 1 "Quick install" "5 short questions, then review" >&2
 		local i=2 g
 		for g in "${MENU_GROUPS[@]}"; do
 			printf '  %2d) %-30s %s\n' "$i" "${MENU_GROUP_TITLE[$g]}" "$(menu_group_summary "$g")" >&2
@@ -806,14 +887,21 @@ menu_main_screen() {
 		echo "  m) Choose components   w) Guided setup (asks every setting)" >&2
 		echo "  c) Check the system   p) Plan   s) Save to file   l) Load from file" >&2
 		echo "  i) Install             q) Quit" >&2
-		local problems
-		problems=$(menu_problems_count)
+		local problems cfg_problems
+		cfg_problems=$(menu_problems_count)
+		problems=$(menu_install_problems | grep -c .)
 		echo >&2
 		if [[ "$problems" -gt 0 ]]; then
-			menu_red "Problems ($problems): $(menu_problems | head -1)" >&2
+			menu_red "Problems ($problems): $(menu_install_problems | head -1)$([[ "$problems" -gt 1 ]] && echo "   (e = show all)")" >&2
 			echo >&2
+			if [[ "$cfg_problems" -gt 0 ]]; then
+				echo "Next: fix the problems above; Install stays off until then." >&2
+			else
+				echo "Next: set the panel password (item $((${#MENU_GROUPS[@]} + 2))), then press i to install." >&2
+			fi
 		else
-			echo "Problems ($problems)" >&2
+			echo "Problems (0)" >&2
+			echo "Next: press i to install. A summary and a confirmation come first." >&2
 		fi
 		local choice
 		menu_read choice "> "
@@ -822,6 +910,8 @@ menu_main_screen() {
 		1) menu_quick_install ;;
 		m) menu_components_screen ;;
 		w) menu_wizard ;;
+		e) menu_install_problems | sed 's/^/  - /' >&2 ;;
+		'?') menu_main_help ;;
 		c) menu_check_system_screen ;;
 		p) menu_plan_screen ;;
 		s) menu_save_to_file_screen ;;
@@ -831,12 +921,12 @@ menu_main_screen() {
 			exit 0
 		} ;;
 		i)
-			if [[ "$problems" != "0" ]]; then
-				echo "  cannot install while there are problems" >&2
+			if [[ "$cfg_problems" != "0" ]]; then
+				echo "  cannot install while there are problems (e shows them)" >&2
 				continue
 			fi
 			if [[ "$MENU_PANEL_PASSWORD_SET" != "1" ]]; then
-				echo "  installation is unavailable without a panel password" >&2
+				echo "  installation is unavailable without a panel password: set it with item $((${#MENU_GROUPS[@]} + 2))" >&2
 				continue
 			fi
 			# A busy port is a warning with a choice here. Keeping it means
@@ -857,7 +947,7 @@ menu_main_screen() {
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 2))" ]]; then
 				menu_panel_password_screen
 			else
-				echo "  unclear choice: $choice" >&2
+				menu_unclear "$choice"
 			fi
 			;;
 		esac
@@ -889,7 +979,7 @@ menu_found_install_screen() {
 			menu_close_input
 			exit 0
 			;;
-		*) echo "  unclear choice: $choice" >&2 ;;
+		*) menu_unclear "$choice" ;;
 		esac
 	done
 }
@@ -1053,7 +1143,7 @@ menu_reconfigure_screen() {
 		if [[ "$rc_problems" -gt 0 ]]; then
 			echo "Edits: $changed key(s). $(menu_red "Problems: $rc_problems")" >&2
 		else
-			echo "Edits: $changed key(s). Problems: $rc_problems" >&2
+			echo "Edits: $changed key(s). Problems: $rc_problems$([[ "$changed" -gt 0 ]] && echo ". Next: a applies, d shows the diff" || echo ". Pick a section to change, or q to leave")" >&2
 		fi
 		local choice
 		menu_read choice "> "
@@ -1080,11 +1170,11 @@ menu_reconfigure_screen() {
 			;;
 		s) menu_save_to_file_screen ;;
 		l) menu_load_from_file_screen ;;
-		b)
+		b | 0)
 			if [[ "$MENU_BACK_ENABLED" == "1" ]]; then
 				return 20
 			fi
-			echo "  unclear choice: $choice" >&2
+			menu_unclear "$choice"
 			;;
 		q) menu_quit_confirm && {
 			menu_close_input
@@ -1098,7 +1188,7 @@ menu_reconfigure_screen() {
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 1))" ]]; then
 				menu_panel_password_screen
 			else
-				echo "  unclear choice: $choice" >&2
+				menu_unclear "$choice"
 			fi
 			;;
 		esac
@@ -1171,6 +1261,9 @@ menu_manage_summary() {
 		health=$(jq -r '.overall // "no data"' "$(path_health_json)" 2>/dev/null)
 	fi
 	printf '  |  health: %s' "$health"
+	local mode=""
+	[[ -f "$(path_conf)" ]] && mode=$(sed -n 's/^SURICATA_MODE=//p' "$(path_conf)" | head -1)
+	printf '  |  mode: %s' "${mode:-ids}"
 }
 
 menu_manage_logs() {
@@ -1255,6 +1348,254 @@ menu_manage_uninstall() {
 	esac
 }
 
+# --- the submenus of the control menu (18.54): the commands that were only
+# on the command line, grouped by task. Each one only calls the same verb a
+# person would type, so nothing here has a rule of its own.
+
+# menu_sub_read <var> <prompt> - a line for a submenu; Enter or 0 is "back".
+menu_sub_read() {
+	local __v="$1"
+	menu_read "$__v" "$2"
+	menu_die_on_eof
+}
+
+# menu_manage_component_states - "<id> <state>" for every installed component.
+menu_manage_component_states() {
+	local ctl out
+	ctl=$(manage_ctl) || return 0
+	out=$("$ctl" status --json 2>/dev/null) || return 0
+	command -v jq >/dev/null 2>&1 || return 0
+	jq -r '.components[] | select(.state != "absent") | "\(.id) \(.state)"' <<<"$out" 2>/dev/null
+}
+
+menu_manage_services() {
+	local choice action id state
+	while true; do
+		local -a ids=()
+		echo >&2
+		menu_bold "Start, stop, restart" >&2
+		echo >&2
+		local i=1
+		while read -r id state; do
+			[[ -n "$id" ]] || continue
+			ids+=("$id")
+			printf '  %2d) %-16s %s\n' "$i" "$id" "$state" >&2
+			i=$((i + 1))
+		done < <(menu_manage_component_states)
+		if ((${#ids[@]} == 0)); then
+			echo "  no installed components were found (dpistack status shows why)" >&2
+			return 0
+		fi
+		menu_sub_read choice "Component (number, Enter or 0 = back): "
+		[[ "$choice" =~ ^[0-9]+$ ]] || return 0
+		((10#$choice == 0)) && return 0
+		if ((10#$choice > ${#ids[@]})); then
+			menu_unclear "$choice"
+			continue
+		fi
+		id="${ids[$((10#$choice - 1))]}"
+		echo "  1) restart   2) stop   3) start$([[ "$id" == suricata ]] && echo "   4) reload the rules without stopping")" >&2
+		menu_sub_read action "$id: (Enter or 0 = back): "
+		case "$action" in
+		1) menu_confirm "Restart $id?" && menu_manage_ctl restart "$id" ;;
+		2)
+			if menu_confirm "Stop $id?$([[ "$id" == panel ]] && echo " The panel will stop answering")" n; then
+				menu_manage_ctl stop "$id"
+			fi
+			;;
+		3) menu_manage_ctl start "$id" ;;
+		4) [[ "$id" == suricata ]] && menu_manage_ctl reload suricata ;;
+		"" | 0) ;;
+		*) menu_unclear "$action" ;;
+		esac
+	done
+}
+
+menu_manage_rules() {
+	local choice q sid act
+	while true; do
+		echo >&2
+		menu_bold "Rules and alerts" >&2
+		echo >&2
+		echo "  1) Update the rules now (rolls back on error)   2) Statistics   3) Update history" >&2
+		echo "  4) Search rules by text or number               5) Turn one rule on or off" >&2
+		echo "  6) Alerts   7) Exceptions (what Suricata stays silent about)   0) back (Enter too)" >&2
+		menu_sub_read choice "> "
+		case "$choice" in
+		"" | 0) return 0 ;;
+		1) menu_confirm "Update the rules now?" && menu_manage_ctl rules-update ;;
+		2) menu_manage_ctl rules-stats ;;
+		3) menu_manage_ctl rules-history ;;
+		4)
+			menu_sub_read q "Text or rule number (Enter = back): "
+			[[ -n "$q" ]] && menu_manage_ctl rules-search "$q"
+			;;
+		5)
+			menu_sub_read sid "Rule number, the sid (Enter = back): "
+			[[ -n "$sid" ]] || continue
+			if [[ ! "$sid" =~ ^[0-9]{1,10}$ ]]; then
+				echo "  a rule number is digits only" >&2
+				continue
+			fi
+			menu_sub_read act "enable or disable (Enter = back): "
+			[[ "$act" == enable || "$act" == disable ]] || continue
+			menu_manage_ctl rules-sid "$act" "$sid" &&
+				echo "  takes effect at the next rules update (item 1)" >&2
+			;;
+		6) menu_manage_ctl alerts list ;;
+		7) menu_manage_ctl exceptions list ;;
+		*) menu_unclear "$choice" ;;
+		esac
+	done
+}
+
+menu_manage_mode() {
+	local choice name answer
+	while true; do
+		echo >&2
+		menu_bold "Mode and interfaces" >&2
+		echo >&2
+		menu_manage_ctl mode status
+		menu_manage_ctl iface list
+		echo "  1) Switch to IDS (watch only)   2) Switch to IPS (can block)" >&2
+		echo "  3) Add a capture interface      4) Remove a capture interface   0) back (Enter too)" >&2
+		menu_sub_read choice "> "
+		case "$choice" in
+		"" | 0) return 0 ;;
+		1) menu_confirm "Switch Suricata to IDS?" && menu_manage_ctl mode ids ;;
+		2)
+			menu_confirm "Switch Suricata to IPS? It can block traffic, and rolls back by itself unless you confirm" n || continue
+			menu_manage_ctl mode ips --confirm-timeout 120 || continue
+			menu_sub_read answer "Still connected? Type yes within 120 s to keep IPS (otherwise it rolls back): "
+			if [[ "${answer,,}" == "yes" ]]; then
+				menu_manage_ctl mode-confirm
+			else
+				echo "  not confirmed: the switch rolls back by itself" >&2
+			fi
+			;;
+		3)
+			menu_sub_read name "Interface name (Enter = back): "
+			[[ -n "$name" ]] && menu_confirm "Add $name? Suricata restarts" && menu_manage_ctl iface add "$name"
+			;;
+		4)
+			menu_sub_read name "Interface name (Enter = back): "
+			[[ -n "$name" ]] && menu_confirm "Remove $name? Suricata restarts" && menu_manage_ctl iface remove "$name"
+			;;
+		*) menu_unclear "$choice" ;;
+		esac
+	done
+}
+
+menu_manage_backup() {
+	local choice file
+	while true; do
+		echo >&2
+		menu_bold "Backup" >&2
+		echo >&2
+		echo "  1) Create a backup   2) List the backups   3) Check a backup file   4) Restore from a backup file   0) back (Enter too)" >&2
+		menu_sub_read choice "> "
+		case "$choice" in
+		"" | 0) return 0 ;;
+		1) menu_manage_ctl backup create ;;
+		2) menu_manage_ctl backup list ;;
+		3)
+			menu_sub_read file "Backup file (Enter = back): "
+			[[ -n "$file" ]] && menu_manage_ctl backup verify "$file"
+			;;
+		4)
+			menu_sub_read file "Backup file (Enter = back): "
+			[[ -n "$file" ]] || continue
+			echo "  what a restore would do:" >&2
+			menu_manage_ctl backup restore "$file" --dry-run || continue
+			menu_confirm "Restore it now?" n && menu_manage_ctl backup restore "$file"
+			;;
+		*) menu_unclear "$choice" ;;
+		esac
+	done
+}
+
+menu_manage_users() {
+	local choice name role p1 p2 id ctl
+	while true; do
+		echo >&2
+		menu_bold "Users and tokens" >&2
+		echo >&2
+		echo "  1) List the users   2) Add a user   3) Change a password   4) Disable or enable a user   5) Remove a user" >&2
+		echo "  6) List the API tokens   7) End an API token   0) back (Enter too)" >&2
+		menu_sub_read choice "> "
+		case "$choice" in
+		"" | 0) return 0 ;;
+		1) menu_manage_ctl users list ;;
+		2)
+			menu_sub_read name "User name (Enter = back): "
+			[[ -n "$name" ]] || continue
+			menu_sub_read role "Role: viewer, analyst, operator or admin (Enter = back): "
+			[[ "$role" =~ ^(viewer|analyst|operator|admin)$ ]] || {
+				[[ -z "$role" ]] || echo "  the role is one of viewer, analyst, operator, admin" >&2
+				continue
+			}
+			menu_read_secret p1 "Password for $name: "
+			menu_read_secret p2 "Repeat the password: "
+			if [[ "$p1" != "$p2" ]]; then
+				echo "  the passwords do not match, nothing changed" >&2
+				continue
+			fi
+			ctl=$(manage_ctl) || continue
+			printf '%s\n' "$p1" | "$ctl" users add "$name" "$role"
+			;;
+		3)
+			menu_sub_read name "User name (Enter = back): "
+			[[ -n "$name" ]] || continue
+			menu_read_secret p1 "New password for $name: "
+			menu_read_secret p2 "Repeat the password: "
+			if [[ "$p1" != "$p2" ]]; then
+				echo "  the passwords do not match, nothing changed" >&2
+				continue
+			fi
+			ctl=$(manage_ctl) || continue
+			printf '%s\n' "$p1" | "$ctl" users passwd "$name"
+			;;
+		4)
+			menu_sub_read name "User name (Enter = back): "
+			[[ -n "$name" ]] || continue
+			menu_sub_read role "disable or enable (Enter = back): "
+			[[ "$role" == disable || "$role" == enable ]] && menu_manage_ctl users "$role" "$name"
+			;;
+		5)
+			menu_sub_read name "User name (Enter = back): "
+			[[ -n "$name" ]] && menu_confirm "Remove the user $name?" n && menu_manage_ctl users remove "$name"
+			;;
+		6) menu_manage_ctl tokens list ;;
+		7)
+			menu_sub_read id "Token id (Enter = back): "
+			[[ -n "$id" ]] && menu_confirm "End the token $id? A script that uses it stops working" n && menu_manage_ctl tokens revoke "$id"
+			;;
+		*) menu_unclear "$choice" ;;
+		esac
+	done
+}
+
+menu_manage_checks() {
+	local choice
+	while true; do
+		echo >&2
+		menu_bold "Checks and addresses" >&2
+		echo >&2
+		echo "  1) Where to open the screens   2) Health now   3) What is not running, and why" >&2
+		echo "  4) Security check of the panel   5) Report for support (a file, no secrets)   0) back (Enter too)" >&2
+		menu_sub_read choice "> "
+		case "$choice" in
+		"" | 0) return 0 ;;
+		1) menu_manage_ctl info ;;
+		2) menu_manage_ctl health ;;
+		3) menu_manage_ctl diagnose ;;
+		4) menu_manage_ctl security check ;;
+		5) menu_manage_ctl diag ;;
+		*) menu_unclear "$choice" ;;
+		esac
+	done
+}
+
 menu_run_manage() {
 	menu_open_input
 	local choice rc answer
@@ -1271,6 +1612,8 @@ menu_run_manage() {
 		echo "  6) Uninstall" >&2
 		echo "  7) Panel password" >&2
 		echo >&2
+		echo "  s) Start, stop, restart    m) Mode and interfaces   r) Rules and alerts" >&2
+		echo "  k) Backup                  u) Users and tokens      c) Checks and addresses" >&2
 		echo "  q) Quit" >&2
 		menu_read choice "> "
 		menu_die_on_eof
@@ -1299,11 +1642,17 @@ menu_run_manage() {
 			fi
 			;;
 		7) menu_manage_password ;;
+		s) menu_manage_services ;;
+		m) menu_manage_mode ;;
+		r) menu_manage_rules ;;
+		k) menu_manage_backup ;;
+		u) menu_manage_users ;;
+		c) menu_manage_checks ;;
 		q | Q)
 			menu_close_input
 			return 0
 			;;
-		*) echo "  unclear choice: $choice" >&2 ;;
+		*) menu_unclear "$choice" ;;
 		esac
 	done
 }

@@ -63,6 +63,7 @@ path_dpistack_bin() { echo "$(path_sbin_dir)/dpistack"; }
 path_ctl_bin() { path_dpistack_bin; }
 # path_retired_ctl - the old second command name; removed on install and uninstall.
 path_retired_ctl() { echo "$(path_sbin_dir)/dpistack-ctl"; }
+path_completion_file() { echo "${DPISTACK_ROOT}/etc/bash_completion.d/dpistack"; }
 path_watch_bin() { echo "$(path_sbin_dir)/dpistack-watch"; }
 path_watch_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.service"; }
 path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.timer"; }

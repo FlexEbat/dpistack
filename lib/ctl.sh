@@ -19,6 +19,12 @@ MODE_ROLLBACK_UNIT="dpistack-mode-rollback"
 
 RULES_SEARCH_MAX=50
 
+# Every verb that ctl_dispatch knows, for "did you mean" and for completion.
+CTL_ALL_VERBS=(status start stop restart reload logs config-read config-write config-revert config-history
+	settings self-update reconfigure rules-update rules-sources rules-group rules-sid rules-search rules-stats
+	rules-history rules-describe rules-find rules-facets rules-local exceptions alerts tokens security iface mode
+	mode-confirm ips fw panel-passwd test health diagnose runtime users backup version help rules config info)
+
 ctl_usage() {
 	cat <<'USAGE'
 Usage: dpistack <command> [arguments]
@@ -74,6 +80,7 @@ Usage: dpistack <command> [arguments]
   backup create [--out FILE]|list [--json]|verify FILE|restore FILE [--dry-run]  configs in one tar.gz
   diagnose [<part>]                  the parts that do not run: state, exit status, last log lines
   runtime [--json]                   what can run in docker, the runtime of every part, the links between them
+  info [--json]                      where to open the panel, EveBox and ntopng (the addresses for the current access mode)
   version                            bundle version
 
 Config names: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
@@ -2542,6 +2549,202 @@ audit_run() {
 	return "$rc"
 }
 
+# --- info: where to open the web screens (18.54) ---
+
+# ctl_info_host - the address the web services answer on for the current
+# ACCESS_MODE: this machine in localhost mode, otherwise BIND_ADDR when it
+# is an address, else the first address of the machine.
+ctl_info_host() {
+	local bind
+	if [[ "$(conf_get ACCESS_MODE localhost)" == "localhost" ]]; then
+		echo "127.0.0.1"
+		return 0
+	fi
+	bind=$(conf_get BIND_ADDR auto)
+	if [[ "$bind" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ && "$bind" != "0.0.0.0" ]]; then
+		echo "$bind"
+		return 0
+	fi
+	hostname -I 2>/dev/null | awk '{ if ($1 != "") print $1; else print "this-host" }' | head -1
+}
+
+# cmd_info [--json] - the address of every switched-on web screen.
+cmd_info() {
+	local json=0 mode host scheme=http name port enabled rows=() note=""
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "info [--json]" ;;
+	esac
+	mode=$(conf_get ACCESS_MODE localhost)
+	host=$(ctl_info_host)
+	[[ "$mode" == "nginx" && "$(conf_get NGINX_TLS none)" != "none" ]] && scheme=https
+	[[ "$mode" == "localhost" ]] && note="this machine only; from another one use an SSH tunnel: ssh -L <port>:127.0.0.1:<port> <this-host>"
+	for name in panel evebox ntopng; do
+		case "$name" in
+		panel) port=$(conf_get PANEL_PORT 9800) enabled=$(conf_get PANEL_ENABLE yes) ;;
+		evebox) port=$(conf_get EVEBOX_PORT 5636) enabled=$(conf_get EVEBOX_ENABLE yes) ;;
+		ntopng) port=$(conf_get NTOPNG_PORT 3000) enabled=$(conf_get NTOPNG_ENABLE yes) ;;
+		esac
+		[[ "$enabled" == "yes" ]] || continue
+		rows+=("$name|${scheme}://${host}:${port}")
+	done
+	if ((json)); then
+		printf '%s\n' "${rows[@]}" | jq -R 'split("|") | {id: .[0], url: .[1]}' | jq -sc --arg mode "$mode" --arg note "$note" '{access: $mode, note: $note, screens: .}'
+		return 0
+	fi
+	echo "access mode: $mode"
+	local row
+	for row in "${rows[@]}"; do
+		printf '  %-8s %s\n' "${row%%|*}" "${row#*|}"
+	done
+	[[ -n "$note" ]] && echo "note: $note"
+	echo "panel sign-in: one of the users from: dpistack users list"
+	return 0
+}
+
+# --- help (tech.md 4.5, 18.54) ---
+
+# ctl_help_overview - the same verbs as ctl_usage, grouped by what a person
+# wants to do. `dpistack help`; the flat reference is `dpistack help --all`.
+ctl_help_overview() {
+	local prog="${CTL_PROG:-dpistack}"
+	cat <<HELP
+dpistack v${DPISTACK_VERSION} - Suricata, nDPI, EveBox and ntopng on one host
+Usage: ${prog} <command> [arguments]     (${prog} with no command opens the menu)
+
+Look at it
+  status [--json]                 state of every component
+  health [--json]                 one watchdog run: what is wrong right now
+  diagnose [<part>]               the parts that do not run: state, exit status, last log lines
+  logs <id> [-n N] [--follow]     the log of a component
+  test bittorrent|https|all       check that detection really sees traffic
+  info [--json]                   where to open the panel, EveBox and ntopng
+  runtime | version | security check | alerts list | rules stats
+
+Control it
+  start|stop|restart <id>         one component (ids: ${prog} help ids)
+  reload suricata                 reload the rules without stopping
+  mode ids|ips | mode status      Suricata mode; ips rolls back by itself unless you run: mode confirm
+  iface list|add|remove [name]    capture interfaces
+
+Rules and alerts
+  rules update                    update the rules, roll back on error
+  rules sources|group|sid|search|stats|history|describe|find|facets|local ...
+  exceptions list|add|remove|prune   what Suricata stays silent about
+  alerts list|history|ack|resolve|reopen|snooze ...
+
+Settings and files (which one to use: ${prog} help settings)
+  settings list|check|set|secret|profile ...   one key at a time, with a check
+  reconfigure [--dry-run]         apply the current dpistack.conf
+  config read|write|revert|history <name>      a config file as text
+
+People and access
+  users list|add|passwd|role|disable|enable|remove
+  tokens create|list|revoke       API tokens for scripts
+  panel-passwd                    the panel password, from stdin
+
+Keep it safe
+  backup create|list|verify|restore
+  self-update ...                 install a newer release of the project
+
+More: ${prog} <command> --help for one command; ${prog} help --all for every option of every command.
+Exit codes: 0 ok, 1 error, 2 misuse, 3 refused or not available in this mode, 4 no such component, 5 a name or value that is not allowed.
+Under development: dpistack is still being developed. Settings, commands and screens can change between releases.
+HELP
+}
+
+ctl_help_settings() {
+	cat <<'HELP'
+Three ways to change a setting, from the smallest to the largest:
+
+  settings set K=V [--apply]     one or a few keys of dpistack.conf, validated first.
+                                 Without --apply the file changes, the services do not.
+  reconfigure                    apply the whole current dpistack.conf: re-render the
+                                 configs and restart what changed (menu on a terminal).
+  config write <name> --apply    replace a whole config file (suricata.yaml, local.rules...)
+                                 from stdin; hand-edited files are kept by later installs.
+
+Look before you change: settings list | settings check K=V | reconfigure --dry-run
+Go back: config revert <name> restores the latest saved version; config history lists them.
+HELP
+}
+
+ctl_help_ids() {
+	echo "Components: suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana panel watch rules"
+	echo "Config names: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules enable.conf disable.conf modify.conf drop.conf threshold.config"
+}
+
+# ctl_verb_help <verb> - the lines of the reference that belong to a verb.
+ctl_verb_help() {
+	local v="$1" out
+	[[ "$v" == "rules" || "$v" == "config" ]] && v="$v-[a-z]*"
+	out=$(ctl_usage | awk -v v="$v" '
+		BEGIN { on = 0 }
+		/^  [a-z]/ { split($0, w, /[ |]+/); on = ($0 ~ "^  " v "([ |]|$)") || index($0, "|" v " ") > 0 || ($0 ~ "^  [a-z|-]*\\|" v "[ |]") }
+		/^$/ { on = 0 }
+		/^[A-Z]/ { on = 0 }
+		on { print }')
+	if [[ -z "$out" ]]; then
+		return 1
+	fi
+	printf '%s\n' "$out"
+	echo
+	echo "Exit codes: 0 ok, 1 error, 2 misuse, 3 refused or not available in this mode, 4 no such component, 5 a name or value that is not allowed."
+}
+
+# ctl_normalize <args...> - the two-word spelling of a verb (rules update,
+# config read, mode confirm) is the one-word verb; the old spelling stays.
+# Sets CTL_ARGS.
+ctl_normalize() {
+	CTL_ARGS=("$@")
+	local first="${1:-}" second="${2:-}"
+	case "$first" in
+	rules)
+		case "$second" in
+		update | sources | group | sid | search | stats | history | describe | find | facets | local)
+			CTL_ARGS=("rules-$second" "${@:3}")
+			;;
+		esac
+		;;
+	config)
+		case "$second" in
+		read | write | revert | history)
+			CTL_ARGS=("config-$second" "${@:3}")
+			;;
+		esac
+		;;
+	mode)
+		[[ "$second" == "confirm" ]] && CTL_ARGS=("mode-confirm" "${@:3}")
+		;;
+	esac
+	return 0
+}
+
+ctl_cmd_help() {
+	case "${1:-}" in
+	"") ctl_help_overview ;;
+	--all) ctl_usage ;;
+	settings) ctl_help_settings ;;
+	ids) ctl_help_ids ;;
+	*) ctl_verb_help "$1" || fail 2 "help: no such command: $1 (dpistack help lists them)" ;;
+	esac
+}
+
+# ctl_suggest <word> - "did you mean": a verb that starts with the word, or a
+# verb that the word is a prefix of.
+ctl_suggest() {
+	local word="$1" v hits=()
+	[[ -n "$word" ]] || return 0
+	for v in "${CTL_ALL_VERBS[@]}"; do
+		if [[ "$v" == "$word"* || "$word" == "$v"* || "${v//-/}" == "${word//-/}" ]]; then
+			hits+=("$v")
+		fi
+	done
+	((${#hits[@]})) && echo "dpistack: unknown command '$word'. Did you mean: ${hits[*]}? (dpistack help)"
+	return 0
+}
+
 ctl_dispatch() {
 	local cmd="$1"
 	shift
@@ -2586,7 +2789,10 @@ ctl_dispatch() {
 	users) cmd_users "$@" ;;
 	backup) cmd_backup "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
+	help) ctl_cmd_help "$@" ;;
+	info) cmd_info "$@" ;;
 	*)
+		ctl_suggest "$cmd" >&2
 		ctl_usage >&2
 		exit 2
 		;;
@@ -2605,5 +2811,14 @@ ctl_main() {
 		[[ "$arg" =~ ^[A-Za-z0-9._:=/@+,\ -]*$ ]] || fail 5 "invalid characters in the argument"
 	done
 
-	audit_run "$@"
+	# <verb> --help / -h: the lines of the reference for that verb, nothing runs.
+	if [[ $# -eq 1 && ("$1" == "--help" || "$1" == "-h") ]]; then
+		ctl_help_overview
+		exit 0
+	fi
+	ctl_normalize "$@"
+	if [[ "${CTL_ARGS[0]}" != "help" && ${#CTL_ARGS[@]} -le 2 && ("${CTL_ARGS[-1]}" == "--help" || "${CTL_ARGS[-1]}" == "-h") ]]; then
+		ctl_verb_help "${CTL_ARGS[0]}" && exit 0
+	fi
+	audit_run "${CTL_ARGS[@]}"
 }

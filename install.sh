@@ -24,6 +24,8 @@ source "$LIB_DIR/os.sh"
 source "$LIB_DIR/state.sh"
 # shellcheck source=lib/schema.sh
 source "$LIB_DIR/schema.sh"
+# shellcheck source=lib/key_hints.sh
+source "$LIB_DIR/key_hints.sh"
 # shellcheck source=lib/config.sh
 source "$LIB_DIR/config.sh"
 # shellcheck source=lib/render.sh
@@ -87,7 +89,17 @@ PURGE=0
 CLI_NO_COLOR=0
 COMMAND=""
 
+# usage - the help of the installer; when it was started as `dpistack` (the
+# command on the PATH) the text names that command, not install.sh.
 usage() {
+	if [[ "${0##*/}" == "dpistack" ]]; then
+		usage_text | sed 's/install\.sh/dpistack/g'
+	else
+		usage_text
+	fi
+}
+
+usage_text() {
 	echo "dpistack v${DPISTACK_VERSION}"
 	cat <<'EOF'
 Usage: install.sh [command] [options]
@@ -756,7 +768,7 @@ cmd_uninstall() {
 	rm -rf "$(path_state_dir)"
 
 	# Last, because `dpistack uninstall` runs from the copy it removes.
-	rm -f "$(path_dpistack_bin)" "$(path_retired_ctl)" "$(path_watch_bin)"
+	rm -f "$(path_dpistack_bin)" "$(path_retired_ctl)" "$(path_watch_bin)" "$(path_completion_file)"
 	rm -rf "$(path_installer_copy_dir)"
 
 	# The install log goes last: every step above still writes to it.
@@ -875,7 +887,7 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update)
+	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update help rules config info)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen

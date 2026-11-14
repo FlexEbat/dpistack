@@ -2,7 +2,15 @@
 
 [English](operations.md) | Русский
 
-Все команды запускаются от root (`sudo dpistack ...`). `dpistack` без аргументов открывает меню управления; `dpistack help` печатает полный список команд.
+Все команды запускаются от root (`sudo dpistack ...`). `dpistack` без аргументов открывает меню управления; `dpistack help` печатает команды по задачам.
+
+## Справка
+
+- `dpistack help` команды по задачам и коды выхода; `dpistack help --all` плоский справочник со всеми параметрами; `dpistack help settings` что выбрать из `settings set`, `reconfigure` и `config write`; `dpistack help ids` имена компонентов и конфигов.
+- `dpistack <команда> --help` строки одной команды, например `dpistack rules-find --help`. Ничего не запускается.
+- Для команд с дефисом работает запись из двух слов: `rules update` это `rules-update`, `config read` это `config-read`, `mode confirm` это `mode-confirm`. Имена с дефисом остаются.
+- Tab дополняет команды, компоненты и имена конфигов, если в оболочке есть bash completion (установщик кладёт файл в `/etc/bash_completion.d/dpistack`; новый сеанс оболочки его подхватит).
+- Опечатка в команде печатает строку «возможно, вы имели в виду» перед справкой.
 
 ## Состояние и управление
 

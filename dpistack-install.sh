@@ -59,6 +59,8 @@ source "$LIB_DIR/os.sh"
 source "$LIB_DIR/state.sh"
 # shellcheck source=lib/schema.sh
 source "$LIB_DIR/schema.sh"
+# shellcheck source=lib/key_hints.sh
+source "$LIB_DIR/key_hints.sh"
 # shellcheck source=lib/config.sh
 source "$LIB_DIR/config.sh"
 # shellcheck source=lib/render.sh
@@ -122,7 +124,17 @@ PURGE=0
 CLI_NO_COLOR=0
 COMMAND=""
 
+# usage - the help of the installer; when it was started as `dpistack` (the
+# command on the PATH) the text names that command, not install.sh.
 usage() {
+	if [[ "${0##*/}" == "dpistack" ]]; then
+		usage_text | sed 's/install\.sh/dpistack/g'
+	else
+		usage_text
+	fi
+}
+
+usage_text() {
 	echo "dpistack v${DPISTACK_VERSION}"
 	cat <<'EOF'
 Usage: install.sh [command] [options]
@@ -791,7 +803,7 @@ cmd_uninstall() {
 	rm -rf "$(path_state_dir)"
 
 	# Last, because `dpistack uninstall` runs from the copy it removes.
-	rm -f "$(path_dpistack_bin)" "$(path_retired_ctl)" "$(path_watch_bin)"
+	rm -f "$(path_dpistack_bin)" "$(path_retired_ctl)" "$(path_watch_bin)" "$(path_completion_file)"
 	rm -rf "$(path_installer_copy_dir)"
 
 	# The install log goes last: every step above still writes to it.
@@ -910,7 +922,7 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update)
+	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update help rules config info)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen
@@ -1808,7 +1820,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.47.1"
+DPISTACK_VERSION="0.48.0"
 
 : "${DRY_RUN:=0}"
 
@@ -2519,6 +2531,12 @@ MODE_ROLLBACK_UNIT="dpistack-mode-rollback"
 
 RULES_SEARCH_MAX=50
 
+# Every verb that ctl_dispatch knows, for "did you mean" and for completion.
+CTL_ALL_VERBS=(status start stop restart reload logs config-read config-write config-revert config-history
+	settings self-update reconfigure rules-update rules-sources rules-group rules-sid rules-search rules-stats
+	rules-history rules-describe rules-find rules-facets rules-local exceptions alerts tokens security iface mode
+	mode-confirm ips fw panel-passwd test health diagnose runtime users backup version help rules config info)
+
 ctl_usage() {
 	cat <<'USAGE'
 Usage: dpistack <command> [arguments]
@@ -2574,6 +2592,7 @@ Usage: dpistack <command> [arguments]
   backup create [--out FILE]|list [--json]|verify FILE|restore FILE [--dry-run]  configs in one tar.gz
   diagnose [<part>]                  the parts that do not run: state, exit status, last log lines
   runtime [--json]                   what can run in docker, the runtime of every part, the links between them
+  info [--json]                      where to open the panel, EveBox and ntopng (the addresses for the current access mode)
   version                            bundle version
 
 Config names: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules
@@ -5042,6 +5061,202 @@ audit_run() {
 	return "$rc"
 }
 
+# --- info: where to open the web screens (18.54) ---
+
+# ctl_info_host - the address the web services answer on for the current
+# ACCESS_MODE: this machine in localhost mode, otherwise BIND_ADDR when it
+# is an address, else the first address of the machine.
+ctl_info_host() {
+	local bind
+	if [[ "$(conf_get ACCESS_MODE localhost)" == "localhost" ]]; then
+		echo "127.0.0.1"
+		return 0
+	fi
+	bind=$(conf_get BIND_ADDR auto)
+	if [[ "$bind" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ && "$bind" != "0.0.0.0" ]]; then
+		echo "$bind"
+		return 0
+	fi
+	hostname -I 2>/dev/null | awk '{ if ($1 != "") print $1; else print "this-host" }' | head -1
+}
+
+# cmd_info [--json] - the address of every switched-on web screen.
+cmd_info() {
+	local json=0 mode host scheme=http name port enabled rows=() note=""
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "info [--json]" ;;
+	esac
+	mode=$(conf_get ACCESS_MODE localhost)
+	host=$(ctl_info_host)
+	[[ "$mode" == "nginx" && "$(conf_get NGINX_TLS none)" != "none" ]] && scheme=https
+	[[ "$mode" == "localhost" ]] && note="this machine only; from another one use an SSH tunnel: ssh -L <port>:127.0.0.1:<port> <this-host>"
+	for name in panel evebox ntopng; do
+		case "$name" in
+		panel) port=$(conf_get PANEL_PORT 9800) enabled=$(conf_get PANEL_ENABLE yes) ;;
+		evebox) port=$(conf_get EVEBOX_PORT 5636) enabled=$(conf_get EVEBOX_ENABLE yes) ;;
+		ntopng) port=$(conf_get NTOPNG_PORT 3000) enabled=$(conf_get NTOPNG_ENABLE yes) ;;
+		esac
+		[[ "$enabled" == "yes" ]] || continue
+		rows+=("$name|${scheme}://${host}:${port}")
+	done
+	if ((json)); then
+		printf '%s\n' "${rows[@]}" | jq -R 'split("|") | {id: .[0], url: .[1]}' | jq -sc --arg mode "$mode" --arg note "$note" '{access: $mode, note: $note, screens: .}'
+		return 0
+	fi
+	echo "access mode: $mode"
+	local row
+	for row in "${rows[@]}"; do
+		printf '  %-8s %s\n' "${row%%|*}" "${row#*|}"
+	done
+	[[ -n "$note" ]] && echo "note: $note"
+	echo "panel sign-in: one of the users from: dpistack users list"
+	return 0
+}
+
+# --- help (tech.md 4.5, 18.54) ---
+
+# ctl_help_overview - the same verbs as ctl_usage, grouped by what a person
+# wants to do. `dpistack help`; the flat reference is `dpistack help --all`.
+ctl_help_overview() {
+	local prog="${CTL_PROG:-dpistack}"
+	cat <<HELP
+dpistack v${DPISTACK_VERSION} - Suricata, nDPI, EveBox and ntopng on one host
+Usage: ${prog} <command> [arguments]     (${prog} with no command opens the menu)
+
+Look at it
+  status [--json]                 state of every component
+  health [--json]                 one watchdog run: what is wrong right now
+  diagnose [<part>]               the parts that do not run: state, exit status, last log lines
+  logs <id> [-n N] [--follow]     the log of a component
+  test bittorrent|https|all       check that detection really sees traffic
+  info [--json]                   where to open the panel, EveBox and ntopng
+  runtime | version | security check | alerts list | rules stats
+
+Control it
+  start|stop|restart <id>         one component (ids: ${prog} help ids)
+  reload suricata                 reload the rules without stopping
+  mode ids|ips | mode status      Suricata mode; ips rolls back by itself unless you run: mode confirm
+  iface list|add|remove [name]    capture interfaces
+
+Rules and alerts
+  rules update                    update the rules, roll back on error
+  rules sources|group|sid|search|stats|history|describe|find|facets|local ...
+  exceptions list|add|remove|prune   what Suricata stays silent about
+  alerts list|history|ack|resolve|reopen|snooze ...
+
+Settings and files (which one to use: ${prog} help settings)
+  settings list|check|set|secret|profile ...   one key at a time, with a check
+  reconfigure [--dry-run]         apply the current dpistack.conf
+  config read|write|revert|history <name>      a config file as text
+
+People and access
+  users list|add|passwd|role|disable|enable|remove
+  tokens create|list|revoke       API tokens for scripts
+  panel-passwd                    the panel password, from stdin
+
+Keep it safe
+  backup create|list|verify|restore
+  self-update ...                 install a newer release of the project
+
+More: ${prog} <command> --help for one command; ${prog} help --all for every option of every command.
+Exit codes: 0 ok, 1 error, 2 misuse, 3 refused or not available in this mode, 4 no such component, 5 a name or value that is not allowed.
+Under development: dpistack is still being developed. Settings, commands and screens can change between releases.
+HELP
+}
+
+ctl_help_settings() {
+	cat <<'HELP'
+Three ways to change a setting, from the smallest to the largest:
+
+  settings set K=V [--apply]     one or a few keys of dpistack.conf, validated first.
+                                 Without --apply the file changes, the services do not.
+  reconfigure                    apply the whole current dpistack.conf: re-render the
+                                 configs and restart what changed (menu on a terminal).
+  config write <name> --apply    replace a whole config file (suricata.yaml, local.rules...)
+                                 from stdin; hand-edited files are kept by later installs.
+
+Look before you change: settings list | settings check K=V | reconfigure --dry-run
+Go back: config revert <name> restores the latest saved version; config history lists them.
+HELP
+}
+
+ctl_help_ids() {
+	echo "Components: suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana panel watch rules"
+	echo "Config names: suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules enable.conf disable.conf modify.conf drop.conf threshold.config"
+}
+
+# ctl_verb_help <verb> - the lines of the reference that belong to a verb.
+ctl_verb_help() {
+	local v="$1" out
+	[[ "$v" == "rules" || "$v" == "config" ]] && v="$v-[a-z]*"
+	out=$(ctl_usage | awk -v v="$v" '
+		BEGIN { on = 0 }
+		/^  [a-z]/ { split($0, w, /[ |]+/); on = ($0 ~ "^  " v "([ |]|$)") || index($0, "|" v " ") > 0 || ($0 ~ "^  [a-z|-]*\\|" v "[ |]") }
+		/^$/ { on = 0 }
+		/^[A-Z]/ { on = 0 }
+		on { print }')
+	if [[ -z "$out" ]]; then
+		return 1
+	fi
+	printf '%s\n' "$out"
+	echo
+	echo "Exit codes: 0 ok, 1 error, 2 misuse, 3 refused or not available in this mode, 4 no such component, 5 a name or value that is not allowed."
+}
+
+# ctl_normalize <args...> - the two-word spelling of a verb (rules update,
+# config read, mode confirm) is the one-word verb; the old spelling stays.
+# Sets CTL_ARGS.
+ctl_normalize() {
+	CTL_ARGS=("$@")
+	local first="${1:-}" second="${2:-}"
+	case "$first" in
+	rules)
+		case "$second" in
+		update | sources | group | sid | search | stats | history | describe | find | facets | local)
+			CTL_ARGS=("rules-$second" "${@:3}")
+			;;
+		esac
+		;;
+	config)
+		case "$second" in
+		read | write | revert | history)
+			CTL_ARGS=("config-$second" "${@:3}")
+			;;
+		esac
+		;;
+	mode)
+		[[ "$second" == "confirm" ]] && CTL_ARGS=("mode-confirm" "${@:3}")
+		;;
+	esac
+	return 0
+}
+
+ctl_cmd_help() {
+	case "${1:-}" in
+	"") ctl_help_overview ;;
+	--all) ctl_usage ;;
+	settings) ctl_help_settings ;;
+	ids) ctl_help_ids ;;
+	*) ctl_verb_help "$1" || fail 2 "help: no such command: $1 (dpistack help lists them)" ;;
+	esac
+}
+
+# ctl_suggest <word> - "did you mean": a verb that starts with the word, or a
+# verb that the word is a prefix of.
+ctl_suggest() {
+	local word="$1" v hits=()
+	[[ -n "$word" ]] || return 0
+	for v in "${CTL_ALL_VERBS[@]}"; do
+		if [[ "$v" == "$word"* || "$word" == "$v"* || "${v//-/}" == "${word//-/}" ]]; then
+			hits+=("$v")
+		fi
+	done
+	((${#hits[@]})) && echo "dpistack: unknown command '$word'. Did you mean: ${hits[*]}? (dpistack help)"
+	return 0
+}
+
 ctl_dispatch() {
 	local cmd="$1"
 	shift
@@ -5086,7 +5301,10 @@ ctl_dispatch() {
 	users) cmd_users "$@" ;;
 	backup) cmd_backup "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
+	help) ctl_cmd_help "$@" ;;
+	info) cmd_info "$@" ;;
 	*)
+		ctl_suggest "$cmd" >&2
 		ctl_usage >&2
 		exit 2
 		;;
@@ -5105,7 +5323,16 @@ ctl_main() {
 		[[ "$arg" =~ ^[A-Za-z0-9._:=/@+,\ -]*$ ]] || fail 5 "invalid characters in the argument"
 	done
 
-	audit_run "$@"
+	# <verb> --help / -h: the lines of the reference for that verb, nothing runs.
+	if [[ $# -eq 1 && ("$1" == "--help" || "$1" == "-h") ]]; then
+		ctl_help_overview
+		exit 0
+	fi
+	ctl_normalize "$@"
+	if [[ "${CTL_ARGS[0]}" != "help" && ${#CTL_ARGS[@]} -le 2 && ("${CTL_ARGS[-1]}" == "--help" || "${CTL_ARGS[-1]}" == "-h") ]]; then
+		ctl_verb_help "${CTL_ARGS[0]}" && exit 0
+	fi
+	audit_run "${CTL_ARGS[@]}"
 }
 DPISTACK_BUNDLE_END
 put lib/exceptions.sh 644 <<'DPISTACK_BUNDLE_END'
@@ -5974,6 +6201,99 @@ cmd_ips() {
 	esac
 }
 DPISTACK_BUNDLE_END
+put lib/key_hints.sh 644 <<'DPISTACK_BUNDLE_END'
+#!/usr/bin/env bash
+# GENERATED by scripts/gen-key-hints.sh from the hints of the Settings screen
+# (panel/web/modules/settings-model.js). Do not edit by hand.
+# shellcheck disable=SC2034 # read by lib/menu.sh
+declare -gA KEY_HINT=(
+	[SURICATA_ENABLE]='Install and run Suricata (the IDS/IPS engine).'
+	[RULES_ENABLE]='Install the rules and their automatic update (needs Suricata).'
+	[EVEBOX_ENABLE]='Install EveBox, the alert viewer.'
+	[NTOPNG_ENABLE]='Install ntopng, the traffic monitor, with its Redis.'
+	[PANEL_ENABLE]='Install this control panel.'
+	[SURICATA_RUNTIME]='Where Suricata runs: on the host or in a Docker container.'
+	[EVEBOX_RUNTIME]='Where EveBox runs: on the host or in a Docker container.'
+	[NTOPNG_RUNTIME]='Where ntopng runs: on the host or in a Docker container.'
+	[SURICATA_SOURCE]='Where Suricata comes from: the distribution package, the OISF package or a build from source.'
+	[SURICATA_VERSION]='Pinned Suricata version. Empty: the latest stable.'
+	[NDPI_ENABLE]='Application detection with nDPI in Suricata.'
+	[NDPI_SOURCE]='nDPI from a package or built from source.'
+	[NDPI_VERSION]='Pinned nDPI version. Empty: the latest stable.'
+	[NTOPNG_VERSION]='Pinned ntopng version.'
+	[EVEBOX_VERSION]='Pinned EveBox version.'
+	[PIN_VERSIONS]='Pin the installed versions so a system update does not change them.'
+	[SURICATA_MODE]='ids only watches, ips can block. Switching is best done on the Components screen.'
+	[IFACES]='Interfaces Suricata captures from, comma separated.'
+	[BPF_FILTER]='BPF filter: which traffic to skip or to analyze.'
+	[HOME_NET]='Your networks (CIDR, comma separated) or auto: detect from the interfaces.'
+	[IPS_METHOD]='How IPS gets packets: the NFQUEUE queue or AF_PACKET.'
+	[IPS_NFQ_CHAINS]='iptables chains that send packets to the queue.'
+	[NTOPNG_IFACES]='ntopng interfaces. Empty: the same as Suricata'\''s.'
+	[EVE_FILE]='Write events to eve.json (needed by the panel and the watchdog).'
+	[EVE_TYPES]='Which event types to write to eve.json.'
+	[EVE_SYSLOG]='Duplicate events to syslog (facility local5).'
+	[EVE_REDIS]='Redis output. Not supported yet: leave it empty, a value is ignored with a warning.'
+	[EVE_ROTATE]='How to rotate eve.json: daily, weekly or by size.'
+	[EVE_KEEP]='How many rotated files to keep.'
+	[EVE_MAX_SIZE_MB]='File size in MB that triggers rotation (the size mode).'
+	[STATS_INTERVAL_SEC]='How often Suricata writes statistics (seconds).'
+	[RULES_SOURCES]='Rule sources for the rules updater, space separated.'
+	[RULES_URLS]='Your own rule set addresses, space separated.'
+	[RULES_GROUPS]='Enabled rule groups, comma separated.'
+	[RULES_UPDATE]='Update the rules on a schedule.'
+	[RULES_UPDATE_CALENDAR]='When to update: daily, weekly or a systemd expression.'
+	[EXCEPTIONS_DEFAULT_DAYS]='Days a new exception lasts when none is given; 0 means it never expires.'
+	[EVEBOX_DB]='Where EveBox stores events.'
+	[EVEBOX_ES_URL]='Elasticsearch address for the elasticsearch mode.'
+	[EVEBOX_PORT]='EveBox port.'
+	[EVEBOX_RETENTION_DAYS]='How many days EveBox keeps events (0: no limit).'
+	[ACCESS_MODE]='Who can open the panels: localhost, the local network or through nginx.'
+	[BIND_ADDR]='Address the web services listen on: auto (127.0.0.1, or every address in lan mode) or one IPv4 address of this host, for example 192.168.1.156. An address that is not loopback opens the panels to LAN_CIDR.'
+	[LAN_CIDR]='The network allowed in lan mode, or auto; several networks may be given separated by commas (auto stands for the network of the default route), for example auto,172.18.0.0/16.'
+	[PANEL_PORT]='Port of this panel.'
+	[NTOPNG_PORT]='ntopng port.'
+	[PANEL_SOURCE]='How to get the panel program: build it, take a ready one or choose automatically.'
+	[PANEL_RUNTIME]='Where the panel runs: as a service on the host or as a Docker container (host commands go through nsenter).'
+	[NGINX_MANAGE]='How to manage nginx: replace the configuration or only drop in a fragment.'
+	[NGINX_TLS]='TLS on nginx: none, self signed or your own certificate.'
+	[NGINX_CERT]='Path to the certificate for the existing mode.'
+	[NGINX_KEY]='Path to the key for the existing mode.'
+	[FIREWALL_MANAGE]='Open the needed ports in the firewall by itself.'
+	[METRICS_EXPORT]='Serve the panel metrics at /metrics with a token.'
+	[METRICS_BACKEND]='Metrics storage: none, VictoriaMetrics or Prometheus.'
+	[METRICS_BACKEND_RUNTIME]='Metrics storage on the host or in Docker.'
+	[METRICS_BACKEND_PORT]='Metrics storage port.'
+	[METRICS_RETENTION]='How long to keep metrics, for example 30d.'
+	[NODE_EXPORTER_ENABLE]='Install node_exporter (CPU, memory, disk and network of the host); the metrics storage scrapes it.'
+	[NODE_EXPORTER_RUNTIME]='Where node_exporter runs: on the host or in a Docker container.'
+	[NODE_EXPORTER_PORT]='node_exporter port.'
+	[GRAFANA_ENABLE]='Install Grafana for dashboards; the metrics storage becomes its default data source.'
+	[GRAFANA_RUNTIME]='Where Grafana runs: on the host or in a Docker container.'
+	[GRAFANA_PORT]='Grafana port. The first login is admin/admin and Grafana asks for a new password.'
+	[WATCH_ENABLE]='Background watch over the components.'
+	[WATCH_INTERVAL_SEC]='How often the watchdog checks the state (seconds).'
+	[WATCH_EVE_STALE_SEC]='After how many seconds of silence eve.json counts as stuck.'
+	[WATCH_DROP_WARN_PCT]='Percent of dropped packets for a warning.'
+	[WATCH_DROP_CRIT_PCT]='Percent of dropped packets for an alarm.'
+	[WATCH_DISK_WARN_PCT]='Free disk space (%) for a warning.'
+	[WATCH_DISK_CRIT_PCT]='Free disk space (%) for an alarm.'
+	[WATCH_RULES_WARN_DAYS]='Age of the rules (days) for a warning.'
+	[WATCH_RULES_CRIT_DAYS]='Age of the rules (days) for an alarm.'
+	[WATCH_REPEAT_MIN]='After how many minutes to repeat the same alert.'
+	[WATCH_AUTORESTART]='Restart a failed component automatically (at most three times an hour).'
+	[ALERT_CHANNELS]='Where to send alerts: panel, log, telegram, mail (comma separated).'
+	[ALERT_TG_CHAT_ID]='Telegram chat for alerts.'
+	[ALERT_MAIL_TO]='Mail recipients, comma separated.'
+	[ALERT_MAIL_FROM]='Sender address.'
+	[TEST_HTTPS_URL]='Address for the HTTPS check on the Tests screen.'
+	[TEST_BT_LIVE]='Also replay the BitTorrent file out of the capture interface and look for an alert in the live log. Adds one small test rule (sid 9000100) to Suricata.'
+	[TEST_ON_INSTALL]='Run the checks after installation.'
+	[ALERT_TG_TOKEN]='Telegram bot token. Stored apart from the main configuration.'
+	[ALERT_SMTP_URL]='SMTP address, for example smtps://user:pass@host:465. Stored apart.'
+	[METRICS_TOKEN]='Access token for /metrics. Stored apart.'
+)
+DPISTACK_BUNDLE_END
 put lib/menu.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Plain-Bash text menu for `install`/`reconfigure` (tech.md 5.0, 5.1,
@@ -5998,6 +6318,7 @@ MENU_DIRTY=0
 declare -A MENU_OLD_CONF # snapshot for reconfigure's "~" marker and diff
 MENU_PANEL_PASSWORD=""   # plaintext, held only in memory until hashed
 MENU_PANEL_PASSWORD_SET=0
+MENU_BANNER_SHOWN=0 # the 'under development' note is printed once per run
 
 menu_color_on() {
 	[[ -z "${NO_COLOR:-}" && "${CLI_NO_COLOR:-0}" != "1" && -t 1 ]]
@@ -6193,6 +6514,30 @@ menu_problems_count() {
 	printf '%s\n' "$out" | wc -l
 }
 
+# menu_install_problems - what stops "Install" on the install screen: the
+# schema and cross checks, plus the panel password that the install needs.
+menu_install_problems() {
+	config_validate
+	[[ "$MENU_PANEL_PASSWORD_SET" == "1" ]] ||
+		echo "the panel password is not set (item $((${#MENU_GROUPS[@]} + 2)))"
+	return 0
+}
+
+# menu_unclear <input> - the answer to an input no screen item matches.
+menu_unclear() {
+	echo "  unclear choice: $1 (type a number or a letter from the list, ? for help)" >&2
+}
+
+# menu_legend <marks> - explains the markers that are on the screen now.
+menu_legend() {
+	local marks="$1" out=""
+	[[ "$marks" == *"*"* ]] && out+="  * differs from the default"
+	[[ "$marks" == *"~"* ]] && out+="  ~ differs from the applied value"
+	[[ "$marks" == *"!"* ]] && out+="  ! invalid, fix it"
+	[[ -n "$out" ]] && echo "$out" >&2
+	return 0
+}
+
 menu_group_summary() {
 	# One short line per group for the main screen's right column.
 	case "$1" in
@@ -6230,6 +6575,7 @@ menu_edit_key() {
 		local current="${CONF[$key]:-}"
 		local opts="${SCHEMA_OPTIONS[$key]}"
 		echo "$key (now: ${current:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$current" ]] && menu_say_empty "$key"
 		[[ -n "$opts" ]] && echo "  options: $opts" >&2
 		local answer
@@ -6242,7 +6588,8 @@ menu_edit_key() {
 		case "$answer" in
 		"" | cancel) return 0 ;;
 		"?")
-			echo "  ${key}: group ${SCHEMA_GROUP[$key]}, type ${SCHEMA_TYPE[$key]}" >&2
+			[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
+			echo "  ${key}: group ${SCHEMA_GROUP[$key]}, type ${SCHEMA_TYPE[$key]}, $(schema_is_basic "$key" && echo basic || echo advanced) level" >&2
 			continue
 			;;
 		"-")
@@ -6267,6 +6614,36 @@ menu_edit_key() {
 	done
 }
 
+# menu_hint_line <key> - the one-line hint of a key for the list of a section:
+# cut to the width of the terminal, with "not used now" first for a key that
+# the other settings switch off (the same table the guided setup uses).
+menu_hint_line() {
+	local key="$1" text width cols
+	text="${KEY_HINT[$key]:-}"
+	[[ -n "$text" ]] || return 0
+	if menu_key_skipped "$key"; then
+		text="(not used with the current settings) $text"
+	fi
+	cols="${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}"
+	[[ "$cols" =~ ^[0-9]+$ ]] || cols=80
+	((cols < 60)) && cols=60
+	((cols > 120)) && cols=120
+	width=$((cols - 9))
+	((${#text} > width)) && text="${text:0:$((width - 3))}..."
+	printf '       %s\n' "$(menu_c 2 "$text")" >&2
+}
+
+# menu_advanced_count <group> - how many advanced keys the section has.
+menu_advanced_count() {
+	local group="$1" key n=0
+	for key in "${SCHEMA_KEYS[@]}"; do
+		[[ "${SCHEMA_GROUP[$key]}" == "$group" ]] || continue
+		[[ "$key" == "METRICS_TOKEN" ]] && continue
+		schema_is_basic "$key" || n=$((n + 1))
+	done
+	echo "$n"
+}
+
 menu_section_keys() {
 	local group="$1" key
 	for key in "${SCHEMA_KEYS[@]}"; do
@@ -6287,10 +6664,11 @@ menu_section_screen() {
 		echo >&2
 		local -a keys=()
 		mapfile -t keys < <(menu_section_keys "$group")
-		local i=1 key
+		local i=1 key seen_marks=""
 		for key in "${keys[@]}"; do
 			local mark
 			mark=$(menu_mark_for_key "$key")
+			seen_marks+="$mark"
 			local shown
 			if schema_is_secret "$key"; then
 				shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
@@ -6298,9 +6676,15 @@ menu_section_screen() {
 				shown="${CONF[$key]:-}"
 			fi
 			printf '  %2d) %-28s = %s %s\n' "$i" "$key" "$shown" "$mark" >&2
+			menu_hint_line "$key"
 			i=$((i + 1))
 		done
-		echo "  a) $([[ $MENU_SHOW_ADVANCED == 1 ]] && echo "hide" || echo "show") advanced   0) back (Enter too)   ?) help   q) quit" >&2
+		menu_legend "$seen_marks"
+		[[ "$group" == "components" ]] && echo "  Tip: m on the main screen switches whole parts on or off in one place." >&2
+		local adv_label
+		adv_label="show advanced ($(menu_advanced_count "$group") more)"
+		[[ "$MENU_SHOW_ADVANCED" == "1" ]] && adv_label="hide advanced"
+		echo "  a) $adv_label   0) back (Enter too)   ?) help   q) quit" >&2
 		local problems
 		problems=$(menu_problems_count)
 		if [[ "$problems" -gt 0 ]]; then
@@ -6320,7 +6704,7 @@ menu_section_screen() {
 			continue
 			;;
 		'?')
-			echo "  Number - edit a key; Enter/0 - back; a - show/hide advanced." >&2
+			echo "  Number - edit a key (Enter keeps the value, - resets it to the default); Enter or 0 - back; a - show or hide the advanced keys." >&2
 			continue
 			;;
 		*)
@@ -6328,7 +6712,7 @@ menu_section_screen() {
 			if [[ "$choice" =~ ^[0-9]+$ ]] && ((10#$choice >= 1 && 10#$choice <= ${#keys[@]})); then
 				menu_edit_key "${keys[$((10#$choice - 1))]}"
 			else
-				echo "  unclear choice: $choice" >&2
+				menu_unclear "$choice"
 			fi
 			;;
 		esac
@@ -6631,7 +7015,7 @@ menu_components_screen() {
 			elif [[ "$choice" =~ ^[0-9]+$ ]] && ((10#$choice == ${#MENU_COMPONENTS[@]} + 1)); then
 				menu_edit_key METRICS_BACKEND
 			else
-				echo "  unclear choice: $choice" >&2
+				menu_unclear "$choice"
 			fi
 			;;
 		esac
@@ -6765,14 +7149,31 @@ menu_wizard() {
 }
 
 # menu_main_screen -> 0 (user chose "Install") or exits the process.
+menu_main_help() {
+	cat >&2 <<'EOF_HELP'
+  1          Quick install: five short questions (interfaces, Suricata source, access, metrics, panel password).
+  2-9        One section of settings: a number edits a key, Enter keeps the value, - resets it to the default.
+  10         The panel password, typed twice without echo. Install needs it.
+  m          Choose which components to install.
+  w          Guided setup: every setting, one by one (s skips a group, x leaves).
+  c, p       Check the system / show the plan. Neither changes anything.
+  s, l       Save the settings to a file / load them from a file.
+  e          Show all the problems that keep Install off.
+  i          Install (a summary and a confirmation come first).   q  Quit.
+EOF_HELP
+}
+
 menu_main_screen() {
 	while true; do
 		echo >&2
 		echo "$(menu_bold "dpistack v${DPISTACK_VERSION}") | $OS_ID ${OS_VERSION_ID:-}, $(uname -m) | systemd: $(command -v systemctl >/dev/null && echo yes || echo no)" >&2
 		echo "Install. Config: $(path_conf) (not created)" >&2
-		echo "Under development: dpistack is still being developed. Settings, commands and screens can change between releases." >&2
+		if [[ "$MENU_BANNER_SHOWN" != "1" ]]; then
+			echo "Under development: dpistack is still being developed. Settings, commands and screens can change between releases." >&2
+			MENU_BANNER_SHOWN=1
+		fi
 		echo >&2
-		echo "  1) Quick install" >&2
+		printf '  %2d) %-30s %s\n' 1 "Quick install" "5 short questions, then review" >&2
 		local i=2 g
 		for g in "${MENU_GROUPS[@]}"; do
 			printf '  %2d) %-30s %s\n' "$i" "${MENU_GROUP_TITLE[$g]}" "$(menu_group_summary "$g")" >&2
@@ -6783,14 +7184,21 @@ menu_main_screen() {
 		echo "  m) Choose components   w) Guided setup (asks every setting)" >&2
 		echo "  c) Check the system   p) Plan   s) Save to file   l) Load from file" >&2
 		echo "  i) Install             q) Quit" >&2
-		local problems
-		problems=$(menu_problems_count)
+		local problems cfg_problems
+		cfg_problems=$(menu_problems_count)
+		problems=$(menu_install_problems | grep -c .)
 		echo >&2
 		if [[ "$problems" -gt 0 ]]; then
-			menu_red "Problems ($problems): $(menu_problems | head -1)" >&2
+			menu_red "Problems ($problems): $(menu_install_problems | head -1)$([[ "$problems" -gt 1 ]] && echo "   (e = show all)")" >&2
 			echo >&2
+			if [[ "$cfg_problems" -gt 0 ]]; then
+				echo "Next: fix the problems above; Install stays off until then." >&2
+			else
+				echo "Next: set the panel password (item $((${#MENU_GROUPS[@]} + 2))), then press i to install." >&2
+			fi
 		else
-			echo "Problems ($problems)" >&2
+			echo "Problems (0)" >&2
+			echo "Next: press i to install. A summary and a confirmation come first." >&2
 		fi
 		local choice
 		menu_read choice "> "
@@ -6799,6 +7207,8 @@ menu_main_screen() {
 		1) menu_quick_install ;;
 		m) menu_components_screen ;;
 		w) menu_wizard ;;
+		e) menu_install_problems | sed 's/^/  - /' >&2 ;;
+		'?') menu_main_help ;;
 		c) menu_check_system_screen ;;
 		p) menu_plan_screen ;;
 		s) menu_save_to_file_screen ;;
@@ -6808,12 +7218,12 @@ menu_main_screen() {
 			exit 0
 		} ;;
 		i)
-			if [[ "$problems" != "0" ]]; then
-				echo "  cannot install while there are problems" >&2
+			if [[ "$cfg_problems" != "0" ]]; then
+				echo "  cannot install while there are problems (e shows them)" >&2
 				continue
 			fi
 			if [[ "$MENU_PANEL_PASSWORD_SET" != "1" ]]; then
-				echo "  installation is unavailable without a panel password" >&2
+				echo "  installation is unavailable without a panel password: set it with item $((${#MENU_GROUPS[@]} + 2))" >&2
 				continue
 			fi
 			# A busy port is a warning with a choice here. Keeping it means
@@ -6834,7 +7244,7 @@ menu_main_screen() {
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 2))" ]]; then
 				menu_panel_password_screen
 			else
-				echo "  unclear choice: $choice" >&2
+				menu_unclear "$choice"
 			fi
 			;;
 		esac
@@ -6866,7 +7276,7 @@ menu_found_install_screen() {
 			menu_close_input
 			exit 0
 			;;
-		*) echo "  unclear choice: $choice" >&2 ;;
+		*) menu_unclear "$choice" ;;
 		esac
 	done
 }
@@ -7030,7 +7440,7 @@ menu_reconfigure_screen() {
 		if [[ "$rc_problems" -gt 0 ]]; then
 			echo "Edits: $changed key(s). $(menu_red "Problems: $rc_problems")" >&2
 		else
-			echo "Edits: $changed key(s). Problems: $rc_problems" >&2
+			echo "Edits: $changed key(s). Problems: $rc_problems$([[ "$changed" -gt 0 ]] && echo ". Next: a applies, d shows the diff" || echo ". Pick a section to change, or q to leave")" >&2
 		fi
 		local choice
 		menu_read choice "> "
@@ -7057,11 +7467,11 @@ menu_reconfigure_screen() {
 			;;
 		s) menu_save_to_file_screen ;;
 		l) menu_load_from_file_screen ;;
-		b)
+		b | 0)
 			if [[ "$MENU_BACK_ENABLED" == "1" ]]; then
 				return 20
 			fi
-			echo "  unclear choice: $choice" >&2
+			menu_unclear "$choice"
 			;;
 		q) menu_quit_confirm && {
 			menu_close_input
@@ -7075,7 +7485,7 @@ menu_reconfigure_screen() {
 			elif [[ "$choice" == "$((${#MENU_GROUPS[@]} + 1))" ]]; then
 				menu_panel_password_screen
 			else
-				echo "  unclear choice: $choice" >&2
+				menu_unclear "$choice"
 			fi
 			;;
 		esac
@@ -7148,6 +7558,9 @@ menu_manage_summary() {
 		health=$(jq -r '.overall // "no data"' "$(path_health_json)" 2>/dev/null)
 	fi
 	printf '  |  health: %s' "$health"
+	local mode=""
+	[[ -f "$(path_conf)" ]] && mode=$(sed -n 's/^SURICATA_MODE=//p' "$(path_conf)" | head -1)
+	printf '  |  mode: %s' "${mode:-ids}"
 }
 
 menu_manage_logs() {
@@ -7232,6 +7645,254 @@ menu_manage_uninstall() {
 	esac
 }
 
+# --- the submenus of the control menu (18.54): the commands that were only
+# on the command line, grouped by task. Each one only calls the same verb a
+# person would type, so nothing here has a rule of its own.
+
+# menu_sub_read <var> <prompt> - a line for a submenu; Enter or 0 is "back".
+menu_sub_read() {
+	local __v="$1"
+	menu_read "$__v" "$2"
+	menu_die_on_eof
+}
+
+# menu_manage_component_states - "<id> <state>" for every installed component.
+menu_manage_component_states() {
+	local ctl out
+	ctl=$(manage_ctl) || return 0
+	out=$("$ctl" status --json 2>/dev/null) || return 0
+	command -v jq >/dev/null 2>&1 || return 0
+	jq -r '.components[] | select(.state != "absent") | "\(.id) \(.state)"' <<<"$out" 2>/dev/null
+}
+
+menu_manage_services() {
+	local choice action id state
+	while true; do
+		local -a ids=()
+		echo >&2
+		menu_bold "Start, stop, restart" >&2
+		echo >&2
+		local i=1
+		while read -r id state; do
+			[[ -n "$id" ]] || continue
+			ids+=("$id")
+			printf '  %2d) %-16s %s\n' "$i" "$id" "$state" >&2
+			i=$((i + 1))
+		done < <(menu_manage_component_states)
+		if ((${#ids[@]} == 0)); then
+			echo "  no installed components were found (dpistack status shows why)" >&2
+			return 0
+		fi
+		menu_sub_read choice "Component (number, Enter or 0 = back): "
+		[[ "$choice" =~ ^[0-9]+$ ]] || return 0
+		((10#$choice == 0)) && return 0
+		if ((10#$choice > ${#ids[@]})); then
+			menu_unclear "$choice"
+			continue
+		fi
+		id="${ids[$((10#$choice - 1))]}"
+		echo "  1) restart   2) stop   3) start$([[ "$id" == suricata ]] && echo "   4) reload the rules without stopping")" >&2
+		menu_sub_read action "$id: (Enter or 0 = back): "
+		case "$action" in
+		1) menu_confirm "Restart $id?" && menu_manage_ctl restart "$id" ;;
+		2)
+			if menu_confirm "Stop $id?$([[ "$id" == panel ]] && echo " The panel will stop answering")" n; then
+				menu_manage_ctl stop "$id"
+			fi
+			;;
+		3) menu_manage_ctl start "$id" ;;
+		4) [[ "$id" == suricata ]] && menu_manage_ctl reload suricata ;;
+		"" | 0) ;;
+		*) menu_unclear "$action" ;;
+		esac
+	done
+}
+
+menu_manage_rules() {
+	local choice q sid act
+	while true; do
+		echo >&2
+		menu_bold "Rules and alerts" >&2
+		echo >&2
+		echo "  1) Update the rules now (rolls back on error)   2) Statistics   3) Update history" >&2
+		echo "  4) Search rules by text or number               5) Turn one rule on or off" >&2
+		echo "  6) Alerts   7) Exceptions (what Suricata stays silent about)   0) back (Enter too)" >&2
+		menu_sub_read choice "> "
+		case "$choice" in
+		"" | 0) return 0 ;;
+		1) menu_confirm "Update the rules now?" && menu_manage_ctl rules-update ;;
+		2) menu_manage_ctl rules-stats ;;
+		3) menu_manage_ctl rules-history ;;
+		4)
+			menu_sub_read q "Text or rule number (Enter = back): "
+			[[ -n "$q" ]] && menu_manage_ctl rules-search "$q"
+			;;
+		5)
+			menu_sub_read sid "Rule number, the sid (Enter = back): "
+			[[ -n "$sid" ]] || continue
+			if [[ ! "$sid" =~ ^[0-9]{1,10}$ ]]; then
+				echo "  a rule number is digits only" >&2
+				continue
+			fi
+			menu_sub_read act "enable or disable (Enter = back): "
+			[[ "$act" == enable || "$act" == disable ]] || continue
+			menu_manage_ctl rules-sid "$act" "$sid" &&
+				echo "  takes effect at the next rules update (item 1)" >&2
+			;;
+		6) menu_manage_ctl alerts list ;;
+		7) menu_manage_ctl exceptions list ;;
+		*) menu_unclear "$choice" ;;
+		esac
+	done
+}
+
+menu_manage_mode() {
+	local choice name answer
+	while true; do
+		echo >&2
+		menu_bold "Mode and interfaces" >&2
+		echo >&2
+		menu_manage_ctl mode status
+		menu_manage_ctl iface list
+		echo "  1) Switch to IDS (watch only)   2) Switch to IPS (can block)" >&2
+		echo "  3) Add a capture interface      4) Remove a capture interface   0) back (Enter too)" >&2
+		menu_sub_read choice "> "
+		case "$choice" in
+		"" | 0) return 0 ;;
+		1) menu_confirm "Switch Suricata to IDS?" && menu_manage_ctl mode ids ;;
+		2)
+			menu_confirm "Switch Suricata to IPS? It can block traffic, and rolls back by itself unless you confirm" n || continue
+			menu_manage_ctl mode ips --confirm-timeout 120 || continue
+			menu_sub_read answer "Still connected? Type yes within 120 s to keep IPS (otherwise it rolls back): "
+			if [[ "${answer,,}" == "yes" ]]; then
+				menu_manage_ctl mode-confirm
+			else
+				echo "  not confirmed: the switch rolls back by itself" >&2
+			fi
+			;;
+		3)
+			menu_sub_read name "Interface name (Enter = back): "
+			[[ -n "$name" ]] && menu_confirm "Add $name? Suricata restarts" && menu_manage_ctl iface add "$name"
+			;;
+		4)
+			menu_sub_read name "Interface name (Enter = back): "
+			[[ -n "$name" ]] && menu_confirm "Remove $name? Suricata restarts" && menu_manage_ctl iface remove "$name"
+			;;
+		*) menu_unclear "$choice" ;;
+		esac
+	done
+}
+
+menu_manage_backup() {
+	local choice file
+	while true; do
+		echo >&2
+		menu_bold "Backup" >&2
+		echo >&2
+		echo "  1) Create a backup   2) List the backups   3) Check a backup file   4) Restore from a backup file   0) back (Enter too)" >&2
+		menu_sub_read choice "> "
+		case "$choice" in
+		"" | 0) return 0 ;;
+		1) menu_manage_ctl backup create ;;
+		2) menu_manage_ctl backup list ;;
+		3)
+			menu_sub_read file "Backup file (Enter = back): "
+			[[ -n "$file" ]] && menu_manage_ctl backup verify "$file"
+			;;
+		4)
+			menu_sub_read file "Backup file (Enter = back): "
+			[[ -n "$file" ]] || continue
+			echo "  what a restore would do:" >&2
+			menu_manage_ctl backup restore "$file" --dry-run || continue
+			menu_confirm "Restore it now?" n && menu_manage_ctl backup restore "$file"
+			;;
+		*) menu_unclear "$choice" ;;
+		esac
+	done
+}
+
+menu_manage_users() {
+	local choice name role p1 p2 id ctl
+	while true; do
+		echo >&2
+		menu_bold "Users and tokens" >&2
+		echo >&2
+		echo "  1) List the users   2) Add a user   3) Change a password   4) Disable or enable a user   5) Remove a user" >&2
+		echo "  6) List the API tokens   7) End an API token   0) back (Enter too)" >&2
+		menu_sub_read choice "> "
+		case "$choice" in
+		"" | 0) return 0 ;;
+		1) menu_manage_ctl users list ;;
+		2)
+			menu_sub_read name "User name (Enter = back): "
+			[[ -n "$name" ]] || continue
+			menu_sub_read role "Role: viewer, analyst, operator or admin (Enter = back): "
+			[[ "$role" =~ ^(viewer|analyst|operator|admin)$ ]] || {
+				[[ -z "$role" ]] || echo "  the role is one of viewer, analyst, operator, admin" >&2
+				continue
+			}
+			menu_read_secret p1 "Password for $name: "
+			menu_read_secret p2 "Repeat the password: "
+			if [[ "$p1" != "$p2" ]]; then
+				echo "  the passwords do not match, nothing changed" >&2
+				continue
+			fi
+			ctl=$(manage_ctl) || continue
+			printf '%s\n' "$p1" | "$ctl" users add "$name" "$role"
+			;;
+		3)
+			menu_sub_read name "User name (Enter = back): "
+			[[ -n "$name" ]] || continue
+			menu_read_secret p1 "New password for $name: "
+			menu_read_secret p2 "Repeat the password: "
+			if [[ "$p1" != "$p2" ]]; then
+				echo "  the passwords do not match, nothing changed" >&2
+				continue
+			fi
+			ctl=$(manage_ctl) || continue
+			printf '%s\n' "$p1" | "$ctl" users passwd "$name"
+			;;
+		4)
+			menu_sub_read name "User name (Enter = back): "
+			[[ -n "$name" ]] || continue
+			menu_sub_read role "disable or enable (Enter = back): "
+			[[ "$role" == disable || "$role" == enable ]] && menu_manage_ctl users "$role" "$name"
+			;;
+		5)
+			menu_sub_read name "User name (Enter = back): "
+			[[ -n "$name" ]] && menu_confirm "Remove the user $name?" n && menu_manage_ctl users remove "$name"
+			;;
+		6) menu_manage_ctl tokens list ;;
+		7)
+			menu_sub_read id "Token id (Enter = back): "
+			[[ -n "$id" ]] && menu_confirm "End the token $id? A script that uses it stops working" n && menu_manage_ctl tokens revoke "$id"
+			;;
+		*) menu_unclear "$choice" ;;
+		esac
+	done
+}
+
+menu_manage_checks() {
+	local choice
+	while true; do
+		echo >&2
+		menu_bold "Checks and addresses" >&2
+		echo >&2
+		echo "  1) Where to open the screens   2) Health now   3) What is not running, and why" >&2
+		echo "  4) Security check of the panel   5) Report for support (a file, no secrets)   0) back (Enter too)" >&2
+		menu_sub_read choice "> "
+		case "$choice" in
+		"" | 0) return 0 ;;
+		1) menu_manage_ctl info ;;
+		2) menu_manage_ctl health ;;
+		3) menu_manage_ctl diagnose ;;
+		4) menu_manage_ctl security check ;;
+		5) menu_manage_ctl diag ;;
+		*) menu_unclear "$choice" ;;
+		esac
+	done
+}
+
 menu_run_manage() {
 	menu_open_input
 	local choice rc answer
@@ -7248,6 +7909,8 @@ menu_run_manage() {
 		echo "  6) Uninstall" >&2
 		echo "  7) Panel password" >&2
 		echo >&2
+		echo "  s) Start, stop, restart    m) Mode and interfaces   r) Rules and alerts" >&2
+		echo "  k) Backup                  u) Users and tokens      c) Checks and addresses" >&2
 		echo "  q) Quit" >&2
 		menu_read choice "> "
 		menu_die_on_eof
@@ -7276,11 +7939,17 @@ menu_run_manage() {
 			fi
 			;;
 		7) menu_manage_password ;;
+		s) menu_manage_services ;;
+		m) menu_manage_mode ;;
+		r) menu_manage_rules ;;
+		k) menu_manage_backup ;;
+		u) menu_manage_users ;;
+		c) menu_manage_checks ;;
 		q | Q)
 			menu_close_input
 			return 0
 			;;
-		*) echo "  unclear choice: $choice" >&2 ;;
+		*) menu_unclear "$choice" ;;
 		esac
 	done
 }
@@ -7942,6 +8611,7 @@ path_dpistack_bin() { echo "$(path_sbin_dir)/dpistack"; }
 path_ctl_bin() { path_dpistack_bin; }
 # path_retired_ctl - the old second command name; removed on install and uninstall.
 path_retired_ctl() { echo "$(path_sbin_dir)/dpistack-ctl"; }
+path_completion_file() { echo "${DPISTACK_ROOT}/etc/bash_completion.d/dpistack"; }
 path_watch_bin() { echo "$(path_sbin_dir)/dpistack-watch"; }
 path_watch_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.service"; }
 path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.timer"; }
@@ -12508,7 +13178,8 @@ put lib/step_selfinstall.sh 644 <<'DPISTACK_BUNDLE_END'
 # "selfinstall" step (tech.md 5.2): copies the installer and its helpers
 # to /usr/local/lib/dpistack/installer/ and puts the persistent commands
 # in /usr/local/sbin: `dpistack` (a symlink to install.sh, so $0 is
-# "dpistack"; it carries the privileged verbs too) and dpistack-watch. A
+# "dpistack"; it carries the privileged verbs too) and dpistack-watch, and the
+# bash completion file in /etc/bash_completion.d. A
 # leftover dpistack-ctl link of an earlier version is removed. After this the
 # stack no longer needs the original clone or archive.
 
@@ -12529,7 +13200,7 @@ selfinstall_is_target() {
 
 step_selfinstall_check() {
 	selfinstall_is_target && return 0
-	[[ -L "$(path_dpistack_bin)" && ! -e "$(path_retired_ctl)" && ! -L "$(path_retired_ctl)" && -x "$(path_watch_bin)" ]] || return 1
+	[[ -L "$(path_dpistack_bin)" && ! -e "$(path_retired_ctl)" && ! -L "$(path_retired_ctl)" && -x "$(path_watch_bin)" && -f "$(path_completion_file)" ]] || return 1
 	[[ -x "$(path_installer_copy_dir)/install.sh" ]] || return 1
 	[[ "$(state_read_value "$SELFINSTALL_HASH_KEY")" == "$(selfinstall_source_hash)" ]]
 }
@@ -12557,12 +13228,13 @@ step_selfinstall_apply() {
 	run install -D -m 0755 "$dest/bin/dpistack-watch" "$(path_watch_bin)" || return 1
 	run ln -sfn "$dest/install.sh" "$(path_dpistack_bin)" || return 1
 	run rm -f "$(path_retired_ctl)" || return 1
+	run install -D -m 0644 "$dest/templates/dpistack.completion.bash" "$(path_completion_file)" || return 1
 	state_write_value "$SELFINSTALL_HASH_KEY" "$(selfinstall_source_hash)"
 	return 0
 }
 
 step_selfinstall_plan() {
-	echo "selfinstall: installer copy in $(path_installer_copy_dir), commands dpistack and dpistack-watch in $(path_sbin_dir)"
+	echo "selfinstall: installer copy in $(path_installer_copy_dir), commands dpistack and dpistack-watch in $(path_sbin_dir), Tab completion in $(path_completion_file)"
 }
 DPISTACK_BUNDLE_END
 put lib/step_suricata.sh 644 <<'DPISTACK_BUNDLE_END'
@@ -13960,6 +14632,45 @@ AccuracySec=1s
 
 [Install]
 WantedBy=timers.target
+DPISTACK_BUNDLE_END
+put templates/dpistack.completion.bash 644 <<'DPISTACK_BUNDLE_END'
+# bash completion for dpistack (installed to /etc/bash_completion.d/dpistack).
+# Static on purpose: completing never runs dpistack, so Tab costs nothing and
+# works for a user who may not run it. A test keeps the word lists in step
+# with the CLI (tests/cli_help.bats).
+_dpistack() {
+	local cur prev verb
+	cur="${COMP_WORDS[COMP_CWORD]}"
+	prev="${COMP_WORDS[COMP_CWORD - 1]}"
+	verb="${COMP_WORDS[1]:-}"
+	local verbs="install reconfigure upgrade uninstall diag status start stop restart reload logs config config-read config-write config-revert config-history settings self-update rules rules-update rules-sources rules-group rules-sid rules-search rules-stats rules-history rules-describe rules-find rules-facets rules-local exceptions alerts tokens security iface mode mode-confirm ips fw panel-passwd test health diagnose runtime users backup version help info"
+	local components="suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana panel watch rules"
+	local configs="suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules enable.conf disable.conf modify.conf drop.conf threshold.config"
+	local words=""
+	if ((COMP_CWORD == 1)); then
+		words="$verbs"
+	else
+		case "$verb" in
+		start | stop | restart | logs | diagnose) words="$components" ;;
+		config) ((COMP_CWORD == 2)) && words="read write revert history" || words="$configs" ;;
+		config-read | config-write | config-revert | config-history) words="$configs" ;;
+		rules) ((COMP_CWORD == 2)) && words="update sources group sid search stats history describe find facets local" ;;
+		mode) words="ids ips status confirm" ;;
+		settings) ((COMP_CWORD == 2)) && words="list check set secret profile job" ;;
+		backup) ((COMP_CWORD == 2)) && words="create list verify restore" ;;
+		users) ((COMP_CWORD == 2)) && words="list add passwd role disable enable remove" ;;
+		tokens) ((COMP_CWORD == 2)) && words="create list revoke" ;;
+		alerts) ((COMP_CWORD == 2)) && words="list history ack resolve reopen snooze" ;;
+		exceptions) ((COMP_CWORD == 2)) && words="list add remove prune" ;;
+		iface) ((COMP_CWORD == 2)) && words="list add remove" ;;
+		test) ((COMP_CWORD == 2)) && words="bittorrent https all" ;;
+		help) ((COMP_CWORD == 2)) && words="$verbs settings ids --all" ;;
+		esac
+		[[ "$prev" == "--config" ]] && return 0
+	fi
+	mapfile -t COMPREPLY < <(compgen -W "$words" -- "$cur")
+}
+complete -F _dpistack dpistack
 DPISTACK_BUNDLE_END
 put templates/evebox.yaml.tpl 644 <<'DPISTACK_BUNDLE_END'
 # dpistack-rendered evebox.yaml. Keys follow the official EveBox server
