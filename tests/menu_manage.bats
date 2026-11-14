@@ -50,6 +50,8 @@ menu() {
 }
 
 logged() { grep -qxF -- "$1" "$STUB_LOG"; }
+not_logged() { ! grep -qxF -- "$1" "$STUB_LOG"; }
+not_logged_re() { ! grep -q -- "$1" "$STUB_LOG"; }
 
 @test "the control menu lists the submenus and shows the mode in its header" {
 	menu q
@@ -71,7 +73,7 @@ logged() { grep -qxF -- "$1" "$STUB_LOG"; }
 @test "services: a stop that is not confirmed does not run, a confirmed one does" {
 	ASK=1 menu s 2 2 n 0 q
 	[ "$status" -eq 0 ]
-	! logged "stop panel"
+	not_logged "stop panel"
 	: >"$STUB_LOG"
 	ASK=1 menu s 2 2 y 0 q
 	logged "stop panel"
@@ -90,7 +92,7 @@ logged() { grep -qxF -- "$1" "$STUB_LOG"; }
 	menu r 5 "20;01" 0 q
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"a rule number is digits only"* ]]
-	! grep -q '^rules-sid' "$STUB_LOG"
+	not_logged_re '^rules-sid'
 }
 
 @test "mode: IPS is kept only when the person types yes, otherwise it is left to roll back" {
@@ -101,7 +103,7 @@ logged() { grep -qxF -- "$1" "$STUB_LOG"; }
 	: >"$STUB_LOG"
 	ASK=1 menu m 2 y no 0 q
 	logged "mode ips --confirm-timeout 120"
-	! logged "mode-confirm"
+	not_logged "mode-confirm"
 	[[ "$output" == *"the switch rolls back by itself"* ]]
 }
 
@@ -117,7 +119,7 @@ logged() { grep -qxF -- "$1" "$STUB_LOG"; }
 	ASK=1 menu k 4 /tmp/b.tar.gz n 0 q
 	[ "$status" -eq 0 ]
 	logged "backup restore /tmp/b.tar.gz --dry-run"
-	! logged "backup restore /tmp/b.tar.gz"
+	not_logged "backup restore /tmp/b.tar.gz"
 	: >"$STUB_LOG"
 	ASK=1 menu k 4 /tmp/b.tar.gz y 0 q
 	logged "backup restore /tmp/b.tar.gz --dry-run"
@@ -128,7 +130,7 @@ logged() { grep -qxF -- "$1" "$STUB_LOG"; }
 	menu u 2 bob viewer "S3cret-pass!" "S3cret-pass!" 0 q
 	[ "$status" -eq 0 ]
 	logged "users add bob viewer"
-	! grep -q 'S3cret' "$STUB_LOG"
+	not_logged_re 'S3cret'
 }
 
 @test "users: passwords that differ change nothing, a wrong role is refused" {
@@ -136,14 +138,14 @@ logged() { grep -qxF -- "$1" "$STUB_LOG"; }
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"the passwords do not match, nothing changed"* ]]
 	[[ "$output" == *"the role is one of viewer, analyst, operator, admin"* ]]
-	! grep -q '^users add' "$STUB_LOG"
+	not_logged_re '^users add'
 }
 
 @test "users: removing a user and ending a token ask first" {
 	ASK=1 menu u 5 bob n 7 abc123 n 0 q
 	[ "$status" -eq 0 ]
-	! grep -q '^users remove' "$STUB_LOG"
-	! grep -q '^tokens revoke' "$STUB_LOG"
+	not_logged_re '^users remove'
+	not_logged_re '^tokens revoke'
 	: >"$STUB_LOG"
 	ASK=1 menu u 5 bob y 7 abc123 y 0 q
 	logged "users remove bob"
