@@ -132,7 +132,7 @@ textarea, .editor { width: 100%; min-height: 320px; resize: vertical; line-heigh
 #login button { margin-top: var(--s2); padding: var(--s3); }
 .devnote { font-size: var(--t-xs); color: var(--amber); background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.24); padding: var(--s2) var(--s3); border-radius: var(--r-sm); }
 
-#overview { display: grid; grid-template-columns: var(--nav-w) minmax(0, 1fr); grid-template-areas: "nav header" "nav view"; align-items: start; min-height: 100vh; transition: grid-template-columns 500ms var(--ease); }
+#overview { display: grid; grid-template-columns: var(--nav-w) minmax(0, 1fr); grid-template-areas: "nav header" "nav view"; grid-template-rows: auto 1fr; align-items: start; min-height: 100vh; transition: grid-template-columns 500ms var(--ease); }
 #overview[data-collapsed] { grid-template-columns: var(--nav-w-collapsed) minmax(0, 1fr); }
 #overview > header { grid-area: header; position: sticky; top: 0; z-index: 20; display: flex; justify-content: space-between; align-items: center; gap: var(--s4); flex-wrap: wrap; padding: var(--s4) var(--s6); background: rgba(6, 10, 20, 0.72); backdrop-filter: blur(16px); border-bottom: 1px solid var(--edge); }
 #overview > div[id^="view-"] { grid-area: view; padding: var(--s5) var(--s6) var(--s7); display: grid; gap: var(--s4); align-content: start; min-width: 0; }
