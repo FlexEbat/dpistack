@@ -110,7 +110,7 @@ preflight_port_conflicts() {
 # and the preflight will stop on it). Reads through the menu's input, so it
 # runs inside the menu. Returns 0 when no conflicts remain unanswered.
 preflight_resolve_ports_interactive() {
-	local line key port who suggestion kind answer rc=0
+	local only="${1:-}" line key port who suggestion kind answer rc=0
 	while IFS= read -r line; do
 		[[ -z "$line" ]] && continue
 		IFS='|' read -r key port who suggestion kind <<<"$line"
@@ -147,7 +147,7 @@ preflight_resolve_ports_interactive() {
 			MENU_DIRTY=1
 			break
 		done
-	done < <(preflight_port_conflicts)
+	done < <(preflight_port_conflicts | if [[ -n "$only" ]]; then grep "^${only}|" || true; else cat; fi)
 	return "$rc"
 }
 

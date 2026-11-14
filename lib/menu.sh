@@ -162,9 +162,57 @@ panel_password_apply() {
 		return 0
 	fi
 
-	command -v argon2 >/dev/null 2>&1 || pkg_install argon2
+	# jq writes the user file and argon2 makes the hash: both come first.
+	command -v jq >/dev/null 2>&1 || pkg_install jq || die 1 "could not install jq"
+	command -v argon2 >/dev/null 2>&1 || pkg_install argon2 || die 1 "could not install argon2"
 	panel_auth_write "$plaintext" || die 1 "could not write the panel password hash (argon2)"
 	MENU_PANEL_PASSWORD=""
+}
+
+# menu_validate_entry <key> <value> - what the menu lets a person type: the
+# schema entry check, and for an interface key the interface must exist on
+# this machine (the preflight would stop on it much later).
+menu_validate_entry() {
+	local key="$1" value="$2" msg el
+	if ! msg=$(schema_validate_entry "$key" "$value"); then
+		echo "$msg"
+		return 1
+	fi
+	case "$key" in
+	IFACES | NTOPNG_IFACES)
+		local IFS=,
+		for el in $value; do
+			[[ -n "$el" ]] || continue
+			net_iface_exists "$el" || {
+				echo "$key=$value: there is no interface $el on this machine$(menu_iface_list)"
+				return 1
+			}
+		done
+		;;
+	esac
+	return 0
+}
+
+# menu_iface_list - " (there are: a, b)" from sysfs, so it works before iproute2.
+menu_iface_list() {
+	local dir name names=""
+	for dir in "$(path_sys_class_net)"/*; do
+		[[ -e "$dir" ]] || continue
+		name="${dir##*/}"
+		[[ "$name" == lo ]] && continue
+		names+="${names:+, }$name"
+	done
+	[[ -n "$names" ]] && echo " (there are: $names)"
+	return 0
+}
+
+# menu_ports_check [KEY] - a port that something already listens on is found
+# now, while the answers are given, and the next free one is offered at once;
+# the preflight stays the last check. Silent when nothing is busy.
+menu_ports_check() {
+	[[ "${DRY_RUN:-0}" == "1" ]] && return 0
+	command -v ss >/dev/null 2>&1 || return 0
+	preflight_resolve_ports_interactive "${1:-}" || true
 }
 
 menu_draft_save() {
@@ -302,7 +350,7 @@ menu_edit_key() {
 			;;
 		*)
 			local err
-			if err=$(schema_validate_one "$key" "$answer"); then
+			if err=$(menu_validate_entry "$key" "$answer"); then
 				config_set_kv "$key" "$answer"
 				menu_reconcile_conflicts
 				menu_draft_save
@@ -414,6 +462,10 @@ menu_section_screen() {
 			# 10#: "08" is eight, not a bad octal number, and "010" is ten.
 			if [[ "$choice" =~ ^[0-9]+$ ]] && ((10#$choice >= 1 && 10#$choice <= ${#keys[@]})); then
 				menu_edit_key "${keys[$((10#$choice - 1))]}"
+				case "${keys[$((10#$choice - 1))]}" in
+				NTOPNG_PORT | EVEBOX_PORT | PANEL_PORT | METRICS_BACKEND_PORT) menu_ports_check "${keys[$((10#$choice - 1))]}" ;;
+				ACCESS_MODE) menu_ports_check ;;
+				esac
 			else
 				menu_unclear "$choice"
 			fi
@@ -737,8 +789,9 @@ menu_key_skipped() {
 	local suri="${CONF[SURICATA_ENABLE]:-yes}"
 	case "$k" in
 	METRICS_TOKEN) return 0 ;;
+	EVE_MAX_SIZE_MB) [[ "${CONF[EVE_ROTATE]:-daily}" != "size" || "$suri" == "$n" ]] && return 0 ;;
 	SURICATA_RUNTIME | SURICATA_SOURCE | SURICATA_VERSION | SURICATA_MODE | IFACES | BPF_FILTER | HOME_NET | \
-		EVE_SYSLOG | EVE_REDIS | EVE_ROTATE | EVE_KEEP | EVE_MAX_SIZE_MB | STATS_INTERVAL_SEC | TEST_*)
+		EVE_SYSLOG | EVE_REDIS | EVE_ROTATE | EVE_KEEP | STATS_INTERVAL_SEC | TEST_*)
 		[[ "$suri" == "$n" ]] && return 0
 		;;
 	IPS_METHOD | IPS_NFQ_CHAINS)
@@ -788,6 +841,7 @@ menu_wizard_ask() {
 		schema_is_secret "$key" && shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
 		echo >&2
 		echo "$key (now: ${shown:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$shown" ]] && menu_say_empty "$key"
 		[[ -n "${SCHEMA_OPTIONS[$key]}" ]] && echo "  options: ${SCHEMA_OPTIONS[$key]}" >&2
 		if schema_is_secret "$key"; then
@@ -810,7 +864,7 @@ menu_wizard_ask() {
 			return 0
 			;;
 		*)
-			if err=$(schema_validate_one "$key" "$answer"); then
+			if err=$(menu_validate_entry "$key" "$answer"); then
 				config_set_kv "$key" "$answer"
 				menu_reconcile_conflicts
 				MENU_DIRTY=1
@@ -838,8 +892,14 @@ menu_wizard() {
 			[[ "${SCHEMA_GROUP[$key]}" == "$g" ]] || continue
 			menu_key_is_component "$key" && continue
 			menu_key_skipped "$key" && continue
+			# no output behind it yet: there is nothing to ask, a value is refused
+			[[ "$key" == "EVE_REDIS" ]] && continue
 			menu_wizard_ask "$key"
 			rc=$?
+			case "$key" in
+			NTOPNG_PORT | EVEBOX_PORT | PANEL_PORT | METRICS_BACKEND_PORT) menu_ports_check "$key" ;;
+			ACCESS_MODE) menu_ports_check ;;
+			esac
 			((rc == 10)) && break
 			# x: the answers so far are kept, so there is nothing to confirm
 			((rc == 11)) && return 0
@@ -1058,6 +1118,9 @@ menu_run_install() {
 		elif [[ "${DPISTACK_MENU_ASSUME_YES:-0}" != "1" ]] && menu_confirm "Run the guided setup first (asks every setting, you can leave at any time)?"; then
 			menu_wizard
 		fi
+		# A port that something listens on is found here, before the first
+		# screen, and not at the install: the next free one is offered at once.
+		menu_ports_check
 		menu_main_screen
 	fi
 

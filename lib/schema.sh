@@ -217,6 +217,7 @@ _schema_depend() {
 
 schema_depends_init() {
 	SCHEMA_DEPENDS=()
+	_schema_depend 'SURICATA_ENABLE=yes EVE_ROTATE=size' EVE_MAX_SIZE_MB
 	_schema_depend 'SURICATA_ENABLE=yes SURICATA_MODE=ips' 'IPS_METHOD' 'IPS_NFQ_CHAINS'
 	_schema_depend 'SURICATA_ENABLE=yes' NDPI_ENABLE RULES_ENABLE
 	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
@@ -362,6 +363,118 @@ schema_validate_one() {
 	*)
 		echo "$key: unknown schema type $type"
 		return 1
+		;;
+	esac
+	return 0
+}
+
+# --- what a person may type (18.55) ---
+# schema_validate_one is what a saved file must pass (lenient on purpose: a
+# file written by an older version must still load). The checks below are
+# stricter and run where a value is typed or set: the menu, --set and
+# `settings set`. They know what the value means, not only what it looks like.
+
+# eve-log outputs of Suricata 8 (the names the configuration takes).
+SCHEMA_EVE_TYPES=" alert anomaly arp dcerpc dhcp dns drop files flow frame ftp http http2 ike krb5 ldap metadata mqtt netflow nfs pgsql quic rdp rfb sip smb smtp snmp ssh stats tftp tls "
+# the alert channels that dpistack-watch knows.
+SCHEMA_ALERT_CHANNELS=" panel log tg mail "
+
+# schema_ipv4_ok <a.b.c.d> - four octets, each 0..255.
+schema_ipv4_ok() {
+	local ip="$1" o
+	[[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+	local IFS=.
+	for o in $ip; do
+		((10#$o <= 255)) || return 1
+	done
+}
+
+# schema_cidr_ok <address[/prefix]> - IPv4 (octets 0..255, prefix 0..32) or
+# IPv6 (hex groups, at most one "::", prefix 0..128).
+schema_cidr_ok() {
+	local a="$1" addr pfx="" colons dc
+	addr="${a%%/*}"
+	[[ "$a" == */* ]] && pfx="${a#*/}"
+	if [[ "$addr" == *:* ]]; then
+		[[ "$addr" =~ ^[0-9A-Fa-f:]+$ && "$addr" != *:::* ]] || return 1
+		colons="${addr//[^:]/}"
+		((${#colons} <= 7)) || return 1
+		dc="${addr//::/@}"
+		[[ "$dc" != *@*@* ]] || return 1
+		[[ -z "$pfx" ]] || { [[ "$pfx" =~ ^[0-9]{1,3}$ ]] && ((10#$pfx <= 128)); }
+	else
+		schema_ipv4_ok "$addr" || return 1
+		[[ -z "$pfx" ]] || { [[ "$pfx" =~ ^[0-9]{1,2}$ ]] && ((10#$pfx <= 32)); }
+	fi
+}
+
+# schema_address_problem <key> <value> - prints the problem of an address or
+# network key and returns 1; silent 0 when the value is fine or not one of them.
+schema_address_problem() {
+	local key="$1" value="$2" el
+	[[ -n "$value" ]] || return 0
+	case "$key" in
+	HOME_NET | LAN_CIDR)
+		local IFS=,
+		for el in $value; do
+			[[ "$el" == auto ]] && continue
+			schema_cidr_ok "$el" || {
+				echo "$key=$value: $el is not an address or a network (octets 0..255, prefix up to 32, IPv6 up to 128)"
+				return 1
+			}
+		done
+		;;
+	BIND_ADDR)
+		[[ "$value" == auto ]] || schema_ipv4_ok "$value" || {
+			echo "$key=$value: not an IPv4 address (octets 0..255)"
+			return 1
+		}
+		;;
+	esac
+	return 0
+}
+
+# schema_validate_entry <key> <value> - schema_validate_one plus the meaning
+# of the value. Prints the reason and returns 1 when a person must not be
+# allowed to set it.
+schema_validate_entry() {
+	local key="$1" value="$2" msg el
+	if ! msg=$(schema_validate_one "$key" "$value"); then
+		echo "$msg"
+		return 1
+	fi
+	[[ -n "$value" ]] || return 0
+	msg=$(schema_address_problem "$key" "$value") || {
+		echo "$msg"
+		return 1
+	}
+	local IFS=,
+	case "$key" in
+	EVE_REDIS)
+		echo "$key: this output is not supported yet, leave it empty"
+		return 1
+		;;
+	EVE_TYPES)
+		for el in $value; do
+			[[ "$SCHEMA_EVE_TYPES" == *" $el "* ]] || {
+				echo "$key=$value: $el is not a Suricata eve output, allowed:${SCHEMA_EVE_TYPES% }"
+				return 1
+			}
+		done
+		;;
+	ALERT_CHANNELS)
+		for el in $value; do
+			[[ "$SCHEMA_ALERT_CHANNELS" == *" $el "* ]] || {
+				echo "$key=$value: $el is not an alert channel, allowed:${SCHEMA_ALERT_CHANNELS% }"
+				return 1
+			}
+		done
+		;;
+	RULES_UPDATE_CALENDAR)
+		if command -v systemd-analyze >/dev/null 2>&1 && ! systemd-analyze calendar "$value" >/dev/null 2>&1; then
+			echo "$key=$value: systemd does not accept this as a time (try: daily, weekly, Mon *-*-* 03:00)"
+			return 1
+		fi
 		;;
 	esac
 	return 0

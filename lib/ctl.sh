@@ -878,6 +878,19 @@ settings_port_warnings() {
 	done < <(preflight_port_conflicts)
 }
 
+# settings_entry_problems <KEY=VALUE>... - the meaning checks of a value that
+# a person sets (18.55), one line per problem. The saved file is not held to
+# them (R210), only the keys of this change.
+settings_entry_problems() {
+	local pair key value
+	for pair in "$@"; do
+		key="${pair%%=*}"
+		value="${pair#*=}"
+		schema_known "$key" || continue
+		schema_validate_entry "$key" "$value" || true
+	done | grep . || true
+}
+
 settings_check() {
 	local staged out rc changed weight errors warnings first=1 key port who suggestion kind
 	settings_collect_pairs "$@"
@@ -888,6 +901,10 @@ settings_check() {
 	weight=$(settings_weight $changed)
 	out=$(config_validate_staged dpistack.conf "$staged")
 	rc=$?
+	if ((rc == 0)); then
+		out=$(settings_entry_problems "${SETTINGS_PAIRS[@]}")
+		[[ -n "$out" ]] && rc=3
+	fi
 	errors="[]"
 	if ((rc == 0)); then
 		# The one conflict of two keys that the preflight would stop on only
@@ -947,6 +964,10 @@ settings_set() {
 	weight=$(settings_weight $changed)
 	out=$(config_validate_staged dpistack.conf "$staged")
 	rc=$?
+	if ((rc == 0)); then
+		out=$(settings_entry_problems "${pairs[@]}")
+		[[ -n "$out" ]] && rc=3
+	fi
 	if ((rc != 0)); then
 		rm -f "$staged"
 		[[ -n "$out" ]] && echo "$out"
