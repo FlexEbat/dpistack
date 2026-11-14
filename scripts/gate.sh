@@ -49,6 +49,11 @@ if ! bash scripts/gen-config-doc.sh --check; then
 	fail "config reference"
 fi
 
+echo "== key hints =="
+if ! bash scripts/gen-key-hints.sh --check; then
+	fail "key hints"
+fi
+
 echo "== bats =="
 if ! bats tests; then
 	fail bats

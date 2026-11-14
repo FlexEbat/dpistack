@@ -19,6 +19,7 @@ dpistack: an installer and a panel for the nDPI, Suricata, EveBox and ntopng sta
 | `tests/` | bats tests, stubs of external commands in `tests/mocks/`, helpers in `tests/helpers/` |
 | `scripts/` | the gate, the single-file build, the security checks, the reference generator |
 | `dpistack-install.sh` | the single-file installer; **generated** by `scripts/bundle.sh`, never edited by hand |
+| `lib/key_hints.sh` | **generated** by `scripts/gen-key-hints.sh` from the hints of the Settings screen |
 | `docs/` | guides; `docs/configuration.md` and `docs/configuration.ru.md` are **generated** by `scripts/gen-config-doc.sh` |
 | `tech.md` | the specification, contracts and decisions |
 
@@ -27,7 +28,7 @@ dpistack: an installer and a panel for the nDPI, Suricata, EveBox and ntopng sta
 1. Work on the `dev` branch. Changes reach `main` only as a pull request after a green gate; there are no direct commits to `main`.
 2. Before a commit run `bash scripts/gate.sh`. It runs `shfmt`, `shellcheck`, the security checks, the checks of the single file, the config example and the reference, `bats`, and, if Go is there, `gofmt`, `go vet`, `go test` and the interface tests on node. A green gate is required.
 3. If you changed any file of `install.sh`, `lib/`, `templates/`, `bin/`, run `bash scripts/bundle.sh`, otherwise the single-file check fails.
-4. If you changed the key schema, update `lib/schema.sh`, `dpistack.conf.example`, the table in tech.md, the hint in `panel/web/modules/settings-model.js` (a test compares it with the schema) and run `bash scripts/gen-config-doc.sh`.
+4. If you changed the key schema, update `lib/schema.sh`, `dpistack.conf.example`, the table in tech.md, the hint in `panel/web/modules/settings-model.js` (a test compares it with the schema) and run `bash scripts/gen-config-doc.sh` and `bash scripts/gen-key-hints.sh` (the menu hints in `lib/key_hints.sh` are generated from the same hint).
 5. Every decision and contract is recorded in tech.md. The program version in `lib/common.sh` and in tech.md changes together, and every merge into `main` is a new version followed by a tag and a release (tech.md 12.3).
 6. New behavior comes with a test: bats for the shell, `go test` for the panel, `node --test` for the pure logic of the interface.
 7. Prefer ready-made solutions (packages, images, tools) to writing your own code when they exist.

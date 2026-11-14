@@ -2,7 +2,15 @@
 
 English | [Русский](operations.ru.md)
 
-All commands run as root (`sudo dpistack ...`). `dpistack` without arguments opens the control menu; `dpistack help` prints the full list of commands.
+All commands run as root (`sudo dpistack ...`). `dpistack` without arguments opens the control menu; `dpistack help` prints the commands grouped by task.
+
+## Getting help
+
+- `dpistack help` the commands grouped by task, with the exit codes; `dpistack help --all` the flat reference with every option; `dpistack help settings` which of `settings set`, `reconfigure` and `config write` to use; `dpistack help ids` the component and config names.
+- `dpistack <command> --help` the lines of one command, for example `dpistack rules-find --help`. Nothing runs.
+- The two-word spelling works for the commands that have a hyphen: `rules update` is `rules-update`, `config read` is `config-read`, `mode confirm` is `mode-confirm`. The hyphenated names stay.
+- Tab completes commands, components and config names once the shell has bash completion (the installer puts the file in `/etc/bash_completion.d/dpistack`; a new shell picks it up).
+- A mistyped command prints a "did you mean" line before the usage.
 
 ## State and control
 

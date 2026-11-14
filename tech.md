@@ -1,27 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v75** (2026-11-12)
-**Program version: v0.47.1** (slices 0-45 and the redesign 18.53 are done; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v78** (2026-11-14)
+**Program version: v0.48.0** (slices 0-45, the redesign 18.53 and the menu and help review 18.54 are done; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.48.0: the menu and help review (18.54): the install screen counts the missing panel password as a problem and says the next step, prints the "under development" note once, explains the markers, has a help and the list of all problems (`e`); every key of a section has a one-line hint (generated into `lib/key_hints.sh` from the hints of the Settings screen) and the count of the advanced keys; the control menu got submenus for services, mode and interfaces, rules and alerts, backup, users and tokens, checks; new commands `dpistack help [--all|settings|ids]`, `<command> --help`, `info [--json]`, the two-word spelling (`rules update`, `config read`, `mode confirm`), a "did you mean" line and bash completion.
 - v0.47.1: a fix of the layout of the panel (18.53): the row under the top bar no longer stretches to the height of the sidebar, which left a blank band above every screen; the phone header leaves room for the floating bar; tables sit on cards; the time labels of the charts no longer overlap.
 - v0.47.0: the complete redesign of the panel (18.53, "Aurora NOC"): a new look from three references, a chart kit on inline SVG (area charts with hover and zoom, rings, donut, radar), a new Overview and shell; the lite edition is removed (`PANEL_EDITION`, `-lite`, `lite.css`, `nofx.js`, the theme switch); `full.css` is now `app.css`.
 - v0.46.0: slice 45, the security of the panel (18.45): a Security screen with the security check (access mode, TLS, default ports, accounts that do not sign in, rule file permissions, files with secrets), your sessions (where from, end one, end all the others), API tokens (a script signs in with `Authorization: Bearer`; read only or by role, never more than its owner, 1 to 365 days, shown once, only a hash kept) and the history of sign ins; an administrator can sign everyone out. New verbs `tokens create|list|revoke` and `security check`, file `api-tokens.json`, routes `/api/security/...`. The gate of the CI runs on Ubuntu 24.04 (D110).
 - v0.45.0: slice 44, Settings v2 (18.44): the Settings screen in three columns (categories with a search, the keys, and the details of the key in focus with the staged change and the profiles); a key that does not apply with the values as they are is dimmed with the reason (the rules of the guided setup, now data in the schema); for every key the default, the allowed values, what it depends on and what a change touches; a diff of the staged change, and Apply opens only after a check of exactly those values has passed; profiles, named sets of keys saved and loaded into the staged change. `settings list --json` has `steps`, `touches` and `depends` per key; new verb `settings profile list|show|save|delete|apply`, file `profiles.json`, routes `GET /api/settings/profiles[/{name}]`, `PUT` and `DELETE /api/settings/profiles/{name}`. The gate of the CI may now run 45 minutes, not 30, and it runs on Ubuntu 22.04 only.
-- v0.44.0: slice 43, the Alert Center (18.43): the alerts of the watchdog (a check that is warn or crit) and of Suricata (one per rule, from the tail of `eve.json`) with a state a person sets (new, acknowledged, snoozed for 1 h, 4 h, 24 h or 7 d, resolved), a list of decisions and filters, on the Alerts screen above the feed of status changes; the bell of the top bar (the count of new alerts, the piece of slice 37 that waited). New verb `alerts list|history|ack|snooze|resolve|reopen`, the state in `alerts-state.json`, routes `GET /api/alert-center`, `GET /api/alert-center/history`, `POST /api/alert-center`; `GET /api/alerts` is unchanged. `ips status` no longer loses its counters when the log tail cuts a line.
-- v0.43.0: slice 42, the IPS page (18.42): a new IPS screen with the readiness of IPS (mode, Suricata, the queue rules, whether a process listens on the queue, the confirmation timer), the packet counters of the newest stats event, the number of drop rules and the latest blocked events, and a rule test that replays a shipped pcap through Suricata offline in simulated IPS mode and says which rules would drop. New verb `ips status|test` (read only, the screen shows its JSON), routes `GET /api/ips` and `POST /api/ips/test`; no new config key, no change to the Suricata config or the firewall rules.
-- v0.42.0: slice 41, Rules v2 (18.41): the counts per rule source, the history of updates, a rule search by category, source, state and text (disabled rules included), a check of `local.rules` (not a rule, no sid, a sid used twice or by the rule set, `suricata -T`) and the history of changes of a config file with a comparison. New verbs `rules-stats`, `rules-history`, `rules-describe`, `rules-find`, `rules-facets`, `rules-local check`, `config-history`; `rules-update` records each update. Findings R218 and R219.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v78: v0.48.0. 18.54 written; 4.5 the verbs `help` and `info`, `--help` and the two-word spelling; 5.0 and 5.2 the menu changes; the file lists (`lib/key_hints.sh`, `scripts/gen-key-hints.sh`, the completion template); the gate stage `key hints`; the slice row 47 of 18.0; decisions D125 to D134.
 - v77: v0.47.1. A note on the layout fix in 18.53.
 - v76: v0.47.0. 18.53 written; 9 (one panel) and 9.1 (the new design rules) rewritten; the slice row 46 of 18.0; `PANEL_EDITION` removed from 4.3 and the lists of keys; decisions D119 to D124.
 - v75: v0.46.0. 18.45 (slice 45) written; the slice 45 row of 18.0; 4.4 `api-tokens.json`; 4.5 the verbs `tokens` and `security`; 4.8 the Bearer way in and the routes of the Security screen; the screens text; the test list; D110 (the gate on 24.04) already in 12; decisions D111 to D118.
 - v74: v0.45.0. 18.44 (slice 44) written; the slice 44 row of 18.0; 4.5 `settings list` keys and the `settings profile` verb; 4.8 the routes of the profiles; `profiles.json` in the list of 4.4; the description of the Settings screen (v0.45.0); the test list; the limit and the system of the gate in 12; decisions D103 to D109.
-- v73: v0.44.0. 18.43 (slice 43) written; the slices 37 and 43 rows of 18.0; 4.5 the `alerts` verb; 4.8 the routes of the Alert Center; the state file in the list of 4.4; the test list; decisions D96 to D102; 18.42 corrected (R223: its audit test looked at the wrong file).
-- v72: v0.43.0. 18.42 (slice 42) written; the slice 42 row of 18.0; 4.5 the `ips` verb; 4.8 the routes of the IPS page; the screens list; the test list; decisions D90 to D95.
-- v71: v0.42.0. 18.41 (slice 41) written; the slice 41 row of 18.0; 4.5 the verbs of Rules v2; 4.8 the routes of Rules v2; decisions D84 to D89.
 
 ---
 
@@ -120,6 +116,7 @@ lib/
   state.sh                    the state of the steps and the hashes of rendered files
   render.sh                   substitution of @@KEY@@ and blocks in templates/
   ctl.sh                      the control verbs of dpistack (section 4.5)
+  key_hints.sh                GENERATED one-line hint of every key for the menu (scripts/gen-key-hints.sh)
   step_preflight.sh
   step_selfinstall.sh         a copy of install.sh, lib/, templates/ into the system and the binary /usr/local/sbin/dpistack
   step_ndpi.sh
@@ -166,6 +163,7 @@ scripts/
   security.sh
   bundle.sh                   gluing into the single file dpistack-install.sh
   gen-config-doc.sh           the settings reference (English and Russian) from the schema
+  gen-key-hints.sh            lib/key_hints.sh from the hints of the Settings screen (--check is a gate stage)
   config-hints.ru             the Russian hints for that reference
 ```
 
@@ -434,6 +432,8 @@ The allowed `<name>` for configs: `suricata.yaml`, `evebox.yaml`, `ntopng.conf`,
 
 Checks at `config-write`: `suricata.yaml`, `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf`, `threshold.config` pass `suricata -T` on a temporary copy of the set; `dpistack.conf` passes the schema check of 4.3; `evebox.yaml` and `ntopng.conf` are checked for non-emptiness only: EveBox and ntopng have no config check mode (assumption A8 closed). For `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf` `suricata -T` checks that the set stays workable, but these files themselves are read only by `suricata-update`. A failed check: nothing changes, code `3`, the output of the check goes to stdout.
 
+**Help and spelling (v0.48.0, 18.54).** `dpistack help` prints the commands grouped by task with the exit codes; `help --all` is the flat reference (the same text a command that does not exist prints, with a "did you mean" line before it); `help settings` says which of `settings set`, `reconfigure` and `config-write` to use; `help ids` lists the component and config names. `<command> --help` or `-h` prints the lines of that command and runs nothing. The commands with a hyphen also take two words: `rules update|sources|group|sid|search|stats|history|describe|find|facets|local` is `rules-<word>`, `config read|write|revert|history` is `config-<word>`, `mode confirm` is `mode-confirm`; the hyphenated names stay and are what the panel, the sudoers file and the audit log use (the audit line names the one-word verb). `info [--json]` prints the address of every switched-on web screen for the current `ACCESS_MODE` (`127.0.0.1` in localhost mode with the SSH tunnel hint, `BIND_ADDR` or the first address of the machine otherwise, `https` when `NGINX_TLS` is not `none`). Both are reads and are not audited.
+
 Exit codes: `0` success, `1` error, `2` misuse, `3` the check failed or the action is unavailable in this mode, `4` the component is missing, `5` a name outside the list.
 
 ### 4.6 `health.json` and events
@@ -606,6 +606,8 @@ The `selfinstall` step copies `install.sh`, `lib/*.sh` and `templates/*` into `/
 
 ### 5.0 The installer menu: general rules
 
+**Review of v0.48.0 (18.54).** The install screen counts the missing panel password as a problem (`Problems (1): the panel password is not set (item 10)`), says the next step in one line, lists all problems with `e`, has a help of its own (`?`) and prints the "under development" note once per run instead of on every redraw. A section prints one hint under each key (the English text of the Settings screen, kept in `lib/key_hints.sh`), marks a key the other settings switch off with "(not used with the current settings)" (the same table the guided setup uses), says `show advanced (N more)`, and explains only the markers that are on the screen. A wrong answer says what to type (`unclear choice: X (type a number or a letter from the list, ? for help)`; the first words stay, tests match them). On the reconfigure screen `0` is Back when it has a Back, as in the sections.
+
 - The menu is opened by the commands `install` and `reconfigure`, and by the binary `dpistack` with no arguments, when there is a terminal and `-y` is not given. The implementation is pure Bash in `lib/menu.sh`: no `dialog`, `whiptail`, ncurses and no cursor sequences. The screen is printed anew after every action, so the menu works over SSH and `tmux` and stays in the history of the terminal.
 - Input is read from stdin, and from `/dev/tty` when run through `curl | bash`. The variable `DPISTACK_INPUT=<file>` replaces the source (this is how the tests work). No terminal, no `DPISTACK_INPUT` and no `-y`: code 2 and a hint about `-y`.
 - Colors are on only on a terminal and without `NO_COLOR` and `--no-color`.
@@ -699,6 +701,8 @@ The items:
 The panel password: in the menu it is typed by hand and without it "Install" is unavailable. With `-y` it is taken from `DPISTACK_PANEL_PASSWORD`, and if the variable is absent a random one (24 characters) is generated and printed once in the report of a real install (with `--dry-run` it is neither generated nor printed). It is stored in plain form nowhere. It is changed by the control menu item "Panel password" (5.2) or by the command `ctl panel-passwd`.
 
 ### 5.2 The persistent command `dpistack` and the control menu
+
+**Submenus of the control menu (v0.48.0, 18.54).** The numbers 1 to 7 are unchanged; letters open submenus that call the same verbs a person would type: `s` start, stop, restart and reload (components with their state; a stop and a restart ask first), `r` rules and alerts (update, statistics, history, search, one rule on or off by sid, alerts, exceptions), `m` mode and interfaces (IDS or IPS with the confirm step: after `mode ips --confirm-timeout 120` the menu asks to type `yes` and then runs `mode-confirm`, so a lost connection means no confirmation and the switch rolls back by itself; add or remove an interface), `k` backup (create, list, check; a restore shows the dry run first), `u` users and tokens (passwords are read without echo twice and go on stdin, never in the arguments), `c` checks and addresses (`info`, `health`, `diagnose`, `security check`, `diag`). The header also shows the mode. The submenus have no rule of their own: every refusal comes from the verb.
 
 After the install the system has an executable `/usr/local/sbin/dpistack` (the `selfinstall` step): the same code as `install.sh`, copied together with `lib/` and `templates/` into `/usr/local/lib/dpistack/installer/`, so the command works without the original clone or archive. `dpistack` is meant for a direct run by the administrator as root; the panel and the watchdog call the same program through `sudo -n` and may use only the narrow list of verbs of 4.5.
 
@@ -1025,6 +1029,7 @@ scripts/security.sh
 scripts/bundle.sh --check        (the single file matches the sources)
 scripts/check-conf-example.sh    (keys and defaults of dpistack.conf.example against 4.3 and lib/schema.sh)
 scripts/gen-config-doc.sh --check  (docs/configuration.md and docs/configuration.ru.md match the schema)
+scripts/gen-key-hints.sh --check   (lib/key_hints.sh matches the hints of the Settings screen and every key has one)
 bats tests
 # when panel/ is there:
 gofmt -l panel        (empty output)
@@ -1255,6 +1260,7 @@ One row per slice. **Done** means the Definition of Done of section 14 was met; 
 | 44 | Settings v2 | **done.** Three columns, search, the standard and advanced levels, dimming of the keys that do not apply, details for every key, the staged change with a diff and a gated Apply, profiles; `settings profile`, `profiles.json` | v0.45.0 | 18.44 |
 | 45 | security of the panel | **done.** The Security screen: the security check, your sessions (end one, end the others, sign everyone out), API tokens (read only or by role, expiring, shown once), the history of sign ins; `dpistack tokens` and `security check`, `api-tokens.json` | v0.46.0 | 18.45 |
 | 46 | redesign of the panel | **done.** A new look ("Aurora NOC") for every screen, the chart kit, the new Overview, the shell; the lite edition removed | v0.47.0 | 18.53 |
+| 47 | menu and help review | **done.** The install screen says what is wrong and what to do next; every key of a section has a hint; the control menu has submenus for what was command line only; `help`, `<command> --help`, `info`, the two-word spelling, "did you mean" and bash completion | v0.48.0 | 18.54 |
 
 **Rules for the slices not yet done.** Decided on the request of 2026-10-31 (`todo.md`), "choose yourself". General rules for all of them: (1) Nothing is shown that the program cannot really do: the IPS page does not say "dry run" unless a drop is really tested (slice 42 calls what it does a "rule test"). (2) Every change of the system goes through a verb of section 4.5; the panel never writes outside `/var/lib/dpistack`. (3) Every action that changes something is written to the audit log (slice 35) with the user, the time, the address and the result. (4) The permission of the user is checked in the panel for every route (slice 34), the verbs trust the panel. (5) There are no resource budgets for the panel. (6) New screens follow the design of 9.1 and work in both themes.
 
@@ -2278,3 +2284,31 @@ Decisions ("choose yourself"):
 | D124 | **The markup contract was kept.** Element ids and class names that the scripts and tests use stay; the redesign is the stylesheet, the shell, the Overview and the chart kit, not a rewrite of every screen |
 
 **v0.47.1:** every screen was then captured in a headless browser against a mock of the API; that found a blank band above each screen (the grid row of the top bar stretched to the height of the sidebar; now `grid-template-rows: auto 1fr`), which is fixed. Open: the screens were checked with a mock, so a pass on a real host with real data is still wanted; the Network screen could use the radar or ring components; the mobile menu was written but not looked at in a browser; the Go tests could not be run where this was written (no Go toolchain), so the gate in CI is the first run.
+
+### 18.54 The review of the menus and the help (v0.48.0)
+
+**Status:** done. The owner asked for a review of the install menu and the whole command line menu, with ideas to make them clearer and easier to use without cutting any function, and then said to go ahead. Four steps, each with tests; the numbers and letters of the existing menu items did not change.
+
+1. **The install screen.** The missing panel password is a counted problem with the next step named; `e` lists all problems; `?` has a help; the note "under development" is printed once; item 1 is aligned; the markers are explained; a wrong answer says what to type.
+2. **The sections.** One hint line under every key, a count of the advanced keys, "not used with the current settings" for a key that another setting switches off. The hints are not a second text: `scripts/gen-key-hints.sh` copies them from `panel/web/modules/settings-model.js` into `lib/key_hints.sh` (the installed `dpistack` has no `panel/`), and `--check` is a gate stage that also fails when a key has no hint.
+3. **The command line.** `help`, `help --all`, `help settings`, `help ids`, `<command> --help`, the two-word spelling, "did you mean", `info`, the right command name in `--help`, and bash completion (`templates/dpistack.completion.bash`, placed in `/etc/bash_completion.d/dpistack` by the `selfinstall` step and removed by uninstall).
+4. **The control menu.** The submenus of 5.2 and the mode in the header.
+
+Decisions ("choose yourself"):
+
+| id | decision |
+| --- | --- |
+| D125 | **Old strings stay as prefixes.** `Quick install`, `Guided setup`, `unclear choice: X` and the numbering are matched by tests and by habit; new words are added after them, not instead of them |
+| D126 | **The hints are generated, not copied by hand.** One source (the Settings screen) feeds the panel, the reference and the menu; a hand copy would drift |
+| D127 | **Keys that do not apply are marked, not hidden.** Hiding them would shift the numbers that a person types and that the tests send, and would make a key hard to find; the marker says why it is idle |
+| D128 | **The "Components and sources" section keeps its keys.** `m` is the shortcut for the same switches; the section says so in a tip instead of dropping keys, because the guided setup and the tests reach every key through it |
+| D129 | **Letters for the new control menu entries.** The numbers 1 to 7 are used by tests and by people; letters keep both, and `q` stays the way out |
+| D130 | **No pause after status, tests and logs.** A "press Enter" after items 2 to 4 would take the next line of a scripted session; the new submenus redraw only their own short list, so the output stays on screen |
+| D131 | **Hyphenated commands stay, two words are added.** The panel, the sudoers file, the audit log and the scripts of users use the hyphenated names; a rewrite of the verbs would break them, so the new spelling is normalised to the old one before the audit and the dispatch |
+| D132 | **`help` is grouped, `help --all` stays flat.** The flat text is what tests and people grep; the grouped text is what a person reads first |
+| D133 | **Completion is a static file.** Tab never runs `dpistack`, so it is instant and works for a user who may not run it; a test keeps its word list equal to the verbs of `ctl.sh` plus the installer commands |
+| D134 | **`mode ips` from the menu asks for `yes` in the same session.** The rollback timer is the safety net; asking in the terminal that the switch may have cut is the check the timer exists for |
+
+**Not done, on purpose:** a table with colours for `status` and the tests, a state next to each component in the logs list, and the list of packages before an upgrade. They change output that scripts read, or need a new verb, and are left for a later slice.
+
+Tests: `tests/menu.bats` (14 new), `tests/cli_help.bats` (15), `tests/menu_manage.bats` (13). The gate has the new stage `key hints`.
