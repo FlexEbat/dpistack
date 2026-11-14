@@ -93,6 +93,14 @@ config_validate() {
 		fi
 	done
 
+	# An address that cannot exist breaks Suricata or the firewall rule at run time.
+	for key in HOME_NET LAN_CIDR BIND_ADDR; do
+		if ! msg=$(schema_address_problem "$key" "${CONF[$key]:-}"); then
+			echo "$msg"
+			errors=$((errors + 1))
+		fi
+	done
+
 	# nginx takes the public port, the service moves to <public>+10000.
 	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
 		local port_key

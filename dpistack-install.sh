@@ -307,6 +307,9 @@ maybe_run_install_menu() {
 	if ! have_input_source; then
 		die 2 "no terminal for the menu, use -y or DPISTACK_INPUT"
 	fi
+	# The menu already looks at busy ports and reads interfaces: the tools it
+	# and the later steps call (ss, curl, jq) are there before the first question.
+	ensure_preflight_tools
 	MENU_SHOW_ADVANCED=$([[ "$ADVANCED" == "1" ]] && echo 1 || echo 0)
 	MENU_FAST="$FAST"
 	menu_run_install
@@ -372,10 +375,11 @@ autodetect_iface() {
 # and only for a real run.
 ensure_preflight_tools() {
 	[[ "$DRY_RUN" == "1" || "${EUID:-$(id -u)}" -ne 0 ]] && return 0
-	command -v ss >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && return 0
+	command -v ss >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && return 0
 	pkg_update_once || die 1 "updating the package index failed"
 	case "$OS_FAMILY" in
-	apt) pkg_install iproute2 curl ca-certificates || die 1 "could not install iproute2 and curl" ;;
+	apt) pkg_install iproute2 curl ca-certificates jq || die 1 "could not install iproute2, curl and jq" ;;
+	*) pkg_install_base || die 1 "could not install the base packages" ;;
 	esac
 }
 
@@ -1820,7 +1824,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.48.0"
+DPISTACK_VERSION="0.49.0"
 
 : "${DRY_RUN:=0}"
 
@@ -2205,6 +2209,14 @@ config_validate() {
 
 	for key in "${!CONF[@]}"; do
 		if ! msg=$(schema_validate_one "$key" "${CONF[$key]}"); then
+			echo "$msg"
+			errors=$((errors + 1))
+		fi
+	done
+
+	# An address that cannot exist breaks Suricata or the firewall rule at run time.
+	for key in HOME_NET LAN_CIDR BIND_ADDR; do
+		if ! msg=$(schema_address_problem "$key" "${CONF[$key]:-}"); then
 			echo "$msg"
 			errors=$((errors + 1))
 		fi
@@ -3390,6 +3402,19 @@ settings_port_warnings() {
 	done < <(preflight_port_conflicts)
 }
 
+# settings_entry_problems <KEY=VALUE>... - the meaning checks of a value that
+# a person sets (18.55), one line per problem. The saved file is not held to
+# them (R210), only the keys of this change.
+settings_entry_problems() {
+	local pair key value
+	for pair in "$@"; do
+		key="${pair%%=*}"
+		value="${pair#*=}"
+		schema_known "$key" || continue
+		schema_validate_entry "$key" "$value" || true
+	done | grep . || true
+}
+
 settings_check() {
 	local staged out rc changed weight errors warnings first=1 key port who suggestion kind
 	settings_collect_pairs "$@"
@@ -3400,6 +3425,10 @@ settings_check() {
 	weight=$(settings_weight $changed)
 	out=$(config_validate_staged dpistack.conf "$staged")
 	rc=$?
+	if ((rc == 0)); then
+		out=$(settings_entry_problems "${SETTINGS_PAIRS[@]}")
+		[[ -n "$out" ]] && rc=3
+	fi
 	errors="[]"
 	if ((rc == 0)); then
 		# The one conflict of two keys that the preflight would stop on only
@@ -3459,6 +3488,10 @@ settings_set() {
 	weight=$(settings_weight $changed)
 	out=$(config_validate_staged dpistack.conf "$staged")
 	rc=$?
+	if ((rc == 0)); then
+		out=$(settings_entry_problems "${pairs[@]}")
+		[[ -n "$out" ]] && rc=3
+	fi
 	if ((rc != 0)); then
 		rm -f "$staged"
 		[[ -n "$out" ]] && echo "$out"
@@ -6233,7 +6266,7 @@ declare -gA KEY_HINT=(
 	[EVE_FILE]='Write events to eve.json (needed by the panel and the watchdog).'
 	[EVE_TYPES]='Which event types to write to eve.json.'
 	[EVE_SYSLOG]='Duplicate events to syslog (facility local5).'
-	[EVE_REDIS]='Redis output. Not supported yet: leave it empty, a value is ignored with a warning.'
+	[EVE_REDIS]='Redis output. Not supported yet: leave it empty (a value saved by an older version is ignored with a warning).'
 	[EVE_ROTATE]='How to rotate eve.json: daily, weekly or by size.'
 	[EVE_KEEP]='How many rotated files to keep.'
 	[EVE_MAX_SIZE_MB]='File size in MB that triggers rotation (the size mode).'
@@ -6459,9 +6492,57 @@ panel_password_apply() {
 		return 0
 	fi
 
-	command -v argon2 >/dev/null 2>&1 || pkg_install argon2
+	# jq writes the user file and argon2 makes the hash: both come first.
+	command -v jq >/dev/null 2>&1 || pkg_install jq || die 1 "could not install jq"
+	command -v argon2 >/dev/null 2>&1 || pkg_install argon2 || die 1 "could not install argon2"
 	panel_auth_write "$plaintext" || die 1 "could not write the panel password hash (argon2)"
 	MENU_PANEL_PASSWORD=""
+}
+
+# menu_validate_entry <key> <value> - what the menu lets a person type: the
+# schema entry check, and for an interface key the interface must exist on
+# this machine (the preflight would stop on it much later).
+menu_validate_entry() {
+	local key="$1" value="$2" msg el
+	if ! msg=$(schema_validate_entry "$key" "$value"); then
+		echo "$msg"
+		return 1
+	fi
+	case "$key" in
+	IFACES | NTOPNG_IFACES)
+		local IFS=,
+		for el in $value; do
+			[[ -n "$el" ]] || continue
+			net_iface_exists "$el" || {
+				echo "$key=$value: there is no interface $el on this machine$(menu_iface_list)"
+				return 1
+			}
+		done
+		;;
+	esac
+	return 0
+}
+
+# menu_iface_list - " (there are: a, b)" from sysfs, so it works before iproute2.
+menu_iface_list() {
+	local dir name names=""
+	for dir in "$(path_sys_class_net)"/*; do
+		[[ -e "$dir" ]] || continue
+		name="${dir##*/}"
+		[[ "$name" == lo ]] && continue
+		names+="${names:+, }$name"
+	done
+	[[ -n "$names" ]] && echo " (there are: $names)"
+	return 0
+}
+
+# menu_ports_check [KEY] - a port that something already listens on is found
+# now, while the answers are given, and the next free one is offered at once;
+# the preflight stays the last check. Silent when nothing is busy.
+menu_ports_check() {
+	[[ "${DRY_RUN:-0}" == "1" ]] && return 0
+	command -v ss >/dev/null 2>&1 || return 0
+	preflight_resolve_ports_interactive "${1:-}" || true
 }
 
 menu_draft_save() {
@@ -6599,7 +6680,7 @@ menu_edit_key() {
 			;;
 		*)
 			local err
-			if err=$(schema_validate_one "$key" "$answer"); then
+			if err=$(menu_validate_entry "$key" "$answer"); then
 				config_set_kv "$key" "$answer"
 				menu_reconcile_conflicts
 				menu_draft_save
@@ -6711,6 +6792,10 @@ menu_section_screen() {
 			# 10#: "08" is eight, not a bad octal number, and "010" is ten.
 			if [[ "$choice" =~ ^[0-9]+$ ]] && ((10#$choice >= 1 && 10#$choice <= ${#keys[@]})); then
 				menu_edit_key "${keys[$((10#$choice - 1))]}"
+				case "${keys[$((10#$choice - 1))]}" in
+				NTOPNG_PORT | EVEBOX_PORT | PANEL_PORT | METRICS_BACKEND_PORT) menu_ports_check "${keys[$((10#$choice - 1))]}" ;;
+				ACCESS_MODE) menu_ports_check ;;
+				esac
 			else
 				menu_unclear "$choice"
 			fi
@@ -7034,8 +7119,9 @@ menu_key_skipped() {
 	local suri="${CONF[SURICATA_ENABLE]:-yes}"
 	case "$k" in
 	METRICS_TOKEN) return 0 ;;
+	EVE_MAX_SIZE_MB) [[ "${CONF[EVE_ROTATE]:-daily}" != "size" || "$suri" == "$n" ]] && return 0 ;;
 	SURICATA_RUNTIME | SURICATA_SOURCE | SURICATA_VERSION | SURICATA_MODE | IFACES | BPF_FILTER | HOME_NET | \
-		EVE_SYSLOG | EVE_REDIS | EVE_ROTATE | EVE_KEEP | EVE_MAX_SIZE_MB | STATS_INTERVAL_SEC | TEST_*)
+		EVE_SYSLOG | EVE_REDIS | EVE_ROTATE | EVE_KEEP | STATS_INTERVAL_SEC | TEST_*)
 		[[ "$suri" == "$n" ]] && return 0
 		;;
 	IPS_METHOD | IPS_NFQ_CHAINS)
@@ -7085,6 +7171,7 @@ menu_wizard_ask() {
 		schema_is_secret "$key" && shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
 		echo >&2
 		echo "$key (now: ${shown:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$shown" ]] && menu_say_empty "$key"
 		[[ -n "${SCHEMA_OPTIONS[$key]}" ]] && echo "  options: ${SCHEMA_OPTIONS[$key]}" >&2
 		if schema_is_secret "$key"; then
@@ -7107,7 +7194,7 @@ menu_wizard_ask() {
 			return 0
 			;;
 		*)
-			if err=$(schema_validate_one "$key" "$answer"); then
+			if err=$(menu_validate_entry "$key" "$answer"); then
 				config_set_kv "$key" "$answer"
 				menu_reconcile_conflicts
 				MENU_DIRTY=1
@@ -7135,8 +7222,14 @@ menu_wizard() {
 			[[ "${SCHEMA_GROUP[$key]}" == "$g" ]] || continue
 			menu_key_is_component "$key" && continue
 			menu_key_skipped "$key" && continue
+			# no output behind it yet: there is nothing to ask, a value is refused
+			[[ "$key" == "EVE_REDIS" ]] && continue
 			menu_wizard_ask "$key"
 			rc=$?
+			case "$key" in
+			NTOPNG_PORT | EVEBOX_PORT | PANEL_PORT | METRICS_BACKEND_PORT) menu_ports_check "$key" ;;
+			ACCESS_MODE) menu_ports_check ;;
+			esac
 			((rc == 10)) && break
 			# x: the answers so far are kept, so there is nothing to confirm
 			((rc == 11)) && return 0
@@ -7355,6 +7448,9 @@ menu_run_install() {
 		elif [[ "${DPISTACK_MENU_ASSUME_YES:-0}" != "1" ]] && menu_confirm "Run the guided setup first (asks every setting, you can leave at any time)?"; then
 			menu_wizard
 		fi
+		# A port that something listens on is found here, before the first
+		# screen, and not at the install: the next free one is offered at once.
+		menu_ports_check
 		menu_main_screen
 	fi
 
@@ -10061,6 +10157,7 @@ _schema_depend() {
 
 schema_depends_init() {
 	SCHEMA_DEPENDS=()
+	_schema_depend 'SURICATA_ENABLE=yes EVE_ROTATE=size' EVE_MAX_SIZE_MB
 	_schema_depend 'SURICATA_ENABLE=yes SURICATA_MODE=ips' 'IPS_METHOD' 'IPS_NFQ_CHAINS'
 	_schema_depend 'SURICATA_ENABLE=yes' NDPI_ENABLE RULES_ENABLE
 	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
@@ -10206,6 +10303,118 @@ schema_validate_one() {
 	*)
 		echo "$key: unknown schema type $type"
 		return 1
+		;;
+	esac
+	return 0
+}
+
+# --- what a person may type (18.55) ---
+# schema_validate_one is what a saved file must pass (lenient on purpose: a
+# file written by an older version must still load). The checks below are
+# stricter and run where a value is typed or set: the menu, --set and
+# `settings set`. They know what the value means, not only what it looks like.
+
+# eve-log outputs of Suricata 8 (the names the configuration takes).
+SCHEMA_EVE_TYPES=" alert anomaly arp dcerpc dhcp dns drop files flow frame ftp http http2 ike krb5 ldap metadata mqtt netflow nfs pgsql quic rdp rfb sip smb smtp snmp ssh stats tftp tls "
+# the alert channels that dpistack-watch knows.
+SCHEMA_ALERT_CHANNELS=" panel log tg mail "
+
+# schema_ipv4_ok <a.b.c.d> - four octets, each 0..255.
+schema_ipv4_ok() {
+	local ip="$1" o
+	[[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+	local IFS=.
+	for o in $ip; do
+		((10#$o <= 255)) || return 1
+	done
+}
+
+# schema_cidr_ok <address[/prefix]> - IPv4 (octets 0..255, prefix 0..32) or
+# IPv6 (hex groups, at most one "::", prefix 0..128).
+schema_cidr_ok() {
+	local a="$1" addr pfx="" colons dc
+	addr="${a%%/*}"
+	[[ "$a" == */* ]] && pfx="${a#*/}"
+	if [[ "$addr" == *:* ]]; then
+		[[ "$addr" =~ ^[0-9A-Fa-f:]+$ && "$addr" != *:::* ]] || return 1
+		colons="${addr//[^:]/}"
+		((${#colons} <= 7)) || return 1
+		dc="${addr//::/@}"
+		[[ "$dc" != *@*@* ]] || return 1
+		[[ -z "$pfx" ]] || { [[ "$pfx" =~ ^[0-9]{1,3}$ ]] && ((10#$pfx <= 128)); }
+	else
+		schema_ipv4_ok "$addr" || return 1
+		[[ -z "$pfx" ]] || { [[ "$pfx" =~ ^[0-9]{1,2}$ ]] && ((10#$pfx <= 32)); }
+	fi
+}
+
+# schema_address_problem <key> <value> - prints the problem of an address or
+# network key and returns 1; silent 0 when the value is fine or not one of them.
+schema_address_problem() {
+	local key="$1" value="$2" el
+	[[ -n "$value" ]] || return 0
+	case "$key" in
+	HOME_NET | LAN_CIDR)
+		local IFS=,
+		for el in $value; do
+			[[ "$el" == auto ]] && continue
+			schema_cidr_ok "$el" || {
+				echo "$key=$value: $el is not an address or a network (octets 0..255, prefix up to 32, IPv6 up to 128)"
+				return 1
+			}
+		done
+		;;
+	BIND_ADDR)
+		[[ "$value" == auto ]] || schema_ipv4_ok "$value" || {
+			echo "$key=$value: not an IPv4 address (octets 0..255)"
+			return 1
+		}
+		;;
+	esac
+	return 0
+}
+
+# schema_validate_entry <key> <value> - schema_validate_one plus the meaning
+# of the value. Prints the reason and returns 1 when a person must not be
+# allowed to set it.
+schema_validate_entry() {
+	local key="$1" value="$2" msg el
+	if ! msg=$(schema_validate_one "$key" "$value"); then
+		echo "$msg"
+		return 1
+	fi
+	[[ -n "$value" ]] || return 0
+	msg=$(schema_address_problem "$key" "$value") || {
+		echo "$msg"
+		return 1
+	}
+	local IFS=,
+	case "$key" in
+	EVE_REDIS)
+		echo "$key: this output is not supported yet, leave it empty"
+		return 1
+		;;
+	EVE_TYPES)
+		for el in $value; do
+			[[ "$SCHEMA_EVE_TYPES" == *" $el "* ]] || {
+				echo "$key=$value: $el is not a Suricata eve output, allowed:${SCHEMA_EVE_TYPES% }"
+				return 1
+			}
+		done
+		;;
+	ALERT_CHANNELS)
+		for el in $value; do
+			[[ "$SCHEMA_ALERT_CHANNELS" == *" $el "* ]] || {
+				echo "$key=$value: $el is not an alert channel, allowed:${SCHEMA_ALERT_CHANNELS% }"
+				return 1
+			}
+		done
+		;;
+	RULES_UPDATE_CALENDAR)
+		if command -v systemd-analyze >/dev/null 2>&1 && ! systemd-analyze calendar "$value" >/dev/null 2>&1; then
+			echo "$key=$value: systemd does not accept this as a time (try: daily, weekly, Mon *-*-* 03:00)"
+			return 1
+		fi
 		;;
 	esac
 	return 0
@@ -12626,7 +12835,7 @@ preflight_port_conflicts() {
 # and the preflight will stop on it). Reads through the menu's input, so it
 # runs inside the menu. Returns 0 when no conflicts remain unanswered.
 preflight_resolve_ports_interactive() {
-	local line key port who suggestion kind answer rc=0
+	local only="${1:-}" line key port who suggestion kind answer rc=0
 	while IFS= read -r line; do
 		[[ -z "$line" ]] && continue
 		IFS='|' read -r key port who suggestion kind <<<"$line"
@@ -12663,7 +12872,7 @@ preflight_resolve_ports_interactive() {
 			MENU_DIRTY=1
 			break
 		done
-	done < <(preflight_port_conflicts)
+	done < <(preflight_port_conflicts | if [[ -n "$only" ]]; then grep "^${only}|" || true; else cat; fi)
 	return "$rc"
 }
 

@@ -317,7 +317,9 @@ run_menu() {
 
 @test "a busy port kept with q does not start the install: the menu says so and stays (report, NTOPNG_PORT)" {
 	export DPISTACK_MENU_ASSUME_YES=0
-	MOCK_SS_LISTEN=3000 run_menu "n\n10\nmypassword123\nmypassword123\ni\nq\nq\ny\n" --set ACCESS_CONFIRM=yes
+	# n: no guided setup; the first q keeps the busy port at the early check
+	# (before the first screen); the second q keeps it again at Install.
+	MOCK_SS_LISTEN=3000 run_menu "n\nq\n10\nmypassword123\nmypassword123\ni\nq\nq\ny\n" --set ACCESS_CONFIRM=yes
 	[[ "$output" == *"port 3000 (NTOPNG_PORT) is already busy"* ]]
 	[[ "$output" == *"the install was not started: a port is still busy"* ]]
 	[ ! -e "$CONF_FILE" ]

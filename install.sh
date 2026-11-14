@@ -272,6 +272,9 @@ maybe_run_install_menu() {
 	if ! have_input_source; then
 		die 2 "no terminal for the menu, use -y or DPISTACK_INPUT"
 	fi
+	# The menu already looks at busy ports and reads interfaces: the tools it
+	# and the later steps call (ss, curl, jq) are there before the first question.
+	ensure_preflight_tools
 	MENU_SHOW_ADVANCED=$([[ "$ADVANCED" == "1" ]] && echo 1 || echo 0)
 	MENU_FAST="$FAST"
 	menu_run_install
@@ -337,10 +340,11 @@ autodetect_iface() {
 # and only for a real run.
 ensure_preflight_tools() {
 	[[ "$DRY_RUN" == "1" || "${EUID:-$(id -u)}" -ne 0 ]] && return 0
-	command -v ss >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && return 0
+	command -v ss >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && return 0
 	pkg_update_once || die 1 "updating the package index failed"
 	case "$OS_FAMILY" in
-	apt) pkg_install iproute2 curl ca-certificates || die 1 "could not install iproute2 and curl" ;;
+	apt) pkg_install iproute2 curl ca-certificates jq || die 1 "could not install iproute2, curl and jq" ;;
+	*) pkg_install_base || die 1 "could not install the base packages" ;;
 	esac
 }
 
