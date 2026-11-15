@@ -141,3 +141,74 @@ base() {
 	[ "$status" -eq 2 ]
 	[[ "$output" == *"needs --set ACCESS_CONFIRM=yes"* ]]
 }
+
+@test "update says so when this is the latest version, and --check only reports" {
+	latest "v$CUR"
+	run bash "$REPO_DIR/install.sh" update
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"is the latest version"* ]]
+	latest v99.0.0
+	run bash "$REPO_DIR/install.sh" update --check
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"99.0.0 is available"* ]]
+	run grep -c "tar.gz" "$DPISTACK_ROOT/fake/calls"
+	[ "$output" = "0" ]
+}
+
+@test "update --dry-run downloads the release, shows what it will do and installs nothing" {
+	run base
+	[ "$status" -eq 0 ]
+	latest v99.0.0
+	release 99.0.0
+	run bash "$REPO_DIR/install.sh" update --dry-run
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"what 99.0.0 does to this host"* ]]
+	[[ "$output" == *"installed: "* ]]
+	run grep -c 'DPISTACK_VERSION="99.0.0"' "$DPISTACK_ROOT/usr/local/lib/dpistack/installer/lib/common.sh"
+	[ "$output" = "0" ]
+}
+
+@test "update without a terminal and without --yes asks nothing and changes nothing" {
+	run base
+	latest v99.0.0
+	release 99.0.0
+	run bash "$REPO_DIR/install.sh" update </dev/null
+	[ "$status" -eq 3 ]
+	[[ "$output" == *"use --yes"* ]]
+	run grep -c 'DPISTACK_VERSION="99.0.0"' "$DPISTACK_ROOT/usr/local/lib/dpistack/installer/lib/common.sh"
+	[ "$output" = "0" ]
+}
+
+@test "update --yes installs the release on the saved config and records the version" {
+	run base --set STATS_INTERVAL_SEC=45
+	[ "$status" -eq 0 ]
+	latest v99.0.0
+	release 99.0.0
+	run bash "$REPO_DIR/install.sh" update --yes
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"installing 99.0.0 on the saved config"* ]]
+	grep -q "^STATS_INTERVAL_SEC=45" "$CONF_FILE"
+	grep -q 'DPISTACK_VERSION="99.0.0"' "$DPISTACK_ROOT/usr/local/lib/dpistack/installer/lib/common.sh"
+	grep -rq "^install.version=99.0.0" "$DPISTACK_ROOT"
+}
+
+@test "update refuses an option it does not know and the panel may not use it" {
+	run bash "$REPO_DIR/install.sh" update --now
+	[ "$status" -eq 2 ]
+	DPISTACK_CALLER=panel run bash "$REPO_DIR/install.sh" update --check
+	[ "$status" -eq 2 ]
+}
+
+@test "the update from an older version runs the migrations of the new one" {
+	run base --set EVE_ROTATE=size
+	[ "$status" -eq 0 ]
+	# this host was installed by 0.49.0 and saved an empty size
+	grep -rl "^install.version=" "$DPISTACK_ROOT" | head -1 | xargs sed -i 's/^install.version=.*/install.version=0.49.0/'
+	sed -i 's/^EVE_MAX_SIZE_MB=.*/EVE_MAX_SIZE_MB=/' "$CONF_FILE"
+	latest v99.0.0
+	release 99.0.0
+	run bash "$REPO_DIR/install.sh" update --yes
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"migrate 0.50.0: EVE_MAX_SIZE_MB was saved empty"* ]]
+	grep -q "^EVE_MAX_SIZE_MB=100" "$CONF_FILE"
+}

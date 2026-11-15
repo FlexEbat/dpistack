@@ -325,7 +325,7 @@ menu_edit_key() {
 	while true; do
 		local current="${CONF[$key]:-}"
 		local opts="${SCHEMA_OPTIONS[$key]}"
-		echo "$key (now: ${current:-not set}, default: ${SCHEMA_DEFAULT[$key]:-none})" >&2
+		echo "$key (now: ${current:-$(schema_effective "$key" || true)}, default: ${SCHEMA_DEFAULT[$key]:-none})" >&2
 		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$current" ]] && menu_say_empty "$key"
 		[[ -n "$opts" ]] && echo "  options: $opts" >&2
@@ -840,7 +840,7 @@ menu_wizard_ask() {
 		local shown="${CONF[$key]:-}"
 		schema_is_secret "$key" && shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
 		echo >&2
-		echo "$key (now: ${shown:-not set}, default: ${SCHEMA_DEFAULT[$key]:-none})" >&2
+		echo "$key (now: ${shown:-$(schema_effective "$key" || true)}, default: ${SCHEMA_DEFAULT[$key]:-none})" >&2
 		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$shown" ]] && menu_say_empty "$key"
 		[[ -n "${SCHEMA_OPTIONS[$key]}" ]] && echo "  options: ${SCHEMA_OPTIONS[$key]}" >&2

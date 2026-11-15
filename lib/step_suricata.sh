@@ -374,7 +374,9 @@ suricata_build_from_source() {
 	# Another release over an old build: the stale objects and the Rust
 	# cache of the previous tree must go, or make mixes two versions.
 	built_before=$(state_read_value "$SURICATA_BUILT_REF_STATE_KEY")
-	if [[ -n "$built_before" && "$built_before" != "$resolved_ref" ]]; then
+	# A new build recipe (other configure flags) is the same case: objects made
+	# with the old flags must not be linked into the new build.
+	if [[ -n "$built_before" && ("$built_before" != "$resolved_ref" || "$(build_recipe_have suricata)" != "$SURICATA_BUILD_RECIPE") ]]; then
 		run git -C "$src_dir" clean -fdxq || return 1
 	fi
 	run git -C "$src_dir" submodule update --init --recursive || return 1
@@ -412,6 +414,7 @@ suricata_build_from_source() {
 
 	[[ "${DRY_RUN:-0}" != "1" ]] && run ldconfig
 	[[ -n "$resolved_ref" ]] && state_write_value "$SURICATA_BUILT_REF_STATE_KEY" "$resolved_ref"
+	[[ "${DRY_RUN:-0}" != "1" ]] && state_write_value "build.suricata.recipe" "$SURICATA_BUILD_RECIPE"
 	return 0
 }
 
@@ -512,6 +515,8 @@ step_suricata_check() {
 		# branch is compared as the commit it names, not as text.
 		wanted=$(git_ref_commit "$(path_suricata_src_dir)" "$(suricata_target_ref)")
 		[[ -n "$wanted" && "$wanted" == "$have" ]] || return 1
+		# a build of an older recipe is built again (lib/migrate.sh)
+		[[ "$(build_recipe_have suricata)" == "$SURICATA_BUILD_RECIPE" ]] || return 1
 	else
 		command -v suricata >/dev/null 2>&1 || return 1
 		[[ -n "$(suricata_installed_version)" ]] || return 1

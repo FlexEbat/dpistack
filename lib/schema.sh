@@ -119,7 +119,7 @@ schema_init() {
 	_schema_add 'EVE_REDIS|free|||advanced|eve|suricata|light|no'
 	_schema_add 'EVE_ROTATE|enum|daily|daily,weekly,size|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_KEEP|int|14|0..3650|advanced|eve|suricata|light|no'
-	_schema_add 'EVE_MAX_SIZE_MB|int||1..1000000|advanced|eve|suricata|light|no'
+	_schema_add 'EVE_MAX_SIZE_MB|int|100|1..1000000|advanced|eve|suricata|light|no'
 	_schema_add 'STATS_INTERVAL_SEC|int|30|5..300|advanced|eve|suricata watch|light|no'
 
 	_schema_add 'RULES_SOURCES|free|et/open||advanced|rules|rules|light|no'
@@ -490,6 +490,40 @@ schema_validate_entry() {
 	return 0
 }
 
+# schema_effective <key> - what an empty value of an optional key is on this
+# host, in a few words, for the prompts of the menu, `settings list --json` and
+# the Settings screen of the panel (v0.50.0: they showed <empty> or "(empty)").
+# It is the value in effect, not a description of the empty string: the
+# interfaces ntopng really watches, the version that is installed now, the rule
+# sources that are used. Prints nothing for a key that has no such value.
+schema_effective() {
+	local key="$1" v="" ifaces="" sources=""
+	# the layered config of an install run, else the saved file (the verbs)
+	ifaces="${CONF[IFACES]:-}"
+	sources="${CONF[RULES_SOURCES]:-}"
+	if declare -F conf_get >/dev/null; then
+		[[ -n "$ifaces" ]] || ifaces=$(conf_get IFACES "" 2>/dev/null || true)
+		[[ -n "$sources" ]] || sources=$(conf_get RULES_SOURCES "" 2>/dev/null || true)
+	fi
+	case "$key" in
+	BPF_FILTER) echo "none: all the traffic is analysed" ;;
+	NTOPNG_IFACES) echo "same as IFACES (${ifaces:-auto})" ;;
+	SURICATA_VERSION)
+		declare -F suricata_installed_version >/dev/null && v=$(suricata_installed_version 2>/dev/null || true)
+		echo "latest stable release${v:+ (installed: $v)}"
+		;;
+	NDPI_VERSION) echo "latest tested release (the one the plugin is built with)" ;;
+	NTOPNG_VERSION | EVEBOX_VERSION)
+		local pkg="${key%_VERSION}"
+		declare -F pkg_installed_version >/dev/null && v=$(pkg_installed_version "${pkg,,}" 2>/dev/null || true)
+		echo "latest available${v:+ (installed: $v)}"
+		;;
+	EVE_REDIS) echo "off: the events go to eve.json only" ;;
+	EVE_MAX_SIZE_MB) echo "100 MB, used only when EVE_ROTATE=size" ;;
+	RULES_URLS) echo "none: only the rule sources ${sources:-et/open} are used" ;;
+	esac
+}
+
 # schema_empty_meaning <key> - what an empty value of an optional key does, for
 # the prompts of the menu (R193 of 18.46: they showed <empty> and nothing else).
 # Prints nothing for a key whose empty value needs no explanation.
@@ -502,7 +536,7 @@ schema_empty_meaning() {
 	NTOPNG_VERSION) echo "the latest version of the package or image" ;;
 	EVEBOX_VERSION) echo "the latest version of the package or image" ;;
 	EVE_REDIS) echo "no Redis output: events go to eve.json only (yes = Redis of this host, key suricata)" ;;
-	EVE_MAX_SIZE_MB) echo "not used; EVE_ROTATE=size is refused without a value" ;;
+	EVE_MAX_SIZE_MB) echo "100 MB; it is used only when EVE_ROTATE=size" ;;
 	RULES_URLS) echo "only the sources of RULES_SOURCES are used" ;;
 	esac
 }

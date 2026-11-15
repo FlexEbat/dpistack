@@ -14,7 +14,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | --- | --- | --- | --- | --- |
 | `SURICATA_MODE` | ids \| ips | `ids` | light | ids only watches, ips can block. Switching is best done on the Components screen. (advanced) |
 | `IFACES` | string | `enp2s0` | light | Interfaces Suricata captures from, comma separated. |
-| `BPF_FILTER` | string | empty | light | BPF filter: which traffic to skip or to analyze. (advanced) |
+| `BPF_FILTER` | string | empty | light | BPF filter: which traffic to skip or to analyze. Examples: not port 22, host 10.0.0.5, net 192.168.0.0/16 and not port 53. Empty: all the traffic. (advanced) |
 | `HOME_NET` | string | `auto` | light | Your networks (CIDR, comma separated) or auto: detect from the interfaces. (advanced) |
 | `IPS_METHOD` | nfq \| afpacket | `nfq` | light | How IPS gets packets: the NFQUEUE queue or AF_PACKET. (advanced) |
 | `IPS_NFQ_CHAINS` | string | `INPUT,OUTPUT,FORWARD` | light | iptables chains that send packets to the queue. (advanced) |
@@ -53,7 +53,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `EVE_REDIS` | string | empty | light | Send the events to Redis as well: yes (Redis of this host), or host[:port][/key], for example 127.0.0.1:6379/suricata. Empty or no: eve.json only. Needs a Suricata built with Redis support (a source build has it). (advanced) |
 | `EVE_ROTATE` | daily \| weekly \| size | `daily` | light | How to rotate eve.json: daily, weekly or by size. (advanced) |
 | `EVE_KEEP` | integer 0..3650 | `14` | light | How many rotated files to keep. (advanced) |
-| `EVE_MAX_SIZE_MB` | integer 1..1000000 | empty | light | File size in MB that triggers rotation (the size mode). (advanced) |
+| `EVE_MAX_SIZE_MB` | integer 1..1000000 | `100` | light | File size in MB that triggers rotation (the size mode). 100 by default. (advanced) |
 | `STATS_INTERVAL_SEC` | integer 5..300 | `30` | light | How often Suricata writes statistics (seconds). (advanced) |
 | `EVEBOX_DB` | sqlite \| elasticsearch | `sqlite` | heavy | Where EveBox stores events. (advanced) |
 | `EVEBOX_ES_URL` | string | empty | light | Elasticsearch address for the elasticsearch mode. (advanced) |
@@ -64,7 +64,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | Key | Values | Default | Change | Description |
 | --- | --- | --- | --- | --- |
 | `RULES_SOURCES` | string | `et/open` | light | Rule sources for the rules updater, space separated. (advanced) |
-| `RULES_URLS` | string | empty | light | Your own rule set addresses, space separated. (advanced) |
+| `RULES_URLS` | string | empty | light | Your own rule set addresses, space separated. Empty: only the rule sources above are used. (advanced) |
 | `RULES_GROUPS` | string | `emerging-p2p,emerging-policy` | light | Enabled rule groups, comma separated. (advanced) |
 | `RULES_UPDATE` | on \| off | `on` | light | Update the rules on a schedule. (advanced) |
 | `RULES_UPDATE_CALENDAR` | string | `weekly` | light | When to update: daily, weekly or a systemd expression. (advanced) |

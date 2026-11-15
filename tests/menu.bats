@@ -343,6 +343,21 @@ run_menu() {
 	done
 }
 
+@test "the prompts of the nine optional keys show the value in effect, not <empty> or a bare not set" {
+	local key out
+	for key in BPF_FILTER NTOPNG_IFACES SURICATA_VERSION NDPI_VERSION NTOPNG_VERSION EVEBOX_VERSION EVE_REDIS RULES_URLS; do
+		run bash -c "source '$BATS_TEST_DIRNAME/../lib/schema.sh'; declare -A CONF=([IFACES]=eth0 [RULES_SOURCES]=et/open); schema_effective $key"
+		[ -n "$output" ]
+		[[ "$output" != *"empty"* && "$output" != *"<"* ]]
+	done
+	run bash -c "source '$BATS_TEST_DIRNAME/../lib/schema.sh'; declare -A CONF=([IFACES]=eth0 [RULES_SOURCES]=et/open); schema_effective NTOPNG_IFACES; schema_effective RULES_URLS"
+	[[ "$output" == *"same as IFACES (eth0)"* ]]
+	[[ "$output" == *"only the rule sources et/open are used"* ]]
+	run bash -c "source '$BATS_TEST_DIRNAME/../lib/schema.sh'; schema_effective STATS_INTERVAL_SEC"
+	[ -z "$output" ]
+	! grep -q '<empty>' "$BATS_TEST_DIRNAME/../lib/menu.sh"
+}
+
 # Step 1 of the menu review (18.54): the install screen says what is wrong
 # and what to do next.
 

@@ -86,8 +86,15 @@ The docker runtime is removed too: the dpistack compose project is taken down (c
 ## Update dpistack itself
 
 ```
-sudo dpistack self-update --check   # is a newer release published?
-sudo dpistack self-update           # shows the same; the panel starts the update, see below
+sudo dpistack update --check        # is a newer release published?
+sudo dpistack update --dry-run      # download it and show what it will do; nothing is installed
+sudo dpistack update                # show the plan, ask, install, wait for the end
+sudo dpistack update --yes          # the same without the question (scripts)
+sudo dpistack migrate --plan        # what an upgrade to this version still has to do here
 ```
+
+`update` installs the release on your saved config and waits until it is done. The work runs as a unit of its own, so a lost ssh session does not stop it halfway. `self-update check|run|job` are the same update in separate steps; the panel uses them.
+
+**What an upgrade does by itself.** Before the config is checked, the migrations of the new version resolve the saved settings whose meaning changed (for example an empty `EVE_MAX_SIZE_MB` becomes 100), and they say so. A part that is built from source (Suricata, nDPI) is built again when the new version changed its build recipe, for example Suricata gets Redis support: the plan names it, and the install does it. Everything that is rendered (units, `suricata.yaml`, the panel) is rendered again by the normal steps. The version that finished the last install is kept, so a migration runs once.
 
 The panel shows its version in the top right corner. When a newer release exists the version glows; a click opens a question, and **Update** installs that release on your saved config (your settings are kept; the panel restarts for a moment and the page reloads). Only a release of the project newer than the running one is ever installed. To switch the check off, start the panel with `-update-url off`.

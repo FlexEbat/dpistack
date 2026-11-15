@@ -158,3 +158,19 @@ teardown() {
 	[ "$status" -eq 0 ]
 	echo "$output" | jq -e '.ok' >/dev/null
 }
+
+@test "settings list --json gives the value in effect of a key that is empty, never a bare empty" {
+	run "$CTL" settings list --json
+	[ "$status" -eq 0 ]
+	local key eff
+	for key in BPF_FILTER NTOPNG_IFACES SURICATA_VERSION NDPI_VERSION NTOPNG_VERSION EVEBOX_VERSION EVE_REDIS RULES_URLS; do
+		eff=$(jq -r --arg k "$key" '.keys[] | select(.key == $k) | .effective' <<<"$output")
+		[ -n "$eff" ]
+		[[ "$eff" != *"empty"* ]]
+	done
+	[[ "$(jq -r '.keys[] | select(.key == "BPF_FILTER") | .effective' <<<"$output")" == "none: all the traffic is analysed" ]]
+	[[ "$(jq -r '.keys[] | select(.key == "NTOPNG_IFACES") | .effective' <<<"$output")" == "same as IFACES (enp2s0)"* ]]
+	# a key with a value has no effective text, and EVE_MAX_SIZE_MB now has a value
+	[ -z "$(jq -r '.keys[] | select(.key == "STATS_INTERVAL_SEC") | .effective' <<<"$output")" ]
+	[ "$(jq -r '.keys[] | select(.key == "EVE_MAX_SIZE_MB") | .value' <<<"$output")" = "100" ]
+}

@@ -65,7 +65,8 @@ test("the staged change: old to new, the weight of the whole, and what it touche
   assert.equal(stageText(stageSummary([])), "No changes are staged.");
   assert.match(stageText(stageSummary(rows)), /^A heavy change: .* It touches Suricata, /);
   assert.match(stageText(stageSummary(diffRows(KEYS, { ACCESS_MODE: "lan" }))), /^A light change: /);
-  assert.equal(shown(""), "(empty)");
+  assert.equal(shown(""), "not set");
+  assert.equal(shown("", "none: all the traffic is analysed"), "none: all the traffic is analysed");
   assert.equal(shown("x"), "x");
 });
 

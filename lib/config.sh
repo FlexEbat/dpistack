@@ -154,11 +154,6 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
-	if [[ "${CONF[EVE_ROTATE]:-}" == "size" && -z "${CONF[EVE_MAX_SIZE_MB]:-}" ]]; then
-		echo "EVE_ROTATE=size needs EVE_MAX_SIZE_MB"
-		errors=$((errors + 1))
-	fi
-
 	local bind_value="${CONF[BIND_ADDR]:-auto}" bind_open=0
 	if [[ "$bind_value" != "auto" ]]; then
 		local octet bad=0

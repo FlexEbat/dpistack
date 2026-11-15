@@ -21,7 +21,7 @@ RULES_SEARCH_MAX=50
 
 # Every verb that ctl_dispatch knows, for "did you mean" and for completion.
 CTL_ALL_VERBS=(status start stop restart reload logs config-read config-write config-revert config-history
-	settings self-update reconfigure rules-update rules-sources rules-group rules-sid rules-search rules-stats
+	settings self-update update migrate reconfigure rules-update rules-sources rules-group rules-sid rules-search rules-stats
 	rules-history rules-describe rules-find rules-facets rules-local exceptions alerts tokens security iface mode
 	mode-confirm ips fw panel-passwd test health diagnose runtime users backup version help rules config info)
 
@@ -782,11 +782,12 @@ settings_list() {
 			max="${SCHEMA_OPTIONS[$key]##*..}"
 		fi
 		pattern="${SCHEMA_PATTERN[$key]:-}"
-		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s","steps":%s,"touches":%s,"depends":%s}' \
+		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s","effective":"%s","steps":%s,"touches":%s,"depends":%s}' \
 			"$key" "$type" "$opts" "$min" "$max" "$(json_escape "${SCHEMA_DEFAULT[$key]}")" \
 			"${SCHEMA_LEVEL[$key]}" "${SCHEMA_GROUP[$key]}" "${SCHEMA_WEIGHT[$key]}" \
 			"$([[ $secret == yes ]] && echo true || echo false)" "$set" \
 			"$(json_escape "$value")" "$(json_escape "$pattern")" \
+			"$(json_escape "$([[ -z "$value" ]] && schema_effective "$key" || true)")" \
 			"$(settings_json_array "${SCHEMA_STEPS[$key]// /,}")" "$(settings_touches_json "$key")" "$(settings_depends_json "$key")"
 	done
 	if ((json)); then printf ']}\n'; fi
@@ -1121,7 +1122,7 @@ selfupdate_check() {
 	if ((json)); then
 		printf '{"version":"%s","latest":"%s","update_available":%s}\n' "$DPISTACK_VERSION" "${tag#v}" "$newer"
 	elif [[ "$newer" == true ]]; then
-		echo "dpistack $DPISTACK_VERSION is running, ${tag#v} is available: sudo dpistack self-update"
+		echo "dpistack $DPISTACK_VERSION is running, ${tag#v} is available: sudo dpistack update"
 	else
 		echo "dpistack $DPISTACK_VERSION is the latest version"
 	fi
@@ -1153,17 +1154,9 @@ selfupdate_job() {
 # selfupdate_apply - download, check, then run the NEW installer on the saved
 # config: it renews the persistent command, the panel and its unit, and
 # restarts what changed. The config is never rewritten with defaults.
-selfupdate_apply() {
-	local tag url tmp src
-	tag=$(selfupdate_latest_tag) || exit 1
-	if ! selfupdate_is_newer "$tag"; then
-		echo "dpistack $DPISTACK_VERSION is the latest version, nothing to do"
-		return 0
-	fi
+selfupdate_fetch() {
+	local tag="$1" tmp="$2" url src
 	url=$(selfupdate_url "$SELFUPDATE_ARCHIVE/${tag}.tar.gz" "${DPISTACK_UPDATE_ARCHIVE:-}")
-	tmp=$(mktemp -d) || fail 1 "no temporary directory"
-	# shellcheck disable=SC2064
-	trap "rm -rf '$tmp'" EXIT
 	echo "downloading $tag"
 	curl -fsSL --max-time 300 -o "$tmp/src.tar.gz" "$url" || fail 1 "could not download $tag"
 	# Nothing outside the target directory, whatever the archive says.
@@ -1177,6 +1170,20 @@ selfupdate_apply() {
 	[[ -f "$src/install.sh" && -f "$src/lib/common.sh" ]] || fail 1 "the archive is not a dpistack release"
 	grep -q "^DPISTACK_VERSION=\"${tag#v}\"" "$src/lib/common.sh" ||
 		fail 1 "the archive does not carry the version ${tag#v}, nothing was installed"
+}
+
+selfupdate_apply() {
+	local tag tmp src
+	tag=$(selfupdate_latest_tag) || exit 1
+	if ! selfupdate_is_newer "$tag"; then
+		echo "dpistack $DPISTACK_VERSION is the latest version, nothing to do"
+		return 0
+	fi
+	tmp=$(mktemp -d) || fail 1 "no temporary directory"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$tmp'" EXIT
+	selfupdate_fetch "$tag" "$tmp"
+	src="$tmp/src"
 	echo "installing ${tag#v} on the saved config"
 	local -a args=(install -y)
 	# -y refuses a non-localhost access mode without ACCESS_CONFIRM=yes (exit 2
@@ -1210,6 +1217,95 @@ cmd_self_update() {
 		selfupdate_apply
 		;;
 	*) fail 2 "self-update: [--check] | check | run | job | apply" ;;
+	esac
+}
+
+# ------------------------------------------------------------ update, migrate
+#
+# `dpistack update [--check] [--dry-run] [--yes]`: the update of dpistack from
+# the command line, start to end. It looks for a newer release, shows what the
+# new version will do to this host (the migrations and the builds it repeats:
+# lib/migrate.sh), asks, then installs it on the saved config and waits for the
+# end, printing what the install prints. The work runs as a transient unit
+# (the same one the panel uses) so a lost ssh session does not stop it halfway.
+# `dpistack migrate [--plan]` shows that plan for the installed version.
+
+update_usage() {
+	cat <<'USAGE'
+Usage: dpistack update [--check] [--dry-run] [--yes]
+
+  (no option)  look for a newer release, show what it will do, ask, install it
+  --check      only say whether a newer release exists
+  --dry-run    download it and show its migration plan; nothing is installed
+  --yes, -y    do not ask
+USAGE
+}
+
+cmd_update() {
+	local check=0 dry=0 yes=0 arg tag tmp
+	restricted_caller && fail 2 "update: not for the panel, the Update button runs self-update run"
+	for arg in "$@"; do
+		case "$arg" in
+		--check) check=1 ;;
+		--dry-run) dry=1 ;;
+		--yes | -y) yes=1 ;;
+		-h | --help)
+			update_usage
+			return 0
+			;;
+		*)
+			update_usage >&2
+			fail 2 "update: unknown option $arg"
+			;;
+		esac
+	done
+	tag=$(selfupdate_latest_tag) || exit 1
+	if ! selfupdate_is_newer "$tag"; then
+		echo "dpistack $DPISTACK_VERSION is the latest version"
+		if [[ -n "$(migrate_pending)$(migrate_rebuilds)" ]]; then
+			echo "this host still has work from an earlier version:"
+			migrate_plan
+			echo "it is done by: sudo dpistack install"
+		fi
+		return 0
+	fi
+	echo "dpistack $DPISTACK_VERSION is running, ${tag#v} is available"
+	((check)) && return 0
+	tmp=$(mktemp -d) || fail 1 "no temporary directory"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$tmp'" EXIT
+	selfupdate_fetch "$tag" "$tmp"
+	echo "what ${tag#v} does to this host:"
+	(cd "$tmp/src" && bash ./install.sh migrate --plan) || fail 1 "could not read the migration plan of ${tag#v}"
+	((dry)) && return 0
+	# DPISTACK_ROOT is the sandbox of the tests: nothing outside it is touched
+	[[ $EUID -eq 0 || -n "${DPISTACK_ROOT:-}" ]] || fail 3 "update: run it as root: sudo dpistack update"
+	if ((!yes)) && [[ -t 0 ]]; then
+		local answer
+		read -r -p "Install ${tag#v} now? [y/N] " answer
+		[[ "${answer,,}" == y || "${answer,,}" == yes ]] || {
+			echo "nothing was changed"
+			return 0
+		}
+	elif ((!yes)); then
+		fail 3 "update: no terminal to ask on, use --yes"
+	fi
+	case "$(systemctl is-active "$SELFUPDATE_UNIT.service" 2>/dev/null)" in
+	active | activating) fail 3 "an update is already running" ;;
+	esac
+	if [[ -z "${DPISTACK_ROOT:-}" ]] && command -v systemd-run >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+		systemctl reset-failed "$SELFUPDATE_UNIT.service" >/dev/null 2>&1 || true
+		systemd-run --quiet --wait --pipe --collect --unit="$SELFUPDATE_UNIT" \
+			--description="dpistack: updating to ${tag#v}" "$SCRIPT_DIR/install.sh" self-update apply
+	else
+		selfupdate_apply
+	fi
+}
+
+cmd_migrate() {
+	case "${1:-}" in
+	"" | --plan) migrate_plan ;;
+	*) fail 2 "migrate: [--plan]" ;;
 	esac
 }
 
@@ -2505,7 +2601,7 @@ cmd_backup() {
 audit_wanted() {
 	local sub="${2:-}"
 	case "$1" in
-	start | stop | restart | reload | config-write | config-revert | self-update | reconfigure | rules-update | rules-group | rules-sid | mode-confirm | mode-rollback | fw | panel-passwd | test) return 0 ;;
+	start | stop | restart | reload | config-write | config-revert | self-update | update | reconfigure | rules-update | rules-group | rules-sid | mode-confirm | mode-rollback | fw | panel-passwd | test) return 0 ;;
 	settings) [[ "$sub" == set || "$sub" == secret || ("$sub" == profile && "${3:-}" =~ ^(save|delete|apply)$) ]] ;;
 	rules-sources | iface | users) [[ -n "$sub" && "$sub" != list ]] ;;
 	# prune is not listed: the watchdog runs it every tick and writes its own
@@ -2667,7 +2763,9 @@ People and access
 
 Keep it safe
   backup create|list|verify|restore
-  self-update ...                 install a newer release of the project
+  update [--check|--dry-run|--yes] look for a newer release, show its plan, install it
+  migrate [--plan]                what an upgrade to this version does on this host
+  self-update ...                 the same update as separate steps (check, run, job)
 
 More: ${prog} <command> --help for one command; ${prog} help --all for every option of every command.
 Exit codes: 0 ok, 1 error, 2 misuse, 3 refused or not available in this mode, 4 no such component, 5 a name or value that is not allowed.
@@ -2779,6 +2877,8 @@ ctl_dispatch() {
 	config-revert) cmd_config_revert "$@" ;;
 	settings) cmd_settings "$@" ;;
 	self-update) cmd_self_update "$@" ;;
+	update) cmd_update "$@" ;;
+	migrate) cmd_migrate "$@" ;;
 	reconfigure) ctl_cmd_reconfigure "$@" ;;
 	rules-update) cmd_rules_update "$@" ;;
 	rules-sources) cmd_rules_sources "$@" ;;
