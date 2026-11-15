@@ -32,7 +32,7 @@ export const HINTS = {
   PIN_VERSIONS: "Pin the installed versions so a system update does not change them.",
   SURICATA_MODE: "ids only watches, ips can block. Switching is best done on the Components screen.",
   IFACES: "Interfaces Suricata captures from, comma separated.",
-  BPF_FILTER: "BPF filter: which traffic to skip or to analyze.",
+  BPF_FILTER: "BPF filter: which traffic to skip or to analyze. Examples: not port 22, host 10.0.0.5, net 192.168.0.0/16 and not port 53. Empty: all the traffic.",
   HOME_NET: "Your networks (CIDR, comma separated) or auto: detect from the interfaces.",
   IPS_METHOD: "How IPS gets packets: the NFQUEUE queue or AF_PACKET.",
   IPS_NFQ_CHAINS: "iptables chains that send packets to the queue.",
@@ -40,13 +40,13 @@ export const HINTS = {
   EVE_FILE: "Write events to eve.json (needed by the panel and the watchdog).",
   EVE_TYPES: "Which event types to write to eve.json.",
   EVE_SYSLOG: "Duplicate events to syslog (facility local5).",
-  EVE_REDIS: "Redis output. Not supported yet: leave it empty (a value saved by an older version is ignored with a warning).",
+  EVE_REDIS: "Send the events to Redis as well: yes (Redis of this host), or host[:port][/key], for example 127.0.0.1:6379/suricata. Empty or no: eve.json only. Needs a Suricata built with Redis support (a source build has it).",
   EVE_ROTATE: "How to rotate eve.json: daily, weekly or by size.",
   EVE_KEEP: "How many rotated files to keep.",
-  EVE_MAX_SIZE_MB: "File size in MB that triggers rotation (the size mode).",
+  EVE_MAX_SIZE_MB: "File size in MB that triggers rotation (the size mode). 100 by default.",
   STATS_INTERVAL_SEC: "How often Suricata writes statistics (seconds).",
   RULES_SOURCES: "Rule sources for the rules updater, space separated.",
-  RULES_URLS: "Your own rule set addresses, space separated.",
+  RULES_URLS: "Your own rule set addresses, space separated. Empty: only the rule sources above are used.",
   RULES_GROUPS: "Enabled rule groups, comma separated.",
   RULES_UPDATE: "Update the rules on a schedule.",
   RULES_UPDATE_CALENDAR: "When to update: daily, weekly or a systemd expression.",
@@ -199,7 +199,10 @@ export function dependencyText(k) {
   return parts.length ? "Used when " + parts.join(" and ") : "";
 }
 
-export const shown = (v) => (v === "" ? "(empty)" : v);
+// shown is a value for people: an empty one is the value in effect when the
+// key has one ("none: all the traffic is analysed", "same as IFACES (eth0)"),
+// and "not set" otherwise, never "(empty)".
+export const shown = (v, effective = "") => (v === "" ? effective || "not set" : v);
 
 // diffRows is the staged change: every edited non secret key as old to new,
 // with its weight and what it touches.

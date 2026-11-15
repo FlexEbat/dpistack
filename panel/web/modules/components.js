@@ -37,16 +37,41 @@ async function reload(api) {
   return res.output || "Rules reloaded";
 }
 
-export function render(status, areas, run) {
-  const t = el("table");
-  const head = el("tr");
-  for (const h of ["Component", "State", "Version", "Actions"]) head.append(el("th", "", h));
-  t.append(head);
+// What each component is for, in a few words, so a name like "watch" says
+// something to a person who did not read the manual.
+export const ABOUT = {
+  suricata: "Traffic inspection engine",
+  evebox: "Alert and event browser",
+  ntopng: "Traffic analytics",
+  redis: "Store for ntopng and the event queue",
+  victoriametrics: "Metrics storage",
+  prometheus: "Metrics storage",
+  node_exporter: "Host metrics",
+  grafana: "Metric dashboards",
+  panel: "This control panel",
+  watch: "Service watcher",
+  rules: "Rule updates",
+};
 
+// toneOf maps the state of a unit to the colour of its dot and its left edge.
+export function toneOf(state) {
+  if (state === "active") return "ok";
+  if (state === "failed") return "crit";
+  if (state === "inactive") return "warn";
+  return "na";
+}
+
+export function render(status, areas, run) {
+  const grid = el("div", "comp-grid");
   for (const c of status.components) {
-    const tr = el("tr");
-    tr.append(el("td", "", c.id), el("td", "", STATE[c.state] || c.state), el("td", "", c.version || ""));
-    const actions = el("td", "actions");
+    const card = el("article", `comp tone-${toneOf(c.state)}`);
+    card.dataset.component = c.id;
+    const top = el("div", "comp-top");
+    top.append(el("i", "dot"), el("h3", "", c.id), el("span", "comp-state", STATE[c.state] || c.state));
+    card.append(top);
+    if (ABOUT[c.id]) card.append(el("p", "comp-about", ABOUT[c.id]));
+    card.append(el("p", "comp-version", c.version ? `Version ${c.version}` : "No version reported"));
+    const actions = el("div", "actions");
     const verbs = c.state === "absent" ? [] : c.state === "active" ? ["restart", "stop"] : ["start"];
     for (const verb of verbs) {
       const b = el("button", "", VERB[verb]);
@@ -60,10 +85,10 @@ export function render(status, areas, run) {
       b.addEventListener("click", () => run(() => reload(areas.api)));
       actions.append(b);
     }
-    tr.append(actions);
-    t.append(tr);
+    card.append(actions);
+    grid.append(card);
   }
-  areas.list.replaceChildren(t);
+  areas.list.replaceChildren(grid);
 }
 
 // start polls while the tab is visible, refreshes at once after an action,

@@ -38,7 +38,9 @@ step_ndpi_check() {
 		local wanted have
 		wanted=$(git_ref_commit "$(path_ndpi_src_dir)" "$(ndpi_target_ref)")
 		have=$(state_read_value "$(ndpi_built_ref_state_key)")
-		[[ -n "$wanted" && "$wanted" == "$have" ]]
+		[[ -n "$wanted" && "$wanted" == "$have" ]] || return 1
+		# a build of an older recipe is built again (lib/migrate.sh)
+		[[ "$(build_recipe_have ndpi)" == "$NDPI_BUILD_RECIPE" ]]
 		;;
 	*)
 		return 1
@@ -88,6 +90,7 @@ ndpi_build_from_source() {
 
 	[[ "${DRY_RUN:-0}" != "1" ]] && run ldconfig
 	[[ -n "$resolved_ref" ]] && state_write_value "$(ndpi_built_ref_state_key)" "$resolved_ref"
+	[[ "${DRY_RUN:-0}" != "1" ]] && state_write_value "build.ndpi.recipe" "$NDPI_BUILD_RECIPE"
 	return 0
 }
 

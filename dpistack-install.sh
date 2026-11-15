@@ -71,6 +71,8 @@ source "$LIB_DIR/menu.sh"
 source "$LIB_DIR/runtime_docker.sh"
 # shellcheck source=lib/ips.sh
 source "$LIB_DIR/ips.sh"
+# shellcheck source=lib/migrate.sh
+source "$LIB_DIR/migrate.sh"
 
 STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics nodeexp grafana access panel watch verify)
 for _step in "${STEPS_ORDER[@]}"; do
@@ -475,6 +477,7 @@ cmd_install() {
 	os_detect
 
 	layer_config_common
+	migrate_run
 	maybe_run_install_menu
 	panel_password_apply
 	config_generate_metrics_token_if_needed
@@ -524,6 +527,7 @@ cmd_install() {
 	report_dead_parts
 	panel_report_metrics
 	state_write_value install.finished yes
+	migrate_record
 	echo "installation finished"
 	return 0
 }
@@ -926,7 +930,7 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update help rules config info)
+	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update update migrate help rules config info)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen
@@ -1824,7 +1828,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.49.0"
+DPISTACK_VERSION="0.50.0"
 
 : "${DRY_RUN:=0}"
 
@@ -2275,11 +2279,6 @@ config_validate() {
 		errors=$((errors + 1))
 	fi
 
-	if [[ "${CONF[EVE_ROTATE]:-}" == "size" && -z "${CONF[EVE_MAX_SIZE_MB]:-}" ]]; then
-		echo "EVE_ROTATE=size needs EVE_MAX_SIZE_MB"
-		errors=$((errors + 1))
-	fi
-
 	local bind_value="${CONF[BIND_ADDR]:-auto}" bind_open=0
 	if [[ "$bind_value" != "auto" ]]; then
 		local octet bad=0
@@ -2545,7 +2544,7 @@ RULES_SEARCH_MAX=50
 
 # Every verb that ctl_dispatch knows, for "did you mean" and for completion.
 CTL_ALL_VERBS=(status start stop restart reload logs config-read config-write config-revert config-history
-	settings self-update reconfigure rules-update rules-sources rules-group rules-sid rules-search rules-stats
+	settings self-update update migrate reconfigure rules-update rules-sources rules-group rules-sid rules-search rules-stats
 	rules-history rules-describe rules-find rules-facets rules-local exceptions alerts tokens security iface mode
 	mode-confirm ips fw panel-passwd test health diagnose runtime users backup version help rules config info)
 
@@ -2779,6 +2778,7 @@ ctl_cmd_status() {
 	esac
 	[[ $# -le 1 ]] || fail 2 "status: extra arguments"
 
+	((json)) || migrate_notice
 	local plugin=absent
 	[[ -e "$(path_suricata_ndpi_plugin)" ]] && plugin=loaded
 
@@ -3273,7 +3273,7 @@ settings_secret_set() {
 }
 
 settings_list() {
-	local json=0 key first=1 type opts min max value secret set pattern
+	local json=0 key first=1 type opts min max value secret set pattern effective
 	[[ "${1:-}" == "--json" ]] && json=1
 	if ((json)); then printf '{"keys":['; fi
 	for key in "${SCHEMA_KEYS[@]}"; do
@@ -3306,11 +3306,16 @@ settings_list() {
 			max="${SCHEMA_OPTIONS[$key]##*..}"
 		fi
 		pattern="${SCHEMA_PATTERN[$key]:-}"
-		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s","steps":%s,"touches":%s,"depends":%s}' \
+		effective=""
+		if [[ -z "$value" ]]; then
+			effective=$(schema_effective "$key")
+		fi
+		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s","effective":"%s","steps":%s,"touches":%s,"depends":%s}' \
 			"$key" "$type" "$opts" "$min" "$max" "$(json_escape "${SCHEMA_DEFAULT[$key]}")" \
 			"${SCHEMA_LEVEL[$key]}" "${SCHEMA_GROUP[$key]}" "${SCHEMA_WEIGHT[$key]}" \
 			"$([[ $secret == yes ]] && echo true || echo false)" "$set" \
 			"$(json_escape "$value")" "$(json_escape "$pattern")" \
+			"$(json_escape "$effective")" \
 			"$(settings_json_array "${SCHEMA_STEPS[$key]// /,}")" "$(settings_touches_json "$key")" "$(settings_depends_json "$key")"
 	done
 	if ((json)); then printf ']}\n'; fi
@@ -3645,7 +3650,7 @@ selfupdate_check() {
 	if ((json)); then
 		printf '{"version":"%s","latest":"%s","update_available":%s}\n' "$DPISTACK_VERSION" "${tag#v}" "$newer"
 	elif [[ "$newer" == true ]]; then
-		echo "dpistack $DPISTACK_VERSION is running, ${tag#v} is available: sudo dpistack self-update"
+		echo "dpistack $DPISTACK_VERSION is running, ${tag#v} is available: sudo dpistack update"
 	else
 		echo "dpistack $DPISTACK_VERSION is the latest version"
 	fi
@@ -3677,17 +3682,9 @@ selfupdate_job() {
 # selfupdate_apply - download, check, then run the NEW installer on the saved
 # config: it renews the persistent command, the panel and its unit, and
 # restarts what changed. The config is never rewritten with defaults.
-selfupdate_apply() {
-	local tag url tmp src
-	tag=$(selfupdate_latest_tag) || exit 1
-	if ! selfupdate_is_newer "$tag"; then
-		echo "dpistack $DPISTACK_VERSION is the latest version, nothing to do"
-		return 0
-	fi
+selfupdate_fetch() {
+	local tag="$1" tmp="$2" url src
 	url=$(selfupdate_url "$SELFUPDATE_ARCHIVE/${tag}.tar.gz" "${DPISTACK_UPDATE_ARCHIVE:-}")
-	tmp=$(mktemp -d) || fail 1 "no temporary directory"
-	# shellcheck disable=SC2064
-	trap "rm -rf '$tmp'" EXIT
 	echo "downloading $tag"
 	curl -fsSL --max-time 300 -o "$tmp/src.tar.gz" "$url" || fail 1 "could not download $tag"
 	# Nothing outside the target directory, whatever the archive says.
@@ -3701,6 +3698,20 @@ selfupdate_apply() {
 	[[ -f "$src/install.sh" && -f "$src/lib/common.sh" ]] || fail 1 "the archive is not a dpistack release"
 	grep -q "^DPISTACK_VERSION=\"${tag#v}\"" "$src/lib/common.sh" ||
 		fail 1 "the archive does not carry the version ${tag#v}, nothing was installed"
+}
+
+selfupdate_apply() {
+	local tag tmp src
+	tag=$(selfupdate_latest_tag) || exit 1
+	if ! selfupdate_is_newer "$tag"; then
+		echo "dpistack $DPISTACK_VERSION is the latest version, nothing to do"
+		return 0
+	fi
+	tmp=$(mktemp -d) || fail 1 "no temporary directory"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$tmp'" EXIT
+	selfupdate_fetch "$tag" "$tmp"
+	src="$tmp/src"
 	echo "installing ${tag#v} on the saved config"
 	local -a args=(install -y)
 	# -y refuses a non-localhost access mode without ACCESS_CONFIRM=yes (exit 2
@@ -3735,6 +3746,133 @@ cmd_self_update() {
 		;;
 	*) fail 2 "self-update: [--check] | check | run | job | apply" ;;
 	esac
+}
+
+# ------------------------------------------------------------ update, migrate
+#
+# `dpistack update [--check] [--dry-run] [--yes]`: the update of dpistack from
+# the command line, start to end. It looks for a newer release, shows what the
+# new version will do to this host (the migrations and the builds it repeats:
+# lib/migrate.sh), asks, then installs it on the saved config and waits for the
+# end, printing what the install prints. The work runs as a transient unit
+# (the same one the panel uses) so a lost ssh session does not stop it halfway.
+# `dpistack migrate [--plan|--yes]` shows or does that work for the installed
+# version. It happens by itself in `install` and `update`; the command is for a
+# host whose files were replaced by other means.
+
+update_usage() {
+	cat <<'USAGE'
+Usage: dpistack update [--check] [--dry-run] [--yes]
+
+  (no option)  look for a newer release, show what it will do, ask, install it
+  --check      only say whether a newer release exists
+  --dry-run    download it and show its migration plan; nothing is installed
+  --yes, -y    do not ask
+USAGE
+}
+
+cmd_update() {
+	local check=0 dry=0 yes=0 arg tag tmp
+	local -a yes_arg=()
+	restricted_caller && fail 2 "update: not for the panel, the Update button runs self-update run"
+	for arg in "$@"; do
+		case "$arg" in
+		--check) check=1 ;;
+		--dry-run) dry=1 ;;
+		--yes | -y)
+			yes=1
+			yes_arg=(--yes)
+			;;
+		-h | --help)
+			update_usage
+			return 0
+			;;
+		*)
+			update_usage >&2
+			fail 2 "update: unknown option $arg"
+			;;
+		esac
+	done
+	tag=$(selfupdate_latest_tag) || exit 1
+	if ! selfupdate_is_newer "$tag"; then
+		echo "dpistack $DPISTACK_VERSION is the latest version"
+		if migrate_needed; then
+			echo "this host still has work from an earlier version:"
+			if ((check || dry)); then
+				migrate_plan
+			else
+				cmd_migrate ${yes_arg[@]+"${yes_arg[@]}"}
+			fi
+		fi
+		return 0
+	fi
+	echo "dpistack $DPISTACK_VERSION is running, ${tag#v} is available"
+	((check)) && return 0
+	tmp=$(mktemp -d) || fail 1 "no temporary directory"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$tmp'" EXIT
+	selfupdate_fetch "$tag" "$tmp"
+	echo "what ${tag#v} does to this host:"
+	(cd "$tmp/src" && bash ./install.sh migrate --plan) || fail 1 "could not read the migration plan of ${tag#v}"
+	((dry)) && return 0
+	# DPISTACK_ROOT is the sandbox of the tests: nothing outside it is touched
+	[[ $EUID -eq 0 || -n "${DPISTACK_ROOT:-}" ]] || fail 3 "update: run it as root: sudo dpistack update"
+	if ((!yes)) && [[ -t 0 ]]; then
+		local answer
+		read -r -p "Install ${tag#v} now? [y/N] " answer
+		[[ "${answer,,}" == y || "${answer,,}" == yes ]] || {
+			echo "nothing was changed"
+			return 0
+		}
+	elif ((!yes)); then
+		fail 3 "update: no terminal to ask on, use --yes"
+	fi
+	case "$(systemctl is-active "$SELFUPDATE_UNIT.service" 2>/dev/null)" in
+	active | activating) fail 3 "an update is already running" ;;
+	esac
+	if [[ -z "${DPISTACK_ROOT:-}" ]] && command -v systemd-run >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+		systemctl reset-failed "$SELFUPDATE_UNIT.service" >/dev/null 2>&1 || true
+		systemd-run --quiet --wait --pipe --collect --unit="$SELFUPDATE_UNIT" \
+			--description="dpistack: updating to ${tag#v}" "$SCRIPT_DIR/install.sh" self-update apply
+	else
+		selfupdate_apply
+	fi
+}
+
+# cmd_migrate [--plan] [--yes] - the work an upgrade left on this host. It is
+# done by itself by `install` and `update`; this is the way to do it alone, for
+# a host whose files were replaced by other means. It is the install on the
+# saved config, so the migrations, the rebuilds and the rendering all run.
+cmd_migrate() {
+	local plan=0 yes=0 arg
+	restricted_caller && fail 2 "migrate: not for the panel"
+	for arg in "$@"; do
+		case "$arg" in
+		--plan) plan=1 ;;
+		--yes | -y) yes=1 ;;
+		*) fail 2 "migrate: [--plan] [--yes]" ;;
+		esac
+	done
+	if ((plan)) || ! migrate_needed; then
+		migrate_plan
+		return 0
+	fi
+	migrate_plan
+	# DPISTACK_ROOT is the sandbox of the tests: nothing outside it is touched
+	[[ $EUID -eq 0 || -n "${DPISTACK_ROOT:-}" ]] || fail 3 "migrate: run it as root: sudo dpistack migrate"
+	if ((!yes)) && [[ -t 0 ]]; then
+		local answer
+		read -r -p "Do this now? [y/N] " answer
+		[[ "${answer,,}" == y || "${answer,,}" == yes ]] || {
+			echo "nothing was changed"
+			return 0
+		}
+	elif ((!yes)); then
+		fail 3 "migrate: no terminal to ask on, use --yes"
+	fi
+	local -a args=(install -y)
+	selfupdate_access_unchanged && args+=(--set ACCESS_CONFIRM=yes)
+	bash "$SCRIPT_DIR/install.sh" "${args[@]}"
 }
 
 # ----------------------------------------------------------------- iface
@@ -5029,7 +5167,7 @@ cmd_backup() {
 audit_wanted() {
 	local sub="${2:-}"
 	case "$1" in
-	start | stop | restart | reload | config-write | config-revert | self-update | reconfigure | rules-update | rules-group | rules-sid | mode-confirm | mode-rollback | fw | panel-passwd | test) return 0 ;;
+	start | stop | restart | reload | config-write | config-revert | self-update | update | reconfigure | rules-update | rules-group | rules-sid | mode-confirm | mode-rollback | fw | panel-passwd | test) return 0 ;;
 	settings) [[ "$sub" == set || "$sub" == secret || ("$sub" == profile && "${3:-}" =~ ^(save|delete|apply)$) ]] ;;
 	rules-sources | iface | users) [[ -n "$sub" && "$sub" != list ]] ;;
 	# prune is not listed: the watchdog runs it every tick and writes its own
@@ -5191,7 +5329,9 @@ People and access
 
 Keep it safe
   backup create|list|verify|restore
-  self-update ...                 install a newer release of the project
+  update [--check|--dry-run|--yes] look for a newer release, show its plan, install it
+  migrate [--plan|--yes]          the work an upgrade left on this host (done by update and install by themselves)
+  self-update ...                 the same update as separate steps (check, run, job)
 
 More: ${prog} <command> --help for one command; ${prog} help --all for every option of every command.
 Exit codes: 0 ok, 1 error, 2 misuse, 3 refused or not available in this mode, 4 no such component, 5 a name or value that is not allowed.
@@ -5303,6 +5443,8 @@ ctl_dispatch() {
 	config-revert) cmd_config_revert "$@" ;;
 	settings) cmd_settings "$@" ;;
 	self-update) cmd_self_update "$@" ;;
+	update) cmd_update "$@" ;;
+	migrate) cmd_migrate "$@" ;;
 	reconfigure) ctl_cmd_reconfigure "$@" ;;
 	rules-update) cmd_rules_update "$@" ;;
 	rules-sources) cmd_rules_sources "$@" ;;
@@ -6258,7 +6400,7 @@ declare -gA KEY_HINT=(
 	[PIN_VERSIONS]='Pin the installed versions so a system update does not change them.'
 	[SURICATA_MODE]='ids only watches, ips can block. Switching is best done on the Components screen.'
 	[IFACES]='Interfaces Suricata captures from, comma separated.'
-	[BPF_FILTER]='BPF filter: which traffic to skip or to analyze.'
+	[BPF_FILTER]='BPF filter: which traffic to skip or to analyze. Examples: not port 22, host 10.0.0.5, net 192.168.0.0/16 and not port 53. Empty: all the traffic.'
 	[HOME_NET]='Your networks (CIDR, comma separated) or auto: detect from the interfaces.'
 	[IPS_METHOD]='How IPS gets packets: the NFQUEUE queue or AF_PACKET.'
 	[IPS_NFQ_CHAINS]='iptables chains that send packets to the queue.'
@@ -6266,13 +6408,13 @@ declare -gA KEY_HINT=(
 	[EVE_FILE]='Write events to eve.json (needed by the panel and the watchdog).'
 	[EVE_TYPES]='Which event types to write to eve.json.'
 	[EVE_SYSLOG]='Duplicate events to syslog (facility local5).'
-	[EVE_REDIS]='Redis output. Not supported yet: leave it empty (a value saved by an older version is ignored with a warning).'
+	[EVE_REDIS]='Send the events to Redis as well: yes (Redis of this host), or host[:port][/key], for example 127.0.0.1:6379/suricata. Empty or no: eve.json only. Needs a Suricata built with Redis support (a source build has it).'
 	[EVE_ROTATE]='How to rotate eve.json: daily, weekly or by size.'
 	[EVE_KEEP]='How many rotated files to keep.'
-	[EVE_MAX_SIZE_MB]='File size in MB that triggers rotation (the size mode).'
+	[EVE_MAX_SIZE_MB]='File size in MB that triggers rotation (the size mode). 100 by default.'
 	[STATS_INTERVAL_SEC]='How often Suricata writes statistics (seconds).'
 	[RULES_SOURCES]='Rule sources for the rules updater, space separated.'
-	[RULES_URLS]='Your own rule set addresses, space separated.'
+	[RULES_URLS]='Your own rule set addresses, space separated. Empty: only the rule sources above are used.'
 	[RULES_GROUPS]='Enabled rule groups, comma separated.'
 	[RULES_UPDATE]='Update the rules on a schedule.'
 	[RULES_UPDATE_CALENDAR]='When to update: daily, weekly or a systemd expression.'
@@ -6655,7 +6797,7 @@ menu_edit_key() {
 	while true; do
 		local current="${CONF[$key]:-}"
 		local opts="${SCHEMA_OPTIONS[$key]}"
-		echo "$key (now: ${current:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		echo "$key (now: ${current:-$(schema_effective "$key" || true)}, default: ${SCHEMA_DEFAULT[$key]:-none})" >&2
 		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$current" ]] && menu_say_empty "$key"
 		[[ -n "$opts" ]] && echo "  options: $opts" >&2
@@ -7170,7 +7312,7 @@ menu_wizard_ask() {
 		local shown="${CONF[$key]:-}"
 		schema_is_secret "$key" && shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
 		echo >&2
-		echo "$key (now: ${shown:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		echo "$key (now: ${shown:-$(schema_effective "$key" || true)}, default: ${SCHEMA_DEFAULT[$key]:-none})" >&2
 		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$shown" ]] && menu_say_empty "$key"
 		[[ -n "${SCHEMA_OPTIONS[$key]}" ]] && echo "  options: ${SCHEMA_OPTIONS[$key]}" >&2
@@ -7222,8 +7364,6 @@ menu_wizard() {
 			[[ "${SCHEMA_GROUP[$key]}" == "$g" ]] || continue
 			menu_key_is_component "$key" && continue
 			menu_key_skipped "$key" && continue
-			# no output behind it yet: there is nothing to ask, a value is refused
-			[[ "$key" == "EVE_REDIS" ]] && continue
 			menu_wizard_ask "$key"
 			rc=$?
 			case "$key" in
@@ -8050,6 +8190,159 @@ menu_run_manage() {
 	done
 }
 DPISTACK_BUNDLE_END
+put lib/migrate.sh 644 <<'DPISTACK_BUNDLE_END'
+#!/usr/bin/env bash
+# Migrations: what an upgrade to a new version does by itself (tech.md 18.57).
+#
+# Three things change between releases and none of them may be left to the
+# person who upgrades:
+#   1. a source build whose recipe changed (a new configure flag) is built
+#      again: every build records its recipe number in the state file
+#      (build.<part>.recipe) and the step check refuses a build of an older
+#      recipe, so the normal install rebuilds it;
+#   2. a saved setting whose meaning changed is resolved here, in memory,
+#      before the config is validated and written (migrate_<version>);
+#   3. everything rendered (unit files, suricata.yaml, the panel) is rendered
+#      again by the ordinary steps, because their checks compare hashes.
+# The version that last finished an install is kept as install.version. A host
+# that has no such line but has a finished install is treated as older than
+# every migration, so each one runs; a migration is safe to run twice.
+
+# The recipe numbers and build_recipe_have are in lib/state.sh: the build steps
+# read them and some of them are loaded without this file.
+
+MIGRATION_VERSIONS=(0.50.0)
+declare -A MIGRATION_TEXT=(
+	["0.50.0"]="EVE_MAX_SIZE_MB gets its default of 100 when it was saved empty; a saved EVE_REDIS value is a live Redis output from now on; a Suricata built from source is rebuilt with Redis support"
+)
+
+# version_lt <a> <b> - 0 when version a is lower than version b.
+version_lt() {
+	[[ "$1" != "$2" && "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$1" ]]
+}
+
+# migrate_from_version - the version of the last finished install, 0.0.0 for a
+# finished install that did not record it, empty on a host without install.
+migrate_from_version() {
+	local v
+	v=$(state_read_value install.version)
+	if [[ -n "$v" ]]; then
+		echo "$v"
+	elif state_install_finished; then
+		echo "0.0.0"
+	fi
+}
+
+# migrate_pending - the versions of the migrations that an upgrade runs.
+migrate_pending() {
+	local from v
+	from=$(migrate_from_version)
+	[[ -n "$from" ]] || return 0
+	for v in "${MIGRATION_VERSIONS[@]}"; do
+		version_lt "$from" "$v" || continue
+		version_lt "$DPISTACK_VERSION" "$v" && continue
+		echo "$v"
+	done
+}
+
+# migrate_conf <key> <default> - a setting from the layered config of this run,
+# or from the saved file when the run has not loaded it (the verbs).
+migrate_conf() {
+	local v=""
+	if declare -p CONF >/dev/null 2>&1; then
+		v="${CONF[$1]:-}"
+	fi
+	[[ -n "$v" ]] || v=$(conf_get "$1" "$2" 2>/dev/null || true)
+	echo "${v:-$2}"
+}
+
+# migrate_rebuilds - one line for each source build that has to be made again,
+# "part have want reason". nDPI comes first: Suricata links its plugin.
+migrate_rebuilds() {
+	local have
+	if [[ "$(migrate_conf NDPI_ENABLE no)" == yes && "$(migrate_conf NDPI_SOURCE source)" == source &&
+	-n "$(state_read_value "$(ndpi_built_ref_state_key 2>/dev/null)" 2>/dev/null)" ]]; then
+		have=$(build_recipe_have ndpi)
+		[[ "$have" != "$NDPI_BUILD_RECIPE" ]] && echo "ndpi $have $NDPI_BUILD_RECIPE the build recipe of nDPI changed"
+	fi
+	if [[ "$(migrate_conf SURICATA_ENABLE yes)" == yes && "$(migrate_conf SURICATA_SOURCE distro)" == source &&
+	-n "$(state_read_value "${SURICATA_BUILT_REF_STATE_KEY:-}")" ]]; then
+		have=$(build_recipe_have suricata)
+		[[ "$have" != "$SURICATA_BUILD_RECIPE" ]] && echo "suricata $have $SURICATA_BUILD_RECIPE Redis support (hiredis) is added to the build"
+	fi
+	return 0
+}
+
+migrate_0_50_0() {
+	if [[ -z "${CONF[EVE_MAX_SIZE_MB]:-}" ]]; then
+		CONF[EVE_MAX_SIZE_MB]=100
+		echo "migrate 0.50.0: EVE_MAX_SIZE_MB was saved empty, it is 100 now (used only with EVE_ROTATE=size)"
+	fi
+	case "${CONF[EVE_REDIS]:-}" in
+	"" | no | No | NO | off | none | false) ;;
+	*) echo "migrate 0.50.0: EVE_REDIS=${CONF[EVE_REDIS]} was ignored before and is a live Redis output now; set EVE_REDIS=no to keep eve.json only" ;;
+	esac
+	return 0
+}
+
+# migrate_plan - what an upgrade from the recorded version does, as text.
+migrate_plan() {
+	local from v part have want why n=0
+	from=$(migrate_from_version)
+	if [[ -z "$from" ]]; then
+		echo "no finished install on this host: nothing to migrate"
+		return 0
+	fi
+	echo "installed: ${from/0.0.0/an older version that did not record it}, this version: $DPISTACK_VERSION"
+	for v in $(migrate_pending); do
+		echo "migration $v: ${MIGRATION_TEXT[$v]}"
+		n=$((n + 1))
+	done
+	while read -r part have want why; do
+		[[ -n "$part" ]] || continue
+		echo "rebuild $part: recipe $have -> $want, $why"
+		n=$((n + 1))
+	done < <(migrate_rebuilds)
+	((n)) || echo "nothing to migrate"
+	return 0
+}
+
+# migrate_needed - 0 when an upgrade left work on this host: a migration of a
+# version above the recorded one, or a source build of an older recipe.
+migrate_needed() {
+	[[ -n "$(migrate_pending)$(migrate_rebuilds)" ]]
+}
+
+# migrate_notice - one line on stderr when work is pending, for the commands a
+# person runs to look at the host. It does not change anything: the install,
+# `dpistack update` and `dpistack migrate` do the work.
+migrate_notice() {
+	migrate_needed || return 0
+	echo "dpistack: this host still has work from an earlier version (details: dpistack migrate --plan); it is done by: sudo dpistack migrate" >&2
+}
+
+# migrate_run - called by the install right after the config is layered and
+# before it is validated and written: the migrations edit CONF, so the file
+# that is written is already the migrated one. A fresh host runs none.
+migrate_run() {
+	local from v part have want why
+	from=$(migrate_from_version)
+	[[ -n "$from" ]] || return 0
+	for v in $(migrate_pending); do
+		"migrate_${v//./_}"
+	done
+	while read -r part have want why; do
+		[[ -n "$part" ]] || continue
+		echo "migrate: $part is built again (recipe $have -> $want: $why)"
+	done < <(migrate_rebuilds)
+	return 0
+}
+
+# migrate_record - the install ran to its end: this version is the installed one.
+migrate_record() {
+	state_write_value install.version "$DPISTACK_VERSION"
+}
+DPISTACK_BUNDLE_END
 put lib/os.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # OS detection and package-manager wrappers. Steps call pkg_install,
@@ -8379,7 +8672,7 @@ pkg_build_deps() {
 		local -a pkgs=(build-essential git autoconf automake libtool pkg-config make libpcap-dev)
 		if [[ "$1" == "suricata" ]]; then
 			pkgs+=(libpcre2-dev libyaml-dev libjansson-dev libmagic-dev zlib1g-dev
-				libcap-ng-dev libnet1-dev liblz4-dev python3-yaml cargo rustc)
+				libcap-ng-dev libnet1-dev liblz4-dev libhiredis-dev python3-yaml cargo rustc)
 			# A git checkout generates its Rust headers with cbindgen.
 			pkg_available cbindgen && pkgs+=(cbindgen)
 		fi
@@ -8389,7 +8682,7 @@ pkg_build_deps() {
 		local -a pkgs=(gcc gcc-c++ make git autoconf automake libtool pkgconf-pkg-config libpcap-devel)
 		if [[ "$1" == "suricata" ]]; then
 			pkgs+=(pcre2-devel libyaml-devel jansson-devel file-devel zlib-devel
-				libcap-ng-devel libnet-devel lz4-devel python3-pyyaml cargo rust)
+				libcap-ng-devel libnet-devel lz4-devel hiredis-devel python3-pyyaml cargo rust)
 			pkg_available cbindgen && pkgs+=(cbindgen)
 		fi
 		pkg_install "${pkgs[@]}"
@@ -10059,7 +10352,7 @@ schema_init() {
 	_schema_add 'EVE_REDIS|free|||advanced|eve|suricata|light|no'
 	_schema_add 'EVE_ROTATE|enum|daily|daily,weekly,size|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_KEEP|int|14|0..3650|advanced|eve|suricata|light|no'
-	_schema_add 'EVE_MAX_SIZE_MB|int||1..1000000|advanced|eve|suricata|light|no'
+	_schema_add 'EVE_MAX_SIZE_MB|int|100|1..1000000|advanced|eve|suricata|light|no'
 	_schema_add 'STATS_INTERVAL_SEC|int|30|5..300|advanced|eve|suricata watch|light|no'
 
 	_schema_add 'RULES_SOURCES|free|et/open||advanced|rules|rules|light|no'
@@ -10391,8 +10684,18 @@ schema_validate_entry() {
 	local IFS=,
 	case "$key" in
 	EVE_REDIS)
-		echo "$key: this output is not supported yet, leave it empty"
-		return 1
+		# no | yes | host[:port][/key]: the port is 1..65535 and the host an address or a name
+		case "${value,,}" in
+		no | off | none | false | yes | on | true) ;;
+		*)
+			local rhp="${value%%/*}" rport=6379
+			[[ "$rhp" == *:* ]] && rport="${rhp#*:}"
+			if [[ ! "$rport" =~ ^[0-9]{1,5}$ ]] || ((10#$rport < 1 || 10#$rport > 65535)) || [[ -z "${rhp%%:*}" || "${rhp%%:*}" =~ ^[0-9]+$ ]]; then
+				echo "$key=$value: use no, yes (this host, 127.0.0.1:6379) or host[:port][/key], for example 127.0.0.1:6379/suricata"
+				return 1
+			fi
+			;;
+		esac
 		;;
 	EVE_TYPES)
 		for el in $value; do
@@ -10420,6 +10723,40 @@ schema_validate_entry() {
 	return 0
 }
 
+# schema_effective <key> - what an empty value of an optional key is on this
+# host, in a few words, for the prompts of the menu, `settings list --json` and
+# the Settings screen of the panel (v0.50.0: they showed <empty> or "(empty)").
+# It is the value in effect, not a description of the empty string: the
+# interfaces ntopng really watches, the version that is installed now, the rule
+# sources that are used. Prints nothing for a key that has no such value.
+schema_effective() {
+	local key="$1" v="" ifaces="" sources=""
+	# the layered config of an install run, else the saved file (the verbs)
+	ifaces="${CONF[IFACES]:-}"
+	sources="${CONF[RULES_SOURCES]:-}"
+	if declare -F conf_get >/dev/null; then
+		[[ -n "$ifaces" ]] || ifaces=$(conf_get IFACES "" 2>/dev/null || true)
+		[[ -n "$sources" ]] || sources=$(conf_get RULES_SOURCES "" 2>/dev/null || true)
+	fi
+	case "$key" in
+	BPF_FILTER) echo "none: all the traffic is analysed" ;;
+	NTOPNG_IFACES) echo "same as IFACES (${ifaces:-auto})" ;;
+	SURICATA_VERSION)
+		declare -F suricata_installed_version >/dev/null && v=$(suricata_installed_version 2>/dev/null || true)
+		echo "latest stable release${v:+ (installed: $v)}"
+		;;
+	NDPI_VERSION) echo "latest tested release (the one the plugin is built with)" ;;
+	NTOPNG_VERSION | EVEBOX_VERSION)
+		local pkg="${key%_VERSION}"
+		declare -F pkg_installed_version >/dev/null && v=$(pkg_installed_version "${pkg,,}" 2>/dev/null || true)
+		echo "latest available${v:+ (installed: $v)}"
+		;;
+	EVE_REDIS) echo "off: the events go to eve.json only" ;;
+	EVE_MAX_SIZE_MB) echo "100 MB, used only when EVE_ROTATE=size" ;;
+	RULES_URLS) echo "none: only the rule sources ${sources:-et/open} are used" ;;
+	esac
+}
+
 # schema_empty_meaning <key> - what an empty value of an optional key does, for
 # the prompts of the menu (R193 of 18.46: they showed <empty> and nothing else).
 # Prints nothing for a key whose empty value needs no explanation.
@@ -10431,8 +10768,8 @@ schema_empty_meaning() {
 	NDPI_VERSION) echo "the nDPI release the Suricata plugin is built with" ;;
 	NTOPNG_VERSION) echo "the latest version of the package or image" ;;
 	EVEBOX_VERSION) echo "the latest version of the package or image" ;;
-	EVE_REDIS) echo "no Redis output; a value is ignored with a warning, this output is not supported yet" ;;
-	EVE_MAX_SIZE_MB) echo "not used; EVE_ROTATE=size is refused without a value" ;;
+	EVE_REDIS) echo "no Redis output: events go to eve.json only (yes = Redis of this host, key suricata)" ;;
+	EVE_MAX_SIZE_MB) echo "100 MB; it is used only when EVE_ROTATE=size" ;;
 	RULES_URLS) echo "only the sources of RULES_SOURCES are used" ;;
 	esac
 }
@@ -10682,6 +11019,22 @@ state_set_file_hash() {
 state_hash_content() {
 	# state_hash_content < content-on-stdin -> sha256 hex
 	sha256sum | cut -d' ' -f1
+}
+
+# Build recipes (lib/migrate.sh): raise a number when the configure flags or
+# the build dependencies of that part change. The step check refuses a build
+# of an older recipe, so the next install builds the part again. A build made
+# before recipes existed counts as recipe 1.
+# shellcheck disable=SC2034 # read by the build steps and by lib/migrate.sh
+SURICATA_BUILD_RECIPE=2 # 2: --enable-hiredis (Redis output of eve-log)
+# shellcheck disable=SC2034
+NDPI_BUILD_RECIPE=1
+
+# build_recipe_have <part> - the recipe the part was built with.
+build_recipe_have() {
+	local v
+	v=$(state_read_value "build.$1.recipe")
+	echo "${v:-1}"
 }
 DPISTACK_BUNDLE_END
 put lib/step_access.sh 644 <<'DPISTACK_BUNDLE_END'
@@ -11867,7 +12220,9 @@ step_ndpi_check() {
 		local wanted have
 		wanted=$(git_ref_commit "$(path_ndpi_src_dir)" "$(ndpi_target_ref)")
 		have=$(state_read_value "$(ndpi_built_ref_state_key)")
-		[[ -n "$wanted" && "$wanted" == "$have" ]]
+		[[ -n "$wanted" && "$wanted" == "$have" ]] || return 1
+		# a build of an older recipe is built again (lib/migrate.sh)
+		[[ "$(build_recipe_have ndpi)" == "$NDPI_BUILD_RECIPE" ]]
 		;;
 	*)
 		return 1
@@ -11917,6 +12272,7 @@ ndpi_build_from_source() {
 
 	[[ "${DRY_RUN:-0}" != "1" ]] && run ldconfig
 	[[ -n "$resolved_ref" ]] && state_write_value "$(ndpi_built_ref_state_key)" "$resolved_ref"
+	[[ "${DRY_RUN:-0}" != "1" ]] && state_write_value "build.ndpi.recipe" "$NDPI_BUILD_RECIPE"
 	return 0
 }
 
@@ -13519,21 +13875,63 @@ suricata_render_plugins_block() {
 	fi
 }
 
-# suricata_warn_redis_unused - EVE_REDIS has no output behind it yet (it needs
-# a Suricata built with hiredis). A saved config may hold a value, so it is
-# ignored with a warning and never refused: the refusal of v0.37.6 stopped an
-# update on a config that had one (R210 of 18.51). "no", "off", "none" and
-# "false" mean off and say nothing.
-suricata_warn_redis_unused() {
-	local v="${CONF[EVE_REDIS]:-}"
+# suricata_redis_target - the Redis output of EVE_REDIS as "host port key" on
+# one line, or exit 1 when the output is off. The value is "no" (or empty, off,
+# none, false): off; "yes": the Redis of this host, 127.0.0.1:6379, key
+# "suricata"; or "host[:port][/key]" (port 6379 and key "suricata" when left
+# out). Events are pushed to the list with LPUSH (mode lpush): a reader takes
+# them with BRPOP and nothing but the list grows when no reader is there.
+suricata_redis_target() {
+	local v="${CONF[EVE_REDIS]:-}" hp key="suricata" host port=6379
 	case "${v,,}" in
-	"" | no | off | none | false) return 0 ;;
+	"" | no | off | none | false) return 1 ;;
+	yes | on | true) v="127.0.0.1:6379/suricata" ;;
 	esac
-	log "WARN" "EVE_REDIS=$v is ignored: this installer has no Redis output yet (empty the value to stop this message)"
+	hp="${v%%/*}"
+	[[ "$v" == */* && -n "${v#*/}" ]] && key="${v#*/}"
+	host="$hp"
+	if [[ "$hp" == *:* ]]; then
+		host="${hp%%:*}"
+		port="${hp#*:}"
+	fi
+	[[ -n "$host" ]] || return 1
+	echo "$host $port $key"
+}
+
+# suricata_has_redis - 0 when the installed Suricata was built with hiredis
+# (`suricata --build-info` says "Redis support: yes"); 0 as well when there is
+# no binary yet: the source build of this installer adds --enable-hiredis, and
+# suricata -T checks the rendered file before anything is replaced.
+suricata_has_redis() {
+	command -v suricata >/dev/null 2>&1 || return 0
+	suricata --build-info 2>/dev/null | grep -Eqi '^[[:space:]]*Redis support:[[:space:]]*yes'
+}
+
+# suricata_render_redis_output - a second eve-log output with the same types:
+# the events go to Redis as well, the file stays (EveBox and the panel read
+# it). A Suricata without hiredis gets a warning and no block: it would stop
+# at the first start on "filetype: redis".
+suricata_render_redis_output() {
+	local target host port key
+	target=$(suricata_redis_target) || return 0
+	read -r host port key <<<"$target"
+	if ! suricata_has_redis; then
+		log "WARN" "EVE_REDIS=${CONF[EVE_REDIS]} is not used: this Suricata was built without hiredis (use SURICATA_SOURCE=source, or a package built with Redis support)"
+		return 0
+	fi
+	echo "  - eve-log:"
+	echo "      enabled: yes"
+	echo "      filetype: redis"
+	echo "      redis:"
+	echo "        server: $host"
+	echo "        port: $port"
+	echo "        async: no"
+	echo "        mode: lpush"
+	echo "        key: $key"
+	suricata_render_eve_types_block
 }
 
 suricata_render_eve_log_block() {
-	suricata_warn_redis_unused
 	echo "  - eve-log:"
 	echo "      enabled: yes"
 	echo "      filetype: regular"
@@ -13559,6 +13957,7 @@ suricata_render_eve_log_block() {
 		echo "      level: Info"
 		suricata_render_eve_types_block
 	fi
+	suricata_render_redis_output
 }
 
 # suricata_series <X.Y.Z[-suffix]> -> "X.Y"
@@ -13780,7 +14179,9 @@ suricata_build_from_source() {
 	# Another release over an old build: the stale objects and the Rust
 	# cache of the previous tree must go, or make mixes two versions.
 	built_before=$(state_read_value "$SURICATA_BUILT_REF_STATE_KEY")
-	if [[ -n "$built_before" && "$built_before" != "$resolved_ref" ]]; then
+	# A new build recipe (other configure flags) is the same case: objects made
+	# with the old flags must not be linked into the new build.
+	if [[ -n "$built_before" && ("$built_before" != "$resolved_ref" || "$(build_recipe_have suricata)" != "$SURICATA_BUILD_RECIPE") ]]; then
 		run git -C "$src_dir" clean -fdxq || return 1
 	fi
 	run git -C "$src_dir" submodule update --init --recursive || return 1
@@ -13791,7 +14192,7 @@ suricata_build_from_source() {
 	# path".
 	local configure_args=(--prefix=/usr/local --sysconfdir="${DPISTACK_ROOT}/etc"
 		--localstatedir="${DPISTACK_ROOT}/var" --libdir="${DPISTACK_ROOT}/usr/lib"
-		--disable-gccmarch-native)
+		--disable-gccmarch-native --enable-hiredis)
 	if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
 		configure_args+=(--enable-ndpi --with-ndpi="$(path_ndpi_src_dir)")
 	fi
@@ -13818,6 +14219,7 @@ suricata_build_from_source() {
 
 	[[ "${DRY_RUN:-0}" != "1" ]] && run ldconfig
 	[[ -n "$resolved_ref" ]] && state_write_value "$SURICATA_BUILT_REF_STATE_KEY" "$resolved_ref"
+	[[ "${DRY_RUN:-0}" != "1" ]] && state_write_value "build.suricata.recipe" "$SURICATA_BUILD_RECIPE"
 	return 0
 }
 
@@ -13918,6 +14320,8 @@ step_suricata_check() {
 		# branch is compared as the commit it names, not as text.
 		wanted=$(git_ref_commit "$(path_suricata_src_dir)" "$(suricata_target_ref)")
 		[[ -n "$wanted" && "$wanted" == "$have" ]] || return 1
+		# a build of an older recipe is built again (lib/migrate.sh)
+		[[ "$(build_recipe_have suricata)" == "$SURICATA_BUILD_RECIPE" ]] || return 1
 	else
 		command -v suricata >/dev/null 2>&1 || return 1
 		[[ -n "$(suricata_installed_version)" ]] || return 1
@@ -14852,7 +15256,7 @@ _dpistack() {
 	cur="${COMP_WORDS[COMP_CWORD]}"
 	prev="${COMP_WORDS[COMP_CWORD - 1]}"
 	verb="${COMP_WORDS[1]:-}"
-	local verbs="install reconfigure upgrade uninstall diag status start stop restart reload logs config config-read config-write config-revert config-history settings self-update rules rules-update rules-sources rules-group rules-sid rules-search rules-stats rules-history rules-describe rules-find rules-facets rules-local exceptions alerts tokens security iface mode mode-confirm ips fw panel-passwd test health diagnose runtime users backup version help info"
+	local verbs="install reconfigure upgrade uninstall diag status start stop restart reload logs config config-read config-write config-revert config-history settings self-update update migrate rules rules-update rules-sources rules-group rules-sid rules-search rules-stats rules-history rules-describe rules-find rules-facets rules-local exceptions alerts tokens security iface mode mode-confirm ips fw panel-passwd test health diagnose runtime users backup version help info"
 	local components="suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana panel watch rules"
 	local configs="suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules enable.conf disable.conf modify.conf drop.conf threshold.config"
 	local words=""

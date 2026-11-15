@@ -36,6 +36,8 @@ source "$LIB_DIR/menu.sh"
 source "$LIB_DIR/runtime_docker.sh"
 # shellcheck source=lib/ips.sh
 source "$LIB_DIR/ips.sh"
+# shellcheck source=lib/migrate.sh
+source "$LIB_DIR/migrate.sh"
 
 STEPS_ORDER=(preflight selfinstall ndpi suricata rules redis ntopng evebox metrics nodeexp grafana access panel watch verify)
 for _step in "${STEPS_ORDER[@]}"; do
@@ -440,6 +442,7 @@ cmd_install() {
 	os_detect
 
 	layer_config_common
+	migrate_run
 	maybe_run_install_menu
 	panel_password_apply
 	config_generate_metrics_token_if_needed
@@ -489,6 +492,7 @@ cmd_install() {
 	report_dead_parts
 	panel_report_metrics
 	state_write_value install.finished yes
+	migrate_record
 	echo "installation finished"
 	return 0
 }
@@ -891,7 +895,7 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update help rules config info)
+	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update update migrate help rules config info)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen

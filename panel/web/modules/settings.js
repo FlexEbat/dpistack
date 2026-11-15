@@ -248,8 +248,8 @@ export function start(api, els, onError) {
     if (k.type === "enum") add("Allowed", k.options.join(", "));
     else if (k.type === "int") add("Allowed", "a whole number" + (k.min !== null && k.max !== null ? " from " + k.min + " to " + k.max : ""));
     else add("Allowed", "text, checked when you press Check");
-    add("Default", shown(k.default));
-    add("Saved value", k.secret ? (k.set ? "set" : "not set") : shown(k.value));
+    add("Default", shown(k.default, k.effective));
+    add("Saved value", k.secret ? (k.set ? "set" : "not set") : shown(k.value, k.effective));
     const dep = dependencyText(k);
     add("Depends on", dep ? dep : "nothing: it always applies");
     if (dep) add("Applies now", applies(k, valueOf) ? "yes" : "no");

@@ -212,23 +212,56 @@ load_step() {
 	[[ "$output" != *"syslog"* ]]
 }
 
-@test "R210: an EVE_REDIS value is ignored with a warning, and off values say nothing" {
-	run load_step 'CONF[EVE_REDIS]="127.0.0.1:6379/eve"' 'suricata_render_eve_log_block'
+@test "EVE_REDIS=yes renders a redis eve-log output for this host with the same types, lpush, key suricata" {
+	run load_step 'CONF[EVE_REDIS]="yes"; CONF[EVE_TYPES]="alert,dns"' 'suricata_render_eve_log_block'
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"EVE_REDIS=127.0.0.1:6379/eve is ignored"* ]]
+	[[ "$output" == *"filetype: redis"* ]]
+	[[ "$output" == *"server: 127.0.0.1"* ]]
+	[[ "$output" == *"port: 6379"* ]]
+	[[ "$output" == *"mode: lpush"* ]]
+	[[ "$output" == *"key: suricata"* ]]
+	# the file output stays and the redis output repeats the types
+	[[ "$output" == *"filetype: regular"* ]]
+	[ "$(grep -c -- '- alert' <<<"$output")" -eq 2 ]
+}
+
+@test "EVE_REDIS=host:port/key is split into server, port and key; port and key have defaults" {
+	run load_step 'CONF[EVE_REDIS]="redis.lan:6380/eve"' 'suricata_redis_target'
+	[ "$output" = "redis.lan 6380 eve" ]
+	run load_step 'CONF[EVE_REDIS]="redis.lan"' 'suricata_redis_target'
+	[ "$output" = "redis.lan 6379 suricata" ]
+	run load_step 'CONF[EVE_REDIS]="redis.lan:6380/"' 'suricata_redis_target'
+	[ "$output" = "redis.lan 6380 suricata" ]
+}
+
+@test "EVE_REDIS off values render no redis output and say nothing" {
 	local v
 	for v in "" no No off none false; do
 		run load_step "CONF[EVE_REDIS]=\"$v\"" 'suricata_render_eve_log_block'
 		[ "$status" -eq 0 ]
-		[[ "$output" != *"ignored"* ]]
+		[[ "$output" != *"redis"* ]]
+		[[ "$output" != *"WARN"* ]]
 	done
 }
 
-@test "R210: an EVE_REDIS value changes nothing in the rendered eve-log" {
-	local with without
-	with=$(load_step 'CONF[EVE_REDIS]="127.0.0.1:6379/eve"' 'suricata_render_eve_log_block' 2>/dev/null)
-	without=$(load_step 'CONF[EVE_REDIS]=""' 'suricata_render_eve_log_block' 2>/dev/null)
-	[ "$with" = "$without" ]
+@test "EVE_REDIS is kept out, with a warning, when the installed Suricata has no hiredis" {
+	run load_step 'CONF[EVE_REDIS]="yes"' 'suricata_has_redis() { return 1; }; suricata_render_eve_log_block'
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"filetype: redis"* ]]
+	[[ "$output" == *"built without hiredis"* ]]
+}
+
+@test "EVE_REDIS is kept out when the Suricata build info says Redis support: no" {
+	run load_step 'CONF[EVE_REDIS]="yes"; export MOCK_SURICATA_REDIS=no' 'suricata_render_eve_log_block'
+	[ "$status" -eq 0 ]
+	[[ "$output" != *"filetype: redis"* ]]
+	[[ "$output" == *"built without hiredis"* ]]
+}
+
+@test "the source build asks for hiredis and installs its headers" {
+	grep -q -- '--enable-hiredis' "$REPO_DIR/lib/step_suricata.sh"
+	grep -q 'libhiredis-dev' "$REPO_DIR/lib/os.sh"
+	grep -q 'hiredis-devel' "$REPO_DIR/lib/os.sh"
 }
 
 @test "R211: TEST_BT_LIVE=yes lists the test rule file in suricata.yaml and no stays as it was" {

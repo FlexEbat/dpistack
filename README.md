@@ -135,7 +135,8 @@ dpistack logs <component> [-n N] [--follow]
 dpistack settings list|check|set|secret|job
 dpistack reconfigure                      # apply dpistack.conf
 dpistack upgrade | uninstall [--purge]
-dpistack self-update [--check]            # update dpistack itself from its latest release
+dpistack update [--check|--dry-run|--yes]  # update dpistack itself from its latest release (with its migrations)
+dpistack migrate [--plan|--yes]           # the work an upgrade left on this host (install and update do it by themselves)
 dpistack rules-update | rules-sources | rules-group | rules-sid | rules-search
 dpistack iface list|add|remove
 dpistack mode ids|ips | mode-confirm

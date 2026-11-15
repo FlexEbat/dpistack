@@ -68,3 +68,19 @@ state_hash_content() {
 	# state_hash_content < content-on-stdin -> sha256 hex
 	sha256sum | cut -d' ' -f1
 }
+
+# Build recipes (lib/migrate.sh): raise a number when the configure flags or
+# the build dependencies of that part change. The step check refuses a build
+# of an older recipe, so the next install builds the part again. A build made
+# before recipes existed counts as recipe 1.
+# shellcheck disable=SC2034 # read by the build steps and by lib/migrate.sh
+SURICATA_BUILD_RECIPE=2 # 2: --enable-hiredis (Redis output of eve-log)
+# shellcheck disable=SC2034
+NDPI_BUILD_RECIPE=1
+
+# build_recipe_have <part> - the recipe the part was built with.
+build_recipe_have() {
+	local v
+	v=$(state_read_value "build.$1.recipe")
+	echo "${v:-1}"
+}

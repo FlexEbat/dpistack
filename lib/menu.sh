@@ -325,7 +325,7 @@ menu_edit_key() {
 	while true; do
 		local current="${CONF[$key]:-}"
 		local opts="${SCHEMA_OPTIONS[$key]}"
-		echo "$key (now: ${current:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		echo "$key (now: ${current:-$(schema_effective "$key" || true)}, default: ${SCHEMA_DEFAULT[$key]:-none})" >&2
 		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$current" ]] && menu_say_empty "$key"
 		[[ -n "$opts" ]] && echo "  options: $opts" >&2
@@ -840,7 +840,7 @@ menu_wizard_ask() {
 		local shown="${CONF[$key]:-}"
 		schema_is_secret "$key" && shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
 		echo >&2
-		echo "$key (now: ${shown:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		echo "$key (now: ${shown:-$(schema_effective "$key" || true)}, default: ${SCHEMA_DEFAULT[$key]:-none})" >&2
 		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$shown" ]] && menu_say_empty "$key"
 		[[ -n "${SCHEMA_OPTIONS[$key]}" ]] && echo "  options: ${SCHEMA_OPTIONS[$key]}" >&2
@@ -892,8 +892,6 @@ menu_wizard() {
 			[[ "${SCHEMA_GROUP[$key]}" == "$g" ]] || continue
 			menu_key_is_component "$key" && continue
 			menu_key_skipped "$key" && continue
-			# no output behind it yet: there is nothing to ask, a value is refused
-			[[ "$key" == "EVE_REDIS" ]] && continue
 			menu_wizard_ask "$key"
 			rc=$?
 			case "$key" in

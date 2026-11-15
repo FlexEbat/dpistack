@@ -8,4 +8,8 @@ fi
 if [[ "${1:-}" == "-V" && -n "${MOCK_SURICATA_VERSION:-}" ]]; then
 	echo "This is Suricata version $MOCK_SURICATA_VERSION RELEASE"
 fi
+# "suricata --build-info" lists Redis support; MOCK_SURICATA_REDIS=no turns it off.
+if [[ "${1:-}" == "--build-info" ]]; then
+	echo "Redis support:                           ${MOCK_SURICATA_REDIS:-yes}"
+fi
 exit "${MOCK_EXIT:-0}"

@@ -7,7 +7,7 @@ _dpistack() {
 	cur="${COMP_WORDS[COMP_CWORD]}"
 	prev="${COMP_WORDS[COMP_CWORD - 1]}"
 	verb="${COMP_WORDS[1]:-}"
-	local verbs="install reconfigure upgrade uninstall diag status start stop restart reload logs config config-read config-write config-revert config-history settings self-update rules rules-update rules-sources rules-group rules-sid rules-search rules-stats rules-history rules-describe rules-find rules-facets rules-local exceptions alerts tokens security iface mode mode-confirm ips fw panel-passwd test health diagnose runtime users backup version help info"
+	local verbs="install reconfigure upgrade uninstall diag status start stop restart reload logs config config-read config-write config-revert config-history settings self-update update migrate rules rules-update rules-sources rules-group rules-sid rules-search rules-stats rules-history rules-describe rules-find rules-facets rules-local exceptions alerts tokens security iface mode mode-confirm ips fw panel-passwd test health diagnose runtime users backup version help info"
 	local components="suricata evebox ntopng redis victoriametrics prometheus node_exporter grafana panel watch rules"
 	local configs="suricata.yaml evebox.yaml ntopng.conf dpistack.conf local.rules enable.conf disable.conf modify.conf drop.conf threshold.config"
 	local words=""

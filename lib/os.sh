@@ -326,7 +326,7 @@ pkg_build_deps() {
 		local -a pkgs=(build-essential git autoconf automake libtool pkg-config make libpcap-dev)
 		if [[ "$1" == "suricata" ]]; then
 			pkgs+=(libpcre2-dev libyaml-dev libjansson-dev libmagic-dev zlib1g-dev
-				libcap-ng-dev libnet1-dev liblz4-dev python3-yaml cargo rustc)
+				libcap-ng-dev libnet1-dev liblz4-dev libhiredis-dev python3-yaml cargo rustc)
 			# A git checkout generates its Rust headers with cbindgen.
 			pkg_available cbindgen && pkgs+=(cbindgen)
 		fi
@@ -336,7 +336,7 @@ pkg_build_deps() {
 		local -a pkgs=(gcc gcc-c++ make git autoconf automake libtool pkgconf-pkg-config libpcap-devel)
 		if [[ "$1" == "suricata" ]]; then
 			pkgs+=(pcre2-devel libyaml-devel jansson-devel file-devel zlib-devel
-				libcap-ng-devel libnet-devel lz4-devel python3-pyyaml cargo rust)
+				libcap-ng-devel libnet-devel lz4-devel hiredis-devel python3-pyyaml cargo rust)
 			pkg_available cbindgen && pkgs+=(cbindgen)
 		fi
 		pkg_install "${pkgs[@]}"

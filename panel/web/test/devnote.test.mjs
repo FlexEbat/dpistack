@@ -12,15 +12,16 @@ test("the CLI usage, the install help and the install menu carry the sentence", 
   for (const f of ["lib/ctl.sh", "install.sh", "lib/menu.sh"]) assert.ok(read(f).includes(SENTENCE), f);
 });
 
-test("the dashboard shows it on the login page and in the menu", () => {
+test("the dashboard shows it on the login page and at the very top of the signed-in page", () => {
   const html = read("panel/web/index.html");
-  const notes = html.match(/<p class="devnote" role="note">[^<]*<\/p>/g) || [];
+  const notes = html.match(/<p class="devnote(?: devnote-top)?" role="note">[^<]*<\/p>/g) || [];
   assert.equal(notes.length, 2);
   for (const n of notes) assert.ok(n.includes(SENTENCE), n);
   const login = html.slice(html.indexOf('id="login"'), html.indexOf("</main>", html.indexOf('id="login"')));
   assert.ok(login.includes("devnote"));
-  const nav = html.slice(html.indexOf('id="nav-links"'));
-  assert.ok(nav.includes("devnote"));
+  const app = html.slice(html.indexOf('<main id="overview"'));
+  assert.ok(app.indexOf("devnote-top") > 0 && app.indexOf("devnote-top") < app.indexOf("<header>"), "the note comes before the top bar");
+  assert.ok(!html.slice(html.indexOf('id="nav-links"')).includes("devnote"), "and no longer sits in the menu");
 });
 
 test("both READMEs say it and both name the GNU General Public License v3.0", () => {

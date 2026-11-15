@@ -114,10 +114,12 @@ export function start(api, els, onError) {
   function setReport(report) {
     els.report.replaceChildren();
     if (!report.verdict) return;
-    els.report.append(el("p", report.canSave ? "muted" : "error", report.verdict));
+    const verdict = el("p", "report-verdict");
+    verdict.append(el("span", `badge ${report.canSave ? "ok" : "crit"}`, report.canSave ? "Passed" : "Problems found"), el("span", "", report.verdict));
+    els.report.append(verdict);
     if (report.lines.length) {
-      const list = el("ul");
-      for (const l of report.lines) list.append(el("li", l.kind === "problem" ? "error" : "muted", l.text));
+      const list = el("ul", "report-list");
+      for (const l of report.lines) list.append(el("li", l.kind === "problem" ? "problem" : "warning", l.text));
       els.report.append(list);
     }
   }

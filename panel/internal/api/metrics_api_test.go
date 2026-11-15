@@ -78,12 +78,12 @@ func TestMetricsAnswer(t *testing.T) {
 	if code, a := getMetrics(t, e, ""); code != 200 || a.Range != "1h" {
 		t.Errorf("default range: %d %q", code, a.Range)
 	}
-	for _, r := range []string{"6h", "24h"} {
+	for _, r := range []string{"6h", "12h", "3h", "24h"} {
 		if code, a := getMetrics(t, e, "?range="+r); code != 200 || a.Range != r || len(a.Series["rss"].Values) != 180 {
 			t.Errorf("%s: %d, %d points", r, code, len(a.Series["rss"].Values))
 		}
 	}
-	for _, bad := range []string{"?range=7d", "?range=2h", "?range=24H", "?range=1h%3B"} {
+	for _, bad := range []string{"?range=7d", "?range=25h", "?range=0h", "?range=05h", "?range=24H", "?range=1h%3B"} {
 		if code, _ := getMetrics(t, e, bad); code != http.StatusBadRequest {
 			t.Errorf("%s: %d, want 400", bad, code)
 		}
