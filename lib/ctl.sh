@@ -749,7 +749,7 @@ settings_secret_set() {
 }
 
 settings_list() {
-	local json=0 key first=1 type opts min max value secret set pattern
+	local json=0 key first=1 type opts min max value secret set pattern effective
 	[[ "${1:-}" == "--json" ]] && json=1
 	if ((json)); then printf '{"keys":['; fi
 	for key in "${SCHEMA_KEYS[@]}"; do
@@ -782,12 +782,16 @@ settings_list() {
 			max="${SCHEMA_OPTIONS[$key]##*..}"
 		fi
 		pattern="${SCHEMA_PATTERN[$key]:-}"
+		effective=""
+		if [[ -z "$value" ]]; then
+			effective=$(schema_effective "$key")
+		fi
 		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s","effective":"%s","steps":%s,"touches":%s,"depends":%s}' \
 			"$key" "$type" "$opts" "$min" "$max" "$(json_escape "${SCHEMA_DEFAULT[$key]}")" \
 			"${SCHEMA_LEVEL[$key]}" "${SCHEMA_GROUP[$key]}" "${SCHEMA_WEIGHT[$key]}" \
 			"$([[ $secret == yes ]] && echo true || echo false)" "$set" \
 			"$(json_escape "$value")" "$(json_escape "$pattern")" \
-			"$(json_escape "$([[ -z "$value" ]] && schema_effective "$key" || true)")" \
+			"$(json_escape "$effective")" \
 			"$(settings_json_array "${SCHEMA_STEPS[$key]// /,}")" "$(settings_touches_json "$key")" "$(settings_depends_json "$key")"
 	done
 	if ((json)); then printf ']}\n'; fi
