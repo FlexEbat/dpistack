@@ -171,3 +171,49 @@ list_actions() {
 		false
 	}
 }
+
+@test "every bats file is in exactly one of the four shards, and the shards are close in size" {
+	local k all
+	all=$(for k in 1 2 3 4; do bash "$REPO_DIR/scripts/bats-shard.sh" "$k" 4; done | sort)
+	[ "$(wc -l <<<"$all")" -eq "$(ls "$REPO_DIR"/tests/*.bats | wc -l)" ]
+	[ -z "$(uniq -d <<<"$all")" ]
+	local min=999999999 max=0 size
+	for k in 1 2 3 4; do
+		size=$(bash "$REPO_DIR/scripts/bats-shard.sh" "$k" 4 | xargs wc -c | tail -1 | awk '{print $1}')
+		((size < min)) && min=$size
+		((size > max)) && max=$size
+	done
+	# the largest shard is less than a fifth bigger than the smallest
+	((max * 5 < min * 6))
+}
+
+@test "the shard script refuses a shard outside 1..N" {
+	run bash "$REPO_DIR/scripts/bats-shard.sh" 0 4
+	[ "$status" -eq 2 ]
+	run bash "$REPO_DIR/scripts/bats-shard.sh" 5 4
+	[ "$status" -eq 2 ]
+	run bash "$REPO_DIR/scripts/bats-shard.sh" x 4
+	[ "$status" -eq 2 ]
+}
+
+@test "gate.sh takes --no-bats and --bats-shard I/N and refuses anything else" {
+	run bash "$REPO_DIR/scripts/gate.sh" --nonsense
+	[ "$status" -eq 2 ]
+	run bash "$REPO_DIR/scripts/gate.sh" --bats-shard 1
+	[ "$status" -eq 2 ]
+	grep -q -- '--no-bats' "$REPO_DIR/scripts/gate.sh"
+	grep -q -- '--bats-shard' "$REPO_DIR/scripts/gate.sh"
+}
+
+@test "the check the branch protection asks for keeps its name and waits for every shard" {
+	grep -q 'name: gate (ubuntu-24.04)' "$WF/ci.yml"
+	grep -Eq 'needs: \[bats, checks\]' "$WF/ci.yml"
+	grep -Eq 'needs: \[bats, checks\]' "$WF/release.yml"
+	grep -q 'shard: \[1, 2, 3, 4\]' "$WF/ci.yml"
+	grep -q 'shard: \[1, 2, 3, 4\]' "$WF/release.yml"
+	# the number of shards in the matrix is the number the script is asked for
+	grep -q '"${{ matrix.shard }}/4"' "$WF/ci.yml"
+	grep -q '"${{ matrix.shard }}/4"' "$WF/release.yml"
+	# the release is published only after the gate
+	grep -Eq 'needs: gate' "$WF/release.yml"
+}
