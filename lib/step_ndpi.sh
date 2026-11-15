@@ -16,7 +16,7 @@ ndpi_target_ref() {
 	echo "${CONF[NDPI_VERSION]:-$NDPI_COMPAT_REF}"
 }
 
-ndpi_built_ref_state_key() { echo "ndpi.built_ref"; }
+# ndpi_built_ref_state_key is in lib/state.sh: the migrations and the watchdog read it too.
 
 ndpi_pkg_installed_version() {
 	pkg_installed_version "$NDPI_PACKAGE"

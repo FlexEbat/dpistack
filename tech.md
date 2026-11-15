@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v79** (2026-11-14)
-**Program version: v0.50.0** (slices 0-45, the redesign 18.53, the menu and help review 18.54 and the input checks 18.55 are done; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v82** (2026-11-15)
+**Program version: v0.51.0** (slices 0-51 and 54 are done, 52, 53, 55 and 56 are planned (18.58); the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.0: the next slices (18.58, 18.59): the gate runs in parallel (4 bats shards, the checks, one `gate (ubuntu-24.04)` check); the Redis output is a stream bounded by `EVE_REDIS_MAXLEN` and the health check `redis.eve_stream` watches it; the migration 0.51.0 deletes the list that 0.50.0 pushed to.
 - v0.50.0: the panel pass of 2026-11-15 (18.56): the Redis output of Suricata (`EVE_REDIS`) is real; Metrics takes 12 hours and an own number of hours (1 to 24); Rules is split into four tabs and Custom rules has seven described templates; Components is a grid of cards with the mode and the interfaces beside it; the "Under development" note is the top bar of the signed-in page; quieter chrome and a colour for each menu group, test status and check report; the migrations of an upgrade, the build recipes and `dpistack update` (18.57); the nine settings that showed `<empty>` show the value in effect.
 - v0.49.0: input checks (18.55): a busy port is found while the answers are given and the next free one is offered at once; jq and the other base tools are installed before the menu asks anything and the panel password step installs jq and argon2 itself; a value that is typed is checked for its meaning (impossible addresses and networks, unknown eve types and alert channels, a time systemd does not accept, a Redis output that does not exist, an interface that is not on the machine); EVE_MAX_SIZE_MB is asked only for the size rotation and EVE_REDIS is not asked.
 - v0.48.0: the menu and help review (18.54): the install screen counts the missing panel password as a problem and says the next step, prints the "under development" note once, explains the markers, has a help and the list of all problems (`e`); every key of a section has a one-line hint (generated into `lib/key_hints.sh` from the hints of the Settings screen) and the count of the advanced keys; the control menu got submenus for services, mode and interfaces, rules and alerts, backup, users and tokens, checks; new commands `dpistack help [--all|settings|ids]`, `<command> --help`, `info [--json]`, the two-word spelling (`rules update`, `config read`, `mode confirm`), a "did you mean" line and bash completion.
 - v0.47.1: a fix of the layout of the panel (18.53): the row under the top bar no longer stretches to the height of the sidebar, which left a blank band above every screen; the phone header leaves room for the floating bar; tables sit on cards; the time labels of the charts no longer overlap.
-- v0.47.0: the complete redesign of the panel (18.53, "Aurora NOC"): a new look from three references, a chart kit on inline SVG (area charts with hover and zoom, rings, donut, radar), a new Overview and shell; the lite edition is removed (`PANEL_EDITION`, `-lite`, `lite.css`, `nofx.js`, the theme switch); `full.css` is now `app.css`.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
-- v80: v0.50.0. 18.56 and 18.57 written (decisions D143 to D157); D138 superseded; the `EVE_REDIS` and `EVE_MAX_SIZE_MB` contracts in 4.3; the verbs `update` and `migrate`; the state keys `install.version` and `build.<part>.recipe`.
+- v81: v0.51.0. 18.58 (slices 50 to 56 planned) and 18.59 written (decisions D158 to D160); rows 50 to 56 of the slice table; `EVE_REDIS_MAXLEN` in 4.3; the check `redis.eve_stream`; `scripts/bats-shard.sh` and the modes of `scripts/gate.sh`.
+- v80: v0.50.0. 18.56 and 18.57 written (decisions D143 to D157; 18.59: D158 to D160); D138 superseded; the `EVE_REDIS` and `EVE_MAX_SIZE_MB` contracts in 4.3; the verbs `update` and `migrate`; the state keys `install.version` and `build.<part>.recipe`.
 - v79: v0.49.0. 18.55 written (decisions D135 to D142); 4.3 and 5.0 name the entry checks; the slice row 48 of 18.0.
 - v78: v0.48.0. 18.54 written; 4.5 the verbs `help` and `info`, `--help` and the two-word spelling; 5.0 and 5.2 the menu changes; the file lists (`lib/key_hints.sh`, `scripts/gen-key-hints.sh`, the completion template); the gate stage `key hints`; the slice row 47 of 18.0; decisions D125 to D134.
 - v77: v0.47.1. A note on the layout fix in 18.53.
-- v76: v0.47.0. 18.53 written; 9 (one panel) and 9.1 (the new design rules) rewritten; the slice row 46 of 18.0; `PANEL_EDITION` removed from 4.3 and the lists of keys; decisions D119 to D124.
 
 ---
 
@@ -257,6 +257,7 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `EVE_REDIS` | empty | `no` or empty (off), `yes` (`127.0.0.1:6379`, key `suricata`), or `host[:port][/key]` (port 6379 and key `suricata` by default); events are pushed with LPUSH |
 | `EVE_ROTATE` | `daily` | `daily` `weekly` `size` |
 | `EVE_KEEP` | `14` | number of rotations |
+| `EVE_REDIS_MAXLEN` | 100000 | a number from 1000 to 100000000; the Redis stream is trimmed to about this many events (18.59) |
 | `EVE_MAX_SIZE_MB` | 100 | a number; used only with `EVE_ROTATE=size` (an empty saved value is 100, 18.57) |
 | `STATS_INTERVAL_SEC` | `30` | 5..300 |
 | `RULES_SOURCES` | `et/open` | `suricata-update` source names, comma separated |
@@ -632,7 +633,7 @@ The sections of the config screen (the "group" column is the column of `lib/sche
 | --- | --- | --- |
 | `capture` | Capture and mode | `IFACES`, `BPF_FILTER`, `HOME_NET`, `SURICATA_MODE`, `IPS_METHOD`, `IPS_NFQ_CHAINS`, `NTOPNG_IFACES` |
 | `components` | Components and sources | `SURICATA_RUNTIME`, `EVEBOX_RUNTIME`, `NTOPNG_RUNTIME`, `SURICATA_SOURCE`, `SURICATA_VERSION`, `NDPI_ENABLE`, `NDPI_SOURCE`, `NDPI_VERSION`, `NTOPNG_VERSION`, `EVEBOX_VERSION`, `PIN_VERSIONS`, `PANEL_SOURCE` |
-| `eve` | EVE and storage | `EVE_FILE`, `EVE_TYPES`, `EVE_SYSLOG`, `EVE_REDIS`, `EVE_ROTATE`, `EVE_KEEP`, `EVE_MAX_SIZE_MB`, `STATS_INTERVAL_SEC`, `EVEBOX_DB`, `EVEBOX_ES_URL`, `EVEBOX_RETENTION_DAYS` |
+| `eve` | EVE and storage | `EVE_FILE`, `EVE_TYPES`, `EVE_SYSLOG`, `EVE_REDIS`, `EVE_REDIS_MAXLEN`, `EVE_ROTATE`, `EVE_KEEP`, `EVE_MAX_SIZE_MB`, `STATS_INTERVAL_SEC`, `EVEBOX_DB`, `EVEBOX_ES_URL`, `EVEBOX_RETENTION_DAYS` |
 | `rules` | Rules | `RULES_SOURCES`, `RULES_URLS`, `RULES_GROUPS`, `RULES_UPDATE`, `RULES_UPDATE_CALENDAR`, `EXCEPTIONS_DEFAULT_DAYS` |
 | `access` | Access | `ACCESS_MODE`, `BIND_ADDR`, `LAN_CIDR`, `PANEL_PORT`, `PANEL_RUNTIME`, `NTOPNG_PORT`, `EVEBOX_PORT`, `NGINX_MANAGE`, `NGINX_TLS`, `NGINX_CERT`, `NGINX_KEY`, `FIREWALL_MANAGE` |
 | `metrics` | Metrics | `METRICS_EXPORT`, `METRICS_BACKEND`, `METRICS_BACKEND_RUNTIME`, `METRICS_BACKEND_PORT`, `METRICS_RETENTION`, `NODE_EXPORTER_*`, `GRAFANA_*` |
@@ -1265,11 +1266,11 @@ One row per slice. **Done** means the Definition of Done of section 14 was met; 
 | 47 | menu and help review | **done.** The install screen says what is wrong and what to do next; every key of a section has a hint; the control menu has submenus for what was command line only; `help`, `<command> --help`, `info`, the two-word spelling, "did you mean" and bash completion | v0.48.0 | 18.54 |
 | 48 | input checks | **done.** Busy ports are found while the answers are given; the base tools come before the menu; a typed value is checked for its meaning, a saved file is not held to it | v0.49.0 | 18.55 |
 | 49 | panel pass of 2026-11-15 | **done.** The Redis output, the period choice in Metrics, the Rules tabs, the custom rule templates, the Components cards, the note at the top, the quieter design and the colours | v0.50.0 | 18.56 |
-| 50 | gate time | **planned.** The `gate` took 39 minutes of its 45 on the v0.50.0 run (26 before it). The bats files are split over parallel jobs; the required checks keep their names | v0.51.0 | 18.58 |
-| 51 | bounds of the Redis output | **planned.** `lpush` with no reader fills the Redis that ntopng uses. A length bound (`LTRIM` through a small writer, or a stream with `MAXLEN`), a health check for the length, a setting for the key and the database | v0.51.0 | 18.58 |
+| 50 | gate time | **done.** The bats suite runs as four parallel shards (`scripts/bats-shard.sh`, dealt out by file size) beside a `checks` job; `gate (ubuntu-24.04)` is a small job that needs both, so the name that the branch protection requires did not change. The whole CI run took 9 minutes on `24acb57` (16:52 to 17:01) against 39 on `fb997c6`; the release workflow has the same split | v0.51.0 | 18.58 |
+| 51 | bounds of the Redis output | **done.** A stream bounded by `EVE_REDIS_MAXLEN`, the health check `redis.eve_stream`, the migration 0.51.0 that deletes the old list. A separate Redis database is not offered: Suricata has no such option | v0.51.0 | 18.59 |
 | 52 | checks on a real host | **planned.** What the tests cannot cover: the Suricata rebuild at a new recipe with `suricata -T` on the Redis block, `dpistack update` through `systemd-run`, an upgrade from the previous release to the new one as a CI job on a stand | v0.51.0 | 18.58 |
 | 53 | safer migration | **planned.** A backup before a migration that rebuilds, progress lines while a source build runs, the migration plan shown by the panel's Update button before it starts | v0.51.0 | 18.58 |
-| 54 | pending work in the panel | **planned.** A health check `migrate.pending` and a banner, so that the line `dpistack status` prints on stderr is also seen in the panel | v0.51.0 | 18.58 |
+| 54 | pending work in the panel | **done.** The watchdog check `migrate.pending` (warn while `migrate_needed`); the Overview shows it, and the check `redis.eve_stream`, as warnings | v0.51.0 | 18.58 |
 | 55 | design pass, part two | **planned.** The screens that 18.56 did not touch (Overview, Alerts, Settings, Exceptions, IPS), narrow screens, reduced motion, headless screenshots in CI | v0.51.0 | 18.58 |
 | 56 | small things | **planned.** The selected Rules tab is remembered; more rule templates; shfmt and shellcheck of the CI versions pinned for local work; a note on why Metrics stops at 24 hours | v0.51.0 | 18.58 |
 
@@ -2404,3 +2405,23 @@ Verified: `tests/migrate.bats` (12 cases), the new `update` cases of `tests/self
 - **54, pending work in the panel.** `migrate_needed` becomes a check of `health.json`; the panel shows a banner with the plan and the way to do it.
 - **55, design, part two.** Overview, Alerts, Settings, Exceptions and IPS get the same pass (quiet chrome, status in words and colour); every screen is looked at at 390, 768 and 1440 px; reduced motion; the screenshots run in CI with the headless Chromium that worked in the sandbox.
 - **56, small things.** The selected Rules tab in `sessionStorage`; more templates (a file extension, a JA3 hash, a country, a rate limit); the versions of shfmt and shellcheck of the CI installed the same way locally (a script `scripts/dev-tools.sh`); Metrics keeps one day because the ring holds one day, longer periods would need a longer ring.
+
+### 18.59 Slice 51: the Redis output is bounded (v0.51.0)
+
+**Status:** done. The output of v0.50.0 pushed every event to a list with LPUSH. With no reader the list grows until Redis runs out of memory, and it is the Redis that ntopng uses.
+
+1. **A stream, trimmed by Redis.** The block now has `mode: stream`, `stream-maxlen: EVE_REDIS_MAXLEN`, `stream-trim-exact: no` (approximate trimming is cheap). `EVE_REDIS_MAXLEN` is a number from 1000 to 100000000, 100000 by default.
+2. **Health.** `redis.eve_stream` (bin/dpistack-watch) reads `XLEN` of the key; `ok` up to twice the bound, `warn` above it or when the stream cannot be read, `na` when `EVE_REDIS` is off or `redis-cli` is missing. `suricata_redis_target` moved to lib/config.sh so that the watchdog can use it.
+3. **Migration 0.51.0.** A stream cannot be added to a key that holds a list (`WRONGTYPE`), so the upgrade finds the old list (`redis-cli type`) and deletes it, saying so: it holds events nobody read. In a dry run it says what it would delete. Without `redis-cli` it prints the command.
+
+| id | decision |
+| --- | --- |
+| D158 | **A stream, not a list.** Redis bounds a stream by itself; a list can only be bounded by a reader or a second command, and a reader is not part of this project. D143 (LPUSH) is superseded for the mode only |
+| D159 | **The old list is deleted by the migration, not left to fail.** The data was never read; leaving it makes the output fail at the first event |
+| D160 | **No database setting.** Suricata's `redis` output has no database option, so none is shown (rule 1 of 18.58: nothing is shown that the program cannot do) |
+
+### 18.60 Slices 50 and 54: what was measured and what changed (v0.51.0)
+
+- **Slice 50.** `.github/workflows/ci.yml` and `release.yml` have the jobs `bats` (matrix of four shards), `checks` (`gate.sh --no-bats`) and `gate`. `scripts/gate.sh` takes `--no-bats` and `--bats-shard I/N`; with no argument it runs everything, as before, for local work. The failing-check reports (commit statuses) stay, named `bats shard N #n` and `checks #n`. Measured: 9 minutes in all, the longest shard 9 minutes.
+- **Slice 54.** `migrate.pending` (bin/dpistack-watch) uses `migrate_from_version` and `migrate_needed`; for that the state keys of the source builds moved to lib/state.sh. The Overview adds `migrate.pending` and `redis.eve_stream` to the checks that it repeats as a sentence.
+- **Left open.** Slice 52 (a real host) and 53 (a backup before a rebuild, build progress, the plan in the Update button) need a stand or more work, 55 and 56 are the design pass and the small things.

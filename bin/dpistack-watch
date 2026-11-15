@@ -23,6 +23,8 @@ for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
 		source "$_lib/schema.sh"
 		# shellcheck source=lib/config.sh
 		source "$_lib/config.sh"
+		# shellcheck source=lib/migrate.sh
+		source "$_lib/migrate.sh"
 		break
 	fi
 done
@@ -224,6 +226,39 @@ check_disk_free() {
 		record disk.free warn "$pct" "$detail"
 	else
 		record disk.free ok "$pct" "$detail"
+	fi
+}
+
+# check_redis_stream - the stream of the Redis output (EVE_REDIS) stays near
+# EVE_REDIS_MAXLEN: Redis trims it, so twice that length means the trim does
+# not work and the memory of the Redis that ntopng uses is at risk.
+check_redis_stream() {
+	local target host port key maxlen len
+	if ! command -v redis-cli >/dev/null 2>&1 || ! target=$(suricata_redis_target 2>/dev/null); then
+		record redis.eve_stream na "" "EVE_REDIS is off or redis-cli is not installed"
+		return
+	fi
+	read -r host port key <<<"$target"
+	maxlen="${CONF[EVE_REDIS_MAXLEN]:-100000}"
+	if ! len=$(redis-cli -h "$host" -p "$port" xlen "$key" 2>/dev/null) || [[ ! "$len" =~ ^[0-9]+$ ]]; then
+		record redis.eve_stream warn "" "the stream $key on $host:$port cannot be read"
+	elif ge "$len" "$((maxlen * 2))"; then
+		record redis.eve_stream warn "$len" "the stream holds $len events, the bound is $maxlen"
+	else
+		record redis.eve_stream ok "$len" ""
+	fi
+}
+
+# check_migrate_pending - an upgrade left work on this host (lib/migrate.sh):
+# a migration of a newer version or a source build of an older recipe. The
+# Overview of the panel shows the detail line, and `dpistack migrate` does it.
+check_migrate_pending() {
+	if [[ -z "$(migrate_from_version)" ]]; then
+		record migrate.pending na "" "no finished install"
+	elif migrate_needed; then
+		record migrate.pending warn "" "this host still has work from an earlier version: run sudo dpistack migrate (details: dpistack migrate --plan)"
+	else
+		record migrate.pending ok "" ""
 	fi
 }
 
@@ -491,6 +526,8 @@ main() {
 	check_eve_fresh
 	check_drop_rate
 	check_disk_free
+	check_redis_stream
+	check_migrate_pending
 	check_rules_age
 	prune_exceptions
 

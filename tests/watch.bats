@@ -294,3 +294,40 @@ stats_line() {
 	[ "$(field evebox.port status)" = "ok" ]
 	[ "$(field panel.port status)" = "ok" ]
 }
+
+@test "redis.eve_stream is na when the Redis output is off" {
+	run "$WATCH"
+	[ "$(field redis.eve_stream status)" = "na" ]
+}
+
+@test "redis.eve_stream is ok while the stream is near its bound, warn at twice the bound or when it cannot be read" {
+	printf 'EVE_REDIS=yes\nEVE_REDIS_MAXLEN=1000\n' >"$CONF_FILE"
+	cat >"$FAKE_BIN/redis-cli" <<'FAKE'
+#!/usr/bin/env bash
+[[ "${FAKE_XLEN:-}" == "fail" ]] && exit 1
+echo "${FAKE_XLEN:-0}"
+FAKE
+	chmod +x "$FAKE_BIN/redis-cli"
+	FAKE_XLEN=1500 run "$WATCH"
+	[ "$(field redis.eve_stream status)" = "ok" ]
+	[ "$(field redis.eve_stream value)" = "1500" ]
+	FAKE_XLEN=2000 run "$WATCH"
+	[ "$(field redis.eve_stream status)" = "warn" ]
+	[[ "$(field redis.eve_stream detail)" == *"the bound is 1000"* ]]
+	FAKE_XLEN=fail run "$WATCH"
+	[ "$(field redis.eve_stream status)" = "warn" ]
+	[[ "$(field redis.eve_stream detail)" == *"cannot be read"* ]]
+}
+
+@test "migrate.pending is na without an install, warn when an upgrade left work, ok when it is done" {
+	run "$WATCH"
+	[ "$(field migrate.pending status)" = "na" ]
+	mkdir -p "$DPISTACK_ROOT/var/lib/dpistack"
+	printf 'install.finished=yes\ninstall.version=0.49.0\n' >>"$DPISTACK_ROOT/var/lib/dpistack/state"
+	run "$WATCH"
+	[ "$(field migrate.pending status)" = "warn" ]
+	[[ "$(field migrate.pending detail)" == *"sudo dpistack migrate"* ]]
+	sed -i 's/^install.version=.*/install.version=99.0.0/' "$DPISTACK_ROOT/var/lib/dpistack/state"
+	run "$WATCH"
+	[ "$(field migrate.pending status)" = "ok" ]
+}

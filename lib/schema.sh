@@ -117,6 +117,7 @@ schema_init() {
 	_schema_add 'EVE_TYPES|free|alert,flow,dns,tls,http,stats||basic|eve|suricata watch|light|no'
 	_schema_add 'EVE_SYSLOG|enum|no|yes,no|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_REDIS|free|||advanced|eve|suricata|light|no'
+	_schema_add 'EVE_REDIS_MAXLEN|int|100000|1000..100000000|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_ROTATE|enum|daily|daily,weekly,size|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_KEEP|int|14|0..3650|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_MAX_SIZE_MB|int|100|1..1000000|advanced|eve|suricata|light|no'
@@ -223,7 +224,7 @@ schema_depends_init() {
 	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
 	_schema_depend 'SURICATA_ENABLE=yes RULES_ENABLE=yes' 'RULES_*'
 	_schema_depend 'SURICATA_ENABLE=yes' SURICATA_RUNTIME SURICATA_SOURCE SURICATA_VERSION SURICATA_MODE IFACES \
-		BPF_FILTER HOME_NET EVE_SYSLOG EVE_REDIS EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
+		BPF_FILTER HOME_NET EVE_SYSLOG EVE_REDIS EVE_REDIS_MAXLEN EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
 	_schema_depend '' EVEBOX_ENABLE NTOPNG_ENABLE PANEL_ENABLE NODE_EXPORTER_ENABLE GRAFANA_ENABLE WATCH_ENABLE METRICS_BACKEND
 	_schema_depend 'EVEBOX_ENABLE=yes EVEBOX_DB=elasticsearch' EVEBOX_ES_URL
 	_schema_depend 'EVEBOX_ENABLE=yes' 'EVEBOX_*'
@@ -519,6 +520,7 @@ schema_effective() {
 		echo "latest available${v:+ (installed: $v)}"
 		;;
 	EVE_REDIS) echo "off: the events go to eve.json only" ;;
+	EVE_REDIS_MAXLEN) echo "100000 events; the stream is trimmed to about this length" ;;
 	EVE_MAX_SIZE_MB) echo "100 MB, used only when EVE_ROTATE=size" ;;
 	RULES_URLS) echo "none: only the rule sources ${sources:-et/open} are used" ;;
 	esac

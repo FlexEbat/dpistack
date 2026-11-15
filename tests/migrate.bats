@@ -48,13 +48,16 @@ lib() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"0.0.0"* ]]
 	[[ "$output" == *"0.50.0"* ]]
+	[[ "$output" == *"0.51.0"* ]]
 }
 
 @test "a recorded version at or above a migration skips it, a lower one runs it" {
-	run lib 'state_write_value install.finished yes; state_write_value install.version 0.50.0' 'migrate_pending'
+	run lib 'state_write_value install.finished yes; state_write_value install.version 0.51.0' 'migrate_pending'
 	[ -z "$output" ]
+	run lib 'state_write_value install.finished yes; state_write_value install.version 0.50.0' 'migrate_pending'
+	[ "$output" = "0.51.0" ]
 	run lib 'state_write_value install.finished yes; state_write_value install.version 0.49.0' 'migrate_pending'
-	[ "$output" = "0.50.0" ]
+	[ "$output" = "$(printf '0.50.0\n0.51.0')" ]
 	# a migration of a version above this one is not run by an older program
 	run lib 'state_write_value install.finished yes; state_write_value install.version 0.1.0; DPISTACK_VERSION=0.49.0' 'migrate_pending'
 	[ -z "$output" ]
@@ -67,6 +70,37 @@ lib() {
 	[[ "$output" == *"EVE_REDIS=127.0.0.1:6379/eve was ignored before and is a live Redis output now"* ]]
 	[[ "$output" == *"size=100"* ]]
 	# EVE_REDIS is left as the person wrote it
+}
+
+# 0.51.0: the Redis output is a bounded stream, the old list is deleted
+redis_host() {
+	echo "state_write_value install.finished yes; state_write_value install.version 0.50.0; CONF[EVE_REDIS]=\"$1\"; export MOCK_REDIS_TYPE=$2 MOCK_LOG=$DPISTACK_ROOT/redis.log"
+}
+
+@test "0.51.0 deletes the list that 0.50.0 left under the key of the stream, and says so" {
+	run lib "$(redis_host yes list)" 'migrate_run'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"is a stream trimmed to about 100000 events now"* ]]
+	[[ "$output" == *"deleted the list suricata on 127.0.0.1:6379"* ]]
+	grep -q "del suricata" "$DPISTACK_ROOT/redis.log"
+	grep -q -- "-h 127.0.0.1 -p 6379 type suricata" "$DPISTACK_ROOT/redis.log"
+}
+
+@test "0.51.0 leaves a key that is already a stream, or missing, alone" {
+	run lib "$(redis_host redis.lan:6380/eve stream)" 'migrate_run'
+	[[ "$output" == *"EVE_REDIS=redis.lan:6380/eve is a stream"* ]]
+	[[ "$output" != *"deleted"* ]]
+	! grep -q " del " "$DPISTACK_ROOT/redis.log"
+	run lib "$(redis_host yes none)" 'migrate_run'
+	[[ "$output" != *"deleted"* ]]
+}
+
+@test "0.51.0 says nothing about Redis when the output is off, and deletes nothing in a dry run" {
+	run lib "$(redis_host no list)" 'migrate_run'
+	[[ "$output" != *"0.51.0"* ]]
+	run lib "$(redis_host yes list); DRY_RUN=1" 'migrate_run'
+	[[ "$output" == *"would delete the list suricata"* ]]
+	! grep -q " del " "$DPISTACK_ROOT/redis.log"
 }
 
 @test "a value that is already fine is not touched and says nothing" {

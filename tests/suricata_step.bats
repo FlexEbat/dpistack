@@ -212,13 +212,15 @@ load_step() {
 	[[ "$output" != *"syslog"* ]]
 }
 
-@test "EVE_REDIS=yes renders a redis eve-log output for this host with the same types, lpush, key suricata" {
+@test "EVE_REDIS=yes renders a redis eve-log output for this host with the same types, a bounded stream, key suricata" {
 	run load_step 'CONF[EVE_REDIS]="yes"; CONF[EVE_TYPES]="alert,dns"' 'suricata_render_eve_log_block'
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"filetype: redis"* ]]
 	[[ "$output" == *"server: 127.0.0.1"* ]]
 	[[ "$output" == *"port: 6379"* ]]
-	[[ "$output" == *"mode: lpush"* ]]
+	[[ "$output" == *"mode: stream"* ]]
+	[[ "$output" == *"stream-maxlen: 100000"* ]]
+	[[ "$output" != *"lpush"* ]]
 	[[ "$output" == *"key: suricata"* ]]
 	# the file output stays and the redis output repeats the types
 	[[ "$output" == *"filetype: regular"* ]]

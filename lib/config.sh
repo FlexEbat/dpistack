@@ -394,3 +394,28 @@ config_diff_and_steps() {
 	echo "Change type: $overall_weight"
 	return 0
 }
+
+# suricata_redis_target - the Redis output of EVE_REDIS as "host port key" on
+# one line, or exit 1 when the output is off. The value is "no" (or empty, off,
+# none, false): off; "yes": the Redis of this host, 127.0.0.1:6379, key
+# "suricata"; or "host[:port][/key]" (port 6379 and key "suricata" when left
+# out). Events are added to a Redis stream (XADD) that Redis trims to about
+# EVE_REDIS_MAXLEN entries, so a stream nobody reads stays bounded and cannot
+# fill the memory of the Redis that ntopng uses (v0.50.0 pushed to a list with
+# LPUSH, which grows without a limit).
+suricata_redis_target() {
+	local v="${CONF[EVE_REDIS]:-}" hp key="suricata" host port=6379
+	case "${v,,}" in
+	"" | no | off | none | false) return 1 ;;
+	yes | on | true) v="127.0.0.1:6379/suricata" ;;
+	esac
+	hp="${v%%/*}"
+	[[ "$v" == */* && -n "${v#*/}" ]] && key="${v#*/}"
+	host="$hp"
+	if [[ "$hp" == *:* ]]; then
+		host="${hp%%:*}"
+		port="${hp#*:}"
+	fi
+	[[ -n "$host" ]] || return 1
+	echo "$host $port $key"
+}
