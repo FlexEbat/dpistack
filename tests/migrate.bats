@@ -90,7 +90,8 @@ redis_host() {
 	run lib "$(redis_host redis.lan:6380/eve stream)" 'migrate_run'
 	[[ "$output" == *"EVE_REDIS=redis.lan:6380/eve is a stream"* ]]
 	[[ "$output" != *"deleted"* ]]
-	! grep -q " del " "$DPISTACK_ROOT/redis.log"
+	run grep -q " del " "$DPISTACK_ROOT/redis.log"
+	[ "$status" -ne 0 ]
 	run lib "$(redis_host yes none)" 'migrate_run'
 	[[ "$output" != *"deleted"* ]]
 }
@@ -100,7 +101,8 @@ redis_host() {
 	[[ "$output" != *"0.51.0"* ]]
 	run lib "$(redis_host yes list); DRY_RUN=1" 'migrate_run'
 	[[ "$output" == *"would delete the list suricata"* ]]
-	! grep -q " del " "$DPISTACK_ROOT/redis.log"
+	run grep -q " del " "$DPISTACK_ROOT/redis.log"
+	[ "$status" -ne 0 ]
 }
 
 @test "a value that is already fine is not touched and says nothing" {
