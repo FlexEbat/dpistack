@@ -212,3 +212,18 @@ base() {
 	[[ "$output" == *"migrate 0.50.0: EVE_MAX_SIZE_MB was saved empty"* ]]
 	grep -q "^EVE_MAX_SIZE_MB=100" "$CONF_FILE"
 }
+
+@test "update on the latest version still does the work an earlier upgrade left, by itself" {
+	run base --set EVE_ROTATE=size
+	[ "$status" -eq 0 ]
+	grep -rl "^install.version=" "$DPISTACK_ROOT" | head -1 | xargs sed -i 's/^install.version=.*/install.version=0.49.0/'
+	sed -i 's/^EVE_MAX_SIZE_MB=.*/EVE_MAX_SIZE_MB=/' "$CONF_FILE"
+	latest "v$CUR"
+	run bash "$REPO_DIR/install.sh" update --check
+	[[ "$output" == *"still has work from an earlier version"* ]]
+	grep -q "^EVE_MAX_SIZE_MB=$" "$CONF_FILE"
+	run bash "$REPO_DIR/install.sh" update --yes
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"migrate 0.50.0: EVE_MAX_SIZE_MB was saved empty"* ]]
+	grep -q "^EVE_MAX_SIZE_MB=100" "$CONF_FILE"
+}

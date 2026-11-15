@@ -114,6 +114,20 @@ migrate_plan() {
 	return 0
 }
 
+# migrate_needed - 0 when an upgrade left work on this host: a migration of a
+# version above the recorded one, or a source build of an older recipe.
+migrate_needed() {
+	[[ -n "$(migrate_pending)$(migrate_rebuilds)" ]]
+}
+
+# migrate_notice - one line on stderr when work is pending, for the commands a
+# person runs to look at the host. It does not change anything: the install,
+# `dpistack update` and `dpistack migrate` do the work.
+migrate_notice() {
+	migrate_needed || return 0
+	echo "dpistack: this host still has work from an earlier version (details: dpistack migrate --plan); it is done by: sudo dpistack migrate" >&2
+}
+
 # migrate_run - called by the install right after the config is layered and
 # before it is validated and written: the migrations edit CONF, so the file
 # that is written is already the migrated one. A fresh host runs none.

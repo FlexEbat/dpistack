@@ -255,6 +255,7 @@ ctl_cmd_status() {
 	esac
 	[[ $# -le 1 ]] || fail 2 "status: extra arguments"
 
+	((json)) || migrate_notice
 	local plugin=absent
 	[[ -e "$(path_suricata_ndpi_plugin)" ]] && plugin=loaded
 
@@ -1232,7 +1233,9 @@ cmd_self_update() {
 # lib/migrate.sh), asks, then installs it on the saved config and waits for the
 # end, printing what the install prints. The work runs as a transient unit
 # (the same one the panel uses) so a lost ssh session does not stop it halfway.
-# `dpistack migrate [--plan]` shows that plan for the installed version.
+# `dpistack migrate [--plan|--yes]` shows or does that work for the installed
+# version. It happens by itself in `install` and `update`; the command is for a
+# host whose files were replaced by other means.
 
 update_usage() {
 	cat <<'USAGE'
@@ -1247,12 +1250,16 @@ USAGE
 
 cmd_update() {
 	local check=0 dry=0 yes=0 arg tag tmp
+	local -a yes_arg=()
 	restricted_caller && fail 2 "update: not for the panel, the Update button runs self-update run"
 	for arg in "$@"; do
 		case "$arg" in
 		--check) check=1 ;;
 		--dry-run) dry=1 ;;
-		--yes | -y) yes=1 ;;
+		--yes | -y)
+			yes=1
+			yes_arg=(--yes)
+			;;
 		-h | --help)
 			update_usage
 			return 0
@@ -1266,10 +1273,13 @@ cmd_update() {
 	tag=$(selfupdate_latest_tag) || exit 1
 	if ! selfupdate_is_newer "$tag"; then
 		echo "dpistack $DPISTACK_VERSION is the latest version"
-		if [[ -n "$(migrate_pending)$(migrate_rebuilds)" ]]; then
+		if migrate_needed; then
 			echo "this host still has work from an earlier version:"
-			migrate_plan
-			echo "it is done by: sudo dpistack install"
+			if ((check || dry)); then
+				migrate_plan
+			else
+				cmd_migrate ${yes_arg[@]+"${yes_arg[@]}"}
+			fi
 		fi
 		return 0
 	fi
@@ -1306,11 +1316,40 @@ cmd_update() {
 	fi
 }
 
+# cmd_migrate [--plan] [--yes] - the work an upgrade left on this host. It is
+# done by itself by `install` and `update`; this is the way to do it alone, for
+# a host whose files were replaced by other means. It is the install on the
+# saved config, so the migrations, the rebuilds and the rendering all run.
 cmd_migrate() {
-	case "${1:-}" in
-	"" | --plan) migrate_plan ;;
-	*) fail 2 "migrate: [--plan]" ;;
-	esac
+	local plan=0 yes=0 arg
+	restricted_caller && fail 2 "migrate: not for the panel"
+	for arg in "$@"; do
+		case "$arg" in
+		--plan) plan=1 ;;
+		--yes | -y) yes=1 ;;
+		*) fail 2 "migrate: [--plan] [--yes]" ;;
+		esac
+	done
+	if ((plan)) || ! migrate_needed; then
+		migrate_plan
+		return 0
+	fi
+	migrate_plan
+	# DPISTACK_ROOT is the sandbox of the tests: nothing outside it is touched
+	[[ $EUID -eq 0 || -n "${DPISTACK_ROOT:-}" ]] || fail 3 "migrate: run it as root: sudo dpistack migrate"
+	if ((!yes)) && [[ -t 0 ]]; then
+		local answer
+		read -r -p "Do this now? [y/N] " answer
+		[[ "${answer,,}" == y || "${answer,,}" == yes ]] || {
+			echo "nothing was changed"
+			return 0
+		}
+	elif ((!yes)); then
+		fail 3 "migrate: no terminal to ask on, use --yes"
+	fi
+	local -a args=(install -y)
+	selfupdate_access_unchanged && args+=(--set ACCESS_CONFIRM=yes)
+	bash "$SCRIPT_DIR/install.sh" "${args[@]}"
 }
 
 # ----------------------------------------------------------------- iface
@@ -2768,7 +2807,7 @@ People and access
 Keep it safe
   backup create|list|verify|restore
   update [--check|--dry-run|--yes] look for a newer release, show its plan, install it
-  migrate [--plan]                what an upgrade to this version does on this host
+  migrate [--plan|--yes]          the work an upgrade left on this host (done by update and install by themselves)
   self-update ...                 the same update as separate steps (check, run, job)
 
 More: ${prog} <command> --help for one command; ${prog} help --all for every option of every command.

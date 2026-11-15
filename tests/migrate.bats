@@ -9,6 +9,7 @@ setup() {
 	printf 'ID=ubuntu\nID_LIKE=debian\n' >"$DPISTACK_ROOT/etc/os-release"
 	PATH="$REPO_DIR/tests/mocks:$PATH"
 	export PATH
+	export MOCK_IP_EXISTING_IFACES=enp2s0 MOCK_IP_DEFAULT_IFACE=enp2s0 MOCK_IP_LINK_ROUTE=192.168.10.0/24
 }
 
 teardown() {
@@ -120,5 +121,56 @@ lib() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"no finished install"* ]]
 	run bash "$REPO_DIR/install.sh" migrate --now
+	[ "$status" -eq 2 ]
+}
+
+# an installed host in the sandbox that the version 0.49.0 installed and that saved an empty size
+old_host() {
+	bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no --set EVE_ROTATE=size >/dev/null 2>&1
+	grep -rl "^install.version=" "$DPISTACK_ROOT" | head -1 | xargs sed -i 's/^install.version=.*/install.version=0.49.0/'
+	sed -i 's/^EVE_MAX_SIZE_MB=.*/EVE_MAX_SIZE_MB=/' "$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+}
+
+@test "a host that is up to date has nothing for migrate to do" {
+	bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no >/dev/null 2>&1
+	run bash "$REPO_DIR/install.sh" migrate --yes
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"nothing to migrate"* ]]
+}
+
+@test "migrate --yes does the work of an upgrade that was not done: the migration, then the version is recorded" {
+	old_host
+	run bash "$REPO_DIR/install.sh" migrate --yes
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"migration 0.50.0:"* ]]
+	[[ "$output" == *"migrate 0.50.0: EVE_MAX_SIZE_MB was saved empty"* ]]
+	grep -q "^EVE_MAX_SIZE_MB=100" "$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+	grep -rq "^install.version=$(sed -n 's/^DPISTACK_VERSION="\(.*\)"/\1/p' "$REPO_DIR/lib/common.sh")" "$DPISTACK_ROOT"
+	run bash "$REPO_DIR/install.sh" migrate --plan
+	[[ "$output" == *"nothing to migrate"* ]]
+}
+
+@test "migrate without a terminal and without --yes asks nothing and changes nothing" {
+	old_host
+	run bash "$REPO_DIR/install.sh" migrate </dev/null
+	[ "$status" -eq 3 ]
+	[[ "$output" == *"use --yes"* ]]
+	grep -q "^EVE_MAX_SIZE_MB=$" "$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+}
+
+@test "status says that work is pending, on stderr and not in the JSON, and nothing once it is done" {
+	old_host
+	run bash -c "DPISTACK_VERBS_ONLY=1 bash '$REPO_DIR/install.sh' status 2>&1 >/dev/null"
+	[[ "$output" == *"still has work from an earlier version"* ]]
+	[[ "$output" == *"sudo dpistack migrate"* ]]
+	run bash -c "DPISTACK_VERBS_ONLY=1 bash '$REPO_DIR/install.sh' status --json 2>&1 >/dev/null"
+	[ -z "$output" ]
+	bash "$REPO_DIR/install.sh" migrate --yes >/dev/null 2>&1
+	run bash -c "DPISTACK_VERBS_ONLY=1 bash '$REPO_DIR/install.sh' status 2>&1 >/dev/null"
+	[[ "$output" != *"still has work"* ]]
+}
+
+@test "the panel may not run migrate" {
+	DPISTACK_CALLER=panel run bash "$REPO_DIR/install.sh" migrate --plan
 	[ "$status" -eq 2 ]
 }
