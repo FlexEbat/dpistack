@@ -85,7 +85,7 @@ fam() {
 @test "dnf: the build dependencies of Suricata and nDPI use the rpm names" {
 	os_release rocky "rhel centos fedora" 9.4
 	fam 'pkg_build_deps suricata' >/dev/null
-	grep -q '^dnf install -y gcc gcc-c++ make git autoconf automake libtool pkgconf-pkg-config libpcap-devel pcre2-devel libyaml-devel jansson-devel file-devel zlib-devel libcap-ng-devel libnet-devel lz4-devel python3-pyyaml cargo rust cbindgen$' "$CALLS"
+	grep -q '^dnf install -y gcc gcc-c++ make git autoconf automake libtool pkgconf-pkg-config libpcap-devel pcre2-devel libyaml-devel jansson-devel file-devel zlib-devel libcap-ng-devel libnet-devel lz4-devel hiredis-devel python3-pyyaml cargo rust cbindgen$' "$CALLS"
 	: >"$CALLS"
 	fam 'pkg_build_deps ndpi' >/dev/null
 	grep -q '^dnf install -y gcc gcc-c++ make git autoconf automake libtool pkgconf-pkg-config libpcap-devel$' "$CALLS"

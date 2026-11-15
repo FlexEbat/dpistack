@@ -50,7 +50,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `EVE_FILE` | yes \| no | `yes` | light | Write events to eve.json (needed by the panel and the watchdog). (advanced) |
 | `EVE_TYPES` | string | `alert,flow,dns,tls,http,stats` | light | Which event types to write to eve.json. |
 | `EVE_SYSLOG` | yes \| no | `no` | light | Duplicate events to syslog (facility local5). (advanced) |
-| `EVE_REDIS` | string | empty | light | Redis output. Not supported yet: leave it empty (a value saved by an older version is ignored with a warning). (advanced) |
+| `EVE_REDIS` | string | empty | light | Send the events to Redis as well: yes (Redis of this host), or host[:port][/key], for example 127.0.0.1:6379/suricata. Empty or no: eve.json only. Needs a Suricata built with Redis support (a source build has it). (advanced) |
 | `EVE_ROTATE` | daily \| weekly \| size | `daily` | light | How to rotate eve.json: daily, weekly or by size. (advanced) |
 | `EVE_KEEP` | integer 0..3650 | `14` | light | How many rotated files to keep. (advanced) |
 | `EVE_MAX_SIZE_MB` | integer 1..1000000 | empty | light | File size in MB that triggers rotation (the size mode). (advanced) |

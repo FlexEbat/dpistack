@@ -253,27 +253,58 @@ type Result struct {
 	Series map[string]SeriesOut `json:"series"`
 }
 
-// ranges are the periods the screen may ask for and the grid of each. The
+// ranges are the fixed periods of the screen and the grid of each. The
 // grids keep an answer near 180 points; the finer data stays in the ring.
+// Any other whole number of hours from 1 to 24 ("12h", "3h") is allowed too:
+// see rangeSpec.
 var ranges = map[string]struct{ span, step time.Duration }{
 	"1h":  {time.Hour, 30 * time.Second},
 	"6h":  {6 * time.Hour, 2 * time.Minute},
 	"24h": {24 * time.Hour, 8 * time.Minute},
 }
 
+// MaxRangeHours is the longest period: the ring holds one day.
+const MaxRangeHours = 24
+
+// rangeSpec returns the period and the grid of a range name. The three fixed
+// names keep their grids; "Nh" for a whole N from 1 to 24 gets about 180
+// points, the grid rounded up to a multiple of 30 seconds (12h: 4 minutes).
+func rangeSpec(rng string) (span, step time.Duration, ok bool) {
+	if spec, found := ranges[rng]; found {
+		return spec.span, spec.step, true
+	}
+	if len(rng) < 2 || len(rng) > 3 || rng[len(rng)-1] != 'h' {
+		return 0, 0, false
+	}
+	n := 0
+	for _, ch := range rng[:len(rng)-1] {
+		if ch < '0' || ch > '9' {
+			return 0, 0, false
+		}
+		n = n*10 + int(ch-'0')
+	}
+	if n < 1 || n > MaxRangeHours || rng[0] == '0' {
+		return 0, 0, false
+	}
+	span = time.Duration(n) * time.Hour
+	const unit = 30 * time.Second
+	step = (span/180 + unit - 1) / unit * unit
+	return span, step, true
+}
+
 // Query answers GET /api/metrics?range=. A bucket with several samples is
 // their mean over the samples that have a value; with none it is null.
 func (c *Collector) Query(rng string) (Result, error) {
-	spec, ok := ranges[rng]
+	span, gridStep, ok := rangeSpec(rng)
 	if !ok {
-		return Result{}, fmt.Errorf("range: 1h, 6h or 24h")
+		return Result{}, fmt.Errorf("range: 1h, 6h, 12h, 24h or any whole number of hours from 1 to 24 (for example 3h)")
 	}
 	now := c.cfg.Now()
-	n := int(spec.span / spec.step)
+	n := int(span / gridStep)
 	// The grid covers (now-span, now]: a sample taken at this very second
 	// belongs to the last bucket on its own, not squeezed into it.
-	start := now.Unix() - int64(spec.span/time.Second) + 1
-	step := int64(spec.step / time.Second)
+	start := now.Unix() - int64(span/time.Second) + 1
+	step := int64(gridStep / time.Second)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

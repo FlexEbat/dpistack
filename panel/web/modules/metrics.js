@@ -1,4 +1,5 @@
-// The Metrics screen: six area charts of the last 1, 6 or 24 hours.
+// The Metrics screen: six area charts of the last 1, 6, 12 or 24 hours, or of a
+// whole number of hours of the person's own choice (1 to 24).
 // Charts are plain SVG (charts.js); a series that cannot exist is shown as a note with
 // the reason, never as a flat line at zero, and a gap in the data is a gap
 // in the line.
@@ -17,6 +18,15 @@ export const SERIES = [
   { name: "eve_size", tone: "a", title: "eve.json size", format: bytes },
   { name: "disk", tone: "b", title: "Free space on the log disk", scale: 100, format: (v) => `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} %` },
 ];
+
+// parseHours reads the own period: a whole number of hours from 1 to 24, or
+// null. 12 and "12" and "12h" are the same period; 0, 25, 1.5 and "" are not.
+export function parseHours(text) {
+  const m = /^\s*(\d{1,2})\s*h?\s*$/i.exec(String(text ?? ""));
+  if (!m) return null;
+  const n = Number(m[1]);
+  return n >= 1 && n <= 24 ? n : null;
+}
 
 function bytes(v) {
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -81,10 +91,40 @@ export function start(api, els, onError) {
   let running = true;
   let range = "1h";
 
+  const input = els.customHours || null;
+  const apply = els.customApply || null;
+  const hint = els.rangeHint || null;
+  const hintText = hint ? hint.textContent : "";
+
   function mark() {
-    for (const b of els.ranges.querySelectorAll("button")) {
+    for (const b of els.ranges.querySelectorAll("button[data-range]")) {
       b.setAttribute("aria-pressed", b.dataset.range === range ? "true" : "false");
     }
+    // An own period that equals a preset lights that preset and clears the box.
+    if (input && els.ranges.querySelector(`button[data-range="${range}"]`)) input.value = "";
+    if (apply) apply.setAttribute("aria-pressed", input && input.value !== "" ? "true" : "false");
+  }
+
+  function pick(next) {
+    range = next;
+    if (hint) hint.textContent = hintText;
+    mark();
+    clearTimeout(timer);
+    load();
+  }
+
+  function applyCustom() {
+    const n = parseHours(input.value);
+    if (n === null) {
+      if (hint) hint.textContent = "Type a whole number of hours from 1 to 24.";
+      input.setAttribute("aria-invalid", "true");
+      return;
+    }
+    input.removeAttribute("aria-invalid");
+    pick(`${n}h`);
+    // pick() cleared the box when the number is a preset; keep it otherwise.
+    if (!els.ranges.querySelector(`button[data-range="${range}"]`)) input.value = String(n);
+    mark();
   }
 
   async function load() {
@@ -108,12 +148,13 @@ export function start(api, els, onError) {
     if (!document.hidden && running && timer === null) load();
   }
 
-  for (const b of els.ranges.querySelectorAll("button")) {
-    b.onclick = () => {
-      range = b.dataset.range;
-      mark();
-      clearTimeout(timer);
-      load();
+  for (const b of els.ranges.querySelectorAll("button[data-range]")) {
+    b.onclick = () => pick(b.dataset.range);
+  }
+  if (input && apply) {
+    apply.onclick = applyCustom;
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") applyCustom();
     };
   }
   document.addEventListener("visibilitychange", onVisible);

@@ -14,6 +14,8 @@ import { start as startIps } from "./modules/ips.js";
 import { start as startAlertCenter } from "./modules/alertcenter.js";
 import { start as startTraffic } from "./modules/traffic.js";
 import { start as startRules2 } from "./modules/rules2.js";
+import { start as startTabs } from "./modules/tabs.js";
+import { start as startRuleTemplates } from "./modules/rule-templates.js";
 import { start as startExceptions } from "./modules/exceptions.js";
 import * as topbar from "./modules/topbar.js";
 import { start as startSettings } from "./modules/settings.js";
@@ -179,9 +181,16 @@ const SCREENS = {
       },
       showLogin,
     );
+    const stopTabs = startTabs($("rules-tabs"), $("view-rules"));
+    const stopTemplates = startRuleTemplates({
+      select: $("r2-template"), insert: $("r2-template-insert"), desc: $("r2-template-desc"),
+      preview: $("r2-template-preview"), editor: $("r2-editor"),
+    });
     return () => {
       stopRules();
       stopRules2();
+      stopTabs();
+      stopTemplates();
     };
   },
   logs: () =>
@@ -330,7 +339,7 @@ const SCREENS = {
   metrics: () =>
     startMetrics(
       api,
-      { error: $("metrics-error"), ranges: $("mx-ranges"), charts: $("mx-charts") },
+      { error: $("metrics-error"), ranges: $("mx-ranges"), charts: $("mx-charts"), customHours: $("mx-custom-hours"), customApply: $("mx-custom-apply"), rangeHint: $("mx-range-hint") },
       showLogin,
     ),
   events: () =>

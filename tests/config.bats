@@ -145,7 +145,7 @@ EOF_T
 	[[ "$output" != *"value too great"* ]]
 }
 
-@test "an EVE_REDIS value in a saved config does not fail validation (R210: it stopped an update)" {
+@test "an EVE_REDIS value in a saved config does not fail validation (R210) and a host:port/key one is a real output" {
 	run_install --set EVE_REDIS=127.0.0.1:6379/eve
 	[ "$status" -eq 0 ]
 	[[ "$output" != *"failed validation"* ]]

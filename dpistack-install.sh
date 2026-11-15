@@ -1824,7 +1824,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.49.0"
+DPISTACK_VERSION="0.50.0"
 
 : "${DRY_RUN:=0}"
 
@@ -6266,7 +6266,7 @@ declare -gA KEY_HINT=(
 	[EVE_FILE]='Write events to eve.json (needed by the panel and the watchdog).'
 	[EVE_TYPES]='Which event types to write to eve.json.'
 	[EVE_SYSLOG]='Duplicate events to syslog (facility local5).'
-	[EVE_REDIS]='Redis output. Not supported yet: leave it empty (a value saved by an older version is ignored with a warning).'
+	[EVE_REDIS]='Send the events to Redis as well: yes (Redis of this host), or host[:port][/key], for example 127.0.0.1:6379/suricata. Empty or no: eve.json only. Needs a Suricata built with Redis support (a source build has it).'
 	[EVE_ROTATE]='How to rotate eve.json: daily, weekly or by size.'
 	[EVE_KEEP]='How many rotated files to keep.'
 	[EVE_MAX_SIZE_MB]='File size in MB that triggers rotation (the size mode).'
@@ -6655,7 +6655,7 @@ menu_edit_key() {
 	while true; do
 		local current="${CONF[$key]:-}"
 		local opts="${SCHEMA_OPTIONS[$key]}"
-		echo "$key (now: ${current:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		echo "$key (now: ${current:-not set}, default: ${SCHEMA_DEFAULT[$key]:-none})" >&2
 		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$current" ]] && menu_say_empty "$key"
 		[[ -n "$opts" ]] && echo "  options: $opts" >&2
@@ -7170,7 +7170,7 @@ menu_wizard_ask() {
 		local shown="${CONF[$key]:-}"
 		schema_is_secret "$key" && shown=$([[ -n "${SECRETS[$key]:-}" ]] && echo set || echo "not set")
 		echo >&2
-		echo "$key (now: ${shown:-<empty>}, default: ${SCHEMA_DEFAULT[$key]:-<empty>})" >&2
+		echo "$key (now: ${shown:-not set}, default: ${SCHEMA_DEFAULT[$key]:-none})" >&2
 		[[ -n "${KEY_HINT[$key]:-}" ]] && echo "  ${KEY_HINT[$key]}" >&2
 		[[ -z "$shown" ]] && menu_say_empty "$key"
 		[[ -n "${SCHEMA_OPTIONS[$key]}" ]] && echo "  options: ${SCHEMA_OPTIONS[$key]}" >&2
@@ -7222,8 +7222,6 @@ menu_wizard() {
 			[[ "${SCHEMA_GROUP[$key]}" == "$g" ]] || continue
 			menu_key_is_component "$key" && continue
 			menu_key_skipped "$key" && continue
-			# no output behind it yet: there is nothing to ask, a value is refused
-			[[ "$key" == "EVE_REDIS" ]] && continue
 			menu_wizard_ask "$key"
 			rc=$?
 			case "$key" in
@@ -8379,7 +8377,7 @@ pkg_build_deps() {
 		local -a pkgs=(build-essential git autoconf automake libtool pkg-config make libpcap-dev)
 		if [[ "$1" == "suricata" ]]; then
 			pkgs+=(libpcre2-dev libyaml-dev libjansson-dev libmagic-dev zlib1g-dev
-				libcap-ng-dev libnet1-dev liblz4-dev python3-yaml cargo rustc)
+				libcap-ng-dev libnet1-dev liblz4-dev libhiredis-dev python3-yaml cargo rustc)
 			# A git checkout generates its Rust headers with cbindgen.
 			pkg_available cbindgen && pkgs+=(cbindgen)
 		fi
@@ -8389,7 +8387,7 @@ pkg_build_deps() {
 		local -a pkgs=(gcc gcc-c++ make git autoconf automake libtool pkgconf-pkg-config libpcap-devel)
 		if [[ "$1" == "suricata" ]]; then
 			pkgs+=(pcre2-devel libyaml-devel jansson-devel file-devel zlib-devel
-				libcap-ng-devel libnet-devel lz4-devel python3-pyyaml cargo rust)
+				libcap-ng-devel libnet-devel lz4-devel hiredis-devel python3-pyyaml cargo rust)
 			pkg_available cbindgen && pkgs+=(cbindgen)
 		fi
 		pkg_install "${pkgs[@]}"
@@ -10391,8 +10389,18 @@ schema_validate_entry() {
 	local IFS=,
 	case "$key" in
 	EVE_REDIS)
-		echo "$key: this output is not supported yet, leave it empty"
-		return 1
+		# no | yes | host[:port][/key]: the port is 1..65535 and the host an address or a name
+		case "${value,,}" in
+		no | off | none | false | yes | on | true) ;;
+		*)
+			local rhp="${value%%/*}" rport=6379
+			[[ "$rhp" == *:* ]] && rport="${rhp#*:}"
+			if [[ ! "$rport" =~ ^[0-9]{1,5}$ ]] || ((10#$rport < 1 || 10#$rport > 65535)) || [[ -z "${rhp%%:*}" || "${rhp%%:*}" =~ ^[0-9]+$ ]]; then
+				echo "$key=$value: use no, yes (this host, 127.0.0.1:6379) or host[:port][/key], for example 127.0.0.1:6379/suricata"
+				return 1
+			fi
+			;;
+		esac
 		;;
 	EVE_TYPES)
 		for el in $value; do
@@ -10431,7 +10439,7 @@ schema_empty_meaning() {
 	NDPI_VERSION) echo "the nDPI release the Suricata plugin is built with" ;;
 	NTOPNG_VERSION) echo "the latest version of the package or image" ;;
 	EVEBOX_VERSION) echo "the latest version of the package or image" ;;
-	EVE_REDIS) echo "no Redis output; a value is ignored with a warning, this output is not supported yet" ;;
+	EVE_REDIS) echo "no Redis output: events go to eve.json only (yes = Redis of this host, key suricata)" ;;
 	EVE_MAX_SIZE_MB) echo "not used; EVE_ROTATE=size is refused without a value" ;;
 	RULES_URLS) echo "only the sources of RULES_SOURCES are used" ;;
 	esac
@@ -13519,21 +13527,63 @@ suricata_render_plugins_block() {
 	fi
 }
 
-# suricata_warn_redis_unused - EVE_REDIS has no output behind it yet (it needs
-# a Suricata built with hiredis). A saved config may hold a value, so it is
-# ignored with a warning and never refused: the refusal of v0.37.6 stopped an
-# update on a config that had one (R210 of 18.51). "no", "off", "none" and
-# "false" mean off and say nothing.
-suricata_warn_redis_unused() {
-	local v="${CONF[EVE_REDIS]:-}"
+# suricata_redis_target - the Redis output of EVE_REDIS as "host port key" on
+# one line, or exit 1 when the output is off. The value is "no" (or empty, off,
+# none, false): off; "yes": the Redis of this host, 127.0.0.1:6379, key
+# "suricata"; or "host[:port][/key]" (port 6379 and key "suricata" when left
+# out). Events are pushed to the list with LPUSH (mode lpush): a reader takes
+# them with BRPOP and nothing but the list grows when no reader is there.
+suricata_redis_target() {
+	local v="${CONF[EVE_REDIS]:-}" hp key="suricata" host port=6379
 	case "${v,,}" in
-	"" | no | off | none | false) return 0 ;;
+	"" | no | off | none | false) return 1 ;;
+	yes | on | true) v="127.0.0.1:6379/suricata" ;;
 	esac
-	log "WARN" "EVE_REDIS=$v is ignored: this installer has no Redis output yet (empty the value to stop this message)"
+	hp="${v%%/*}"
+	[[ "$v" == */* && -n "${v#*/}" ]] && key="${v#*/}"
+	host="$hp"
+	if [[ "$hp" == *:* ]]; then
+		host="${hp%%:*}"
+		port="${hp#*:}"
+	fi
+	[[ -n "$host" ]] || return 1
+	echo "$host $port $key"
+}
+
+# suricata_has_redis - 0 when the installed Suricata was built with hiredis
+# (`suricata --build-info` says "Redis support: yes"); 0 as well when there is
+# no binary yet: the source build of this installer adds --enable-hiredis, and
+# suricata -T checks the rendered file before anything is replaced.
+suricata_has_redis() {
+	command -v suricata >/dev/null 2>&1 || return 0
+	suricata --build-info 2>/dev/null | grep -Eqi '^[[:space:]]*Redis support:[[:space:]]*yes'
+}
+
+# suricata_render_redis_output - a second eve-log output with the same types:
+# the events go to Redis as well, the file stays (EveBox and the panel read
+# it). A Suricata without hiredis gets a warning and no block: it would stop
+# at the first start on "filetype: redis".
+suricata_render_redis_output() {
+	local target host port key
+	target=$(suricata_redis_target) || return 0
+	read -r host port key <<<"$target"
+	if ! suricata_has_redis; then
+		log "WARN" "EVE_REDIS=${CONF[EVE_REDIS]} is not used: this Suricata was built without hiredis (use SURICATA_SOURCE=source, or a package built with Redis support)"
+		return 0
+	fi
+	echo "  - eve-log:"
+	echo "      enabled: yes"
+	echo "      filetype: redis"
+	echo "      redis:"
+	echo "        server: $host"
+	echo "        port: $port"
+	echo "        async: no"
+	echo "        mode: lpush"
+	echo "        key: $key"
+	suricata_render_eve_types_block
 }
 
 suricata_render_eve_log_block() {
-	suricata_warn_redis_unused
 	echo "  - eve-log:"
 	echo "      enabled: yes"
 	echo "      filetype: regular"
@@ -13559,6 +13609,7 @@ suricata_render_eve_log_block() {
 		echo "      level: Info"
 		suricata_render_eve_types_block
 	fi
+	suricata_render_redis_output
 }
 
 # suricata_series <X.Y.Z[-suffix]> -> "X.Y"
@@ -13791,7 +13842,7 @@ suricata_build_from_source() {
 	# path".
 	local configure_args=(--prefix=/usr/local --sysconfdir="${DPISTACK_ROOT}/etc"
 		--localstatedir="${DPISTACK_ROOT}/var" --libdir="${DPISTACK_ROOT}/usr/lib"
-		--disable-gccmarch-native)
+		--disable-gccmarch-native --enable-hiredis)
 	if [[ "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
 		configure_args+=(--enable-ndpi --with-ndpi="$(path_ndpi_src_dir)")
 	fi

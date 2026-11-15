@@ -451,8 +451,18 @@ schema_validate_entry() {
 	local IFS=,
 	case "$key" in
 	EVE_REDIS)
-		echo "$key: this output is not supported yet, leave it empty"
-		return 1
+		# no | yes | host[:port][/key]: the port is 1..65535 and the host an address or a name
+		case "${value,,}" in
+		no | off | none | false | yes | on | true) ;;
+		*)
+			local rhp="${value%%/*}" rport=6379
+			[[ "$rhp" == *:* ]] && rport="${rhp#*:}"
+			if [[ ! "$rport" =~ ^[0-9]{1,5}$ ]] || ((10#$rport < 1 || 10#$rport > 65535)) || [[ -z "${rhp%%:*}" || "${rhp%%:*}" =~ ^[0-9]+$ ]]; then
+				echo "$key=$value: use no, yes (this host, 127.0.0.1:6379) or host[:port][/key], for example 127.0.0.1:6379/suricata"
+				return 1
+			fi
+			;;
+		esac
 		;;
 	EVE_TYPES)
 		for el in $value; do
@@ -491,7 +501,7 @@ schema_empty_meaning() {
 	NDPI_VERSION) echo "the nDPI release the Suricata plugin is built with" ;;
 	NTOPNG_VERSION) echo "the latest version of the package or image" ;;
 	EVEBOX_VERSION) echo "the latest version of the package or image" ;;
-	EVE_REDIS) echo "no Redis output; a value is ignored with a warning, this output is not supported yet" ;;
+	EVE_REDIS) echo "no Redis output: events go to eve.json only (yes = Redis of this host, key suricata)" ;;
 	EVE_MAX_SIZE_MB) echo "not used; EVE_ROTATE=size is refused without a value" ;;
 	RULES_URLS) echo "only the sources of RULES_SOURCES are used" ;;
 	esac

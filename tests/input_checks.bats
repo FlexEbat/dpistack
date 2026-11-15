@@ -75,12 +75,19 @@ entry() {
 	[ "$status" -eq 0 ]
 }
 
-@test "EVE_REDIS takes no value, empty is fine" {
-	entry EVE_REDIS "10000"
+@test "EVE_REDIS takes no, yes or host[:port][/key]; a bare number or a port out of range is refused" {
+	local ok bad
+	for ok in "" no yes Yes off 127.0.0.1 127.0.0.1:6379 127.0.0.1:6379/suricata redis.lan:6380/eve; do
+		entry EVE_REDIS "$ok"
+		[ "$status" -eq 0 ]
+	done
+	for bad in 10000 127.0.0.1:0 127.0.0.1:70000 127.0.0.1:abc; do
+		entry EVE_REDIS "$bad"
+		[ "$status" -eq 1 ]
+		[[ "$output" == *"use no, yes"* ]]
+	done
+	entry EVE_REDIS ":6379"
 	[ "$status" -eq 1 ]
-	[[ "$output" == *"not supported yet, leave it empty"* ]]
-	entry EVE_REDIS ""
-	[ "$status" -eq 0 ]
 }
 
 @test "a time that systemd does not accept is refused for the rules update" {
@@ -113,7 +120,7 @@ entry() {
 	[[ "$output" == *"bogus is not a Suricata eve output"* ]]
 	run "$CTL" settings set EVE_REDIS=10000
 	[ "$status" -eq 3 ]
-	[[ "$output" == *"not supported yet"* ]]
+	[[ "$output" == *"use no, yes"* ]]
 	run grep -c 'EVE_REDIS=127.0.0.1:6379/eve' "$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
 	[ "$output" = "1" ]
 	run "$CTL" settings check STATS_INTERVAL_SEC=45
@@ -132,7 +139,7 @@ entry() {
 	[[ "$output" == *"bogus is not a Suricata eve output"* ]]
 }
 
-@test "the guided setup does not ask EVE_REDIS, and EVE_MAX_SIZE_MB only when the rotation is by size" {
+@test "the guided setup asks EVE_REDIS, and EVE_MAX_SIZE_MB only when the rotation is by size" {
 	run bash -c '
 		source "$1/lib/paths.sh"; source "$1/lib/common.sh"; source "$1/lib/schema.sh"; source "$1/lib/key_hints.sh"; source "$1/lib/config.sh"
 		source "$1/lib/menu.sh"
@@ -149,7 +156,7 @@ entry() {
 	[[ "$output" == *"daily ASK EVE_ROTATE"* ]]
 	[[ "$output" != *"daily ASK EVE_MAX_SIZE_MB"* ]]
 	[[ "$output" == *"size ASK EVE_MAX_SIZE_MB"* ]]
-	[[ "$output" != *"ASK EVE_REDIS"* ]]
+	[[ "$output" == *"daily ASK EVE_REDIS"* ]]
 }
 
 @test "a section marks EVE_MAX_SIZE_MB as not used while the rotation is daily" {

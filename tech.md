@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
 **Document version: v79** (2026-11-14)
-**Program version: v0.49.0** (slices 0-45, the redesign 18.53, the menu and help review 18.54 and the input checks 18.55 are done; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Program version: v0.50.0** (slices 0-45, the redesign 18.53, the menu and help review 18.54 and the input checks 18.55 are done; the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.50.0: the panel pass of 2026-11-15 (18.56): the Redis output of Suricata (`EVE_REDIS`) is real; Metrics takes 12 hours and an own number of hours (1 to 24); Rules is split into four tabs and Custom rules has seven described templates; Components is a grid of cards with the mode and the interfaces beside it; the "Under development" note is the top bar of the signed-in page; quieter chrome and a colour for each menu group, test status and check report.
 - v0.49.0: input checks (18.55): a busy port is found while the answers are given and the next free one is offered at once; jq and the other base tools are installed before the menu asks anything and the panel password step installs jq and argon2 itself; a value that is typed is checked for its meaning (impossible addresses and networks, unknown eve types and alert channels, a time systemd does not accept, a Redis output that does not exist, an interface that is not on the machine); EVE_MAX_SIZE_MB is asked only for the size rotation and EVE_REDIS is not asked.
 - v0.48.0: the menu and help review (18.54): the install screen counts the missing panel password as a problem and says the next step, prints the "under development" note once, explains the markers, has a help and the list of all problems (`e`); every key of a section has a one-line hint (generated into `lib/key_hints.sh` from the hints of the Settings screen) and the count of the advanced keys; the control menu got submenus for services, mode and interfaces, rules and alerts, backup, users and tokens, checks; new commands `dpistack help [--all|settings|ids]`, `<command> --help`, `info [--json]`, the two-word spelling (`rules update`, `config read`, `mode confirm`), a "did you mean" line and bash completion.
 - v0.47.1: a fix of the layout of the panel (18.53): the row under the top bar no longer stretches to the height of the sidebar, which left a blank band above every screen; the phone header leaves room for the floating bar; tables sit on cards; the time labels of the charts no longer overlap.
 - v0.47.0: the complete redesign of the panel (18.53, "Aurora NOC"): a new look from three references, a chart kit on inline SVG (area charts with hover and zoom, rings, donut, radar), a new Overview and shell; the lite edition is removed (`PANEL_EDITION`, `-lite`, `lite.css`, `nofx.js`, the theme switch); `full.css` is now `app.css`.
-- v0.46.0: slice 45, the security of the panel (18.45): a Security screen with the security check (access mode, TLS, default ports, accounts that do not sign in, rule file permissions, files with secrets), your sessions (where from, end one, end all the others), API tokens (a script signs in with `Authorization: Bearer`; read only or by role, never more than its owner, 1 to 365 days, shown once, only a hash kept) and the history of sign ins; an administrator can sign everyone out. New verbs `tokens create|list|revoke` and `security check`, file `api-tokens.json`, routes `/api/security/...`. The gate of the CI runs on Ubuntu 24.04 (D110).
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v80: v0.50.0. 18.56 written (decisions D143 to D150); D138 superseded; the `EVE_REDIS` contract in 4.2.
 - v79: v0.49.0. 18.55 written (decisions D135 to D142); 4.3 and 5.0 name the entry checks; the slice row 48 of 18.0.
 - v78: v0.48.0. 18.54 written; 4.5 the verbs `help` and `info`, `--help` and the two-word spelling; 5.0 and 5.2 the menu changes; the file lists (`lib/key_hints.sh`, `scripts/gen-key-hints.sh`, the completion template); the gate stage `key hints`; the slice row 47 of 18.0; decisions D125 to D134.
 - v77: v0.47.1. A note on the layout fix in 18.53.
 - v76: v0.47.0. 18.53 written; 9 (one panel) and 9.1 (the new design rules) rewritten; the slice row 46 of 18.0; `PANEL_EDITION` removed from 4.3 and the lists of keys; decisions D119 to D124.
-- v75: v0.46.0. 18.45 (slice 45) written; the slice 45 row of 18.0; 4.4 `api-tokens.json`; 4.5 the verbs `tokens` and `security`; 4.8 the Bearer way in and the routes of the Security screen; the screens text; the test list; D110 (the gate on 24.04) already in 12; decisions D111 to D118.
 
 ---
 
@@ -254,7 +254,7 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `EVE_FILE` | `yes` | `yes` `no`; `no` turns off the EVE view, the freshness check and the eve metrics |
 | `EVE_TYPES` | `alert,flow,dns,tls,http,stats` | from `alert,anomaly,dns,http,tls,files,flow,netflow,ssh,smb,stats,drop` |
 | `EVE_SYSLOG` | `no` | `yes` `no` |
-| `EVE_REDIS` | empty | `host:port` or empty |
+| `EVE_REDIS` | empty | `no` or empty (off), `yes` (`127.0.0.1:6379`, key `suricata`), or `host[:port][/key]` (port 6379 and key `suricata` by default); events are pushed with LPUSH |
 | `EVE_ROTATE` | `daily` | `daily` `weekly` `size` |
 | `EVE_KEEP` | `14` | number of rotations |
 | `EVE_MAX_SIZE_MB` | empty | a number, needed with `EVE_ROTATE=size` |
@@ -1264,6 +1264,7 @@ One row per slice. **Done** means the Definition of Done of section 14 was met; 
 | 46 | redesign of the panel | **done.** A new look ("Aurora NOC") for every screen, the chart kit, the new Overview, the shell; the lite edition removed | v0.47.0 | 18.53 |
 | 47 | menu and help review | **done.** The install screen says what is wrong and what to do next; every key of a section has a hint; the control menu has submenus for what was command line only; `help`, `<command> --help`, `info`, the two-word spelling, "did you mean" and bash completion | v0.48.0 | 18.54 |
 | 48 | input checks | **done.** Busy ports are found while the answers are given; the base tools come before the menu; a typed value is checked for its meaning, a saved file is not held to it | v0.49.0 | 18.55 |
+| 49 | panel pass of 2026-11-15 | **done.** The Redis output, the period choice in Metrics, the Rules tabs, the custom rule templates, the Components cards, the note at the top, the quieter design and the colours | v0.50.0 | 18.56 |
 
 **Rules for the slices not yet done.** Decided on the request of 2026-10-31 (`todo.md`), "choose yourself". General rules for all of them: (1) Nothing is shown that the program cannot really do: the IPS page does not say "dry run" unless a drop is really tested (slice 42 calls what it does a "rule test"). (2) Every change of the system goes through a verb of section 4.5; the panel never writes outside `/var/lib/dpistack`. (3) Every action that changes something is written to the audit log (slice 35) with the user, the time, the address and the result. (4) The permission of the user is checked in the panel for every route (slice 34), the verbs trust the panel. (5) There are no resource budgets for the panel. (6) New screens follow the design of 9.1 and work in both themes.
 
@@ -2329,10 +2330,36 @@ Tests: `tests/menu.bats` (14 new), `tests/cli_help.bats` (15), `tests/menu_manag
 | D135 | **Two levels of checking.** A saved file is held to the shape and to the addresses only; a typed value (menu, `settings check`, `settings set`) is held to its meaning. `--set` stays lenient: it replays saved values, and a refusal there stopped an update before (R210) |
 | D136 | **The lists are in `schema.sh`.** The eve outputs and the alert channels are the names the code understands; a saved file with another name still loads, a typed one is refused |
 | D137 | **The interface check is in the menu only.** A configuration may be prepared for another machine; the preflight stops on a missing interface at install time as before |
-| D138 | **`EVE_REDIS` is not asked and a typed value is refused.** A value in an old saved file is ignored with a warning, as before |
+| D138 | ~~`EVE_REDIS` is not asked and a typed value is refused.~~ **Superseded by D143**: the output exists since v0.50.0 |
 | D139 | **`EVE_MAX_SIZE_MB` depends on `EVE_ROTATE=size`.** The dependency table that the panel reads and `menu_key_skipped` agree, and a test compares them over many configurations |
 | D140 | **The early port search is a question, not a silent change.** The same prompt as at Install, so nothing is changed without an answer; the preflight is still the last check |
 | D141 | **Tools come before questions.** The menu asks for ports and interfaces, so `ss` must be there; installing `jq` and `iproute2` first costs a few seconds on a minimal image |
 | D142 | **The calendar is checked by systemd, not by a pattern.** A ready tool that knows every form the timer accepts; skipped when the host has no `systemd-analyze` |
 
 Tests: `tests/input_checks.bats` (14), changes in `tests/menu.bats` (the busy-port test has one more answer for the early question) and `tests/settings_v2.bats` (the dependency comparison also walks `EVE_ROTATE`).
+
+### 18.56 The panel pass of 2026-11-15 (v0.50.0)
+
+**Status:** done. The owner asked for eight changes after looking at the panel: the Redis output that said "not yet supported", a period choice in Metrics, a Rules screen with the search and the rule sets at the bottom, templates for custom rules, a Components layout, the "Under development" note at the very top, a pass over the design with two skills (`ui-ux-pro-max`, `unslop`), and colour in the menu and the reports. The wording `<empty>` in the setup prompts is replaced by `not set` and `none`.
+
+1. **Redis.** `EVE_REDIS` is a real output: a second `eve-log` with `filetype: redis`, the same event types, `mode: lpush`, `async: no`. The file output stays, EveBox and the panel read it. The installer's own Redis (installed in every case) is the default target.
+2. **Metrics.** The period buttons are 1, 6, 12 and 24 hours, and a field takes any whole number of hours from 1 to 24. The API accepts `range=Nh` for the same numbers.
+3. **Rules.** Four tabs: Rule sets (with the update history and the disabled rules), Search (both searches), Sources and groups, Custom rules. The element ids did not change, so the existing handlers work in a hidden tab.
+4. **Custom rules.** A template list (`modules/rule-templates.js`) with seven rules, each with a description of what it matches, what to change and what to expect. A template is added at the end of the file with the next free sid.
+5. **Components.** A card for each component (state, what it is for, version, actions); Suricata mode and Capture interfaces are in a column beside them.
+6. **The note.** "Under development" is the first element of the signed-in page, above the top bar, and no longer in the menu.
+7. **Design.** From `unslop`: no gradient text, no glow, no colour washes behind content, no tracked capitals, the stars dimmed. From `ui-ux-pro-max`: status is never colour alone (every dot has a word), keyboard arrows in the tabs, visible selected state, labelled fields, a hint with the allowed values.
+8. **Colour.** Each menu group has a hue (Monitoring cyan, Protection violet, System blue, Admin grey); test status words and the rule check report have the status colours (green, amber, red) with a badge.
+
+| id | decision |
+| --- | --- |
+| D143 | **`EVE_REDIS` is `no`, `yes` or `host[:port][/key]`.** A single key keeps old saved files valid; `yes` means the Redis of this host with key `suricata`. A value that an older version ignored is now active |
+| D144 | **No hiredis, no block.** If `suricata --build-info` says `Redis support: no`, the block is left out with a warning, because Suricata would stop at `filetype: redis`. With no binary yet the block is written and `suricata -T` checks the file |
+| D145 | **The source build always asks for hiredis.** `--enable-hiredis` and `libhiredis-dev` (`hiredis-devel`) cost almost nothing and make a later switch of `EVE_REDIS` work without a rebuild |
+| D146 | **The own period is whole hours, 1 to 24.** The ring holds one day. Other periods get about 180 points, the step rounded up to 30 seconds (12 hours: 4 minutes); the three old periods keep their grids |
+| D147 | **Tabs, not a longer page.** The Rules screen groups its tasks; a small `tabs.js` (roles, arrow keys) is used, no library |
+| D148 | **Templates start at sid 9001000.** Clear of the installer's own test rule (9000100); the next sid is the highest local one plus one, and the panel check still looks at the whole file |
+| D149 | **The note is in the page grid, not in the menu.** It is above the top bar so that it is the first thing on every screen and does not disappear when the menu is collapsed |
+| D150 | **Colour keeps its meaning.** Green, amber and red are only status. The menu groups use the non-status hues (cyan, violet, blue) and grey |
+
+Verified: the panel was built and run with a stub `dpistack`, and every changed screen was opened in headless Chromium (login, Components, the four Rules tabs with a template added, Metrics with 12 hours and with 3 hours served by the Go code). Tests: `panel/web/test/rule-templates.test.mjs`, `tabs.test.mjs`, `metrics-range.test.mjs`, the changed `devnote.test.mjs`; Go tests for the new periods in `internal/metrics` and `internal/api`; bats tests for the Redis block in `tests/suricata_step.bats` and `tests/input_checks.bats`.

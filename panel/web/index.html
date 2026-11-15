@@ -27,6 +27,7 @@
   </form>
 </main>
 <main id="overview" hidden>
+  <p class="devnote devnote-top" role="note">Under development: dpistack is still being developed. Settings, commands and screens can change between releases.</p>
   <header>
     <div class="titles">
       <h1 id="page-title" tabindex="-1">Overview</h1>
@@ -89,7 +90,6 @@
         <button type="button" data-view="account"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M230.92,212c-15.23-26.33-38.7-45.21-66.09-54.16a72,72,0,1,0-73.66,0C63.78,166.78,40.31,185.66,25.08,212a8,8,0,1,0,13.85,8c18.84-32.56,52.14-52,89.07-52s70.23,19.44,89.07,52a8,8,0,1,0,13.85-8ZM72,96a56,56,0,1,1,56,56A56.06,56.06,0,0,1,72,96Z"/></svg><span>Account</span></button>
       </div>
       <button id="nav-collapse" class="nav-collapse" type="button" aria-expanded="true" aria-label="Collapse the menu" title="Collapse the menu"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z"/></svg><span>Collapse</span></button>
-      <p class="devnote" role="note">Under development: dpistack is still being developed. Settings, commands and screens can change between releases.</p>
     </div>
   </nav>
   <div id="view-overview">
@@ -135,27 +135,31 @@
   <div id="view-components" hidden>
     <p id="components-error" class="error" role="alert"></p>
     <p id="components-message" class="muted" aria-live="polite"></p>
-    <section id="components-list"><div class="skeleton" aria-hidden="true"></div></section>
-    <div id="mode">
-      <h2>Suricata mode</h2>
-      <p id="mode-error" class="error" role="alert"></p>
-      <p id="mode-status"></p>
-      <p id="mode-message" class="muted" aria-live="polite"></p>
-      <div class="toolbar">
-        <button id="mode-ips" type="button">Enable IPS</button>
-        <button id="mode-ids" type="button">Back to IDS</button>
-        <button id="mode-confirm" type="button" hidden>Confirm IPS</button>
-      </div>
-    </div>
-    <div id="ifaces">
-      <h2>Capture interfaces</h2>
-      <p id="ifaces-error" class="error" role="alert"></p>
-      <p id="ifaces-message" class="muted" aria-live="polite"></p>
-      <section id="ifaces-list"></section>
-      <div class="toolbar">
-        <input id="ifaces-name" type="text" class="wide" placeholder="e.g. eth1" aria-label="Interface name" autocomplete="off">
-        <button id="ifaces-add" type="button">Add interface</button>
-      </div>
+    <div class="comp-layout">
+      <section id="components-list" class="comp-main"><div class="skeleton" aria-hidden="true"></div></section>
+      <aside class="comp-side">
+        <div id="mode" class="card">
+          <h2>Suricata mode</h2>
+          <p id="mode-error" class="error" role="alert"></p>
+          <p id="mode-status"></p>
+          <p id="mode-message" class="muted" aria-live="polite"></p>
+          <div class="toolbar">
+            <button id="mode-ips" type="button">Enable IPS</button>
+            <button id="mode-ids" type="button">Back to IDS</button>
+            <button id="mode-confirm" type="button" hidden>Confirm IPS</button>
+          </div>
+        </div>
+        <div id="ifaces" class="card">
+          <h2>Capture interfaces</h2>
+          <p id="ifaces-error" class="error" role="alert"></p>
+          <p id="ifaces-message" class="muted" aria-live="polite"></p>
+          <section id="ifaces-list"></section>
+          <div class="toolbar">
+            <input id="ifaces-name" type="text" class="wide" placeholder="e.g. eth1" aria-label="Interface name" autocomplete="off">
+            <button id="ifaces-add" type="button">Add interface</button>
+          </div>
+        </div>
+      </aside>
     </div>
   </div>
   <div id="view-settings" hidden>
@@ -221,6 +225,39 @@
       <span id="rules-last" class="muted" aria-live="polite"></span>
     </div>
     <pre id="rules-update-output" class="result" role="status"></pre>
+    <div id="rules-tabs" class="tabs" role="tablist" aria-label="Rules sections">
+      <button type="button" role="tab" id="rules-tab-overview" data-tab="overview" aria-selected="true" aria-controls="rules-pane-overview">Rule sets</button>
+      <button type="button" role="tab" id="rules-tab-find" data-tab="find" aria-selected="false" aria-controls="rules-pane-find" tabindex="-1">Search</button>
+      <button type="button" role="tab" id="rules-tab-sources" data-tab="sources" aria-selected="false" aria-controls="rules-pane-sources" tabindex="-1">Sources and groups</button>
+      <button type="button" role="tab" id="rules-tab-custom" data-tab="custom" aria-selected="false" aria-controls="rules-pane-custom" tabindex="-1">Custom rules</button>
+    </div>
+    <div id="rules-pane-overview" class="pane" role="tabpanel" aria-labelledby="rules-tab-overview" data-pane="overview">
+    <h2>Rule sets</h2>
+    <section id="r2-stats"><div class="skeleton" aria-hidden="true"></div></section>
+    <h2>Update history</h2>
+    <section id="r2-history"><div class="skeleton" aria-hidden="true"></div></section>
+    <h2>Disabled rules</h2>
+    <section id="rules-disabled"></section>
+    </div>
+    <div id="rules-pane-find" class="pane" role="tabpanel" aria-labelledby="rules-tab-find" data-pane="find" hidden>
+    <h2>Rule search</h2>
+    <div class="toolbar">
+      <input id="rules-q" type="text" class="wide" placeholder="sid or part of the text" aria-label="Rule search" autocomplete="off">
+      <button id="rules-search" type="button">Find</button>
+    </div>
+    <section id="rules-results"></section>
+    <h2>Find rules</h2>
+    <div class="toolbar">
+      <label>Category <select id="r2-class"><option value="">any category</option></select></label>
+      <label>Source <select id="r2-source"><option value="">any source</option></select></label>
+      <label>State <select id="r2-state"><option value="any">any</option><option value="enabled">enabled</option><option value="disabled">disabled</option></select></label>
+      <input id="r2-text" type="text" class="wide" placeholder="rule number or part of the description" aria-label="Rule number or text" autocomplete="off">
+      <button id="r2-find" type="button">Find</button>
+    </div>
+    <p id="r2-find-note" class="muted" aria-live="polite"></p>
+    <section id="r2-find-results"></section>
+    </div>
+    <div id="rules-pane-sources" class="pane" role="tabpanel" aria-labelledby="rules-tab-sources" data-pane="sources" hidden>
     <h2>Sources</h2>
     <section id="rules-sources"></section>
     <div class="toolbar">
@@ -233,30 +270,17 @@
       <input id="rules-group" type="text" class="wide" placeholder="emerging-p2p.rules" aria-label="Group name" autocomplete="off">
       <button id="rules-group-add" type="button">Enable group</button>
     </div>
-    <h2>Rule search</h2>
-    <div class="toolbar">
-      <input id="rules-q" type="text" class="wide" placeholder="sid or part of the text" aria-label="Rule search" autocomplete="off">
-      <button id="rules-search" type="button">Find</button>
     </div>
-    <section id="rules-results"></section>
-    <h2>Disabled rules</h2>
-    <section id="rules-disabled"></section>
-    <h2>Rule sets</h2>
-    <section id="r2-stats"><div class="skeleton" aria-hidden="true"></div></section>
-    <h2>Update history</h2>
-    <section id="r2-history"><div class="skeleton" aria-hidden="true"></div></section>
-    <h2>Find rules</h2>
-    <div class="toolbar">
-      <label>Category <select id="r2-class"><option value="">any category</option></select></label>
-      <label>Source <select id="r2-source"><option value="">any source</option></select></label>
-      <label>State <select id="r2-state"><option value="any">any</option><option value="enabled">enabled</option><option value="disabled">disabled</option></select></label>
-      <input id="r2-text" type="text" class="wide" placeholder="rule number or part of the description" aria-label="Rule number or text" autocomplete="off">
-      <button id="r2-find" type="button">Find</button>
-    </div>
-    <p id="r2-find-note" class="muted" aria-live="polite"></p>
-    <section id="r2-find-results"></section>
+    <div id="rules-pane-custom" class="pane" role="tabpanel" aria-labelledby="rules-tab-custom" data-pane="custom" hidden>
     <h2>Custom rules</h2>
     <p class="muted">The file local.rules. Check it before saving: the check finds a line that is no rule, a rule with no sid, a sid used twice or already used by the rule set, and asks Suricata to load the file. Use sids from 9000000 to 9999999.</p>
+    <div class="tpl">
+      <label for="r2-template">Template</label>
+      <select id="r2-template" class="wide"></select>
+      <button id="r2-template-insert" type="button" disabled>Add to the file</button>
+    </div>
+    <p id="r2-template-desc" class="tpl-desc" aria-live="polite"></p>
+    <pre id="r2-template-preview" class="tpl-preview" hidden></pre>
     <textarea id="r2-editor" class="editor" rows="12" spellcheck="false" aria-label="local.rules"></textarea>
     <div class="toolbar">
       <button id="r2-reload" type="button">Reload from the server</button>
@@ -268,6 +292,7 @@
     <h3>Earlier versions</h3>
     <section id="r2-versions"></section>
     <section id="r2-diff"></section>
+    </div>
   </div>
   <div id="view-logs" hidden>
     <p id="logs-error" class="error" role="alert"></p>
@@ -378,8 +403,12 @@
     <div id="mx-ranges" class="toolbar" role="group" aria-label="Period">
       <button type="button" data-range="1h" aria-pressed="true">1 hour</button>
       <button type="button" data-range="6h" aria-pressed="false">6 hours</button>
+      <button type="button" data-range="12h" aria-pressed="false">12 hours</button>
       <button type="button" data-range="24h" aria-pressed="false">24 hours</button>
+      <label class="mx-custom">Own period, hours <input id="mx-custom-hours" type="number" min="1" max="24" step="1" inputmode="numeric" placeholder="1-24" autocomplete="off"></label>
+      <button id="mx-custom-apply" type="button">Show</button>
     </div>
+    <p id="mx-range-hint" class="muted" aria-live="polite">The panel keeps the last 24 hours of samples, so a period is a whole number of hours from 1 to 24.</p>
     <section id="mx-charts" class="charts"><div class="skeleton" aria-hidden="true"></div></section>
   </div>
   <div id="view-tests" hidden>

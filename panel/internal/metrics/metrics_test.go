@@ -331,7 +331,7 @@ func TestQueryGrids(t *testing.T) {
 		}
 		c.Sample()
 	}
-	for rng, want := range map[string]struct{ n, step int }{"1h": {120, 30}, "6h": {180, 120}, "24h": {180, 480}} {
+	for rng, want := range map[string]struct{ n, step int }{"1h": {120, 30}, "6h": {180, 120}, "12h": {180, 240}, "3h": {180, 60}, "24h": {180, 480}} {
 		res, err := c.Query(rng)
 		if err != nil {
 			t.Fatal(err)
