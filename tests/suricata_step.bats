@@ -298,3 +298,17 @@ load_step() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"sid:9000100"* ]]
 }
+
+@test "redis_output_off is one meaning for every spelling of off, and the menu and the renderer agree on it" {
+	local v
+	for v in "" no No NO off Off OFF none None false False FALSE; do
+		run bash -c "source '$REPO_DIR/lib/schema.sh'; redis_output_off '$v'"
+		[ "$status" -eq 0 ]
+		run load_step "CONF[EVE_REDIS]=\"$v\"" 'suricata_render_eve_log_block'
+		[[ "$output" != *"filetype: redis"* ]]
+	done
+	for v in yes Yes 127.0.0.1 redis.lan:6380/eve; do
+		run bash -c "source '$REPO_DIR/lib/schema.sh'; redis_output_off '$v'"
+		[ "$status" -eq 1 ]
+	done
+}

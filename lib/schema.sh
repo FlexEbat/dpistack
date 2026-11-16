@@ -220,7 +220,7 @@ schema_depends_init() {
 	SCHEMA_DEPENDS=()
 	_schema_depend 'SURICATA_ENABLE=yes EVE_ROTATE=size' EVE_MAX_SIZE_MB
 	# the length of the Redis stream: only when EVE_REDIS is on (an empty value and the off words are in the list)
-	_schema_depend 'SURICATA_ENABLE=yes EVE_REDIS!=|no|No|NO|off|none|false' EVE_REDIS_MAXLEN
+	_schema_depend 'SURICATA_ENABLE=yes EVE_REDIS!=|no|No|NO|off|Off|OFF|none|None|NONE|false|False|FALSE' EVE_REDIS_MAXLEN
 	_schema_depend 'SURICATA_ENABLE=yes SURICATA_MODE=ips' 'IPS_METHOD' 'IPS_NFQ_CHAINS'
 	_schema_depend 'SURICATA_ENABLE=yes' NDPI_ENABLE RULES_ENABLE
 	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
@@ -491,6 +491,17 @@ schema_validate_entry() {
 		;;
 	esac
 	return 0
+}
+
+# redis_output_off <value> - 0 when a value of EVE_REDIS means no Redis output:
+# empty, no, off, none or false in any case. The renderer, the menu, the
+# migrations and dependency below all use this one meaning (the list of spellings in
+# `_schema_depend` for EVE_REDIS_MAXLEN is the same words).
+redis_output_off() {
+	case "${1,,}" in
+	"" | no | off | none | false) return 0 ;;
+	esac
+	return 1
 }
 
 # schema_effective <key> - what an empty value of an optional key is on this

@@ -7382,7 +7382,7 @@ menu_key_skipped() {
 	# the length of the Redis stream means something only when there is a Redis output
 	EVE_REDIS_MAXLEN)
 		[[ "$suri" == "$n" ]] && return 0
-		case "${CONF[EVE_REDIS]:-}" in "" | no | No | NO | off | none | false) return 0 ;; esac
+		redis_output_off "${CONF[EVE_REDIS]:-}" && return 0
 		;;
 	SURICATA_RUNTIME | SURICATA_SOURCE | SURICATA_VERSION | SURICATA_MODE | IFACES | BPF_FILTER | HOME_NET | \
 		EVE_SYSLOG | EVE_REDIS | EVE_ROTATE | EVE_KEEP | STATS_INTERVAL_SEC | TEST_*)
@@ -8401,10 +8401,9 @@ migrate_0_50_0() {
 		CONF[EVE_MAX_SIZE_MB]=100
 		echo "migrate 0.50.0: EVE_MAX_SIZE_MB was saved empty, it is 100 now (used only with EVE_ROTATE=size)"
 	fi
-	case "${CONF[EVE_REDIS]:-}" in
-	"" | no | No | NO | off | none | false) ;;
-	*) echo "migrate 0.50.0: EVE_REDIS=${CONF[EVE_REDIS]} was ignored before and is a live Redis output now; set EVE_REDIS=no to keep eve.json only" ;;
-	esac
+	if ! redis_output_off "${CONF[EVE_REDIS]:-}"; then
+		echo "migrate 0.50.0: EVE_REDIS=${CONF[EVE_REDIS]} was ignored before and is a live Redis output now; set EVE_REDIS=no to keep eve.json only"
+	fi
 	return 0
 }
 
@@ -10612,7 +10611,7 @@ schema_depends_init() {
 	SCHEMA_DEPENDS=()
 	_schema_depend 'SURICATA_ENABLE=yes EVE_ROTATE=size' EVE_MAX_SIZE_MB
 	# the length of the Redis stream: only when EVE_REDIS is on (an empty value and the off words are in the list)
-	_schema_depend 'SURICATA_ENABLE=yes EVE_REDIS!=|no|No|NO|off|none|false' EVE_REDIS_MAXLEN
+	_schema_depend 'SURICATA_ENABLE=yes EVE_REDIS!=|no|No|NO|off|Off|OFF|none|None|NONE|false|False|FALSE' EVE_REDIS_MAXLEN
 	_schema_depend 'SURICATA_ENABLE=yes SURICATA_MODE=ips' 'IPS_METHOD' 'IPS_NFQ_CHAINS'
 	_schema_depend 'SURICATA_ENABLE=yes' NDPI_ENABLE RULES_ENABLE
 	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
@@ -10883,6 +10882,17 @@ schema_validate_entry() {
 		;;
 	esac
 	return 0
+}
+
+# redis_output_off <value> - 0 when a value of EVE_REDIS means no Redis output:
+# empty, no, off, none or false in any case. The renderer, the menu, the
+# migrations and dependency below all use this one meaning (the list of spellings in
+# `_schema_depend` for EVE_REDIS_MAXLEN is the same words).
+redis_output_off() {
+	case "${1,,}" in
+	"" | no | off | none | false) return 0 ;;
+	esac
+	return 1
 }
 
 # schema_effective <key> - what an empty value of an optional key is on this

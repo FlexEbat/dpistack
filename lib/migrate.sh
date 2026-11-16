@@ -86,10 +86,9 @@ migrate_0_50_0() {
 		CONF[EVE_MAX_SIZE_MB]=100
 		echo "migrate 0.50.0: EVE_MAX_SIZE_MB was saved empty, it is 100 now (used only with EVE_ROTATE=size)"
 	fi
-	case "${CONF[EVE_REDIS]:-}" in
-	"" | no | No | NO | off | none | false) ;;
-	*) echo "migrate 0.50.0: EVE_REDIS=${CONF[EVE_REDIS]} was ignored before and is a live Redis output now; set EVE_REDIS=no to keep eve.json only" ;;
-	esac
+	if ! redis_output_off "${CONF[EVE_REDIS]:-}"; then
+		echo "migrate 0.50.0: EVE_REDIS=${CONF[EVE_REDIS]} was ignored before and is a live Redis output now; set EVE_REDIS=no to keep eve.json only"
+	fi
 	return 0
 }
 

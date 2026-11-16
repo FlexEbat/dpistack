@@ -420,3 +420,10 @@ input[aria-invalid="true"] { border-color: var(--red); }
 .status-skip, .status-unknown { color: var(--amber); font-weight: 650; }
 
 @media (max-width: 1100px) { .comp-layout { grid-template-columns: minmax(0, 1fr); } }
+
+/* a form of several fields: a label above each field, in a card */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--s4); align-items: end; padding: var(--s4); }
+.form-grid label { display: grid; gap: var(--s1); color: var(--text-2); font-size: var(--t-sm); }
+.form-grid label[hidden] { display: none; }
+.form-grid .wide, .form-grid input, .form-grid select { width: 100%; }
+.form-grid > button { justify-self: start; }
