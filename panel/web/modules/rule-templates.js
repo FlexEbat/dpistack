@@ -57,6 +57,30 @@ export const TEMPLATES = [
     rule: 'alert tcp any any -> $HOME_NET 22 (msg:"dpistack custom: many SSH connection attempts"; flow:to_server; flags:S; threshold:type both, track by_src, count 5, seconds 60; classtype:attempted-admin; sid:@SID@; rev:1;)',
   },
   {
+    id: "http-download",
+    title: "Download of a file type",
+    summary: "Alert when a plain HTTP request asks for a file of one type",
+    description:
+      "Matches an HTTP request whose address ends with the extension in content, for example .exe or .ps1, so you see when a program or a script is fetched over plain HTTP. The match is not case sensitive and looks at the address only, not at what the server sends back, so a file served under another name is not seen. HTTPS is not seen at all: use the TLS name template for the site instead. Change the extension and the message.",
+    rule: 'alert http $HOME_NET any -> any any (msg:"dpistack custom: HTTP download of an .exe file"; http.uri; content:".exe"; endswith; nocase; classtype:policy-violation; sid:@SID@; rev:1;)',
+  },
+  {
+    id: "tls-ja3",
+    title: "TLS client fingerprint (JA3)",
+    summary: "Alert on a client by the way it starts a TLS connection",
+    description:
+      "A JA3 hash is a short fingerprint of how a program opens a TLS connection, so it names the program (a malware family, a scanner) even when the site name changes. Put the hash from a report into content, in lower case. A rule that uses ja3.hash makes Suricata turn JA3 on by itself. A common browser shares its fingerprint with many other programs and a new version of a program changes it, so treat a hit as a lead to check and not as proof.",
+    rule: 'alert tls $HOME_NET any -> any any (msg:"dpistack custom: TLS client with a listed JA3 hash"; ja3.hash; content:"e7d705a3286e19ea42f587b344ee6865"; classtype:trojan-activity; sid:@SID@; rev:1;)',
+  },
+  {
+    id: "outbound-scan",
+    title: "One inside host opens many connections",
+    summary: "Alert when a host of the network scans or floods outward",
+    description:
+      "Counts the first packets (SYN) of new connections that one host of the home network sends to any address and raises one alert when it sends 100 within 10 seconds, which is how a scan, a worm or a flood from inside looks. Change count and seconds to fit your network: a busy proxy or a backup server opens many connections as part of its work and should be left out with a pass rule. The alert comes once for each period.",
+    rule: 'alert tcp $HOME_NET any -> any any (msg:"dpistack custom: one host opens many connections"; flow:to_server; flags:S; threshold:type both, track by_src, count 100, seconds 10; classtype:network-scan; sid:@SID@; rev:1;)',
+  },
+  {
     id: "pass-host",
     title: "Ignore a trusted host",
     summary: "Stop the rules from firing for one address",

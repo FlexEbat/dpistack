@@ -13,7 +13,31 @@ export function nextIndex(count, current, key) {
   return -1;
 }
 
-export function start(root, scope) {
+// remembered reads the tab saved for this screen; a stored name that is not a
+// tab (an old one, or a tab that no longer exists) is ignored.
+export function remembered(names, stored) {
+  return names.includes(stored) ? stored : null;
+}
+
+function load(key) {
+  try {
+    return key ? sessionStorage.getItem(key) : null;
+  } catch {
+    return null; // storage can be off; the first tab is the default
+  }
+}
+
+function save(key, name) {
+  try {
+    if (key) sessionStorage.setItem(key, name);
+  } catch {
+    // nothing to do: the choice is only not remembered
+  }
+}
+
+// start wires the tabs; with a storageKey the selected tab is kept for the
+// session, so a reload or a visit to another screen comes back to it.
+export function start(root, scope, storageKey = "") {
   if (!root || !scope) return () => {};
   const tabs = [...root.querySelectorAll("[data-tab]")];
   const panes = [...scope.querySelectorAll("[data-pane]")];
@@ -25,7 +49,10 @@ export function start(root, scope) {
       if (on && focus) t.focus();
     }
     for (const p of panes) p.hidden = p.dataset.pane !== name;
+    save(storageKey, name);
   }
+  const first = remembered(tabs.map((t) => t.dataset.tab), load(storageKey));
+  if (first) select(first, false);
   const onClick = (e) => {
     const t = e.target.closest("[data-tab]");
     if (t && root.contains(t)) select(t.dataset.tab, false);

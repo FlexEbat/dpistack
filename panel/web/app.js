@@ -181,7 +181,7 @@ const SCREENS = {
       },
       showLogin,
     );
-    const stopTabs = startTabs($("rules-tabs"), $("view-rules"));
+    const stopTabs = startTabs($("rules-tabs"), $("view-rules"), "dpistack.rules.tab");
     const stopTemplates = startRuleTemplates({
       select: $("r2-template"), insert: $("r2-template-insert"), desc: $("r2-template-desc"),
       preview: $("r2-template-preview"), editor: $("r2-editor"),

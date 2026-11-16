@@ -217,3 +217,34 @@ list_actions() {
 	# the release is published only after the gate
 	grep -Eq 'needs: gate' "$WF/release.yml"
 }
+
+# fake_tool <name> <output> - a tool on a private PATH that prints its version
+fake_tool() {
+	mkdir -p "$BATS_TEST_TMPDIR/bin"
+	printf '#!/usr/bin/env bash\necho "%s"\n' "$2" >"$BATS_TEST_TMPDIR/bin/$1"
+	chmod +x "$BATS_TEST_TMPDIR/bin/$1"
+}
+
+@test "dev-tools --check passes with the versions of the CI and names a tool that differs or is missing" {
+	fake_tool shellcheck $'ShellCheck - shell script analysis tool\nversion: 0.9.0\nlicense: GNU General Public License, version 3'
+	fake_tool shfmt "v3.8.0"
+	PATH="$BATS_TEST_TMPDIR/bin:/usr/bin:/bin" run bash "$REPO_DIR/scripts/dev-tools.sh" --check
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"ok: shellcheck 0.9.0"* && "$output" == *"ok: shfmt 3.8.0"* ]]
+	fake_tool shellcheck $'ShellCheck\nversion: 0.11.0'
+	PATH="$BATS_TEST_TMPDIR/bin:/usr/bin:/bin" run bash "$REPO_DIR/scripts/dev-tools.sh"
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"different: shellcheck is 0.11.0, the CI uses 0.9.0"* ]]
+	rm "$BATS_TEST_TMPDIR/bin/shfmt"
+	mkdir -p "$BATS_TEST_TMPDIR/empty"
+	PATH="$BATS_TEST_TMPDIR/empty:/nonexistent" run /bin/bash "$REPO_DIR/scripts/dev-tools.sh" --check
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"missing: shfmt (the CI uses 3.8.0)"* ]]
+}
+
+@test "the versions that dev-tools names are the ones of the Ubuntu 24.04 runner packages, and it refuses an unknown option" {
+	run bash "$REPO_DIR/scripts/dev-tools.sh" --nonsense
+	[ "$status" -eq 2 ]
+	grep -q 'ubuntu-24.04' "$WF/ci.yml"
+	grep -q 'apt-get install -y bats shellcheck shfmt' "$WF/ci.yml"
+}
