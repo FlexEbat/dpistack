@@ -26,6 +26,7 @@ printf '%s\n' '$argon2id$v=19$m=16384,t=3,p=4$c2FsdHNhbHRzYWx0c2FsdA$06P4n5MT+1p
 cat >"$work/ctl" <<'STUB'
 #!/bin/sh
 case "$*" in
+*settings*list*) cat "$(dirname "$0")/settings.json" ;;
 *status*) cat <<'JSON'
 {"components":[
 {"id":"suricata","runtime":"native","state":"active","enabled":true,"version":"8.0.8"},
@@ -40,6 +41,7 @@ JSON
 *) echo '{}' ;;
 esac
 STUB
+cp "$here/settings.json" "$work/settings.json"
 chmod +x "$work/ctl"
 
 "$work/panel" -addr "127.0.0.1:$port" -auth-file "$work/panel.auth" -users-file "$work/none.json" \

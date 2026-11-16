@@ -271,7 +271,7 @@ pre:empty, .result:empty { display: none; }
 .chart { display: block; width: 100%; height: auto; touch-action: pan-y; cursor: crosshair; user-select: none; }
 .chart-grid { stroke: rgba(129, 160, 255, 0.12); stroke-width: 1; stroke-dasharray: 3 5; }
 .chart-tick { fill: var(--muted); font-size: 10px; font-family: var(--mono); }
-.chart-line { stroke: var(--tone, var(--blue)); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 5px var(--tone, var(--blue))); }
+.chart-line { stroke: var(--tone, var(--blue)); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .chart-area { pointer-events: none; }
 .stop-top { stop-color: var(--tone, var(--blue)); stop-opacity: 0.38; }
 .stop-bottom { stop-color: var(--tone, var(--blue)); stop-opacity: 0; }
@@ -284,20 +284,20 @@ pre:empty, .result:empty { display: none; }
 .ring { display: grid; justify-items: center; }
 .ring-svg { overflow: visible; }
 .ring-track { stroke: rgba(129, 160, 255, 0.14); stroke-width: 9; }
-.ring-fill { stroke: var(--tone, var(--green)); stroke-width: 9; stroke-linecap: round; filter: drop-shadow(0 0 7px var(--tone, var(--green))); transition: stroke-dasharray 800ms var(--ease); }
+.ring-fill { stroke: var(--tone, var(--green)); stroke-width: 9; stroke-linecap: round; transition: stroke-dasharray 800ms var(--ease); }
 .ring.ok { --tone: var(--green); } .ring.warn { --tone: var(--amber); } .ring.crit { --tone: var(--red); }
 .ring-value { fill: var(--text); font-size: 21px; font-weight: 700; font-family: var(--sans); }
 .ring-label { fill: var(--muted); font-size: 10px; font-family: var(--sans); }
 .donut { display: grid; justify-items: center; gap: var(--s3); }
 .donut-svg { width: 132px; height: 132px; }
-.donut-seg { stroke: var(--tone, var(--blue)); stroke-width: 10; stroke-linecap: round; filter: drop-shadow(0 0 6px var(--tone, var(--blue))); }
+.donut-seg { stroke: var(--tone, var(--blue)); stroke-width: 10; stroke-linecap: round; }
 .legend { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); width: 100%; font-size: var(--t-sm); }
 .legend li { display: flex; align-items: center; gap: var(--s2); }
 .legend span { flex: 1; color: var(--text-2); }
 .radar { display: grid; justify-items: center; }
 .radar-svg { width: 100%; max-width: 280px; height: auto; }
 .radar-ring, .radar-axis { stroke: rgba(129, 160, 255, 0.2); stroke-width: 1; }
-.radar-shape { fill: rgba(79, 140, 255, 0.28); stroke: var(--blue); stroke-width: 2; filter: drop-shadow(0 0 8px var(--blue)); }
+.radar-shape { fill: rgba(79, 140, 255, 0.28); stroke: var(--blue); stroke-width: 2; }
 
 /* the capture chain of the Network screen */
 .flow { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--s3); }
@@ -340,7 +340,7 @@ dialog[open] { display: grid; gap: var(--s4); }
 .dlg-head h2 { flex: 1; }
 .dlg-mark { width: 28px; height: 28px; fill: none; stroke: var(--cyan); stroke-width: 1.8; stroke-linecap: round; }
 .dlg-foot { display: flex; gap: var(--s2); flex-wrap: wrap; }
-.banner { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); padding: var(--s4); border: 1px solid var(--cyan); border-radius: var(--r-md); background: rgba(34, 211, 238, 0.08); box-shadow: 0 0 24px rgba(34, 211, 238, 0.16); }
+.banner { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); padding: var(--s4); border: 1px solid var(--cyan); border-radius: var(--r-md); background: rgba(34, 211, 238, 0.08); }
 .banner-actions { display: flex; gap: var(--s2); }
 
 /* narrow screens: the sidebar becomes a floating bar and a full height menu */
