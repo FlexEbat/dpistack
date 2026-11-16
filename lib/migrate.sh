@@ -164,6 +164,21 @@ migrate_run() {
 		[[ -n "$part" ]] || continue
 		echo "migrate: $part is built again (recipe $have -> $want: $why)"
 	done < <(migrate_rebuilds)
+	migrate_backup
+	return 0
+}
+
+# migrate_backup - a rebuild replaces a program that works, so the config and
+# the state are copied first (`dpistack backup`, the same archive). A backup
+# that fails is said and the upgrade goes on: it is a copy of files, not a way
+# back for the binary. Nothing is made in a dry run or when nothing is rebuilt.
+migrate_backup() {
+	[[ -n "$(migrate_rebuilds)" && "${DRY_RUN:-0}" != "1" ]] || return 0
+	declare -F backup_create >/dev/null || return 0
+	echo "migrate: a backup is made before the rebuild"
+	if ! (backup_create); then
+		echo "migrate: the backup failed; the upgrade goes on"
+	fi
 	return 0
 }
 

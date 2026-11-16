@@ -1,7 +1,7 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
 **Document version: v82** (2026-11-15)
-**Program version: v0.51.0** (slices 0-51, 54 and 56 are done, 52, 53 and 55 are planned (18.58); the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Program version: v0.51.0** (slices 0-51, 53, 54 and 56 are done, 52 and 55 are planned (18.58); the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
@@ -14,7 +14,7 @@ Program changelog. Only the last five entries are kept; older ones are deleted (
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
 - v81: v0.51.0. 18.58 (slices 50 to 56 planned) and 18.59 written (decisions D158 to D160); rows 50 to 56 of the slice table; `EVE_REDIS_MAXLEN` in 4.3; the check `redis.eve_stream`; `scripts/bats-shard.sh` and the modes of `scripts/gate.sh`.
-- v80: v0.50.0. 18.56 and 18.57 written (decisions D143 to D157; 18.59: D158 to D160); D138 superseded; the `EVE_REDIS` and `EVE_MAX_SIZE_MB` contracts in 4.3; the verbs `update` and `migrate`; the state keys `install.version` and `build.<part>.recipe`.
+- v80: v0.50.0. 18.56 and 18.57 written (decisions D143 to D157; 18.59: D158 to D160; 18.60: D161 to D163); D138 superseded; the `EVE_REDIS` and `EVE_MAX_SIZE_MB` contracts in 4.3; the verbs `update` and `migrate`; the state keys `install.version` and `build.<part>.recipe`.
 - v79: v0.49.0. 18.55 written (decisions D135 to D142); 4.3 and 5.0 name the entry checks; the slice row 48 of 18.0.
 - v78: v0.48.0. 18.54 written; 4.5 the verbs `help` and `info`, `--help` and the two-word spelling; 5.0 and 5.2 the menu changes; the file lists (`lib/key_hints.sh`, `scripts/gen-key-hints.sh`, the completion template); the gate stage `key hints`; the slice row 47 of 18.0; decisions D125 to D134.
 - v77: v0.47.1. A note on the layout fix in 18.53.
@@ -1269,7 +1269,7 @@ One row per slice. **Done** means the Definition of Done of section 14 was met; 
 | 50 | gate time | **done.** The bats suite runs as four parallel shards (`scripts/bats-shard.sh`, dealt out by file size) beside a `checks` job; `gate (ubuntu-24.04)` is a small job that needs both, so the name that the branch protection requires did not change. The whole CI run took 9 minutes on `24acb57` (16:52 to 17:01) against 39 on `fb997c6`; the release workflow has the same split | v0.51.0 | 18.58 |
 | 51 | bounds of the Redis output | **done.** A stream bounded by `EVE_REDIS_MAXLEN`, the health check `redis.eve_stream`, the migration 0.51.0 that deletes the old list. A separate Redis database is not offered: Suricata has no such option | v0.51.0 | 18.59 |
 | 52 | checks on a real host | **planned.** What the tests cannot cover: the Suricata rebuild at a new recipe with `suricata -T` on the Redis block, `dpistack update` through `systemd-run`, an upgrade from the previous release to the new one as a CI job on a stand | v0.51.0 | 18.58 |
-| 53 | safer migration | **planned.** A backup before a migration that rebuilds, progress lines while a source build runs, the migration plan shown by the panel's Update button before it starts | v0.51.0 | 18.58 |
+| 53 | safer migration | **done.** A backup before an install that rebuilds a part (`migrate_backup`, the archive of `dpistack backup`), a progress line every minute during a source build (`heartbeat_start`), and the plan of the new version in the panel's Update dialog (`self-update plan`, `GET /api/update/plan`) | v0.51.0 | 18.60 |
 | 54 | pending work in the panel | **done.** The watchdog check `migrate.pending` (warn while `migrate_needed`); the Overview shows it, and the check `redis.eve_stream`, as warnings | v0.51.0 | 18.58 |
 | 55 | design pass, part two | **planned.** The screens that 18.56 did not touch (Overview, Alerts, Settings, Exceptions, IPS), narrow screens, reduced motion, headless screenshots in CI | v0.51.0 | 18.58 |
 | 56 | small things | **done.** The selected Rules tab is kept for the session; three more templates (a file type over HTTP, a JA3 hash, many outward connections); `scripts/dev-tools.sh --check|--install` for the CI versions of shellcheck 0.9.0 and shfmt 3.8.0; Metrics keeps one day because the ring holds one day (the hint on the screen says so) | v0.51.0 | 18.60 |
@@ -2427,3 +2427,10 @@ Verified: `tests/migrate.bats` (12 cases), the new `update` cases of `tests/self
 - **Left open.** Slice 52 (a real host) and 53 (a backup before a rebuild, build progress, the plan in the Update button) need a stand or more work, 55 and 56 are the design pass and the small things.
 - **Slice 56.** `modules/tabs.js` keeps the selected tab in `sessionStorage` under a key given by the caller (`dpistack.rules.tab`), ignores a stored name that is not a tab and works with storage off. `modules/rule-templates.js` has ten templates. `scripts/dev-tools.sh` compares the shellcheck and shfmt on the PATH with the CI ones (Ubuntu 24.04 packages: 0.9.0 and 3.8.0) and installs them with apt on request.
 - **Found by the first CI run of 0.51.0.** A key added to the `eve` section moved the numbers in two scripted menu tests (`4, a, 9` is now `4, a, 10`), and the dependency of `EVE_REDIS_MAXLEN` did not match the guided setup until it was written as `EVE_REDIS!=|no|No|NO|off|none|false` (an empty value is in the list). The test that compares the two found it.
+- **Slice 53.** (1) `migrate_backup` (lib/migrate.sh), called at the end of `migrate_run`: when a source build will be repeated and it is not a dry run, `backup_create` is called in a subshell; a failing backup is said and the upgrade goes on. (2) `heartbeat_start`/`heartbeat_stop` (lib/common.sh) around the `autogen`, `configure`, `make` of Suricata and nDPI print `suricata build: still running (N min)` every `DPISTACK_HEARTBEAT_SEC` (60) seconds; the ticker ends with the script and a dry run has none. (3) `dpistack self-update plan` downloads the newest release and prints its own `migrate --plan`; the panel's `GET /api/update/plan` (permission `update.manage`) returns it as `{"plan": text}` and the Update dialog shows it under "What this update does on this host" while the Update button stays usable. `migrate --plan` is allowed for the panel caller (it only reads), `migrate` is not.
+
+| id | decision |
+| --- | --- |
+| D161 | **A failed backup does not stop an upgrade.** The archive holds config and state, not the binary, so it is not a way back for a rebuild; stopping an update on it would only keep a host on an old version. The failure is printed |
+| D162 | **The plan comes from the release, also in the panel.** The same reason as D156: the running version cannot know what the next one will migrate. It is read in a separate call so that the dialog opens at once |
+| D163 | **The heartbeat is a line, not a spinner.** The output goes to a log, to the panel's job window and to ssh; only plain lines survive all three |

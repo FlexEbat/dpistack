@@ -426,6 +426,8 @@ async function showOverview() {
     text: $("update-text"),
     status: $("update-status"),
     log: $("update-log"),
+    plan: $("update-plan"),
+    planBox: $("update-plan-box"),
     yes: $("update-yes"),
     no: $("update-no"),
   });

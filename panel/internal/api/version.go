@@ -73,3 +73,19 @@ func (s *server) updateJob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_, _ = w.Write(out)
 }
+
+// updatePlan handles GET /api/update/plan: what the newest release will do on
+// this host, read by the release itself (`self-update plan`). The Update
+// dialog shows it before the person confirms.
+func (s *server) updatePlan(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Update == nil {
+		writeError(w, http.StatusConflict, "the update check is switched off")
+		return
+	}
+	out, err := s.cfg.Ctl.SelfUpdatePlan(r.Context())
+	if err != nil {
+		opError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"plan": out})
+}

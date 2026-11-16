@@ -104,6 +104,7 @@ var routePerms = []struct {
 	{"GET", "/api/status", auth.PermView, false},
 	{"GET", "/api/version", auth.PermView, false},
 	{"POST", "/api/update", auth.PermUpdateManage, false},
+	{"GET", "/api/update/plan", auth.PermUpdateManage, false},
 	{"GET", "/api/update/job", auth.PermView, false},
 	{"POST", "/api/components/suricata/restart", auth.PermComponentsCtl, false},
 	{"POST", "/api/suricata/reload", auth.PermComponentsCtl, false},

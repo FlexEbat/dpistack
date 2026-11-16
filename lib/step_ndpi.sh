@@ -75,6 +75,7 @@ ndpi_build_from_source() {
 	local resolved_ref
 	resolved_ref=$(git -C "$src_dir" rev-parse HEAD 2>/dev/null)
 
+	heartbeat_start "ndpi build"
 	(
 		cd "$src_dir" || exit 1
 		run ./autogen.sh &&
@@ -83,6 +84,7 @@ ndpi_build_from_source() {
 			run make install
 	)
 	local rc=$?
+	heartbeat_stop
 	if [[ "$rc" -ne 0 ]]; then
 		echo "nDPI: the build from source failed (autogen/configure/make), see the output above" >&2
 		return 1

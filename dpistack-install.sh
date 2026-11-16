@@ -1911,6 +1911,38 @@ run() {
 	fi
 }
 
+# heartbeat_start <label> / heartbeat_stop - one line about every minute
+# (DPISTACK_HEARTBEAT_SEC) while a long step runs, a source build of Suricata
+# or nDPI that is silent for a quarter of an hour, so that an update that is
+# waited for at a terminal or read in the panel does not look hung. The ticker
+# ends with the script that started it. Dry runs start none.
+HEARTBEAT_PID=""
+heartbeat_start() {
+	[[ "$DRY_RUN" == "1" ]] && return 0
+	local label="$1" every="${DPISTACK_HEARTBEAT_SEC:-60}" parent=$$ began=$SECONDS
+	(
+		local e
+		while kill -0 "$parent" 2>/dev/null && sleep "$every"; do
+			e=$((SECONDS - began))
+			if ((e >= 120)); then
+				echo "$label: still running ($((e / 60)) min)"
+			else
+				echo "$label: still running (${e} s)"
+			fi
+		done
+	) &
+	HEARTBEAT_PID=$!
+}
+
+heartbeat_stop() {
+	if [[ -n "$HEARTBEAT_PID" ]]; then
+		kill "$HEARTBEAT_PID" 2>/dev/null || true
+		wait "$HEARTBEAT_PID" 2>/dev/null || true
+	fi
+	HEARTBEAT_PID=""
+	return 0
+}
+
 # git_clone_retry <url> <dir> - git clone that survives a dropped connection.
 # A clone of nDPI died on a real Debian 13 install (v0.29.1) with "HTTP/2
 # stream was not closed cleanly" and stopped the whole install. HTTP/1.1 is
@@ -3762,6 +3794,25 @@ selfupdate_fetch() {
 		fail 1 "the archive does not carry the version ${tag#v}, nothing was installed"
 }
 
+# selfupdate_plan - what the newest release will do to this host, as text: it
+# is downloaded and its own `migrate --plan` is read, because the running
+# version cannot know what the next one migrates. Nothing is installed. The
+# panel shows it in the Update dialog before the person confirms.
+selfupdate_plan() {
+	local tag tmp
+	tag=$(selfupdate_latest_tag) || exit 1
+	if ! selfupdate_is_newer "$tag"; then
+		echo "there is no newer release"
+		return 0
+	fi
+	tmp=$(mktemp -d) || fail 1 "no temporary directory"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$tmp'" EXIT
+	selfupdate_fetch "$tag" "$tmp" >/dev/null
+	echo "dpistack ${tag#v} will do this on this host:"
+	(cd "$tmp/src" && bash ./install.sh migrate --plan) || fail 1 "could not read the plan of ${tag#v}"
+}
+
 selfupdate_apply() {
 	local tag tmp src
 	tag=$(selfupdate_latest_tag) || exit 1
@@ -3802,11 +3853,12 @@ cmd_self_update() {
 	--json | check) selfupdate_check --json ;;
 	run) selfupdate_run ;;
 	job) selfupdate_job ;;
+	plan) selfupdate_plan ;;
 	apply)
 		restricted_caller && fail 2 "self-update apply: not for the panel, use run"
 		selfupdate_apply
 		;;
-	*) fail 2 "self-update: [--check] | check | run | job | apply" ;;
+	*) fail 2 "self-update: [--check] | check | run | job | plan | apply" ;;
 	esac
 }
 
@@ -3907,7 +3959,6 @@ cmd_update() {
 # saved config, so the migrations, the rebuilds and the rendering all run.
 cmd_migrate() {
 	local plan=0 yes=0 arg
-	restricted_caller && fail 2 "migrate: not for the panel"
 	for arg in "$@"; do
 		case "$arg" in
 		--plan) plan=1 ;;
@@ -3915,6 +3966,9 @@ cmd_migrate() {
 		*) fail 2 "migrate: [--plan] [--yes]" ;;
 		esac
 	done
+	# The plan only reads (the panel shows it before an update); doing the work
+	# is not for the panel.
+	((plan)) || ! restricted_caller || fail 2 "migrate: not for the panel, only --plan"
 	if ((plan)) || ! migrate_needed; then
 		migrate_plan
 		return 0
@@ -8425,6 +8479,21 @@ migrate_run() {
 		[[ -n "$part" ]] || continue
 		echo "migrate: $part is built again (recipe $have -> $want: $why)"
 	done < <(migrate_rebuilds)
+	migrate_backup
+	return 0
+}
+
+# migrate_backup - a rebuild replaces a program that works, so the config and
+# the state are copied first (`dpistack backup`, the same archive). A backup
+# that fails is said and the upgrade goes on: it is a copy of files, not a way
+# back for the binary. Nothing is made in a dry run or when nothing is rebuilt.
+migrate_backup() {
+	[[ -n "$(migrate_rebuilds)" && "${DRY_RUN:-0}" != "1" ]] || return 0
+	declare -F backup_create >/dev/null || return 0
+	echo "migrate: a backup is made before the rebuild"
+	if ! (backup_create); then
+		echo "migrate: the backup failed; the upgrade goes on"
+	fi
 	return 0
 }
 
@@ -12356,6 +12425,7 @@ ndpi_build_from_source() {
 	local resolved_ref
 	resolved_ref=$(git -C "$src_dir" rev-parse HEAD 2>/dev/null)
 
+	heartbeat_start "ndpi build"
 	(
 		cd "$src_dir" || exit 1
 		run ./autogen.sh &&
@@ -12364,6 +12434,7 @@ ndpi_build_from_source() {
 			run make install
 	)
 	local rc=$?
+	heartbeat_stop
 	if [[ "$rc" -ne 0 ]]; then
 		echo "nDPI: the build from source failed (autogen/configure/make), see the output above" >&2
 		return 1
@@ -14283,6 +14354,7 @@ suricata_build_from_source() {
 	# first build, when there is no suricata.yaml yet.
 	local install_conf=1
 	[[ -f "$(path_suricata_yaml)" ]] && install_conf=0
+	heartbeat_start "suricata build"
 	(
 		cd "$src_dir" || exit 1
 		run ./autogen.sh &&
@@ -14292,6 +14364,7 @@ suricata_build_from_source() {
 			{ ((install_conf == 0)) || run make install-conf; }
 	)
 	local rc=$?
+	heartbeat_stop
 	if [[ "$rc" -ne 0 ]]; then
 		echo "suricata: the build from source failed (autogen/configure/make)" >&2
 		return 1

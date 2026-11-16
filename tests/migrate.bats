@@ -119,6 +119,19 @@ redis_host() {
 	[ -z "$output" ]
 }
 
+@test "a backup is made before a rebuild, not when nothing is rebuilt, not in a dry run, and a failing one does not stop the upgrade" {
+	local base='state_write_value install.finished yes; state_write_value install.version 0.50.0; CONF[SURICATA_SOURCE]=source; state_write_value "$SURICATA_BUILT_REF_STATE_KEY" abc123; state_write_value build.suricata.recipe 1; backup_create() { echo "BACKUP-CALLED"; }'
+	run lib "$base" 'migrate_run'
+	[[ "$output" == *"a backup is made before the rebuild"* && "$output" == *"BACKUP-CALLED"* ]]
+	run lib "$base; state_write_value build.suricata.recipe 2" 'migrate_run'
+	[[ "$output" != *"BACKUP-CALLED"* ]]
+	run lib "$base; DRY_RUN=1" 'migrate_run'
+	[[ "$output" != *"BACKUP-CALLED"* ]]
+	run lib "$base; backup_create() { return 1; }" 'migrate_run'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"the backup failed; the upgrade goes on"* ]]
+}
+
 @test "a package Suricata is never rebuilt" {
 	run lib 'state_write_value install.finished yes; CONF[SURICATA_SOURCE]=oisf; state_write_value "$SURICATA_BUILT_REF_STATE_KEY" abc123' 'migrate_rebuilds'
 	[ -z "$output" ]
@@ -206,7 +219,11 @@ old_host() {
 	[[ "$output" != *"still has work"* ]]
 }
 
-@test "the panel may not run migrate" {
+@test "the panel may read the plan of migrate but not do the work" {
 	DPISTACK_CALLER=panel run bash "$REPO_DIR/install.sh" migrate --plan
+	[ "$status" -eq 0 ]
+	DPISTACK_CALLER=panel run bash "$REPO_DIR/install.sh" migrate --yes
+	[ "$status" -eq 2 ]
+	DPISTACK_CALLER=panel run bash "$REPO_DIR/install.sh" migrate
 	[ "$status" -eq 2 ]
 }

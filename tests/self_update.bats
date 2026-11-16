@@ -227,3 +227,29 @@ base() {
 	[[ "$output" == *"migrate 0.50.0: EVE_MAX_SIZE_MB was saved empty"* ]]
 	grep -q "^EVE_MAX_SIZE_MB=100" "$CONF_FILE"
 }
+
+@test "self-update plan prints what the newest release will do, installs nothing, and says when there is none" {
+	run base
+	latest "v$CUR"
+	run bash "$REPO_DIR/install.sh" self-update plan
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"there is no newer release"* ]]
+	latest v99.0.0
+	release 99.0.0
+	run bash "$REPO_DIR/install.sh" self-update plan
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"dpistack 99.0.0 will do this on this host:"* ]]
+	[[ "$output" == *"installed: "* ]]
+	run grep -c 'DPISTACK_VERSION="99.0.0"' "$DPISTACK_ROOT/usr/local/lib/dpistack/installer/lib/common.sh"
+	[ "$output" = "0" ]
+}
+
+@test "the panel may run self-update plan (it only reads), and the error text names it" {
+	latest v99.0.0
+	release 99.0.0
+	DPISTACK_CALLER=panel run bash "$REPO_DIR/install.sh" self-update plan
+	[ "$status" -eq 0 ]
+	run bash "$REPO_DIR/install.sh" self-update nonsense
+	[ "$status" -eq 2 ]
+	[[ "$output" == *"plan"* ]]
+}

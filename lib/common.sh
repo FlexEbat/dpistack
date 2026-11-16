@@ -51,6 +51,38 @@ run() {
 	fi
 }
 
+# heartbeat_start <label> / heartbeat_stop - one line about every minute
+# (DPISTACK_HEARTBEAT_SEC) while a long step runs, a source build of Suricata
+# or nDPI that is silent for a quarter of an hour, so that an update that is
+# waited for at a terminal or read in the panel does not look hung. The ticker
+# ends with the script that started it. Dry runs start none.
+HEARTBEAT_PID=""
+heartbeat_start() {
+	[[ "$DRY_RUN" == "1" ]] && return 0
+	local label="$1" every="${DPISTACK_HEARTBEAT_SEC:-60}" parent=$$ began=$SECONDS
+	(
+		local e
+		while kill -0 "$parent" 2>/dev/null && sleep "$every"; do
+			e=$((SECONDS - began))
+			if ((e >= 120)); then
+				echo "$label: still running ($((e / 60)) min)"
+			else
+				echo "$label: still running (${e} s)"
+			fi
+		done
+	) &
+	HEARTBEAT_PID=$!
+}
+
+heartbeat_stop() {
+	if [[ -n "$HEARTBEAT_PID" ]]; then
+		kill "$HEARTBEAT_PID" 2>/dev/null || true
+		wait "$HEARTBEAT_PID" 2>/dev/null || true
+	fi
+	HEARTBEAT_PID=""
+	return 0
+}
+
 # git_clone_retry <url> <dir> - git clone that survives a dropped connection.
 # A clone of nDPI died on a real Debian 13 install (v0.29.1) with "HTTP/2
 # stream was not closed cleanly" and stopped the whole install. HTTP/1.1 is

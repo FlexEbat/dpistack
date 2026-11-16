@@ -379,6 +379,7 @@ suricata_build_from_source() {
 	# first build, when there is no suricata.yaml yet.
 	local install_conf=1
 	[[ -f "$(path_suricata_yaml)" ]] && install_conf=0
+	heartbeat_start "suricata build"
 	(
 		cd "$src_dir" || exit 1
 		run ./autogen.sh &&
@@ -388,6 +389,7 @@ suricata_build_from_source() {
 			{ ((install_conf == 0)) || run make install-conf; }
 	)
 	local rc=$?
+	heartbeat_stop
 	if [[ "$rc" -ne 0 ]]; then
 		echo "suricata: the build from source failed (autogen/configure/make)" >&2
 		return 1
