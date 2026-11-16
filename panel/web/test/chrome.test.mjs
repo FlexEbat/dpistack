@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { REVEAL_SELECTOR, revealOnce, menu } from "../modules/chrome.js";
+import { REVEAL_SELECTOR, revealOnce, menu, noteHeight } from "../modules/chrome.js";
 
 class FakeClasses {
   constructor() { this.set = new Set(); }
@@ -64,4 +64,34 @@ test("the menu toggles on click, closes on Escape and on demand, and keeps aria-
   m.close();
   assert.equal(expanded, "false");
   assert.ok(!root.contains("menu-open"));
+});
+
+test("noteHeight sets --note-h from the bar, follows it, and does nothing without the bar or without ResizeObserver", () => {
+  const props = {};
+  let height = 48;
+  let notify = () => {};
+  let observed = 0;
+  let disconnected = 0;
+  const note = { get offsetHeight() { return height; } };
+  const doc = {
+    querySelector: (sel) => (sel === ".devnote-top" ? note : null),
+    documentElement: { style: { setProperty: (k, v) => (props[k] = v) } },
+  };
+  const win = {
+    ResizeObserver: class {
+      constructor(fn) { notify = fn; }
+      observe() { observed++; }
+      disconnect() { disconnected++; }
+    },
+  };
+  const stop = noteHeight(doc, win);
+  assert.equal(props["--note-h"], "48px");
+  height = 72;
+  notify();
+  assert.equal(props["--note-h"], "72px");
+  stop();
+  assert.equal(observed, 1);
+  assert.equal(disconnected, 1);
+  assert.equal(typeof noteHeight({ querySelector: () => null }, win), "function");
+  assert.equal(typeof noteHeight(doc, {}), "function");
 });

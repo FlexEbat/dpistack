@@ -55,3 +55,16 @@ export function skipLink(doc = document) {
   if (!skip) return;
   skip.addEventListener("click", () => doc.getElementById("page-title")?.focus());
 }
+
+// noteHeight keeps --note-h equal to the height of the "Under development"
+// bar at the top of the page, so the menu that floats over the page on a phone
+// sits below it and not on top of it. 0 while the page is hidden.
+export function noteHeight(doc = document, win = window) {
+  const note = doc.querySelector(".devnote-top");
+  if (!note || typeof win.ResizeObserver !== "function") return () => {};
+  const set = () => doc.documentElement.style.setProperty("--note-h", note.offsetHeight + "px");
+  const ro = new win.ResizeObserver(set);
+  ro.observe(note);
+  set();
+  return () => ro.disconnect();
+}

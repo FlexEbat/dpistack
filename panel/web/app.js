@@ -25,7 +25,7 @@ import { start as startAudit } from "./modules/audit.js";
 import { start as startBackups } from "./modules/backups.js";
 import * as shell from "./modules/shell.js";
 import { start as startVersion } from "./modules/version.js";
-import { menu, revealOnce, skipLink } from "./modules/chrome.js";
+import { menu, noteHeight, revealOnce, skipLink } from "./modules/chrome.js";
 
 const REPO_URL = "https://github.com/FlexEbat/dpistack";
 const $ = (id) => document.getElementById(id);
@@ -475,6 +475,7 @@ $("login-form").addEventListener("submit", async (event) => {
 });
 
 const navMenu = menu();
+noteHeight();
 for (const b of document.querySelectorAll("#nav button[data-view]")) {
   b.addEventListener("click", () => {
     showView(b.dataset.view);

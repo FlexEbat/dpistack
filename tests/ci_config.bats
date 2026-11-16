@@ -248,3 +248,17 @@ fake_tool() {
 	grep -q 'ubuntu-24.04' "$WF/ci.yml"
 	grep -q 'apt-get install -y bats shellcheck shfmt' "$WF/ci.yml"
 }
+
+@test "the ui check is in the CI, not in the gate, and its scripts are in order" {
+	grep -q 'name: ui (headless screenshots)' "$WF/ci.yml"
+	grep -q 'scripts/ui-check/run.sh' "$WF/ci.yml"
+	# informational: the gate does not wait for it
+	run grep -E 'needs: \[.*ui' "$WF/ci.yml"
+	[ "$status" -ne 0 ]
+	bash -n "$REPO_DIR/scripts/ui-check/run.sh"
+	[ -f "$REPO_DIR/scripts/ui-check/package-lock.json" ]
+	# the browser and the driver are pinned to an exact version
+	grep -q '"@sparticuz/chromium": "[0-9]' "$REPO_DIR/scripts/ui-check/package.json"
+	grep -q '"puppeteer-core": "[0-9]' "$REPO_DIR/scripts/ui-check/package.json"
+	if command -v node >/dev/null 2>&1; then node --check "$REPO_DIR/scripts/ui-check/check.mjs"; fi
+}

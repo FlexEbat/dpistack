@@ -352,16 +352,17 @@ dialog[open] { display: grid; gap: var(--s4); }
   .grid.two, .grid.mix { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 960px) {
-  #overview, #overview[data-collapsed] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "header" "view"; }
+  #overview, #overview[data-collapsed] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "note" "header" "view"; grid-template-rows: auto auto 1fr; }
   #overview > header { position: static; padding: 80px var(--s4) var(--s3); }
+  .devnote-top { padding-right: var(--s4); padding-left: var(--s4); }
   #overview > div[id^="view-"] { padding: var(--s4); }
-  nav#nav { position: fixed; top: var(--s3); left: var(--s3); right: auto; width: auto; height: auto; max-height: calc(100vh - 24px); border: 1px solid var(--edge-strong); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+  nav#nav { position: fixed; top: calc(var(--note-h, 0px) + var(--s3)); left: var(--s3); right: auto; width: auto; height: auto; max-height: calc(100vh - 24px); border: 1px solid var(--edge-strong); border-radius: var(--r-lg); box-shadow: var(--shadow); }
   nav .bar { padding: var(--s2) var(--s3); gap: var(--s3); }
   .brand div { display: none; }
   .menu-toggle { display: inline-flex; }
   .menu-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
   .nav-links, .nav-collapse { display: none; }
-  nav#nav[data-open] { inset: var(--s3); width: auto; height: auto; max-height: none; background: rgba(6, 10, 20, 0.96); }
+  nav#nav[data-open] { inset: calc(var(--note-h, 0px) + var(--s3)) var(--s3) var(--s3); width: auto; height: auto; max-height: none; background: rgba(6, 10, 20, 0.96); }
   nav#nav[data-open] .nav-links { display: flex; padding: var(--s4); }
   nav#nav[data-open] .nav-group button { font-size: var(--t-lg); padding: var(--s3) var(--s4); }
   nav#nav[data-open] .brand div { display: block; }
@@ -378,7 +379,8 @@ input[aria-invalid="true"] { border-color: var(--red); }
 
 /* the Components screen: a card for each component, the mode and the interfaces beside them */
 .comp-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: var(--s4); align-items: start; }
-.comp-main { min-width: 0; }
+.comp-main, .comp-side, .comp-side .card { min-width: 0; }
+.comp-side .error, .comp-side .muted { overflow-wrap: anywhere; }
 .comp-side { display: grid; gap: var(--s4); }
 .comp-side .card { display: grid; gap: var(--s3); }
 .comp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s4); }
