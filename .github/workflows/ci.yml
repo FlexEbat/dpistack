@@ -120,6 +120,33 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # An upgrade from a REAL earlier release (tech.md 18.58, slice 52): the last
+  # published release is installed in the test sandbox and this tree migrates
+  # it, once through `migrate --yes` and once through `update --yes`. Not part
+  # of `gate`: it needs the release list of GitHub, and an outage there must not
+  # block a merge.
+  upgrade:
+    name: upgrade (from the last release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats jq util-linux
+      - name: Install the last release, then upgrade it with this tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cur=$(sed -n 's/^DPISTACK_VERSION="\(.*\)"/\1/p' lib/common.sh)
+          prev=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq "[.[] | select(.draft == false and .prerelease == false) | .tag_name | select(. != \"v$cur\")][0]")
+          echo "upgrading from $prev to $cur"
+          [ -n "$prev" ] && [ "$prev" != null ]
+          sudo -E env "PATH=$PATH" "GH_TOKEN=$GH_TOKEN" "DPISTACK_UPGRADE_FROM=$prev" bats tests/upgrade_from_release.bats
+
   # The one check the branch protection asks for: green only when every shard
   # and the other checks are green. Its name did not change.
   gate:

@@ -262,3 +262,11 @@ fake_tool() {
 	grep -q '"puppeteer-core": "[0-9]' "$REPO_DIR/scripts/ui-check/package.json"
 	if command -v node >/dev/null 2>&1; then node --check "$REPO_DIR/scripts/ui-check/check.mjs"; fi
 }
+
+@test "the upgrade from the last release runs in the CI, not in the gate, and the test skips without a tag" {
+	grep -q 'name: upgrade (from the last release)' "$WF/ci.yml"
+	grep -q 'tests/upgrade_from_release.bats' "$WF/ci.yml"
+	run grep -E 'needs: \[.*upgrade' "$WF/ci.yml"
+	[ "$status" -ne 0 ]
+	grep -q 'skip "set DPISTACK_UPGRADE_FROM' "$REPO_DIR/tests/upgrade_from_release.bats"
+}
