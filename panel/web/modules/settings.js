@@ -326,7 +326,7 @@ export function start(api, els, onError) {
     els.check.disabled = n === 0;
     els.revert.disabled = n === 0;
     els.apply.disabled = n === 0 || checkedSig !== stageSig(values);
-    els.count.textContent = n ? "Changed: " + n : "No changes";
+    els.count.textContent = n ? "Changed: " + n : ""; // the summary above already says "No changes are staged."
   }
 
   async function load() {

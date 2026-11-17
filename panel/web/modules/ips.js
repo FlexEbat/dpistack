@@ -34,7 +34,7 @@ function table(head, rows) {
 export function render(st, areas) {
   const h = headline(st);
   const top = el("p", "ips-headline");
-  top.append(badge(h.level, h.level === "crit" ? "fail" : h.level), el("span", "", " " + h.text));
+  top.append(badge(h.level, h.label || (h.level === "crit" ? "fail" : h.level)), el("span", "", " " + h.text));
   areas.summary.replaceChildren(top);
 
   const checks = checkRows(st);
@@ -47,7 +47,8 @@ export function render(st, areas) {
   const counters = counterRows(st);
   areas.counters.replaceChildren(counters.length ? table(["Counter", "Packets"], counters.map((c) => [c.title, c.value])) : el("p", "muted empty", NO_COUNTERS));
 
-  areas.rules.replaceChildren(...ruleLines(st).map((l) => el("p", "", l)));
+  const lines = ruleLines(st);
+  areas.rules.replaceChildren(...(lines.length ? lines.map((l) => el("p", "", l)) : [el("p", "muted empty", "No drop rule counts reported.")]));
 
   const blocked = (st && st.blocked) || [];
   areas.blocked.replaceChildren(
