@@ -2456,4 +2456,6 @@ Verified: `tests/migrate.bats` (12 cases), the new `update` cases of `tests/self
 | D165 | **An unreported value is said, not left empty.** The rule of 18.57 for settings, applied to the interface speed |
 | D166 | **The sample events live in the repository.** A screen that needs data to be judged is shot with data; the file is five lines |
 
+6. **Found by CI on the first push.** `DPISTACK_VERSION` and the bundle (`dpistack-install.sh`) are part of a version bump; the test `tests/upgrade_from_release.bats` assumed that every release has a migration, so it expected `install.version` to move. A patch release with no migration has "nothing to migrate" and runs no install; the test now checks the recorded version only when an install ran.
+
 Verified: `panel/web/test/empty-states.test.mjs` (4 cases; they fail on the code of v0.51.0), the 250 earlier JS tests, the Go tests, `ui-check` at three widths. Still open from 18.60: slice 52 (a real host) and the Alerts, Settings and IPS restyle.

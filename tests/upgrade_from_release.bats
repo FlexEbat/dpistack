@@ -50,7 +50,11 @@ teardown() {
 	run bash "$REPO_DIR/install.sh" migrate --yes
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"installation finished"* || "$output" == *"nothing to migrate"* ]]
-	grep -rq "^install.version=$CUR" "$DPISTACK_ROOT"
+	# a release with no migration of its own (a patch release) has nothing to do,
+	# so no install runs and the recorded version stays the old one
+	if [[ "$output" == *"installation finished"* ]]; then
+		grep -rq "^install.version=$CUR" "$DPISTACK_ROOT"
+	fi
 
 	# nothing is left, the config is valid and status is JSON
 	run bash "$REPO_DIR/install.sh" migrate --plan
