@@ -303,7 +303,8 @@ pre:empty, .result:empty { display: none; }
 .flow { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--s3); }
 .stage { display: grid; gap: var(--s1); align-content: start; min-width: 160px; flex: 1 1 160px; border-color: var(--edge-strong); }
 .arrow { align-self: center; color: var(--muted); font-size: var(--t-xl); }
-.other { display: flex; gap: var(--s2); align-items: center; }
+.others-list { display: flex; flex-wrap: wrap; gap: var(--s3) var(--s5); }
+.other { display: inline-flex; gap: var(--s2); align-items: center; }
 
 /* settings, the editor of access, secrets */
 .settings-cols { display: grid; grid-template-columns: 240px minmax(0, 1fr) 340px; gap: var(--s4); align-items: start; }
@@ -427,3 +428,4 @@ input[aria-invalid="true"] { border-color: var(--red); }
 .form-grid label[hidden] { display: none; }
 .form-grid .wide, .form-grid input, .form-grid select { width: 100%; }
 .form-grid > button { justify-self: start; }
+#ev-filters { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s3) var(--s4); }

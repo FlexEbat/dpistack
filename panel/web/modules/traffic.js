@@ -160,6 +160,7 @@ export function start(api, els, onError) {
     renderNotes(v, els.notes, v.avail.ready ? ntopng : "");
     els.body.hidden = !v.avail.ready;
     els.detail.hidden = !v.avail.ready;
+    els.controls.hidden = !v.avail.ready;
     if (!v.avail.ready) {
       els.detail.replaceChildren();
       return;

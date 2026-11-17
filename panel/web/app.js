@@ -234,7 +234,7 @@ const SCREENS = {
   traffic: () =>
     startTraffic(
       api,
-      { error: $("traffic-error"), notes: $("traffic-notes"), tabs: $("traffic-tabs"), text: $("traffic-q"), external: $("traffic-external"), detail: $("traffic-detail"), body: $("traffic-body") },
+      { error: $("traffic-error"), notes: $("traffic-notes"), controls: $("traffic-controls"), tabs: $("traffic-tabs"), text: $("traffic-q"), external: $("traffic-external"), detail: $("traffic-detail"), body: $("traffic-body") },
       showLogin,
     ),
   alerts: () => {
@@ -347,6 +347,8 @@ const SCREENS = {
       api,
       {
         error: $("events-error"),
+        filters: $("ev-filters"),
+        actions: $("ev-actions"),
         type: $("ev-type"),
         q: $("ev-q"),
         limit: $("ev-limit"),
