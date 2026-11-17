@@ -83,3 +83,15 @@ test("Network: a speed the host did not report says so, the other parts sit in a
   assert.ok(card, "the parts are in a card");
   assert.match(textOf(card), /ntopng/);
 });
+
+test("IPS: IDS mode is named on its badge, and no drop rule counts is said in words", async () => {
+  const { render } = await import("../modules/ips.js");
+  const { headline } = await import("../modules/ips-model.js");
+  assert.equal(headline({ mode: "ids" }).label, "IDS");
+  assert.equal(headline(null).label, "unknown");
+  const areas = { summary: node(), checks: node(), counters: node(), rules: node(), blocked: node() };
+  render({ mode: "ids" }, areas);
+  assert.match(textOf(areas.summary), /IDS/);
+  assert.doesNotMatch(textOf(areas.summary), /\bna\b/);
+  assert.match(textOf(areas.rules), /No drop rule counts/);
+});

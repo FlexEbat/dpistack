@@ -429,3 +429,4 @@ input[aria-invalid="true"] { border-color: var(--red); }
 .form-grid .wide, .form-grid input, .form-grid select { width: 100%; }
 .form-grid > button { justify-self: start; }
 #ev-filters { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s3) var(--s4); }
+.card > h2 + p, .card > h2 + div { margin-top: var(--s2); }

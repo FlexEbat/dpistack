@@ -12,8 +12,8 @@ export function levelOf(state) {
 
 // headline is the one sentence and the level at the top of the page.
 export function headline(st) {
-  if (!st) return { level: "na", text: "The panel could not read the IPS state." };
-  if (st.mode !== "ips") return { level: "na", text: "IDS mode: Suricata only reports, nothing is dropped." };
+  if (!st) return { level: "na", label: "unknown", text: "The panel could not read the IPS state." };
+  if (st.mode !== "ips") return { level: "na", label: "IDS", text: "IDS mode: Suricata only reports, nothing is dropped." };
   if (st.pending) return { level: "warn", text: `IPS is on and waits for confirmation: ${st.remaining_sec} s until the rollback to IDS.` };
   if (!st.ready) return { level: "crit", text: "IPS is set, but a readiness check fails: traffic may pass unchecked." };
   return { level: "ok", text: `IPS is on (${st.method}) and ready.` };

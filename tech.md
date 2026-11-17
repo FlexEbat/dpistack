@@ -1,23 +1,23 @@
 # tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v83** (2026-11-17)
-**Program version: v0.51.1** (slices 0-51, 53, 54 and 56 are done, 52 and 55 are partly done (18.58); the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v84** (2026-11-17)
+**Program version: v0.51.2** (slices 0-51 and 53-56 are done, 52 is partly done (18.58); the index of slices, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the slices (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.2: the last screens of slice 55 (18.62): the IPS badge names the mode (IDS) instead of `na` and an empty Drop rules section says so, Settings no longer says "No changes" twice, card headings have room above their text.
 - v0.51.1: the screens of slice 55 that were not yet looked at (18.61): the Events filters are a labelled grid card and are hidden with the viewer off, the Traffic controls are hidden without an event view, the Network parts sit in a card and a missing speed says so, a failed Backups load leaves no placeholder.
 - v0.51.0: the next slices (18.58, 18.59): the gate runs in parallel (4 bats shards, the checks, one `gate (ubuntu-24.04)` check); the Redis output is a stream bounded by `EVE_REDIS_MAXLEN` and the health check `redis.eve_stream` watches it; the migration 0.51.0 deletes the list that 0.50.0 pushed to.
 - v0.50.0: the panel pass of 2026-11-15 (18.56): the Redis output of Suricata (`EVE_REDIS`) is real; Metrics takes 12 hours and an own number of hours (1 to 24); Rules is split into four tabs and Custom rules has seven described templates; Components is a grid of cards with the mode and the interfaces beside it; the "Under development" note is the top bar of the signed-in page; quieter chrome and a colour for each menu group, test status and check report; the migrations of an upgrade, the build recipes and `dpistack update` (18.57); the nine settings that showed `<empty>` show the value in effect.
 - v0.49.0: input checks (18.55): a busy port is found while the answers are given and the next free one is offered at once; jq and the other base tools are installed before the menu asks anything and the panel password step installs jq and argon2 itself; a value that is typed is checked for its meaning (impossible addresses and networks, unknown eve types and alert channels, a time systemd does not accept, a Redis output that does not exist, an interface that is not on the machine); EVE_MAX_SIZE_MB is asked only for the size rotation and EVE_REDIS is not asked.
-- v0.48.0: the menu and help review (18.54): the install screen counts the missing panel password as a problem and says the next step, prints the "under development" note once, explains the markers, has a help and the list of all problems (`e`); every key of a section has a one-line hint (generated into `lib/key_hints.sh` from the hints of the Settings screen) and the count of the advanced keys; the control menu got submenus for services, mode and interfaces, rules and alerts, backup, users and tokens, checks; new commands `dpistack help [--all|settings|ids]`, `<command> --help`, `info [--json]`, the two-word spelling (`rules update`, `config read`, `mode confirm`), a "did you mean" line and bash completion.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v84: v0.51.2. 18.62 written (decision D167); the slice row 55 of 18.0 is done.
 - v83: v0.51.1. 18.61 written (decisions D164 to D166); the slice row 55 of 18.0.
 - v81: v0.51.0. 18.58 (slices 50 to 56 planned) and 18.59 written (decisions D158 to D160); rows 50 to 56 of the slice table; `EVE_REDIS_MAXLEN` in 4.3; the check `redis.eve_stream`; `scripts/bats-shard.sh` and the modes of `scripts/gate.sh`.
 - v80: v0.50.0. 18.56 and 18.57 written (decisions D143 to D157; 18.59: D158 to D160; 18.60: D161 to D163); D138 superseded; the `EVE_REDIS` and `EVE_MAX_SIZE_MB` contracts in 4.3; the verbs `update` and `migrate`; the state keys `install.version` and `build.<part>.recipe`.
 - v79: v0.49.0. 18.55 written (decisions D135 to D142); 4.3 and 5.0 name the entry checks; the slice row 48 of 18.0.
-- v78: v0.48.0. 18.54 written; 4.5 the verbs `help` and `info`, `--help` and the two-word spelling; 5.0 and 5.2 the menu changes; the file lists (`lib/key_hints.sh`, `scripts/gen-key-hints.sh`, the completion template); the gate stage `key hints`; the slice row 47 of 18.0; decisions D125 to D134.
 
 ---
 
@@ -2459,3 +2459,18 @@ Verified: `tests/migrate.bats` (12 cases), the new `update` cases of `tests/self
 6. **Found by CI on the first push.** `DPISTACK_VERSION` and the bundle (`dpistack-install.sh`) are part of a version bump; the test `tests/upgrade_from_release.bats` assumed that every release has a migration, so it expected `install.version` to move. A patch release with no migration has "nothing to migrate" and runs no install; the test now checks the recorded version only when an install ran.
 
 Verified: `panel/web/test/empty-states.test.mjs` (4 cases; they fail on the code of v0.51.0), the 250 earlier JS tests, the Go tests, `ui-check` at three widths. Still open from 18.60: slice 52 (a real host) and the Alerts, Settings and IPS restyle.
+
+### 18.62 Slice 55, IPS, Settings and Alerts (v0.51.2)
+
+**Status:** done. These were the last screens of slice 55 that nobody had looked at one by one (`ui-check`, 1440 px).
+
+1. **IPS.** The headline badge said `na` in IDS mode, which means nothing to a reader; it says `IDS` now (`unknown` when the state cannot be read). An empty Drop rules section was a bare heading; it says `No drop rule counts reported.`
+2. **Settings.** The Staged change card said "No changes are staged." and, under it, "No changes". The second line is gone when nothing is staged and stays as `Changed: N` otherwise.
+3. **Cards.** A heading is followed by room (`.card > h2 + p, .card > h2 + div`), so the text under Details, Profiles and Staged change no longer touches it.
+4. **Alerts.** Looked at, nothing changed: the empty states are the usual boxes.
+
+| id | decision |
+| --- | --- |
+| D167 | **A badge says what it is.** `na` is an internal level; the person reads the mode (`IDS`) or `unknown`. The level still drives the colour |
+
+Verified: a new case in `panel/web/test/empty-states.test.mjs`, the other JS tests, `ui-check` at three widths.
