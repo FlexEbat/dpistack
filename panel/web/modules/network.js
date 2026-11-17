@@ -45,15 +45,15 @@ function renderTopology(stages, area) {
 function renderOthers(parts, area) {
   area.hidden = !parts.length;
   if (!parts.length) return;
-  area.replaceChildren(
-    el("h2", "", "Other parts"),
-    el("p", "muted", "Not part of the event chain above; their own state."),
-    ...parts.map((p) => {
-      const row = el("p", "other");
-      row.append(el("span", "", p.id + " "), badge(p.level, p.state));
-      return row;
-    }),
-  );
+  const list = el("div", "others-list");
+  for (const p of parts) {
+    const item = el("span", "other");
+    item.append(el("span", "", p.id), badge(p.level, p.state));
+    list.append(item);
+  }
+  const card = el("div", "card");
+  card.append(list);
+  area.replaceChildren(el("h2", "", "Other parts"), el("p", "muted", "Not part of the event chain above; their own state."), card);
 }
 
 function renderIfaces(system, area) {
@@ -68,7 +68,7 @@ function renderIfaces(system, area) {
   t.append(head);
   for (const r of rows) {
     const tr = el("tr");
-    for (const c of [r.name + (r.virtual ? " (virtual)" : ""), r.state, r.speed, r.rx, r.tx, String(r.lost), String(r.errors), r.capture]) tr.append(el("td", "", c));
+    for (const c of [r.name + (r.virtual ? " (virtual)" : ""), r.state, r.speed || "not reported", r.rx, r.tx, String(r.lost), String(r.errors), r.capture]) tr.append(el("td", "", c));
     t.append(tr);
   }
   area.replaceChildren(t);

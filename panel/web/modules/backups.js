@@ -150,6 +150,7 @@ export function start(api, els, onError) {
     } catch (err) {
       if (err.status === 401) return onError(err);
       els.error.textContent = err.message;
+      els.list.replaceChildren(); // the loading placeholder must not stay
       return;
     }
     if (!running) return;

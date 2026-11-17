@@ -76,7 +76,7 @@ export function start(api, els, onError) {
   });
 
   function note(text) {
-    els.list.replaceChildren(el("p", "muted", text));
+    els.list.replaceChildren(el("p", "muted empty", text));
     els.status.textContent = "";
   }
 
@@ -236,9 +236,11 @@ export function start(api, els, onError) {
       if (!res.available) {
         // The viewer is switched off: say so instead of showing an empty list.
         note(res.reason || "Event view is unavailable.");
-        els.show.disabled = els.follow.disabled = true;
+        // the filters and the export have nothing to act on
+        els.filters.hidden = els.actions.hidden = true;
         return false;
       }
+      els.filters.hidden = els.actions.hidden = false;
       fillTypes(res.types);
       if (!res.file_present) {
         note("eve.json does not exist yet: Suricata has not created it.");

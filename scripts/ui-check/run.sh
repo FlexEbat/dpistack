@@ -42,10 +42,11 @@ JSON
 esac
 STUB
 cp "$here/settings.json" "$work/settings.json"
+cp "$here/eve.sample.json" "$work/eve.json"
 chmod +x "$work/ctl"
 
 "$work/panel" -addr "127.0.0.1:$port" -auth-file "$work/panel.auth" -users-file "$work/none.json" \
-	-audit-file "" -health-file "$work/health.json" -ctl "$work/ctl" -sudo=false \
+	-audit-file "" -eve-file "$work/eve.json" -health-file "$work/health.json" -ctl "$work/ctl" -sudo=false \
 	-version 0.0.0 -update-url off >"$work/panel.log" 2>&1 &
 panel_pid=$!
 sleep 2
