@@ -82,7 +82,7 @@ export function stateCards({ status, system, mode, alerts, now }) {
 
 // The watchdog checks that the Overview repeats as a warning. The component
 // and disk checks are left out: the screen says those from its own data.
-const WATCH_CHECKS = ["rules.age", "suricata.eve_fresh"];
+const WATCH_CHECKS = ["rules.age", "suricata.eve_fresh", "redis.eve_stream", "migrate.pending"];
 
 // watchWarnings turns a warn or crit check of the watchdog into a sentence
 // from its own detail line.

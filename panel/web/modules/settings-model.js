@@ -40,6 +40,7 @@ export const HINTS = {
   EVE_FILE: "Write events to eve.json (needed by the panel and the watchdog).",
   EVE_TYPES: "Which event types to write to eve.json.",
   EVE_SYSLOG: "Duplicate events to syslog (facility local5).",
+  EVE_REDIS_MAXLEN: "How many events the Redis stream keeps (EVE_REDIS). Redis trims it to about this length, so a stream that nobody reads cannot fill the memory. 100000 by default.",
   EVE_REDIS: "Send the events to Redis as well: yes (Redis of this host), or host[:port][/key], for example 127.0.0.1:6379/suricata. Empty or no: eve.json only. Needs a Suricata built with Redis support (a source build has it).",
   EVE_ROTATE: "How to rotate eve.json: daily, weekly or by size.",
   EVE_KEEP: "How many rotated files to keep.",

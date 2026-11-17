@@ -117,6 +117,7 @@ schema_init() {
 	_schema_add 'EVE_TYPES|free|alert,flow,dns,tls,http,stats||basic|eve|suricata watch|light|no'
 	_schema_add 'EVE_SYSLOG|enum|no|yes,no|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_REDIS|free|||advanced|eve|suricata|light|no'
+	_schema_add 'EVE_REDIS_MAXLEN|int|100000|1000..100000000|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_ROTATE|enum|daily|daily,weekly,size|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_KEEP|int|14|0..3650|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_MAX_SIZE_MB|int|100|1..1000000|advanced|eve|suricata|light|no'
@@ -218,6 +219,8 @@ _schema_depend() {
 schema_depends_init() {
 	SCHEMA_DEPENDS=()
 	_schema_depend 'SURICATA_ENABLE=yes EVE_ROTATE=size' EVE_MAX_SIZE_MB
+	# the length of the Redis stream: only when EVE_REDIS is on (an empty value and the off words are in the list)
+	_schema_depend 'SURICATA_ENABLE=yes EVE_REDIS!=|no|No|NO|off|Off|OFF|none|None|NONE|false|False|FALSE' EVE_REDIS_MAXLEN
 	_schema_depend 'SURICATA_ENABLE=yes SURICATA_MODE=ips' 'IPS_METHOD' 'IPS_NFQ_CHAINS'
 	_schema_depend 'SURICATA_ENABLE=yes' NDPI_ENABLE RULES_ENABLE
 	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
@@ -490,6 +493,17 @@ schema_validate_entry() {
 	return 0
 }
 
+# redis_output_off <value> - 0 when a value of EVE_REDIS means no Redis output:
+# empty, no, off, none or false in any case. The renderer, the menu, the
+# migrations and dependency below all use this one meaning (the list of spellings in
+# `_schema_depend` for EVE_REDIS_MAXLEN is the same words).
+redis_output_off() {
+	case "${1,,}" in
+	"" | no | off | none | false) return 0 ;;
+	esac
+	return 1
+}
+
 # schema_effective <key> - what an empty value of an optional key is on this
 # host, in a few words, for the prompts of the menu, `settings list --json` and
 # the Settings screen of the panel (v0.50.0: they showed <empty> or "(empty)").
@@ -519,6 +533,7 @@ schema_effective() {
 		echo "latest available${v:+ (installed: $v)}"
 		;;
 	EVE_REDIS) echo "off: the events go to eve.json only" ;;
+	EVE_REDIS_MAXLEN) echo "100000 events; the stream is trimmed to about this length" ;;
 	EVE_MAX_SIZE_MB) echo "100 MB, used only when EVE_ROTATE=size" ;;
 	RULES_URLS) echo "none: only the rule sources ${sources:-et/open} are used" ;;
 	esac

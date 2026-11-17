@@ -212,13 +212,15 @@ load_step() {
 	[[ "$output" != *"syslog"* ]]
 }
 
-@test "EVE_REDIS=yes renders a redis eve-log output for this host with the same types, lpush, key suricata" {
+@test "EVE_REDIS=yes renders a redis eve-log output for this host with the same types, a bounded stream, key suricata" {
 	run load_step 'CONF[EVE_REDIS]="yes"; CONF[EVE_TYPES]="alert,dns"' 'suricata_render_eve_log_block'
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"filetype: redis"* ]]
 	[[ "$output" == *"server: 127.0.0.1"* ]]
 	[[ "$output" == *"port: 6379"* ]]
-	[[ "$output" == *"mode: lpush"* ]]
+	[[ "$output" == *"mode: stream"* ]]
+	[[ "$output" == *"stream-maxlen: 100000"* ]]
+	[[ "$output" != *"lpush"* ]]
 	[[ "$output" == *"key: suricata"* ]]
 	# the file output stays and the redis output repeats the types
 	[[ "$output" == *"filetype: regular"* ]]
@@ -295,4 +297,18 @@ load_step() {
 	run load_step 'CONF[TEST_BT_LIVE]="yes"' 'suricata_write_test_rules; cat "$(path_suricata_test_rules)"'
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"sid:9000100"* ]]
+}
+
+@test "redis_output_off is one meaning for every spelling of off, and the menu and the renderer agree on it" {
+	local v
+	for v in "" no No NO off Off OFF none None false False FALSE; do
+		run bash -c "source '$REPO_DIR/lib/schema.sh'; redis_output_off '$v'"
+		[ "$status" -eq 0 ]
+		run load_step "CONF[EVE_REDIS]=\"$v\"" 'suricata_render_eve_log_block'
+		[[ "$output" != *"filetype: redis"* ]]
+	done
+	for v in yes Yes 127.0.0.1 redis.lan:6380/eve; do
+		run bash -c "source '$REPO_DIR/lib/schema.sh'; redis_output_off '$v'"
+		[ "$status" -eq 1 ]
+	done
 }

@@ -2,7 +2,7 @@
 // dialog texts. Pure functions, no DOM.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { badge, question, progress, facts, when } from "../modules/version.js";
+import { badge, question, progress, facts, when, planText } from "../modules/version.js";
 
 test("no answer shows nothing", () => {
   assert.equal(badge(null).visible, false);
@@ -61,4 +61,11 @@ test("the Build info rows: only what is known, the commit shortened and copyable
 test("when keeps a time it cannot read as it came", () => {
   assert.equal(when("2026-11-03T12:00:00+03:00"), "2026-11-03T12:00:00+03:00");
   assert.equal(when(""), "");
+});
+
+test("the plan of the new version is shown without blank lines, and an empty answer is said in words", () => {
+  assert.equal(planText({ plan: "dpistack 0.52.0 will do this on this host:\n\nmigration 0.52.0: x\n  \nrebuild suricata: recipe 2 -> 3\n" }), "dpistack 0.52.0 will do this on this host:\nmigration 0.52.0: x\nrebuild suricata: recipe 2 -> 3");
+  assert.equal(planText({ plan: "" }), "The new version did not say what it will do.");
+  assert.equal(planText(null), "The new version did not say what it will do.");
+  assert.equal(planText({}), "The new version did not say what it will do.");
 });

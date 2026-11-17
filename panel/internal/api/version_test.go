@@ -16,6 +16,7 @@ echo "$*" >> '@LOG@'
 case "$2" in
 run) echo "update started" ;;
 job) echo '{"state":"active","result":"","log":["fetching"]}' ;;
+plan) echo "dpistack 0.26.0 will do this on this host:"; echo "migration 0.26.0: something" ;;
 esac
 `
 
@@ -102,6 +103,19 @@ func TestUpdateJobPassesThrough(t *testing.T) {
 	w := send(e, "GET", "/api/update/job", "", cookies, csrf)
 	if w.Code != 200 || jsonMap(t, w.Body.Bytes())["state"] != "active" {
 		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+}
+
+func TestUpdatePlanIsTheTextOfThePlanVerb(t *testing.T) {
+	e, c := updateEnv(t, "0.25.2", "v0.26.0")
+	cookies, csrf := e.login()
+	w := send(e, "GET", "/api/update/plan", "", cookies, csrf)
+	if w.Code != 200 || !strings.Contains(jsonMap(t, w.Body.Bytes())["plan"].(string), "migration 0.26.0") {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	log, _ := os.ReadFile(c.log)
+	if !strings.Contains(string(log), "self-update plan") {
+		t.Fatalf("the plan verb was not run: %s", log)
 	}
 }
 

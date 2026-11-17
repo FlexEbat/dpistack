@@ -1177,6 +1177,25 @@ selfupdate_fetch() {
 		fail 1 "the archive does not carry the version ${tag#v}, nothing was installed"
 }
 
+# selfupdate_plan - what the newest release will do to this host, as text: it
+# is downloaded and its own `migrate --plan` is read, because the running
+# version cannot know what the next one migrates. Nothing is installed. The
+# panel shows it in the Update dialog before the person confirms.
+selfupdate_plan() {
+	local tag tmp
+	tag=$(selfupdate_latest_tag) || exit 1
+	if ! selfupdate_is_newer "$tag"; then
+		echo "there is no newer release"
+		return 0
+	fi
+	tmp=$(mktemp -d) || fail 1 "no temporary directory"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$tmp'" EXIT
+	selfupdate_fetch "$tag" "$tmp" >/dev/null
+	echo "dpistack ${tag#v} will do this on this host:"
+	(cd "$tmp/src" && bash ./install.sh migrate --plan) || fail 1 "could not read the plan of ${tag#v}"
+}
+
 selfupdate_apply() {
 	local tag tmp src
 	tag=$(selfupdate_latest_tag) || exit 1
@@ -1217,11 +1236,12 @@ cmd_self_update() {
 	--json | check) selfupdate_check --json ;;
 	run) selfupdate_run ;;
 	job) selfupdate_job ;;
+	plan) selfupdate_plan ;;
 	apply)
 		restricted_caller && fail 2 "self-update apply: not for the panel, use run"
 		selfupdate_apply
 		;;
-	*) fail 2 "self-update: [--check] | check | run | job | apply" ;;
+	*) fail 2 "self-update: [--check] | check | run | job | plan | apply" ;;
 	esac
 }
 
@@ -1322,7 +1342,6 @@ cmd_update() {
 # saved config, so the migrations, the rebuilds and the rendering all run.
 cmd_migrate() {
 	local plan=0 yes=0 arg
-	restricted_caller && fail 2 "migrate: not for the panel"
 	for arg in "$@"; do
 		case "$arg" in
 		--plan) plan=1 ;;
@@ -1330,6 +1349,9 @@ cmd_migrate() {
 		*) fail 2 "migrate: [--plan] [--yes]" ;;
 		esac
 	done
+	# The plan only reads (the panel shows it before an update); doing the work
+	# is not for the panel.
+	((plan)) || ! restricted_caller || fail 2 "migrate: not for the panel, only --plan"
 	if ((plan)) || ! migrate_needed; then
 		migrate_plan
 		return 0

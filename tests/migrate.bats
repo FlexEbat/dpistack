@@ -48,13 +48,16 @@ lib() {
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"0.0.0"* ]]
 	[[ "$output" == *"0.50.0"* ]]
+	[[ "$output" == *"0.51.0"* ]]
 }
 
 @test "a recorded version at or above a migration skips it, a lower one runs it" {
-	run lib 'state_write_value install.finished yes; state_write_value install.version 0.50.0' 'migrate_pending'
+	run lib 'state_write_value install.finished yes; state_write_value install.version 0.51.0' 'migrate_pending'
 	[ -z "$output" ]
+	run lib 'state_write_value install.finished yes; state_write_value install.version 0.50.0' 'migrate_pending'
+	[ "$output" = "0.51.0" ]
 	run lib 'state_write_value install.finished yes; state_write_value install.version 0.49.0' 'migrate_pending'
-	[ "$output" = "0.50.0" ]
+	[ "$output" = "$(printf '0.50.0\n0.51.0')" ]
 	# a migration of a version above this one is not run by an older program
 	run lib 'state_write_value install.finished yes; state_write_value install.version 0.1.0; DPISTACK_VERSION=0.49.0' 'migrate_pending'
 	[ -z "$output" ]
@@ -69,6 +72,39 @@ lib() {
 	# EVE_REDIS is left as the person wrote it
 }
 
+# 0.51.0: the Redis output is a bounded stream, the old list is deleted
+redis_host() {
+	echo "state_write_value install.finished yes; state_write_value install.version 0.50.0; CONF[EVE_REDIS]=\"$1\"; export MOCK_REDIS_TYPE=$2 MOCK_LOG=$DPISTACK_ROOT/redis.log"
+}
+
+@test "0.51.0 deletes the list that 0.50.0 left under the key of the stream, and says so" {
+	run lib "$(redis_host yes list)" 'migrate_run'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"is a stream trimmed to about 100000 events now"* ]]
+	[[ "$output" == *"deleted the list suricata on 127.0.0.1:6379"* ]]
+	grep -q "del suricata" "$DPISTACK_ROOT/redis.log"
+	grep -q -- "-h 127.0.0.1 -p 6379 type suricata" "$DPISTACK_ROOT/redis.log"
+}
+
+@test "0.51.0 leaves a key that is already a stream, or missing, alone" {
+	run lib "$(redis_host redis.lan:6380/eve stream)" 'migrate_run'
+	[[ "$output" == *"EVE_REDIS=redis.lan:6380/eve is a stream"* ]]
+	[[ "$output" != *"deleted"* ]]
+	run grep -q " del " "$DPISTACK_ROOT/redis.log"
+	[ "$status" -ne 0 ]
+	run lib "$(redis_host yes none)" 'migrate_run'
+	[[ "$output" != *"deleted"* ]]
+}
+
+@test "0.51.0 says nothing about Redis when the output is off, and deletes nothing in a dry run" {
+	run lib "$(redis_host no list)" 'migrate_run'
+	[[ "$output" != *"0.51.0"* ]]
+	run lib "$(redis_host yes list); DRY_RUN=1" 'migrate_run'
+	[[ "$output" == *"would delete the list suricata"* ]]
+	run grep -q " del " "$DPISTACK_ROOT/redis.log"
+	[ "$status" -ne 0 ]
+}
+
 @test "a value that is already fine is not touched and says nothing" {
 	run lib 'state_write_value install.finished yes; state_write_value install.version 0.49.0; CONF[EVE_MAX_SIZE_MB]=250; CONF[EVE_REDIS]=""' 'migrate_run; echo "size=${CONF[EVE_MAX_SIZE_MB]}"'
 	[[ "$output" != *"migrate 0.50.0"* ]]
@@ -81,6 +117,19 @@ lib() {
 	[[ "$output" == "suricata 1 2 "* ]]
 	run lib "$setup; state_write_value build.suricata.recipe 2" 'migrate_rebuilds'
 	[ -z "$output" ]
+}
+
+@test "a backup is made before a rebuild, not when nothing is rebuilt, not in a dry run, and a failing one does not stop the upgrade" {
+	local base='state_write_value install.finished yes; state_write_value install.version 0.50.0; CONF[SURICATA_SOURCE]=source; state_write_value "$SURICATA_BUILT_REF_STATE_KEY" abc123; state_write_value build.suricata.recipe 1; backup_create() { echo "BACKUP-CALLED"; }'
+	run lib "$base" 'migrate_run'
+	[[ "$output" == *"a backup is made before the rebuild"* && "$output" == *"BACKUP-CALLED"* ]]
+	run lib "$base; state_write_value build.suricata.recipe 2" 'migrate_run'
+	[[ "$output" != *"BACKUP-CALLED"* ]]
+	run lib "$base; DRY_RUN=1" 'migrate_run'
+	[[ "$output" != *"BACKUP-CALLED"* ]]
+	run lib "$base; backup_create() { return 1; }" 'migrate_run'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"the backup failed; the upgrade goes on"* ]]
 }
 
 @test "a package Suricata is never rebuilt" {
@@ -170,7 +219,11 @@ old_host() {
 	[[ "$output" != *"still has work"* ]]
 }
 
-@test "the panel may not run migrate" {
+@test "the panel may read the plan of migrate but not do the work" {
 	DPISTACK_CALLER=panel run bash "$REPO_DIR/install.sh" migrate --plan
+	[ "$status" -eq 0 ]
+	DPISTACK_CALLER=panel run bash "$REPO_DIR/install.sh" migrate --yes
+	[ "$status" -eq 2 ]
+	DPISTACK_CALLER=panel run bash "$REPO_DIR/install.sh" migrate
 	[ "$status" -eq 2 ]
 }

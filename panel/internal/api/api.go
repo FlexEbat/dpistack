@@ -126,6 +126,7 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/status", s.need(auth.PermView, s.status))
 	mux.HandleFunc("GET /api/version", s.need(auth.PermView, s.versionGet))
 	mux.HandleFunc("POST /api/update", s.need(auth.PermUpdateManage, s.updateStart))
+	mux.HandleFunc("GET /api/update/plan", s.need(auth.PermUpdateManage, s.updatePlan))
 	mux.HandleFunc("GET /api/update/job", s.need(auth.PermView, s.updateJob))
 	mux.HandleFunc("POST /api/components/{id}/{action}", s.need(auth.PermComponentsCtl, s.control))
 	mux.HandleFunc("POST /api/suricata/reload", s.need(auth.PermComponentsCtl, s.reloadSuricata))

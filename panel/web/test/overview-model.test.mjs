@@ -79,3 +79,19 @@ test("the watchdog's rules age and eve checks are warnings, the others are left 
   assert.deepEqual(warnings({ status: { components: [] }, health: { checks: [{ id: "rules.age", status: "ok", detail: "" }, { id: "rules.age", status: "na", detail: "rule updates are off" }] } }), []);
   assert.deepEqual(warnings({ status: { components: [] }, health: null }), []);
 });
+
+test("pending work after an upgrade and an over-long Redis stream are warnings on the Overview", () => {
+  const w = warnings({
+    status: { components: [] },
+    health: {
+      checks: [
+        { id: "migrate.pending", status: "warn", detail: "this host still has work from an earlier version: run sudo dpistack migrate" },
+        { id: "redis.eve_stream", status: "warn", detail: "the stream holds 300000 events, the bound is 100000" },
+        { id: "migrate.pending", status: "ok", detail: "" },
+      ],
+    },
+  });
+  assert.equal(w.length, 2);
+  assert.match(w[0], /^This host still has work from an earlier version: run sudo dpistack migrate\.$/);
+  assert.match(w[1], /the bound is 100000\.$/);
+});

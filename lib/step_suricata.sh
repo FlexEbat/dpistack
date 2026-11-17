@@ -70,28 +70,7 @@ suricata_render_plugins_block() {
 	fi
 }
 
-# suricata_redis_target - the Redis output of EVE_REDIS as "host port key" on
-# one line, or exit 1 when the output is off. The value is "no" (or empty, off,
-# none, false): off; "yes": the Redis of this host, 127.0.0.1:6379, key
-# "suricata"; or "host[:port][/key]" (port 6379 and key "suricata" when left
-# out). Events are pushed to the list with LPUSH (mode lpush): a reader takes
-# them with BRPOP and nothing but the list grows when no reader is there.
-suricata_redis_target() {
-	local v="${CONF[EVE_REDIS]:-}" hp key="suricata" host port=6379
-	case "${v,,}" in
-	"" | no | off | none | false) return 1 ;;
-	yes | on | true) v="127.0.0.1:6379/suricata" ;;
-	esac
-	hp="${v%%/*}"
-	[[ "$v" == */* && -n "${v#*/}" ]] && key="${v#*/}"
-	host="$hp"
-	if [[ "$hp" == *:* ]]; then
-		host="${hp%%:*}"
-		port="${hp#*:}"
-	fi
-	[[ -n "$host" ]] || return 1
-	echo "$host $port $key"
-}
+# suricata_redis_target is in lib/config.sh: the watchdog reads it too.
 
 # suricata_has_redis - 0 when the installed Suricata was built with hiredis
 # (`suricata --build-info` says "Redis support: yes"); 0 as well when there is
@@ -121,7 +100,9 @@ suricata_render_redis_output() {
 	echo "        server: $host"
 	echo "        port: $port"
 	echo "        async: no"
-	echo "        mode: lpush"
+	echo "        mode: stream"
+	echo "        stream-maxlen: ${CONF[EVE_REDIS_MAXLEN]:-100000}"
+	echo "        stream-trim-exact: no"
 	echo "        key: $key"
 	suricata_render_eve_types_block
 }
@@ -310,7 +291,7 @@ SURICATA_STABLE_REF="suricata-8.0.8"
 suricata_target_ref() {
 	echo "${CONF[SURICATA_VERSION]:-$SURICATA_STABLE_REF}"
 }
-SURICATA_BUILT_REF_STATE_KEY="suricata.built_ref"
+# SURICATA_BUILT_REF_STATE_KEY is in lib/state.sh: the migrations and the watchdog read it too.
 
 suricata_source_binary_present() {
 	command -v suricata >/dev/null 2>&1 && [[ "$(command -v suricata)" == "${DPISTACK_ROOT}/usr/local/bin/suricata" ]]
@@ -398,6 +379,7 @@ suricata_build_from_source() {
 	# first build, when there is no suricata.yaml yet.
 	local install_conf=1
 	[[ -f "$(path_suricata_yaml)" ]] && install_conf=0
+	heartbeat_start "suricata build"
 	(
 		cd "$src_dir" || exit 1
 		run ./autogen.sh &&
@@ -407,6 +389,7 @@ suricata_build_from_source() {
 			{ ((install_conf == 0)) || run make install-conf; }
 	)
 	local rc=$?
+	heartbeat_stop
 	if [[ "$rc" -ne 0 ]]; then
 		echo "suricata: the build from source failed (autogen/configure/make)" >&2
 		return 1

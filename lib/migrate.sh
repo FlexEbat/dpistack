@@ -18,9 +18,10 @@
 # The recipe numbers and build_recipe_have are in lib/state.sh: the build steps
 # read them and some of them are loaded without this file.
 
-MIGRATION_VERSIONS=(0.50.0)
+MIGRATION_VERSIONS=(0.50.0 0.51.0)
 declare -A MIGRATION_TEXT=(
 	["0.50.0"]="EVE_MAX_SIZE_MB gets its default of 100 when it was saved empty; a saved EVE_REDIS value is a live Redis output from now on; a Suricata built from source is rebuilt with Redis support"
+	["0.51.0"]="the Redis output is a bounded stream (EVE_REDIS_MAXLEN) instead of a list: the old list of events that nobody read is deleted, because a stream cannot be added to a key that holds a list"
 )
 
 # version_lt <a> <b> - 0 when version a is lower than version b.
@@ -85,10 +86,30 @@ migrate_0_50_0() {
 		CONF[EVE_MAX_SIZE_MB]=100
 		echo "migrate 0.50.0: EVE_MAX_SIZE_MB was saved empty, it is 100 now (used only with EVE_ROTATE=size)"
 	fi
-	case "${CONF[EVE_REDIS]:-}" in
-	"" | no | No | NO | off | none | false) ;;
-	*) echo "migrate 0.50.0: EVE_REDIS=${CONF[EVE_REDIS]} was ignored before and is a live Redis output now; set EVE_REDIS=no to keep eve.json only" ;;
-	esac
+	if ! redis_output_off "${CONF[EVE_REDIS]:-}"; then
+		echo "migrate 0.50.0: EVE_REDIS=${CONF[EVE_REDIS]} was ignored before and is a live Redis output now; set EVE_REDIS=no to keep eve.json only"
+	fi
+	return 0
+}
+
+migrate_0_51_0() {
+	local target host port key type
+	target=$(suricata_redis_target 2>/dev/null) || return 0
+	read -r host port key <<<"$target"
+	echo "migrate 0.51.0: the Redis output of EVE_REDIS=${CONF[EVE_REDIS]} is a stream trimmed to about ${CONF[EVE_REDIS_MAXLEN]:-100000} events now, not a list"
+	if ! command -v redis-cli >/dev/null 2>&1; then
+		echo "migrate 0.51.0: redis-cli is not installed; if $key on $host:$port holds a list from 0.50.0, delete it: redis-cli -h $host -p $port del $key"
+		return 0
+	fi
+	type=$(redis-cli -h "$host" -p "$port" type "$key" 2>/dev/null || true)
+	[[ "$type" == "list" ]] || return 0
+	if [[ "${DRY_RUN:-0}" == "1" ]]; then
+		echo "migrate 0.51.0: would delete the list $key on $host:$port (events that nobody read)"
+	elif redis-cli -h "$host" -p "$port" del "$key" >/dev/null 2>&1; then
+		echo "migrate 0.51.0: deleted the list $key on $host:$port (events that nobody read): a stream cannot be added to a key that holds a list"
+	else
+		echo "migrate 0.51.0: could not delete the list $key on $host:$port; delete it by hand: redis-cli -h $host -p $port del $key"
+	fi
 	return 0
 }
 
@@ -142,6 +163,21 @@ migrate_run() {
 		[[ -n "$part" ]] || continue
 		echo "migrate: $part is built again (recipe $have -> $want: $why)"
 	done < <(migrate_rebuilds)
+	migrate_backup
+	return 0
+}
+
+# migrate_backup - a rebuild replaces a program that works, so the config and
+# the state are copied first (`dpistack backup`, the same archive). A backup
+# that fails is said and the upgrade goes on: it is a copy of files, not a way
+# back for the binary. Nothing is made in a dry run or when nothing is rebuilt.
+migrate_backup() {
+	[[ -n "$(migrate_rebuilds)" && "${DRY_RUN:-0}" != "1" ]] || return 0
+	declare -F backup_create >/dev/null || return 0
+	echo "migrate: a backup is made before the rebuild"
+	if ! (backup_create); then
+		echo "migrate: the backup failed; the upgrade goes on"
+	fi
 	return 0
 }
 

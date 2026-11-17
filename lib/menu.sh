@@ -790,6 +790,11 @@ menu_key_skipped() {
 	case "$k" in
 	METRICS_TOKEN) return 0 ;;
 	EVE_MAX_SIZE_MB) [[ "${CONF[EVE_ROTATE]:-daily}" != "size" || "$suri" == "$n" ]] && return 0 ;;
+	# the length of the Redis stream means something only when there is a Redis output
+	EVE_REDIS_MAXLEN)
+		[[ "$suri" == "$n" ]] && return 0
+		redis_output_off "${CONF[EVE_REDIS]:-}" && return 0
+		;;
 	SURICATA_RUNTIME | SURICATA_SOURCE | SURICATA_VERSION | SURICATA_MODE | IFACES | BPF_FILTER | HOME_NET | \
 		EVE_SYSLOG | EVE_REDIS | EVE_ROTATE | EVE_KEEP | STATS_INTERVAL_SEC | TEST_*)
 		[[ "$suri" == "$n" ]] && return 0

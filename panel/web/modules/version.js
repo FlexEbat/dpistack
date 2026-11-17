@@ -48,6 +48,17 @@ export function question(info) {
   );
 }
 
+// planText is the plan of the new version for the dialog: the lines that the
+// release printed, with the blank ones taken out. An answer with nothing in it
+// is said in words.
+export function planText(answer) {
+  const lines = String((answer && answer.plan) || "")
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim() !== "");
+  return lines.length ? lines.join("\n") : "The new version did not say what it will do.";
+}
+
 // progress turns the answer of GET /api/update/job into one line.
 export function progress(job) {
   if (!job || !job.state) return "Starting…";
@@ -128,6 +139,21 @@ export function start(api, els) {
     els.no.disabled = false;
     renderFacts();
     els.dialog.showModal();
+    if (update) loadPlan();
+    else if (els.planBox) els.planBox.hidden = true;
+  }
+
+  // The plan is read by the new version itself (it is downloaded for this), so
+  // it takes a moment; the Update button does not wait for it.
+  async function loadPlan() {
+    if (!els.plan || !els.planBox) return;
+    els.planBox.hidden = false;
+    els.plan.textContent = "Reading the plan of the new version…";
+    try {
+      els.plan.textContent = planText(await api("/api/update/plan"));
+    } catch (err) {
+      els.plan.textContent = "The plan could not be read (" + err.message + "). The update itself is not affected.";
+    }
   }
 
   async function poll() {

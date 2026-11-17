@@ -14,17 +14,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gate:
-    name: gate (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+  # The bats suite is dealt out over parallel runners (scripts/bats-shard.sh):
+  # one runner took 39 minutes of the 45 allowed (tech.md 18.58, slice 50).
+  bats:
+    name: bats (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: read
       statuses: write # names failing checks, see "Report failing checks"
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04]
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck shfmt jq util-linux
+      - name: Bats shard
+        # The installer refuses to run without root (preflight), so the suite
+        # that exercises it must run as root too; the runner user is not.
+        run: |
+          sudo git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          set -o pipefail
+          sudo -E env "PATH=$PATH" bash scripts/gate.sh --bats-shard "${{ matrix.shard }}/4" 2>&1 | tee "$RUNNER_TEMP/gate.log"
+      - name: Report failing checks
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHARD: ${{ matrix.shard }}
+        run: |
+          n=0
+          { grep -E '^(not ok|FAIL:)' "$RUNNER_TEMP/gate.log" || tail -n 6 "$RUNNER_TEMP/gate.log"; } | head -6 | while IFS= read -r line; do
+            n=$((n + 1))
+            gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+              -f state=failure -f context="bats shard $SHARD #$n" -f description="${line:0:130}" >/dev/null
+          done
+
+  # Everything except bats: formatting, lint, security, bundle, docs, Go, panel JS.
+  checks:
+    name: checks (ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      statuses: write # names failing checks, see "Report failing checks"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -36,29 +72,97 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bats shellcheck shfmt jq util-linux
-      - name: Gate (shfmt, shellcheck, bats, security)
-        # The installer refuses to run without root (preflight), so the gate
-        # that exercises it must run as root too; the runner user is not.
-        # root also needs git to accept the checkout, owned by the runner.
+      - name: Checks (shfmt, shellcheck, security, bundle, docs, Go, panel JS)
         run: |
           sudo git config --global --add safe.directory "$GITHUB_WORKSPACE"
           set -o pipefail
-          sudo -E env "PATH=$PATH" bash scripts/gate.sh 2>&1 | tee "$RUNNER_TEMP/gate.log"
-      # Job logs are not readable from outside, so a red gate names its
-      # failing checks in commit statuses (one per failure, at most six).
+          sudo -E env "PATH=$PATH" bash scripts/gate.sh --no-bats 2>&1 | tee "$RUNNER_TEMP/gate.log"
       - name: Report failing checks
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-          OS_NAME: ${{ matrix.os }}
         run: |
           n=0
-          # A failure that prints none of those markers still shows its last lines.
-          { grep -E '^(not ok|FAIL:|--- FAIL|FAIL[[:space:]]|panic:|go: [^d]|.*error:)' "$RUNNER_TEMP/gate.log" || tail -n 6 "$RUNNER_TEMP/gate.log"; } | head -6 | while IFS= read -r line; do
+          { grep -E '^(FAIL:|--- FAIL|FAIL[[:space:]]|panic:|go: [^d]|.*error:)' "$RUNNER_TEMP/gate.log" || tail -n 6 "$RUNNER_TEMP/gate.log"; } | head -6 | while IFS= read -r line; do
             n=$((n + 1))
             gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-              -f state=failure -f context="gate $OS_NAME #$n" -f description="${line:0:130}" >/dev/null
+              -f state=failure -f context="checks #$n" -f description="${line:0:130}" >/dev/null
           done
+
+  # The panel in a headless browser: every screen at 390, 768 and 1440 px must
+  # not scroll sideways, the note must be the first thing on the page, and no
+  # script may throw (tech.md 18.58, slice 55). It is not part of `gate`: a
+  # browser that fails to download must not block a merge. The shots are kept.
+  ui:
+    name: ui (headless screenshots)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: panel/go.mod
+          check-latest: true
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Open every screen at three widths
+        run: bash scripts/ui-check/run.sh "$RUNNER_TEMP/ui-shots"
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ui-shots
+          path: ${{ runner.temp }}/ui-shots
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # An upgrade from a REAL earlier release (tech.md 18.58, slice 52): the last
+  # published release is installed in the test sandbox and this tree migrates
+  # it, once through `migrate --yes` and once through `update --yes`. Not part
+  # of `gate`: it needs the release list of GitHub, and an outage there must not
+  # block a merge.
+  upgrade:
+    name: upgrade (from the last release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats jq util-linux
+      - name: Install the last release, then upgrade it with this tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cur=$(sed -n 's/^DPISTACK_VERSION="\(.*\)"/\1/p' lib/common.sh)
+          prev=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq "[.[] | select(.draft == false and .prerelease == false) | .tag_name | select(. != \"v$cur\")][0]")
+          echo "upgrading from $prev to $cur"
+          [ -n "$prev" ] && [ "$prev" != null ]
+          sudo -E env "PATH=$PATH" "GH_TOKEN=$GH_TOKEN" "DPISTACK_UPGRADE_FROM=$prev" bats tests/upgrade_from_release.bats
+
+  # The one check the branch protection asks for: green only when every shard
+  # and the other checks are green. Its name did not change.
+  gate:
+    name: gate (ubuntu-24.04)
+    needs: [bats, checks]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every shard and every check passed
+        env:
+          BATS: ${{ needs.bats.result }}
+          CHECKS: ${{ needs.checks.result }}
+        run: |
+          echo "bats shards: $BATS, checks: $CHECKS"
+          [ "$BATS" = success ] && [ "$CHECKS" = success ]
 
   workflows:
     name: lint workflows

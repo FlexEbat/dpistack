@@ -31,7 +31,7 @@ check() {
 	local title="$1" found
 	shift
 	# Lines that only print a systemd ExecStart= are unit text, not code.
-	found=$(grep -rnIE "$@" "${CODE[@]}" 2>/dev/null | grep -v '^scripts/security.sh:' | grep -v 'ExecStart=' || true)
+	found=$(grep -rnIE --exclude-dir=node_modules "$@" "${CODE[@]}" 2>/dev/null | grep -v '^scripts/security.sh:' | grep -v 'ExecStart=' || true)
 	if [[ -n "$found" ]]; then
 		fail "$title" "$found"
 	else

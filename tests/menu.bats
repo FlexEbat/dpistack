@@ -107,7 +107,7 @@ run_menu() {
 }
 
 @test "criterion 5: 'i' is refused while a cross-check problem exists" {
-	run_menu "4\na\n9\nelasticsearch\n0\ni\nq\ny\n"
+	run_menu "4\na\n10\nelasticsearch\n0\ni\nq\ny\n"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"cannot install while there are problems"* ]]
 	[[ "$output" == *"needs EVEBOX_ES_URL"* ]]
@@ -376,7 +376,7 @@ run_menu() {
 }
 
 @test "e lists every problem, a cross-check problem and the missing password both" {
-	run_menu "4\na\n9\nelasticsearch\n0\ne\nq\ny\n"
+	run_menu "4\na\n10\nelasticsearch\n0\ne\nq\ny\n"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"(e = show all)"* ]]
 	[[ "$output" == *"  - "*"needs EVEBOX_ES_URL"* ]]

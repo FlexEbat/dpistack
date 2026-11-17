@@ -25,7 +25,7 @@ import { start as startAudit } from "./modules/audit.js";
 import { start as startBackups } from "./modules/backups.js";
 import * as shell from "./modules/shell.js";
 import { start as startVersion } from "./modules/version.js";
-import { menu, revealOnce, skipLink } from "./modules/chrome.js";
+import { menu, noteHeight, revealOnce, skipLink } from "./modules/chrome.js";
 
 const REPO_URL = "https://github.com/FlexEbat/dpistack";
 const $ = (id) => document.getElementById(id);
@@ -181,7 +181,7 @@ const SCREENS = {
       },
       showLogin,
     );
-    const stopTabs = startTabs($("rules-tabs"), $("view-rules"));
+    const stopTabs = startTabs($("rules-tabs"), $("view-rules"), "dpistack.rules.tab");
     const stopTemplates = startRuleTemplates({
       select: $("r2-template"), insert: $("r2-template-insert"), desc: $("r2-template-desc"),
       preview: $("r2-template-preview"), editor: $("r2-editor"),
@@ -426,6 +426,8 @@ async function showOverview() {
     text: $("update-text"),
     status: $("update-status"),
     log: $("update-log"),
+    plan: $("update-plan"),
+    planBox: $("update-plan-box"),
     yes: $("update-yes"),
     no: $("update-no"),
   });
@@ -473,6 +475,7 @@ $("login-form").addEventListener("submit", async (event) => {
 });
 
 const navMenu = menu();
+noteHeight();
 for (const b of document.querySelectorAll("#nav button[data-view]")) {
   b.addEventListener("click", () => {
     showView(b.dataset.view);

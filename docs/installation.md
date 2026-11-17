@@ -94,7 +94,7 @@ sudo dpistack migrate --plan        # what an upgrade left to do on this host
 sudo dpistack migrate               # do it now (the same work, for a host whose files were replaced by other means)
 ```
 
-`update` installs the release on your saved config and waits until it is done. The work runs as a unit of its own, so a lost ssh session does not stop it halfway. `self-update check|run|job` are the same update in separate steps; the panel uses them.
+The panel's Update button shows the same plan under "What this update does on this host" before you confirm. A source build prints a line every minute so that a quarter of an hour of silence does not look like a hang, and a backup is taken before an update that rebuilds a part. `update` installs the release on your saved config and waits until it is done. The work runs as a unit of its own, so a lost ssh session does not stop it halfway. `self-update check|run|job` are the same update in separate steps; the panel uses them.
 
 **What an upgrade does by itself.** Nothing has to be started by hand: `install`, `update` and the panel's Update button run it, and `dpistack status` says so on stderr when a host still has work pending. Before the config is checked, the migrations of the new version resolve the saved settings whose meaning changed (for example an empty `EVE_MAX_SIZE_MB` becomes 100), and they say so. A part that is built from source (Suricata, nDPI) is built again when the new version changed its build recipe, for example Suricata gets Redis support: the plan names it, and the install does it. Everything that is rendered (units, `suricata.yaml`, the panel) is rendered again by the normal steps. The version that finished the last install is kept, so a migration runs once.
 

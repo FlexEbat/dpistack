@@ -84,3 +84,8 @@ build_recipe_have() {
 	v=$(state_read_value "build.$1.recipe")
 	echo "${v:-1}"
 }
+
+# The state keys that hold the ref a source build was made from.
+# shellcheck disable=SC2034 # read by the build steps, lib/migrate.sh and the watchdog
+SURICATA_BUILT_REF_STATE_KEY="suricata.built_ref"
+ndpi_built_ref_state_key() { echo "ndpi.built_ref"; }

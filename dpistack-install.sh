@@ -1062,6 +1062,8 @@ for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
 		source "$_lib/schema.sh"
 		# shellcheck source=lib/config.sh
 		source "$_lib/config.sh"
+		# shellcheck source=lib/migrate.sh
+		source "$_lib/migrate.sh"
 		break
 	fi
 done
@@ -1263,6 +1265,39 @@ check_disk_free() {
 		record disk.free warn "$pct" "$detail"
 	else
 		record disk.free ok "$pct" "$detail"
+	fi
+}
+
+# check_redis_stream - the stream of the Redis output (EVE_REDIS) stays near
+# EVE_REDIS_MAXLEN: Redis trims it, so twice that length means the trim does
+# not work and the memory of the Redis that ntopng uses is at risk.
+check_redis_stream() {
+	local target host port key maxlen len
+	if ! command -v redis-cli >/dev/null 2>&1 || ! target=$(suricata_redis_target 2>/dev/null); then
+		record redis.eve_stream na "" "EVE_REDIS is off or redis-cli is not installed"
+		return
+	fi
+	read -r host port key <<<"$target"
+	maxlen="${CONF[EVE_REDIS_MAXLEN]:-100000}"
+	if ! len=$(redis-cli -h "$host" -p "$port" xlen "$key" 2>/dev/null) || [[ ! "$len" =~ ^[0-9]+$ ]]; then
+		record redis.eve_stream warn "" "the stream $key on $host:$port cannot be read"
+	elif ge "$len" "$((maxlen * 2))"; then
+		record redis.eve_stream warn "$len" "the stream holds $len events, the bound is $maxlen"
+	else
+		record redis.eve_stream ok "$len" ""
+	fi
+}
+
+# check_migrate_pending - an upgrade left work on this host (lib/migrate.sh):
+# a migration of a newer version or a source build of an older recipe. The
+# Overview of the panel shows the detail line, and `dpistack migrate` does it.
+check_migrate_pending() {
+	if [[ -z "$(migrate_from_version)" ]]; then
+		record migrate.pending na "" "no finished install"
+	elif migrate_needed; then
+		record migrate.pending warn "" "this host still has work from an earlier version: run sudo dpistack migrate (details: dpistack migrate --plan)"
+	else
+		record migrate.pending ok "" ""
 	fi
 }
 
@@ -1530,6 +1565,8 @@ main() {
 	check_eve_fresh
 	check_drop_rate
 	check_disk_free
+	check_redis_stream
+	check_migrate_pending
 	check_rules_age
 	prune_exceptions
 
@@ -1828,7 +1865,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.50.0"
+DPISTACK_VERSION="0.51.0"
 
 : "${DRY_RUN:=0}"
 
@@ -1872,6 +1909,38 @@ run() {
 		log "ERROR" "command failed (rc=$rc): $*"
 		return "$rc"
 	fi
+}
+
+# heartbeat_start <label> / heartbeat_stop - one line about every minute
+# (DPISTACK_HEARTBEAT_SEC) while a long step runs, a source build of Suricata
+# or nDPI that is silent for a quarter of an hour, so that an update that is
+# waited for at a terminal or read in the panel does not look hung. The ticker
+# ends with the script that started it. Dry runs start none.
+HEARTBEAT_PID=""
+heartbeat_start() {
+	[[ "$DRY_RUN" == "1" ]] && return 0
+	local label="$1" every="${DPISTACK_HEARTBEAT_SEC:-60}" parent=$$ began=$SECONDS
+	(
+		local e
+		while kill -0 "$parent" 2>/dev/null && sleep "$every"; do
+			e=$((SECONDS - began))
+			if ((e >= 120)); then
+				echo "$label: still running ($((e / 60)) min)"
+			else
+				echo "$label: still running (${e} s)"
+			fi
+		done
+	) &
+	HEARTBEAT_PID=$!
+}
+
+heartbeat_stop() {
+	if [[ -n "$HEARTBEAT_PID" ]]; then
+		kill "$HEARTBEAT_PID" 2>/dev/null || true
+		wait "$HEARTBEAT_PID" 2>/dev/null || true
+	fi
+	HEARTBEAT_PID=""
+	return 0
 }
 
 # git_clone_retry <url> <dir> - git clone that survives a dropped connection.
@@ -2518,6 +2587,31 @@ config_diff_and_steps() {
 
 	echo "Change type: $overall_weight"
 	return 0
+}
+
+# suricata_redis_target - the Redis output of EVE_REDIS as "host port key" on
+# one line, or exit 1 when the output is off. The value is "no" (or empty, off,
+# none, false): off; "yes": the Redis of this host, 127.0.0.1:6379, key
+# "suricata"; or "host[:port][/key]" (port 6379 and key "suricata" when left
+# out). Events are added to a Redis stream (XADD) that Redis trims to about
+# EVE_REDIS_MAXLEN entries, so a stream nobody reads stays bounded and cannot
+# fill the memory of the Redis that ntopng uses (v0.50.0 pushed to a list with
+# LPUSH, which grows without a limit).
+suricata_redis_target() {
+	local v="${CONF[EVE_REDIS]:-}" hp key="suricata" host port=6379
+	case "${v,,}" in
+	"" | no | off | none | false) return 1 ;;
+	yes | on | true) v="127.0.0.1:6379/suricata" ;;
+	esac
+	hp="${v%%/*}"
+	[[ "$v" == */* && -n "${v#*/}" ]] && key="${v#*/}"
+	host="$hp"
+	if [[ "$hp" == *:* ]]; then
+		host="${hp%%:*}"
+		port="${hp#*:}"
+	fi
+	[[ -n "$host" ]] || return 1
+	echo "$host $port $key"
 }
 DPISTACK_BUNDLE_END
 put lib/ctl.sh 755 <<'DPISTACK_BUNDLE_END'
@@ -3700,6 +3794,25 @@ selfupdate_fetch() {
 		fail 1 "the archive does not carry the version ${tag#v}, nothing was installed"
 }
 
+# selfupdate_plan - what the newest release will do to this host, as text: it
+# is downloaded and its own `migrate --plan` is read, because the running
+# version cannot know what the next one migrates. Nothing is installed. The
+# panel shows it in the Update dialog before the person confirms.
+selfupdate_plan() {
+	local tag tmp
+	tag=$(selfupdate_latest_tag) || exit 1
+	if ! selfupdate_is_newer "$tag"; then
+		echo "there is no newer release"
+		return 0
+	fi
+	tmp=$(mktemp -d) || fail 1 "no temporary directory"
+	# shellcheck disable=SC2064
+	trap "rm -rf '$tmp'" EXIT
+	selfupdate_fetch "$tag" "$tmp" >/dev/null
+	echo "dpistack ${tag#v} will do this on this host:"
+	(cd "$tmp/src" && bash ./install.sh migrate --plan) || fail 1 "could not read the plan of ${tag#v}"
+}
+
 selfupdate_apply() {
 	local tag tmp src
 	tag=$(selfupdate_latest_tag) || exit 1
@@ -3740,11 +3853,12 @@ cmd_self_update() {
 	--json | check) selfupdate_check --json ;;
 	run) selfupdate_run ;;
 	job) selfupdate_job ;;
+	plan) selfupdate_plan ;;
 	apply)
 		restricted_caller && fail 2 "self-update apply: not for the panel, use run"
 		selfupdate_apply
 		;;
-	*) fail 2 "self-update: [--check] | check | run | job | apply" ;;
+	*) fail 2 "self-update: [--check] | check | run | job | plan | apply" ;;
 	esac
 }
 
@@ -3845,7 +3959,6 @@ cmd_update() {
 # saved config, so the migrations, the rebuilds and the rendering all run.
 cmd_migrate() {
 	local plan=0 yes=0 arg
-	restricted_caller && fail 2 "migrate: not for the panel"
 	for arg in "$@"; do
 		case "$arg" in
 		--plan) plan=1 ;;
@@ -3853,6 +3966,9 @@ cmd_migrate() {
 		*) fail 2 "migrate: [--plan] [--yes]" ;;
 		esac
 	done
+	# The plan only reads (the panel shows it before an update); doing the work
+	# is not for the panel.
+	((plan)) || ! restricted_caller || fail 2 "migrate: not for the panel, only --plan"
 	if ((plan)) || ! migrate_needed; then
 		migrate_plan
 		return 0
@@ -6409,6 +6525,7 @@ declare -gA KEY_HINT=(
 	[EVE_TYPES]='Which event types to write to eve.json.'
 	[EVE_SYSLOG]='Duplicate events to syslog (facility local5).'
 	[EVE_REDIS]='Send the events to Redis as well: yes (Redis of this host), or host[:port][/key], for example 127.0.0.1:6379/suricata. Empty or no: eve.json only. Needs a Suricata built with Redis support (a source build has it).'
+	[EVE_REDIS_MAXLEN]='How many events the Redis stream keeps (EVE_REDIS). Redis trims it to about this length, so a stream that nobody reads cannot fill the memory. 100000 by default.'
 	[EVE_ROTATE]='How to rotate eve.json: daily, weekly or by size.'
 	[EVE_KEEP]='How many rotated files to keep.'
 	[EVE_MAX_SIZE_MB]='File size in MB that triggers rotation (the size mode). 100 by default.'
@@ -7262,6 +7379,11 @@ menu_key_skipped() {
 	case "$k" in
 	METRICS_TOKEN) return 0 ;;
 	EVE_MAX_SIZE_MB) [[ "${CONF[EVE_ROTATE]:-daily}" != "size" || "$suri" == "$n" ]] && return 0 ;;
+	# the length of the Redis stream means something only when there is a Redis output
+	EVE_REDIS_MAXLEN)
+		[[ "$suri" == "$n" ]] && return 0
+		redis_output_off "${CONF[EVE_REDIS]:-}" && return 0
+		;;
 	SURICATA_RUNTIME | SURICATA_SOURCE | SURICATA_VERSION | SURICATA_MODE | IFACES | BPF_FILTER | HOME_NET | \
 		EVE_SYSLOG | EVE_REDIS | EVE_ROTATE | EVE_KEEP | STATS_INTERVAL_SEC | TEST_*)
 		[[ "$suri" == "$n" ]] && return 0
@@ -8211,9 +8333,10 @@ put lib/migrate.sh 644 <<'DPISTACK_BUNDLE_END'
 # The recipe numbers and build_recipe_have are in lib/state.sh: the build steps
 # read them and some of them are loaded without this file.
 
-MIGRATION_VERSIONS=(0.50.0)
+MIGRATION_VERSIONS=(0.50.0 0.51.0)
 declare -A MIGRATION_TEXT=(
 	["0.50.0"]="EVE_MAX_SIZE_MB gets its default of 100 when it was saved empty; a saved EVE_REDIS value is a live Redis output from now on; a Suricata built from source is rebuilt with Redis support"
+	["0.51.0"]="the Redis output is a bounded stream (EVE_REDIS_MAXLEN) instead of a list: the old list of events that nobody read is deleted, because a stream cannot be added to a key that holds a list"
 )
 
 # version_lt <a> <b> - 0 when version a is lower than version b.
@@ -8278,10 +8401,30 @@ migrate_0_50_0() {
 		CONF[EVE_MAX_SIZE_MB]=100
 		echo "migrate 0.50.0: EVE_MAX_SIZE_MB was saved empty, it is 100 now (used only with EVE_ROTATE=size)"
 	fi
-	case "${CONF[EVE_REDIS]:-}" in
-	"" | no | No | NO | off | none | false) ;;
-	*) echo "migrate 0.50.0: EVE_REDIS=${CONF[EVE_REDIS]} was ignored before and is a live Redis output now; set EVE_REDIS=no to keep eve.json only" ;;
-	esac
+	if ! redis_output_off "${CONF[EVE_REDIS]:-}"; then
+		echo "migrate 0.50.0: EVE_REDIS=${CONF[EVE_REDIS]} was ignored before and is a live Redis output now; set EVE_REDIS=no to keep eve.json only"
+	fi
+	return 0
+}
+
+migrate_0_51_0() {
+	local target host port key type
+	target=$(suricata_redis_target 2>/dev/null) || return 0
+	read -r host port key <<<"$target"
+	echo "migrate 0.51.0: the Redis output of EVE_REDIS=${CONF[EVE_REDIS]} is a stream trimmed to about ${CONF[EVE_REDIS_MAXLEN]:-100000} events now, not a list"
+	if ! command -v redis-cli >/dev/null 2>&1; then
+		echo "migrate 0.51.0: redis-cli is not installed; if $key on $host:$port holds a list from 0.50.0, delete it: redis-cli -h $host -p $port del $key"
+		return 0
+	fi
+	type=$(redis-cli -h "$host" -p "$port" type "$key" 2>/dev/null || true)
+	[[ "$type" == "list" ]] || return 0
+	if [[ "${DRY_RUN:-0}" == "1" ]]; then
+		echo "migrate 0.51.0: would delete the list $key on $host:$port (events that nobody read)"
+	elif redis-cli -h "$host" -p "$port" del "$key" >/dev/null 2>&1; then
+		echo "migrate 0.51.0: deleted the list $key on $host:$port (events that nobody read): a stream cannot be added to a key that holds a list"
+	else
+		echo "migrate 0.51.0: could not delete the list $key on $host:$port; delete it by hand: redis-cli -h $host -p $port del $key"
+	fi
 	return 0
 }
 
@@ -8335,6 +8478,21 @@ migrate_run() {
 		[[ -n "$part" ]] || continue
 		echo "migrate: $part is built again (recipe $have -> $want: $why)"
 	done < <(migrate_rebuilds)
+	migrate_backup
+	return 0
+}
+
+# migrate_backup - a rebuild replaces a program that works, so the config and
+# the state are copied first (`dpistack backup`, the same archive). A backup
+# that fails is said and the upgrade goes on: it is a copy of files, not a way
+# back for the binary. Nothing is made in a dry run or when nothing is rebuilt.
+migrate_backup() {
+	[[ -n "$(migrate_rebuilds)" && "${DRY_RUN:-0}" != "1" ]] || return 0
+	declare -F backup_create >/dev/null || return 0
+	echo "migrate: a backup is made before the rebuild"
+	if ! (backup_create); then
+		echo "migrate: the backup failed; the upgrade goes on"
+	fi
 	return 0
 }
 
@@ -10350,6 +10508,7 @@ schema_init() {
 	_schema_add 'EVE_TYPES|free|alert,flow,dns,tls,http,stats||basic|eve|suricata watch|light|no'
 	_schema_add 'EVE_SYSLOG|enum|no|yes,no|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_REDIS|free|||advanced|eve|suricata|light|no'
+	_schema_add 'EVE_REDIS_MAXLEN|int|100000|1000..100000000|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_ROTATE|enum|daily|daily,weekly,size|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_KEEP|int|14|0..3650|advanced|eve|suricata|light|no'
 	_schema_add 'EVE_MAX_SIZE_MB|int|100|1..1000000|advanced|eve|suricata|light|no'
@@ -10451,6 +10610,8 @@ _schema_depend() {
 schema_depends_init() {
 	SCHEMA_DEPENDS=()
 	_schema_depend 'SURICATA_ENABLE=yes EVE_ROTATE=size' EVE_MAX_SIZE_MB
+	# the length of the Redis stream: only when EVE_REDIS is on (an empty value and the off words are in the list)
+	_schema_depend 'SURICATA_ENABLE=yes EVE_REDIS!=|no|No|NO|off|Off|OFF|none|None|NONE|false|False|FALSE' EVE_REDIS_MAXLEN
 	_schema_depend 'SURICATA_ENABLE=yes SURICATA_MODE=ips' 'IPS_METHOD' 'IPS_NFQ_CHAINS'
 	_schema_depend 'SURICATA_ENABLE=yes' NDPI_ENABLE RULES_ENABLE
 	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
@@ -10723,6 +10884,17 @@ schema_validate_entry() {
 	return 0
 }
 
+# redis_output_off <value> - 0 when a value of EVE_REDIS means no Redis output:
+# empty, no, off, none or false in any case. The renderer, the menu, the
+# migrations and dependency below all use this one meaning (the list of spellings in
+# `_schema_depend` for EVE_REDIS_MAXLEN is the same words).
+redis_output_off() {
+	case "${1,,}" in
+	"" | no | off | none | false) return 0 ;;
+	esac
+	return 1
+}
+
 # schema_effective <key> - what an empty value of an optional key is on this
 # host, in a few words, for the prompts of the menu, `settings list --json` and
 # the Settings screen of the panel (v0.50.0: they showed <empty> or "(empty)").
@@ -10752,6 +10924,7 @@ schema_effective() {
 		echo "latest available${v:+ (installed: $v)}"
 		;;
 	EVE_REDIS) echo "off: the events go to eve.json only" ;;
+	EVE_REDIS_MAXLEN) echo "100000 events; the stream is trimmed to about this length" ;;
 	EVE_MAX_SIZE_MB) echo "100 MB, used only when EVE_ROTATE=size" ;;
 	RULES_URLS) echo "none: only the rule sources ${sources:-et/open} are used" ;;
 	esac
@@ -11036,6 +11209,11 @@ build_recipe_have() {
 	v=$(state_read_value "build.$1.recipe")
 	echo "${v:-1}"
 }
+
+# The state keys that hold the ref a source build was made from.
+# shellcheck disable=SC2034 # read by the build steps, lib/migrate.sh and the watchdog
+SURICATA_BUILT_REF_STATE_KEY="suricata.built_ref"
+ndpi_built_ref_state_key() { echo "ndpi.built_ref"; }
 DPISTACK_BUNDLE_END
 put lib/step_access.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
@@ -12198,7 +12376,7 @@ ndpi_target_ref() {
 	echo "${CONF[NDPI_VERSION]:-$NDPI_COMPAT_REF}"
 }
 
-ndpi_built_ref_state_key() { echo "ndpi.built_ref"; }
+# ndpi_built_ref_state_key is in lib/state.sh: the migrations and the watchdog read it too.
 
 ndpi_pkg_installed_version() {
 	pkg_installed_version "$NDPI_PACKAGE"
@@ -12257,6 +12435,7 @@ ndpi_build_from_source() {
 	local resolved_ref
 	resolved_ref=$(git -C "$src_dir" rev-parse HEAD 2>/dev/null)
 
+	heartbeat_start "ndpi build"
 	(
 		cd "$src_dir" || exit 1
 		run ./autogen.sh &&
@@ -12265,6 +12444,7 @@ ndpi_build_from_source() {
 			run make install
 	)
 	local rc=$?
+	heartbeat_stop
 	if [[ "$rc" -ne 0 ]]; then
 		echo "nDPI: the build from source failed (autogen/configure/make), see the output above" >&2
 		return 1
@@ -13875,28 +14055,7 @@ suricata_render_plugins_block() {
 	fi
 }
 
-# suricata_redis_target - the Redis output of EVE_REDIS as "host port key" on
-# one line, or exit 1 when the output is off. The value is "no" (or empty, off,
-# none, false): off; "yes": the Redis of this host, 127.0.0.1:6379, key
-# "suricata"; or "host[:port][/key]" (port 6379 and key "suricata" when left
-# out). Events are pushed to the list with LPUSH (mode lpush): a reader takes
-# them with BRPOP and nothing but the list grows when no reader is there.
-suricata_redis_target() {
-	local v="${CONF[EVE_REDIS]:-}" hp key="suricata" host port=6379
-	case "${v,,}" in
-	"" | no | off | none | false) return 1 ;;
-	yes | on | true) v="127.0.0.1:6379/suricata" ;;
-	esac
-	hp="${v%%/*}"
-	[[ "$v" == */* && -n "${v#*/}" ]] && key="${v#*/}"
-	host="$hp"
-	if [[ "$hp" == *:* ]]; then
-		host="${hp%%:*}"
-		port="${hp#*:}"
-	fi
-	[[ -n "$host" ]] || return 1
-	echo "$host $port $key"
-}
+# suricata_redis_target is in lib/config.sh: the watchdog reads it too.
 
 # suricata_has_redis - 0 when the installed Suricata was built with hiredis
 # (`suricata --build-info` says "Redis support: yes"); 0 as well when there is
@@ -13926,7 +14085,9 @@ suricata_render_redis_output() {
 	echo "        server: $host"
 	echo "        port: $port"
 	echo "        async: no"
-	echo "        mode: lpush"
+	echo "        mode: stream"
+	echo "        stream-maxlen: ${CONF[EVE_REDIS_MAXLEN]:-100000}"
+	echo "        stream-trim-exact: no"
 	echo "        key: $key"
 	suricata_render_eve_types_block
 }
@@ -14115,7 +14276,7 @@ SURICATA_STABLE_REF="suricata-8.0.8"
 suricata_target_ref() {
 	echo "${CONF[SURICATA_VERSION]:-$SURICATA_STABLE_REF}"
 }
-SURICATA_BUILT_REF_STATE_KEY="suricata.built_ref"
+# SURICATA_BUILT_REF_STATE_KEY is in lib/state.sh: the migrations and the watchdog read it too.
 
 suricata_source_binary_present() {
 	command -v suricata >/dev/null 2>&1 && [[ "$(command -v suricata)" == "${DPISTACK_ROOT}/usr/local/bin/suricata" ]]
@@ -14203,6 +14364,7 @@ suricata_build_from_source() {
 	# first build, when there is no suricata.yaml yet.
 	local install_conf=1
 	[[ -f "$(path_suricata_yaml)" ]] && install_conf=0
+	heartbeat_start "suricata build"
 	(
 		cd "$src_dir" || exit 1
 		run ./autogen.sh &&
@@ -14212,6 +14374,7 @@ suricata_build_from_source() {
 			{ ((install_conf == 0)) || run make install-conf; }
 	)
 	local rc=$?
+	heartbeat_stop
 	if [[ "$rc" -ne 0 ]]; then
 		echo "suricata: the build from source failed (autogen/configure/make)" >&2
 		return 1
