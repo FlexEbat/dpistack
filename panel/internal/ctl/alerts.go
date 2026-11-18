@@ -6,7 +6,7 @@ import (
 	"strconv"
 )
 
-// The Alert Center (section 18.43). Each method runs one `alerts` verb and
+// The Alert Center. Each method runs one `alerts` verb and
 // returns the JSON it printed, unchanged. The caller has checked the values
 // against the same patterns as the verb.
 

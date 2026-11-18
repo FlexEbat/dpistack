@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # v0.25.0: components chosen one by one, an exit on every screen, the guided
 # setup that asks everything. v0.26.1: a question only where something is lost
-# or hard to undo (18.29); edits are a draft until Apply, so they are not asked.
+# or hard to undo; edits are a draft until Apply, so they are not asked.
 # These tests do NOT set DPISTACK_MENU_ASSUME_YES: the questions are real.
 
 setup() {

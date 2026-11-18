@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 10 criteria 1-4 (status, start|stop|restart, logs,
+# Covers status, control and logs, criteria 1-4 (status, start|stop|restart, logs,
 # argument checks). Criterion 5 (sudo as the dpistack user) needs a real
 # host and is checked by hand.
 

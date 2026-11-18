@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Entry point for both the pre-install invocation (install.sh) and,
 # once selfinstall has run, the persistent `dpistack` command
-# (section 4.4, 5.1, 5.2). Task 1 wires the CLI, config layering and
+# (section 4.4, 5.1, 5.2). The first version wires the CLI, config layering and
 # an all-stub step pipeline; components fill in their steps later.
 set -uo pipefail
 
@@ -539,7 +539,7 @@ cmd_reconfigure() {
 			fi
 		fi
 
-		# criterion 4 (task 8): validate the new suricata.yaml with a
+		# criterion 4: validate the new suricata.yaml with a
 		# real `suricata -T` before touching anything on disk, so a
 		# failed check leaves the old suricata.yaml and dpistack.conf
 		# alone. (Non-interactive -y path only now; see above.)

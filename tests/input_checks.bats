@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# 18.55: what a person may type is checked for its meaning, busy ports are
+# Input checks: what a person may type is checked for its meaning, busy ports are
 # found while the answers are given, and the tools the menu needs come first.
 
 setup() {

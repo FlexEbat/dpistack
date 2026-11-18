@@ -12,7 +12,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 )
 
-// Rules v2 (section 18.41). The routes run one verb each and send its JSON on
+// Rules v2. The routes run one verb each and send its JSON on
 // as it is; the screen and `dpistack rules-stats` and friends therefore show
 // the same numbers.
 var (

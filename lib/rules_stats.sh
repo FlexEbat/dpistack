@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rules v2 (section 18.41): what the rule sets hold, when they were updated,
+# Rules v2: what the rule sets hold, when they were updated,
 # what a rule says, whether a custom rule is sound, and how a config file
 # changed. The verbs only read (`rules-local check` reads what it is given),
 # so the CLI and the dashboard show the same numbers: the panel calls these

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# IPS mode (task 29): the DPISTACK chain and its jumps. Shared by
+# IPS mode: the DPISTACK chain and its jumps. Shared by
 # dpistack (mode, fw) and the installer (uninstall).
 #
 # The installer never flushes, deletes or reorders a chain that is not its
@@ -137,7 +137,7 @@ ips_nft_remove() {
 	return 0
 }
 
-# --- the IPS page (section 18.42): `dpistack ips status|test` ---
+# --- the IPS page: `dpistack ips status|test` ---
 # Both only read. The dashboard calls the same verbs and shows their JSON,
 # so the CLI and the page cannot disagree. The pcap replay of `ips test`
 # writes into a private temporary directory and never touches the capture.

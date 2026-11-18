@@ -1,4 +1,4 @@
-// The model of the IPS screen (task 42): what the page says about the
+// The model of the IPS screen: what the page says about the
 // answers of /api/ips and /api/ips/test. Pure functions, no DOM, so
 // node --test can load it. The numbers are the verbs' (`dpistack ips status`,
 // `dpistack ips test`); nothing is computed here but wording and levels.

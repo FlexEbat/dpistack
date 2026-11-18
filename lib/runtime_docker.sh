@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Docker runtime (task 27): suricata, evebox, ntopng and the redis behind
+# Docker runtime: suricata, evebox, ntopng and the redis behind
 # ntopng as services of one compose project. Only Docker with the compose
 # plugin; podman, swarm and kubernetes are out of scope.
 #

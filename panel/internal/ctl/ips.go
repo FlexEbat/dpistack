@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// The IPS page (section 18.42). Each method runs one verb and returns the
+// The IPS page. Each method runs one verb and returns the
 // JSON it printed, unchanged: the page shows the numbers of
 // `dpistack ips status`, not a second computation.
 

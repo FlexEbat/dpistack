@@ -1,4 +1,4 @@
-// Package audit keeps the audit log of the panel (task 35): one JSON
+// Package audit keeps the audit log of the panel: one JSON
 // object per line in audit.jsonl, appended by the panel and by `dpistack` when
 // root runs a verb by hand, rotated by size. A line never holds a password, a
 // token or a hash: callers pass names and flags, never values.

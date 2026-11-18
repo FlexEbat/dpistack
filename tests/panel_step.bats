@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers the task 10 part of the panel step: user and sudoers rule.
+# Covers the user and sudoers part of the panel step: user and sudoers rule.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -107,7 +107,7 @@ unit_file() {
 	grep -q "^systemctl enable --now dpistack-panel.service" "$MOCK_CALLS_LOG"
 }
 
-@test "task 22: metrics.json is created for the panel user and an existing history is kept" {
+@test "metrics.json is created for the panel user and an existing history is kept" {
 	run install_base
 	[ "$status" -eq 0 ]
 	mfile="$DPISTACK_ROOT/var/lib/dpistack/metrics.json"
@@ -120,7 +120,7 @@ unit_file() {
 	grep -q '"version":1' "$mfile"
 }
 
-@test "task 22: the panel unit gets the metrics file, and nothing else in the state directory is handed over" {
+@test "the panel unit gets the metrics file, and nothing else in the state directory is handed over" {
 	run install_base
 	[ "$status" -eq 0 ]
 	grep -q -- "-metrics-file $DPISTACK_ROOT/var/lib/dpistack/metrics.json" "$(unit_file)"
@@ -130,7 +130,7 @@ unit_file() {
 
 token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" | cut -d= -f2-; }
 
-@test "task 23: the token reaches the panel through a 0640 root:dpistack file, never through a flag, the unit or dpistack.conf" {
+@test "the token reaches the panel through a 0640 root:dpistack file, never through a flag, the unit or dpistack.conf" {
 	run install_base
 	[ "$status" -eq 0 ]
 	tfile="$DPISTACK_ROOT/etc/dpistack/metrics.token"
@@ -143,7 +143,7 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	! grep -rq "$token" "$(unit_file)" "$DPISTACK_ROOT/etc/dpistack/dpistack.conf" "$MOCK_CALLS_LOG"
 }
 
-@test "task 23: the report shows the token with a ready scrape_config entry, once" {
+@test "the report shows the token with a ready scrape_config entry, once" {
 	run install_base
 	[ "$status" -eq 0 ]
 	token=$(token_of)
@@ -159,7 +159,7 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	[[ "$output" != *"job_name: dpistack"* ]]
 }
 
-@test "task 23: a dry run neither writes nor prints the token" {
+@test "a dry run neither writes nor prints the token" {
 	run bash "$REPO_DIR/install.sh" install -y --dry-run --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
 	[ "$status" -eq 0 ]
 	[ ! -e "$DPISTACK_ROOT/etc/dpistack/metrics.token" ]
@@ -169,7 +169,7 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	[[ "$output" != *"credentials:"* ]]
 }
 
-@test "task 23: METRICS_EXPORT=no leaves no token file and no flags, and the panel unit says so" {
+@test "METRICS_EXPORT=no leaves no token file and no flags, and the panel unit says so" {
 	run install_base --set METRICS_EXPORT=no
 	[ "$status" -eq 0 ]
 	[ ! -e "$DPISTACK_ROOT/etc/dpistack/metrics.token" ]
@@ -179,7 +179,7 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	[[ "$output" != *"job_name: dpistack"* ]]
 }
 
-@test "task 23: reconfigure turns /metrics on and off, and shows the new token once" {
+@test "reconfigure turns /metrics on and off, and shows the new token once" {
 	run install_base --set METRICS_EXPORT=no
 	[ "$status" -eq 0 ]
 	run bash "$REPO_DIR/install.sh" reconfigure -y --set METRICS_EXPORT=yes
@@ -194,14 +194,14 @@ token_of() { grep '^METRICS_TOKEN=' "$DPISTACK_ROOT/etc/dpistack/secrets.conf" |
 	! grep -q -- "-metrics-token-file" "$(unit_file)"
 }
 
-@test "task 21: EVE_FILE=no leaves -eve-file out of the unit, so the panel says viewing is off" {
+@test "EVE_FILE=no leaves -eve-file out of the unit, so the panel says viewing is off" {
 	run install_base --set EVE_FILE=no --set EVEBOX_DB=elasticsearch --set EVEBOX_ES_URL=http://es.local:9200
 	[ "$status" -eq 0 ]
 	grep -q "^ExecStart=.*dpistack-panel " "$(unit_file)"
 	! grep -q -- "-eve-file" "$(unit_file)"
 }
 
-@test "task 21: changing EVE_FILE on reconfigure rewrites the panel unit" {
+@test "changing EVE_FILE on reconfigure rewrites the panel unit" {
 	run install_base --set EVEBOX_DB=elasticsearch --set EVEBOX_ES_URL=http://es.local:9200
 	[ "$status" -eq 0 ]
 	grep -q -- "-eve-file" "$(unit_file)"
@@ -426,7 +426,7 @@ release_binary_name() {
 	[ "$status" -eq 0 ]
 }
 
-@test "task 35: the audit directory is the panel user's, 0770, and an existing log is kept" {
+@test "the audit directory is the panel user's, 0770, and an existing log is kept" {
 	mkdir -p "$DPISTACK_ROOT/var/lib/dpistack/audit"
 	printf '{"ts":"2026-11-01T00:00:00Z","user":"root","action":"cli test","result":"ok"}\n' >"$DPISTACK_ROOT/var/lib/dpistack/audit/audit.jsonl"
 	run install_base

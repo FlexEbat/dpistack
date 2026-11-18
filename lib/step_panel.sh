@@ -290,7 +290,7 @@ step_panel_check() {
 
 # panel_warn_unit_overrides - a drop-in of dpistack-panel.service that sets
 # ExecStart replaces the command line the installer renders, so nothing new in
-# it reaches the panel: a field report (R212 of 18.52) had an old hand-written
+# it reaches the panel: a field report (R212) had an old hand-written
 # line with -version 0.32.1, which kept the corner and the update notice at
 # 0.32.1 after a clean reinstall of 0.39.1 and left out -backups-dir. Said once
 # per apply, with the file named; the file is never touched. An empty
@@ -339,7 +339,7 @@ step_panel_apply() {
 	fi
 	run chown "$PANEL_USER:$PANEL_USER" "$mfile" || return 1
 
-	# The audit log (task 35) has a directory of its own, because the panel
+	# The audit log (the audit log) has a directory of its own, because the panel
 	# rotates it (it renames files) and the state directory stays root's.
 	# Root appends to the same file when it runs a verb by hand.
 	local adir

@@ -1,4 +1,4 @@
-// The IPS screen (task 42): readiness, counters, drop rules and the latest
+// The IPS screen: readiness, counters, drop rules and the latest
 // blocked events, read from /api/ips, and a rule test that replays a sample
 // capture offline. It never switches the mode: that is confirmed and counted
 // down on Components. Only a 401 signs the user out.

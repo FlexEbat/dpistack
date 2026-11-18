@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 4 criteria 3 and 6 (per the test scope for
+# Covers nDPI and Suricata from source, criteria 3 and 6 (per the test scope for
 # this task). git/autogen.sh/configure/make are real, relative-path
 # invocations inside a cloned tree, not PATH-resolved commands, so
 # they can't be intercepted the way apt-get/systemctl are; criterion 6

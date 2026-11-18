@@ -1,5 +1,5 @@
 // Package system reads the state of the host for the Overview and the
-// interface page (task 38): load, CPU, memory, disks, uptime and the
+// interface page: load, CPU, memory, disks, uptime and the
 // network interfaces with their speed and counters. Everything comes from
 // /proc, /sys and statfs; nothing is run. The roots are fields so the tests
 // can point them at a directory.

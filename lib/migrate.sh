@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Migrations: what an upgrade to a new version does by itself (section 18.57).
+# Migrations: what an upgrade to a new version does by itself.
 #
 # Three things change between releases and none of them may be left to the
 # person who upgrades:

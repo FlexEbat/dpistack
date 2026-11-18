@@ -49,8 +49,8 @@ type Config struct {
 	Policy      *auth.Policy
 	AuthFile    string
 	Audit       *audit.Log     // nil: no audit log
-	UsersFile   string         // users.json (task 34); AuthFile is the fallback of the old one-password panel
-	TokensFile  string         // api-tokens.json (task 45), beside users.json; empty means no API tokens
+	UsersFile   string         // users.json (users and roles); AuthFile is the fallback of the old one-password panel
+	TokensFile  string         // api-tokens.json (panel security), beside users.json; empty means no API tokens
 	System      *system.Reader // the host state of /api/system; nil switches it off
 	BackupsDir  string         // the archives of `dpistack backup`, for downloading them; empty: no download
 	HealthFile  string

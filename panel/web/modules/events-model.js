@@ -1,4 +1,4 @@
-// The model of the Events workspace (task 40): filters by address, rule,
+// The model of the Events workspace: filters by address, rule,
 // category, protocol, severity and domain, grouping, the events of one flow,
 // the history of one rule, and the JSON and CSV export. Pure functions, no
 // DOM. The server filters by type, text and time only (GET /api/eve); every

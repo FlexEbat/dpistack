@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Task 44 (18.44), Settings v2: what a key depends on and what a change
+# Settings v2: what a key depends on and what a change
 # touches (in `settings list --json`), and the profiles.
 
 setup() {

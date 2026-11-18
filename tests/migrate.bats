@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Migrations and build recipes (section 18.57): what an upgrade does by itself.
+# Migrations and build recipes: what an upgrade does by itself.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

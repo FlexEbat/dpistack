@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 7 criteria 1, 3, 5, 6 (per the test scope).
+# Covers access and the firewall, criteria 1, 3, 5, 6 (per the test scope).
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

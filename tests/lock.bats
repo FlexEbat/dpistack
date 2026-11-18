@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 1 criterion 8: a second concurrent install.sh instance
+# Covers the skeleton, criterion 8: a second concurrent install.sh instance
 # must exit 1 because the first instance holds the flock.
 
 setup() {

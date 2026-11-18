@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 6 criteria 2, 3, 5, plus the preflight port regression
+# Covers EveBox, criteria 2, 3, 5, plus the preflight port regression
 # found while building this task (a repeat run must not treat ports
 # held by our own services as conflicts).
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 1 criteria 3, 4, 7: schema/cross-field validation exits
+# Covers the skeleton, criteria 3, 4, 7: schema/cross-field validation exits
 # 2 with a readable message, not-yet-implemented values say so, and
 # secrets never land in dpistack.conf or on stdout.
 

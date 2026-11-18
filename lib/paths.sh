@@ -28,7 +28,7 @@ path_profiles_json() { echo "$(path_state_dir)/profiles.json"; }
 path_tests_last_json() { echo "$(path_state_dir)/tests-last.json"; }
 path_metrics_json() { echo "$(path_state_dir)/metrics.json"; }
 path_backups_dir() { echo "$(path_state_dir)/backups"; }
-# Archives of `dpistack backup create` (task 36); backups/ holds the single
+# Archives of `dpistack backup create` (backup and restore); backups/ holds the single
 # copies of a file made before it is replaced.
 path_backup_archives_dir() { echo "$(path_state_dir)/archives"; }
 path_staging_dir() { echo "$(path_state_dir)/staging"; }

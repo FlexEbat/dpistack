@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Step 3 of the menu review (18.54): grouped help, <command> --help, the
+# Step 3 of the menu review: grouped help, <command> --help, the
 # two-word spelling of a command, "did you mean" and Tab completion.
 
 setup() {

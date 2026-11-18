@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Suricata IDS: package install from distro/oisf, suricata.yaml and
-# logrotate rendering, systemd unit (task 2). Source builds
-# and nDPI are schema.sh "not supported yet" until task 4.
+# logrotate rendering, systemd unit (Suricata from packages). Source builds
+# and nDPI are schema.sh "not supported yet" until building from source is added.
 
 SURICATA_PACKAGE="suricata"
 SURICATA_UNIT="suricata.service"
@@ -183,7 +183,7 @@ suricata_render_yaml() {
 # The live BitTorrent check (TEST_BT_LIVE=yes) brings its own rule. The
 # replayed pcap has private addresses on both ends, so the Emerging Threats
 # rules, written for a $HOME_NET to $EXTERNAL_NET direction, never match it on
-# a live Suricata (R211 of 18.52); the offline check passes only because it
+# a live Suricata (R211); the offline check passes only because it
 # adds a rule of its own to a temporary config. The rule is in a file of its
 # own, listed in suricata.yaml only while the key is "yes".
 suricata_test_rules_wanted() {

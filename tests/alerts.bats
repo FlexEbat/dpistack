@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Task 43 (18.43), the Alert Center: `alerts list|history|ack|snooze|resolve|reopen`.
+# The Alert Center: `alerts list|history|ack|snooze|resolve|reopen`.
 # Time is fixed with DPISTACK_NOW_CMD, so snoozes and expiry are exact.
 
 setup() {

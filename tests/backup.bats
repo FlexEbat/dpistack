@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Task 36: `dpistack backup create|list|verify|restore` (section 4.5, 18.36).
+# `dpistack backup create|list|verify|restore`.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

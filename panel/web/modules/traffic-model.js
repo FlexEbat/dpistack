@@ -1,4 +1,4 @@
-// The model of the Traffic Explorer (task 39): devices, applications,
+// The model of the Traffic Explorer: devices, applications,
 // domains and connections, made in the browser from the events that
 // GET /api/eve already serves (flow, dns, tls). Pure functions, no DOM, so
 // node --test can load it. Nothing here is invented: a field an event does

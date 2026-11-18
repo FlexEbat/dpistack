@@ -1,4 +1,4 @@
-// The model of the Exceptions screen (task 40): what an entry says in words,
+// The model of the Exceptions screen: what an entry says in words,
 // how the form becomes the body POST /api/exceptions takes, and the defaults
 // "Create exception" takes from an alert. Pure functions, no DOM. The checks
 // here only keep a value from being sent that `dpistack exceptions` would

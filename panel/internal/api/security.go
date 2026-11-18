@@ -15,7 +15,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/auth"
 )
 
-// The security page (section 18.45): API tokens, the sessions of the user,
+// The security page: API tokens, the sessions of the user,
 // the history of sign ins, and the security check.
 
 var (

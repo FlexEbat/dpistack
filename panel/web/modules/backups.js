@@ -1,4 +1,4 @@
-// The Backups screen (task 36): archives of the configuration made by
+// The Backups screen: archives of the configuration made by
 // `dpistack backup`. The panel decides who may use it (backup.manage). A
 // restore always shows the difference first and asks before it replaces
 // anything; the checks (the manifest, suricata -T) are done by dpistack.

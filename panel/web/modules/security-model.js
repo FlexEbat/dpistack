@@ -1,4 +1,4 @@
-// The model of the Security screen (task 45): wording, levels and the
+// The model of the Security screen: wording, levels and the
 // request bodies. Pure functions, no DOM, so node --test can load it. What
 // the lists hold is what `dpistack security check`, the sessions of the panel,
 // `dpistack tokens` and the audit log say; nothing is computed here but words.
