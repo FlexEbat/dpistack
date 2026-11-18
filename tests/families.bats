@@ -496,6 +496,8 @@ preflight_reasons() {
 	os_release ubuntu debian 24.04
 	mkdir -p "$DPISTACK_ROOT/etc/dpistack"
 	printf 'ALERT_SMTP_URL=smtp://user:s3cret@mail.example.com:587\nALERT_TG_TOKEN=12345:abcdef\nIFACES=eth0\n' >"$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+	mkdir -p "$DPISTACK_ROOT/var/lib/dpistack"
+	printf 'applied.ACCESS_MODE=lan\nfile_hash.suricata.yaml=abc123\nlast_step=panel\n' >"$DPISTACK_ROOT/var/lib/dpistack/state"
 	out="$DPISTACK_ROOT/diag.txt"
 	run env PATH="$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" DIAG_OUT="$out" bash "$REPO_DIR/install.sh" diag --no-color
 	[ "$status" -eq 0 ]
@@ -504,6 +506,10 @@ preflight_reasons() {
 	grep -q 'level=supported' "$out"
 	grep -q '^===== dpistack.conf =====$' "$out"
 	grep -q '^IFACES=eth0$' "$out"
+	# the state section leaves out the applied and hash lines, and keeps the rest
+	grep -q '^last_step=panel$' "$out"
+	if grep -q '^applied\.' "$out"; then false; fi
+	if grep -q '^file_hash\.' "$out"; then false; fi
 	if grep -q 's3cret' "$out"; then false; fi
 	if grep -q '12345:abcdef' "$out"; then false; fi
 	grep -q '<hidden>' "$out"

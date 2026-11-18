@@ -28,6 +28,15 @@ hb() {
 	[ -z "$output" ]
 }
 
+@test "stopping the ticker leaves nothing holding the output open for the rest of the interval" {
+	# `run` reads until every holder of stdout has closed it: a sleep that
+	# outlived the ticker made this take the whole interval.
+	local began=$SECONDS
+	DPISTACK_HEARTBEAT_SEC=30 run hb 'heartbeat_start "x"; sleep 0.3; heartbeat_stop'
+	[ "$status" -eq 0 ]
+	[ $((SECONDS - began)) -lt 10 ]
+}
+
 @test "a dry run starts no ticker, and stopping twice is harmless" {
 	DRY=1 DPISTACK_HEARTBEAT_SEC=1 run hb 'heartbeat_start "x"; sleep 1.5; heartbeat_stop; heartbeat_stop'
 	[ "$status" -eq 0 ]

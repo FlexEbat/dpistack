@@ -849,9 +849,12 @@ diag_units() {
 	systemctl --failed --no-pager 2>&1 | head -n 15
 }
 
+# The bash -c scripts are single-quoted on purpose: a path reaches them as an
+# argument ($1, $2), never as part of the script text (SC2016 is the point).
+# shellcheck disable=SC2016
 diag_report() {
 	echo "dpistack v${DPISTACK_VERSION}, $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-	diag_section "platform" bash -c "echo \"$OS_ID $OS_VERSION_ID family=$OS_FAMILY level=\$1\"; cat \"$(path_os_release)\"; uname -a; nproc; free -m | sed -n 1,2p; df -h / | tail -n 1" _ "$(os_support_level)"
+	diag_section "platform" bash -c 'echo "$1 $2 family=$3 level=$4"; cat "$5"; uname -a; nproc; free -m | sed -n 1,2p; df -h / | tail -n 1' _ "$OS_ID" "$OS_VERSION_ID" "$OS_FAMILY" "$(os_support_level)" "$(path_os_release)"
 	diag_section "versions" diag_tool_versions
 	if command -v suricata >/dev/null 2>&1; then
 		diag_section "suricata --build-info" bash -c 'suricata --build-info 2>&1 | grep -E "^This is|Rust|nDPI|AF_PACKET|Features"'
@@ -859,14 +862,14 @@ diag_report() {
 	diag_section "packages" diag_packages
 	diag_section "repositories" diag_repos
 	diag_section "dpistack.conf" cat "$(path_conf)"
-	diag_section "state" bash -c "grep -vE '^(file_hash|applied)\\.' \"$(path_state_file)\" 2>/dev/null"
+	diag_section "state" bash -c 'grep -vE "^(file_hash|applied)\." "$1" 2>/dev/null' _ "$(path_state_file)"
 	diag_section "services" diag_units
-	diag_section "network" bash -c "ip -br addr 2>/dev/null; ss -ltn 2>/dev/null | head -n 25"
-	diag_section "SELinux and firewall" bash -c "getenforce 2>&1; (ufw status 2>/dev/null || firewall-cmd --state 2>&1) | head -n 8"
+	diag_section "network" bash -c 'ip -br addr 2>/dev/null; ss -ltn 2>/dev/null | head -n 25'
+	diag_section "SELinux and firewall" bash -c 'getenforce 2>&1; (ufw status 2>/dev/null || firewall-cmd --state 2>&1) | head -n 8'
 	if command -v suricata >/dev/null 2>&1 && [[ -f "$(path_suricata_yaml)" ]]; then
-		diag_section "suricata -T" bash -c "suricata -T -c \"$(path_suricata_yaml)\" 2>&1 | tail -n 12"
+		diag_section "suricata -T" bash -c 'suricata -T -c "$1" 2>&1 | tail -n 12' _ "$(path_suricata_yaml)"
 	fi
-	diag_section "dpistack log (last 80 lines)" bash -c "tail -n 80 \"$(path_install_log)\" 2>&1"
+	diag_section "dpistack log (last 80 lines)" bash -c 'tail -n 80 "$1" 2>&1' _ "$(path_install_log)"
 	if command -v journalctl >/dev/null 2>&1; then
 		diag_section "journalctl (suricata, evebox, ntopng)" bash -c 'journalctl -u suricata -u evebox -u ntopng -n 40 --no-pager 2>&1'
 	fi
