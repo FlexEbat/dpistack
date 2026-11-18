@@ -1,24 +1,24 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v87** (2026-11-18)
-**Program version: v0.51.4** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v88** (2026-11-18)
+**Program version: v0.51.5** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.5: the heartbeat ticker of a source build no longer outlives its stop (18.65): its `sleep` is killed with it, so whatever reads the installer output (a pipe, `$(...)`, the panel's update job) is not held for up to a minute after the build; the `bash -c` scripts of `dpistack diag` take paths as arguments; one bats test no longer clones the OISF repository.
 - v0.51.4: an upgrade no longer stops on the port of dpistack's own running service (18.64): the preflight knows the panel, EveBox, ntopng and the metrics backend by their process names.
 - v0.51.3: the Update button when the panel runs an older version than the installed dpistack (18.63): root repairs it by installing the release again, or names the drop-in that pins the old command line; the refusal and its reason are in the audit log.
 - v0.51.2: the last screens of task 55 (18.62): the IPS badge names the mode (IDS) instead of `na` and an empty Drop rules section says so, Settings no longer says "No changes" twice, card headings have room above their text.
 - v0.51.1: the screens of task 55 that were not yet looked at (18.61): the Events filters are a labelled grid card and are hidden with the viewer off, the Traffic controls are hidden without an event view, the Network parts sit in a card and a missing speed says so, a failed Backups load leaves no placeholder.
-- v0.51.0: the next tasks (18.58, 18.59): the gate runs in parallel (4 bats shards, the checks, one `gate (ubuntu-24.04)` check); the Redis output is a stream bounded by `EVE_REDIS_MAXLEN` and the health check `redis.eve_stream` watches it; the migration 0.51.0 deletes the list that 0.50.0 pushed to.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v88: v0.51.5. 18.65 written (decisions D172 and D173).
 - v87: v0.51.4. 18.64 written (decision D171).
 - v86: v0.51.3. 18.63 written (decisions D169 and D170); the row of `POST /api/update` in 4.5.
 - v85: documentation wording: the unit of work is a task (D168).
 - v84: v0.51.2. 18.62 written (decision D167); the task row 55 of 18.0 is done.
 - v83: v0.51.1. 18.61 written (decisions D164 to D166); the task row 55 of 18.0.
-- v79: v0.49.0. 18.55 written (decisions D135 to D142); 4.3 and 5.0 name the entry checks; the task row 48 of 18.0.
 
 ---
 
@@ -2504,3 +2504,22 @@ Verified: 6 cases in `tests/self_update.bats` (a repair is started, no repair wh
 | D171 | **A service is known by what listens, not by whether its step is current.** The step is allowed to be out of date during an upgrade, the port of the old process is the same port |
 
 Verified: 2 cases in `tests/access_step.bats` (the three services are not conflicts on their own ports; another program and a wrong pairing are), the first fails on the code of v0.51.3.
+
+### 18.65 The heartbeat that outlived its stop, and a test that cloned the network (v0.51.5)
+
+**Status:** done. A review pass over the whole tree (code, gate, tests). The gate stages for shell, security, the bundle, the generated files and the interface tests were green before the change; the findings below are what the review turned up.
+
+| No | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | medium | `heartbeat_stop` killed the subshell of the ticker but not the `sleep` it was waiting in. That `sleep` kept the standard output open for up to `DPISTACK_HEARTBEAT_SEC` (60 s), so whatever reads the output of an install that did a source build (`... \| tee`, `$(...)`, the panel's update job, a test) waited up to a minute after the install had ended | the ticker waits on a background `sleep` and a `TERM` trap kills it; the loop also checks the parent after each nap |
+| 2 | low | the test "the source switch is written to dpistack.conf outside dry-run" reached the source build and cloned `github.com/OISF/suricata` for real, because there is no `git` in `tests/mocks/` and a global one would hide the tests that use the real `git` (`ndpi_step`, `self_update`, `upgrade_from_release`, the commit lookup of the panel step). It also needs the network and is slow | the test puts a stand-in `git` on its own `PATH` only |
+| 3 | low | the `bash -c` scripts of `dpistack diag` put paths into the script text with double quotes; safe with today's fixed paths, fragile otherwise | the paths and the OS fields are arguments (`$1`, `$2`, ...) and the scripts are single-quoted (`SC2016` is disabled for that function, with the reason) |
+
+Verified: `tests/heartbeat.bats` has a test that fails on v0.51.4 (31 s against a limit of 10 s) and passes now (under 1 s); the diag test also checks that the state section leaves out the `applied.` and `file_hash.` lines and keeps the others (the filter was correct before; this was not tested).
+
+| id | decision |
+| --- | --- |
+| D172 | **A background helper is stopped together with what it waits in.** A ticker that sleeps is stopped by killing its `sleep` too, otherwise its open standard output keeps the readers of the installer waiting |
+| D173 | **No global `git` mock.** A test that must not reach the network puts a stand-in `git` on its own `PATH` |
+
+Open: the update archive (`selfupdate_fetch`) is checked for unsafe paths and for the version in `lib/common.sh`, but not against a checksum or a signature published with the release, so the Update button trusts the tag as GitHub serves it (the panel runs the update as root). A checksum file next to a release is cheap but is served from the same place, so it protects against a damaged download only; a signature (for example `minisign` or `cosign`, with a key kept off GitHub) protects against a moved tag and needs the owner's key and a change to the release workflow and to 4.5. That is a contract change (section 15) and is not made here. `self-update plan` also runs `install.sh migrate --plan` of the new release as root before the person confirms; that is the same trust as the update itself.

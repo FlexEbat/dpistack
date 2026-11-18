@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.51.4"
+DPISTACK_VERSION="0.51.5"
 
 : "${DRY_RUN:=0}"
 
@@ -61,8 +61,17 @@ heartbeat_start() {
 	[[ "$DRY_RUN" == "1" ]] && return 0
 	local label="$1" every="${DPISTACK_HEARTBEAT_SEC:-60}" parent=$$ began=$SECONDS
 	(
-		local e
-		while kill -0 "$parent" 2>/dev/null && sleep "$every"; do
+		local e nap=""
+		# Killing this subshell alone would leave its sleep running with
+		# stdout still open, and whatever reads the installer's output
+		# (a pipe, $(...), the panel's update job) would wait for it.
+		trap '[[ -z "$nap" ]] || kill "$nap" 2>/dev/null; exit 0' TERM
+		while kill -0 "$parent" 2>/dev/null; do
+			sleep "$every" &
+			nap=$!
+			wait "$nap" 2>/dev/null || break
+			nap=""
+			kill -0 "$parent" 2>/dev/null || break
 			e=$((SECONDS - began))
 			if ((e >= 120)); then
 				echo "$label: still running ($((e / 60)) min)"

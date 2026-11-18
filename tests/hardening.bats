@@ -373,7 +373,15 @@ inst() {
 
 @test "the source switch is written to dpistack.conf outside dry-run" {
 	ubuntu_root
-	MOCK_DPKG_ABSENT="suricata" MOCK_APT_MISSING="suricata" inst install -y --set SURICATA_SOURCE=distro --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no >/dev/null 2>&1 || true
+	# The switch leads into a source build. A stand-in git stops the clone
+	# of the real OISF repository (hundreds of MB over the network) that
+	# this test used to make; only this test has it on the PATH.
+	local stub
+	stub="$(mktemp -d)"
+	printf '#!/usr/bin/env bash\nexit 0\n' >"$stub/git"
+	chmod +x "$stub/git"
+	PATH="$stub:$PATH" MOCK_DPKG_ABSENT="suricata" MOCK_APT_MISSING="suricata" inst install -y --set SURICATA_SOURCE=distro --set NDPI_ENABLE=no --set TEST_ON_INSTALL=no >/dev/null 2>&1 || true
+	rm -rf "$stub"
 	grep -q '^SURICATA_SOURCE=source$' "$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
 	grep -q '^apt-get install -y build-essential git autoconf' "$CALLS"
 }
