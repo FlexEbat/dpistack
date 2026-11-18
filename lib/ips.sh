@@ -137,7 +137,7 @@ ips_nft_remove() {
 	return 0
 }
 
-# --- the IPS page (tech.md 18.42): `dpistack ips status|test` ---
+# --- the IPS page (section 18.42): `dpistack ips status|test` ---
 # Both only read. The dashboard calls the same verbs and shows their JSON,
 # so the CLI and the page cannot disagree. The pcap replay of `ips test`
 # writes into a private temporary directory and never touches the capture.

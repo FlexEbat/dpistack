@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Flat "key=value" step-completion log, rewritten atomically, plus
-# render-hash tracking for idempotency (tech.md 5.4).
+# render-hash tracking for idempotency (section 5.4).
 
 state_read_value() {
 	# state_read_value <key>
@@ -50,7 +50,7 @@ state_install_finished() {
 }
 
 # Render-hash tracking for idempotency and the "manually edited file"
-# guard (tech.md 5.4). Added back in task 2 once step_suricata.sh
+# guard (section 5.4). Added back in task 2 once step_suricata.sh
 # actually renders something; task 1 removed these as dead code
 # because nothing called them yet.
 

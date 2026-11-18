@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// API tokens (tech.md 18.45). A token lets a script call the API without a
+// API tokens (section 18.45). A token lets a script call the API without a
 // session: `Authorization: Bearer dpt_...`. It is made by `dpistack tokens
 // create`, which prints it once and keeps only its SHA-256 in api-tokens.json
 // (beside users.json, 0640, written only by that verb). The token is 256 bits

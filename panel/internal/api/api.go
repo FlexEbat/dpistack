@@ -1,4 +1,4 @@
-// Package api is the panel's HTTP server (tech.md 4.8): address policy,
+// Package api is the panel's HTTP server (section 4.8): address policy,
 // login, sessions, CSRF and the JSON endpoints.
 package api
 

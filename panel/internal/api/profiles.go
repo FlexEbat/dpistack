@@ -5,7 +5,7 @@ import (
 	"regexp"
 )
 
-// Settings profiles (tech.md 18.44). A profile is a named set of KEY=VALUE
+// Settings profiles (section 18.44). A profile is a named set of KEY=VALUE
 // pairs; the verbs keep the file and check the values. A profile is applied
 // by the screen loading its values into the edits, so it goes through the
 // same check, diff and apply as any change; there is no route that applies a

@@ -1,4 +1,4 @@
-// The chart kit of the panel (tech.md 9.1, v0.47.0): inline SVG only, drawn
+// The chart kit of the panel (section 9.1, v0.47.0): inline SVG only, drawn
 // by our own functions, no library, no inline styles (the CSP policy). Every
 // colour comes from a class of the stylesheet, so one drawing serves every
 // card. The first half of the file is pure

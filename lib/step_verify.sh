@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# "verify" step and the checks behind `dpistack test` (tech.md 10).
+# "verify" step and the checks behind `dpistack test` (section 10).
 # The same functions serve the step (TEST_ON_INSTALL=yes) and the ctl
 # command, so the two cannot drift apart.
 #

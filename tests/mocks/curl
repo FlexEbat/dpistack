@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mock for bats tests (tech.md 11): records the call and exits with
+# Mock for bats tests (section 11): records the call and exits with
 # MOCK_EXIT (default 0), so steps never touch the real system in CI.
 # MOCK_CURL_FAIL_MATCH: a call whose arguments contain this text exits 22
 # (an HTTP error, as a missing repository would).

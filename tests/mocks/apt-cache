@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mock for bats tests (tech.md 11): every package has a candidate unless
+# Mock for bats tests (section 11): every package has a candidate unless
 # it is listed in MOCK_APT_MISSING; versioned rustc packages come from
 # MOCK_APT_RUSTC (default none newer than the system one); the candidate of
 # the unversioned rustc comes from MOCK_APT_RUSTC_DEFAULT (e.g. 1.85.0+dfsg3-1).

@@ -6,7 +6,7 @@
 # installer started earlier, keeping its data (removed only by --purge).
 #
 # Native binaries come from the projects' GitHub releases: a pinned
-# version and the pinned sha256 of the tarball (A10, tech.md). The pins
+# version and the pinned sha256 of the tarball (A10). The pins
 # below were taken from the release checksum files; DPISTACK_METRICS_*
 # overrides exist for tests and for moving to a newer release by hand.
 

@@ -28,7 +28,7 @@ setup() {
 	done < <(sed -n 's/^#\{0,1\}\([A-Z][A-Z0-9_]*\)=.*/\1/p' "$REPO_DIR/dpistack.conf.example" | sort -u)
 }
 
-@test "the README and the guides come in English and in Russian; AGENTS, CONTRIBUTING, SECURITY and tech.md are English only" {
+@test "the README and the guides come in English and in Russian; AGENTS, CONTRIBUTING, SECURITY and the specification are English only" {
 	cd "$REPO_DIR"
 	for doc in README.md docs/*.md tests/data/README.md; do
 		case "$doc" in *.ru.md) continue ;; esac

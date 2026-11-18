@@ -3,7 +3,7 @@
 # added when the mode, LAN_CIDR or FIREWALL_MANAGE no longer want them, and
 # on uninstall - and never a rule the administrator had. Against stateful
 # ufw and firewall-cmd mocks (tests/mocks); a real ufw or firewalld is not
-# in the sandbox (tech.md 18.21).
+# in the sandbox (section 18.21).
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

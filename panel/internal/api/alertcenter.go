@@ -8,7 +8,7 @@ import (
 	"strconv"
 )
 
-// The Alert Center (tech.md 18.43). It sits beside GET /api/alerts, the feed
+// The Alert Center (section 18.43). It sits beside GET /api/alerts, the feed
 // of status changes, which stays as it is. The routes run one verb each and send its
 // JSON on as it is; the verb is the only writer of alerts-state.json.
 var (

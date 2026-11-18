@@ -1,5 +1,5 @@
 // Package ctl runs dpistack, the only privileged helper the panel may
-// call (tech.md 4.5). The panel never runs any other command.
+// call (section 4.5). The panel never runs any other command.
 package ctl
 
 import (
@@ -43,7 +43,7 @@ const stopGrace = 5 * time.Second
 var ErrUnavailable = errors.New("dpistack unavailable")
 
 // ExitError means dpistack ran and refused or failed. Code is its exit
-// status (tech.md 4.5: 1 failure, 2 bad arguments, 3 not supported in this
+// status (section 4.5: 1 failure, 2 bad arguments, 3 not supported in this
 // mode, 4 component not installed, 5 argument not allowed) and Message the
 // first line it wrote to stderr, in Russian, fit to show to the user.
 type ExitError struct {

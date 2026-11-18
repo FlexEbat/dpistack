@@ -15,7 +15,7 @@ import (
 
 const (
 	eveDefault = 50
-	eveMax     = 500 // tech.md 4.8: limit up to 500
+	eveMax     = 500 // section 4.8: limit up to 500
 )
 
 // evePollEvery is how often a stream looks at the file. A variable so tests

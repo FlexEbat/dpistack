@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Suricata IDS: package install from distro/oisf, suricata.yaml and
-# logrotate rendering, systemd unit (tech.md task 2). Source builds
+# logrotate rendering, systemd unit (task 2). Source builds
 # and nDPI are schema.sh "not supported yet" until task 4.
 
 SURICATA_PACKAGE="suricata"
@@ -258,7 +258,7 @@ suricata_installed_version() {
 
 # suricata_validate_render <rendered-yaml-content>
 # Runs the real `suricata -T` against a temp copy, never against the
-# live suricata.yaml (tech.md 5.3 step 5: a failed check must leave
+# live suricata.yaml (section 5.3 step 5: a failed check must leave
 # the old file and the old dpistack.conf alone). Prints suricata's own
 # output and returns its exit code.
 suricata_validate_render() {
@@ -556,7 +556,7 @@ SYSCONFIG
 }
 
 # suricata_log_access - who may read eve.json: the group "suricata", which
-# the panel and EveBox users join (tech.md 4.2). The Debian and Ubuntu
+# the panel and EveBox users join (section 4.2). The Debian and Ubuntu
 # packages make no such group and run Suricata as root, so the group is
 # created here and the root-owned log directory handed to it (setgid, so
 # files Suricata creates later, also after logrotate, keep the group). Where

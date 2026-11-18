@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The dpistack.conf key table (tech.md 4.3), plus the menu group (5.0)
+# The dpistack.conf key table (section 4.3), plus the menu group (5.0)
 # and reconfigure step/weight metadata (5.3) that lib/schema.sh is also
 # the single source for. Every dpistack.conf key must appear here; no
 # step reads or invents a key outside this table.
@@ -23,7 +23,7 @@ declare -A SCHEMA_TYPE SCHEMA_DEFAULT SCHEMA_OPTIONS SCHEMA_LEVEL \
 SCHEMA_KEYS=()
 
 # Key/value combinations whose implementation does not exist yet
-# (tech.md 4.3: "docker", "ips", METRICS_BACKEND other than "none").
+# (section 4.3: "docker", "ips", METRICS_BACKEND other than "none").
 # Present as valid enum members so the schema does not reject them
 # outright, but installer rejects them with "not supported yet".
 # Shape of every free-text key. These values end up in YAML, nginx and
@@ -188,7 +188,7 @@ schema_init() {
 
 schema_init
 
-# --- settings v2 (tech.md 18.44): when a key applies, and what a change touches ---
+# --- settings v2 (section 18.44): when a key applies, and what a change touches ---
 #
 # SCHEMA_DEPENDS[KEY] holds the conditions under which the key means anything,
 # separated by spaces, all of which must hold. A condition is

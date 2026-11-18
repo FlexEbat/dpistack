@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Policy decides which client addresses may reach the panel (tech.md 4.8).
+// Policy decides which client addresses may reach the panel (section 4.8).
 type Policy struct {
 	mode string
 	lan  []netip.Prefix

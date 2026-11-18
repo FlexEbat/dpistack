@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stateful mock of iptables/ip6tables for bats tests (tech.md 11). Rules
+# Stateful mock of iptables/ip6tables for bats tests (section 11). Rules
 # live in $MOCK_IPT_STATE.<tool> (default /tmp/mock-ipt.<tool>) as the lines
 # "-N CHAIN" and "-A CHAIN rule...", in order. Supports -w, -N -F -X -A -I
 # -D -C and -n -L <chain>; INPUT, OUTPUT and FORWARD always exist.

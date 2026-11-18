@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The privileged verbs of dpistack (tech.md 4.5): status, start, stop, config
+# The privileged verbs of dpistack (section 4.5): status, start, stop, config
 # editing, rules, interfaces, mode, tests, health, panel password. They are
 # part of the one `dpistack` command (install.sh dispatches here); the panel
 # and the watchdog reach them through `sudo -n dpistack <verb>`. Sourced by
@@ -670,7 +670,7 @@ ctl_cmd_reconfigure() {
 }
 
 # -------------------------------------------------------------- settings
-# The dashboard's settings screen (tech.md 9): every key of the schema
+# The dashboard's settings screen (section 9): every key of the schema
 # (lib/schema.sh), its value, the checks of config_validate, and the
 # application of a change. The panel never edits dpistack.conf as text for
 # this; it sends KEY=VALUE pairs.
@@ -1848,7 +1848,7 @@ cmd_panel_passwd() {
 # --- runtime: what can run in Docker, and the links between parts (4.10) ---
 
 # RUNTIME_MATRIX rows: id|docker (yes|no|follows:<id>)|why. The same table is
-# in tech.md 4.10 and docs/runtimes.md; tests/runtime_matrix.bats compares the
+# in section 4.10 and docs/runtimes.md; tests/runtime_matrix.bats compares the
 # ids with COMPONENTS and the docker keys with the schema.
 RUNTIME_MATRIX=(
 	"suricata|yes|image jasonish/suricata; no nDPI plugin in the image and no IPS (mode ips needs a native Suricata)"
@@ -2304,7 +2304,7 @@ cmd_diagnose() {
 }
 
 # ---------------------------------------------------------------- backup
-# Task 36 (tech.md 4.5, 18.36): one tar.gz of the configs with a manifest
+# Task 36 (section 4.5, 18.36): one tar.gz of the configs with a manifest
 # (the program version, the sha256 and the mode of every file). Logs and
 # secrets.conf are not in it.
 
@@ -2659,7 +2659,7 @@ cmd_backup() {
 	esac
 }
 
-# --- audit log of verbs run by hand (tech.md 4.5, task 35) ---
+# --- audit log of verbs run by hand (section 4.5, task 35) ---
 
 # audit_wanted <verb> [<subverb>] - does this call change something? Reads
 # (list, status, check) are not logged.
@@ -2785,7 +2785,7 @@ cmd_info() {
 	return 0
 }
 
-# --- help (tech.md 4.5, 18.54) ---
+# --- help (section 4.5, 18.54) ---
 
 # ctl_help_overview - the same verbs as ctl_usage, grouped by what a person
 # wants to do. `dpistack help`; the flat reference is `dpistack help --all`.

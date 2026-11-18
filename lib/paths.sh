@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Single source of paths, built from DPISTACK_ROOT (tech.md 4.2, 3).
+# Single source of paths, built from DPISTACK_ROOT (section 4.2, 3).
 # No step reads /etc/... or /var/... directly; every path comes from here
 # so tests can redirect the whole tree into a temp dir.
 

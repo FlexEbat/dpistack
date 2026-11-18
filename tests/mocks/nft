@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stateful mock of nft for bats tests (tech.md 11): records the call and keeps
+# Stateful mock of nft for bats tests (section 11): records the call and keeps
 # the script of the one table that dpistack loads with `nft -f -` in
 # $MOCK_NFT_STATE (default $MOCK_IPT_STATE.nft). Understands
 # `-f -`, `list table inet dpistack`, `delete table inet dpistack` and

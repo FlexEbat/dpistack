@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Task 27 criteria 1, 2, 3, 5, 6 against the docker mock. Criterion 4
 # (images and volume paths, assumption A6) and a real container start are
-# not covered: see tech.md 18.17.
+# not covered: see section 18.17.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

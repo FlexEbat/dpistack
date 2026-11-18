@@ -175,7 +175,6 @@ The README and the guides come in English and Russian (`*.ru.md`).
 | [docs/platforms.md](docs/platforms.md) | supported distributions |
 | [docs/operations.md](docs/operations.md) | commands, rules, IPS, watchdog, metrics stack |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | common messages and what to do |
-| [tech.md](tech.md) | specification, contracts and the project history |
 | [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) | development |
 
 ## Development

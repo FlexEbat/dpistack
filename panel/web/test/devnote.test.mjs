@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// tech.md rule 12: the same sentence says "under development" in the CLI and
+// Rule 12 of the specification: the same sentence says "under development" in the CLI and
 // the dashboard, and the README says it too. If the wording changes it must
 // change everywhere at once, which is what this test holds.
 const SENTENCE = "Under development: dpistack is still being developed. Settings, commands and screens can change between releases.";

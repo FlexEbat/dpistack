@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// The read side of Rules v2 (tech.md 18.41). Each method runs one verb and
+// The read side of Rules v2 (section 18.41). Each method runs one verb and
 // returns the JSON it printed, unchanged: the numbers on the screen are the
 // numbers of `dpistack rules-stats` in the CLI, not a second computation.
 

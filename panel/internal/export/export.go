@@ -1,5 +1,5 @@
 // Package export renders the panel's state as Prometheus text exposition
-// (format 0.0.4, tech.md 4.9) for GET /metrics.
+// (format 0.0.4, section 4.9) for GET /metrics.
 //
 // A metric whose data is not there is left out, not shown as zero: a check
 // that is `na`, a test that was skipped, everything about eve.json when

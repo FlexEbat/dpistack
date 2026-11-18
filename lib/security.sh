@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The security check of the panel (tech.md 18.45): `dpistack security check
+# The security check of the panel (section 18.45): `dpistack security check
 # [--json]`. It reads the settings, the modes of a few files and the audit log,
 # changes nothing, and answers with a list, each item with a level (ok, warn,
 # crit or na) and a hint for the fix. The panel shows the same list. Sourced by

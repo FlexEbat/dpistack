@@ -5,6 +5,7 @@
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
 	WF="$REPO_DIR/.github/workflows"
+	SPEC="$REPO_DIR/tech.md"
 }
 
 # list_actions - the action of every `uses:` key. Anchored at the start of
@@ -44,9 +45,9 @@ list_actions() {
 	grep -qE '^DPISTACK_VERSION="[0-9]+\.[0-9]+\.[0-9]+"$' "$REPO_DIR/lib/common.sh"
 }
 
-@test "the program version in tech.md is the one in the code" {
+@test "the program version in the specification is the one in the code" {
 	code="$(sed -n 's/^DPISTACK_VERSION="\(.*\)"$/\1/p' "$REPO_DIR/lib/common.sh")"
-	doc="$(sed -n 's/.*Program version: v\([0-9.]*\)\*\*.*/\1/p' "$REPO_DIR/tech.md" | head -1)"
+	doc="$(sed -n 's/.*Program version: v\([0-9.]*\)\*\*.*/\1/p' "$SPEC" | head -1)"
 	[ -n "$code" ]
 	[ "$code" = "$doc" ]
 }
@@ -107,7 +108,7 @@ list_actions() {
 	grep -q 'sha256sum -c' "$WF/security.yml"
 }
 
-@test "dpistack.conf.example matches the tech.md 4.3 key table and lib/schema.sh defaults" {
+@test "dpistack.conf.example matches the section 4.3 key table and lib/schema.sh defaults" {
 	run bash "$REPO_DIR/scripts/check-conf-example.sh"
 	[ "$status" -eq 0 ]
 }
@@ -117,7 +118,7 @@ list_actions() {
 	mkdir -p "$work/scripts" "$work/lib"
 	cp "$REPO_DIR/scripts/check-conf-example.sh" "$work/scripts/"
 	cp "$REPO_DIR/lib/schema.sh" "$work/lib/"
-	cp "$REPO_DIR/tech.md" "$work/"
+	cp "$SPEC" "$work/"
 	grep -v '^EVE_KEEP=' "$REPO_DIR/dpistack.conf.example" >"$work/dpistack.conf.example"
 	run bash "$work/scripts/check-conf-example.sh"
 	rm -rf "$work"
@@ -130,7 +131,7 @@ list_actions() {
 	mkdir -p "$work/scripts" "$work/lib"
 	cp "$REPO_DIR/scripts/check-conf-example.sh" "$work/scripts/"
 	cp "$REPO_DIR/lib/schema.sh" "$work/lib/"
-	cp "$REPO_DIR/tech.md" "$work/"
+	cp "$SPEC" "$work/"
 	sed 's/^PANEL_PORT=.*/PANEL_PORT=9999/' "$REPO_DIR/dpistack.conf.example" >"$work/dpistack.conf.example"
 	run bash "$work/scripts/check-conf-example.sh"
 	rm -rf "$work"

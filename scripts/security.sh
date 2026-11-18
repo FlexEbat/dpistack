@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Security checks for the shell code (tech.md section 12). Cheap, local,
+# Security checks for the shell code (section 12). Cheap, local,
 # no network: the same script runs in the gate and in CI. gitleaks adds a
 # deeper secret scan in CI when it is installed.
 set -uo pipefail

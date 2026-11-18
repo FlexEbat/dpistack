@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# The gate every task must pass before it is done (tech.md section 12).
+# The gate every task must pass before it is done (section 12).
 set -uo pipefail
 
 # gate.sh                      every check, as before (local work, the release)
 # gate.sh --no-bats            every check except the bats suite
 # gate.sh --bats-shard I/N     only shard I of N of the bats suite (scripts/bats-shard.sh)
-# CI runs the shards and the rest as separate jobs (tech.md 18.58, task 50).
+# CI runs the shards and the rest as separate jobs (section 18.58, task 50).
 mode=all
 shard=""
 case "${1:-}" in

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # shellcheck disable=SC2016 # single quotes are meant: literal hostile values and code for `lib`
-# Regression tests for defects found in the full code review (tech.md 18).
+# Regression tests for defects found in the full code review (section 18).
 # Each test fails on the code as it was before the fix.
 
 setup() {

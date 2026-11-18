@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Real preflight (tech.md 5.5). Runs once, before any package gets
+# Real preflight (section 5.5). Runs once, before any package gets
 # installed; collects every failure reason instead of stopping at the
 # first one (install.sh's cmd_install dies with all of them, code 3).
 
@@ -245,7 +245,7 @@ step_preflight_reasons() {
 		fi
 		;;
 	unverified)
-		log "WARN" "$OS_ID ${OS_VERSION_ID:-} is not in the list of tested platforms (tech.md 11), the installation goes on"
+		log "WARN" "$OS_ID ${OS_VERSION_ID:-} is not in the list of tested platforms (section 11), the installation goes on"
 		;;
 	esac
 

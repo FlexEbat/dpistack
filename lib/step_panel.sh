@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # "panel" step: the system user `dpistack`, the sudoers rule that lets it
-# run only dpistack (tech.md 4.2, 4.5), the panel binary (PANEL_SOURCE:
+# run only dpistack (section 4.2, 4.5), the panel binary (PANEL_SOURCE:
 # built from panel/ with Go, or a ready dpistack-panel next to install.sh)
-# and the systemd unit (tech.md 9).
+# and the systemd unit (section 9).
 
 PANEL_USER="dpistack"
 PANEL_SERVICE="dpistack-panel.service"
@@ -72,7 +72,7 @@ panel_token_matches() {
 	fi
 }
 
-# panel_args - the flags of the panel (tech.md 9). The panel does not read
+# panel_args - the flags of the panel (section 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
 	local mode port

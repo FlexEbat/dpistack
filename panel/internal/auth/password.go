@@ -15,7 +15,7 @@ import (
 )
 
 // maxMemoryKiB caps the argon2 memory a hash may demand. The panel unit
-// has MemoryMax=64M (tech.md 9), so a 64 MiB hash would be killed by the
+// has MemoryMax=64M (section 9), so a 64 MiB hash would be killed by the
 // cgroup while it is being checked.
 const maxMemoryKiB = 32 * 1024
 

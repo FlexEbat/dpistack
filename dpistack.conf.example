@@ -1,5 +1,5 @@
 # dpistack.conf example - every key dpistack.conf accepts, with its
-# default value (tech.md 4.3). One KEY=value per line, no quotes, no
+# default value (section 4.3). One KEY=value per line, no quotes, no
 # shell substitution. Unknown keys or values outside their documented
 # options stop the installer.
 #
@@ -7,7 +7,7 @@
 # this file: they live only in /etc/dpistack/secrets.conf (0600).
 #
 # "auto"/empty values mean "computed at install/apply time"; see the
-# key's row in tech.md 4.3 for what "auto" resolves to.
+# key's row in section 4.3 for what "auto" resolves to.
 
 ACCESS_MODE=localhost
 # auto: 127.0.0.1 (localhost) or 0.0.0.0 (lan); or an IPv4 address of this host, for example 192.168.1.156

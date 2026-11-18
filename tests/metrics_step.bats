@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
-# Task 28 (tech.md 17), criteria 2, 3, 4, 7, 8 and the parts of 1, 5 and 6
+# Task 28 (section 17), criteria 2, 3, 4, 7, 8 and the parts of 1, 5 and 6
 # that need no real host. The release download is a fake tarball behind the
 # curl mock; the sha256 check runs for real against it. Not covered: a real
-# backend scraping a real panel (criterion 1), see tech.md 18.18.
+# backend scraping a real panel (criterion 1), see section 18.18.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

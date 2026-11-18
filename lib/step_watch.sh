@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# "watch" step: the systemd service and timer of dpistack-watch (tech.md
+# "watch" step: the systemd service and timer of dpistack-watch (section
 # 8). The binary itself is placed by the selfinstall step, which runs
 # before this one. jq is a hard dependency of the watchdog, so the step
 # installs it. The service skips its run while the installer copy is

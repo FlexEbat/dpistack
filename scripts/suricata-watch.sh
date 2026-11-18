@@ -64,7 +64,7 @@ if [[ "$status" == "update" && -n "$latest" ]]; then
 	echo "== newer release of the same series: $latest"
 	if bash "$build" "$latest"; then
 		issue "Suricata $latest verified: raise SURICATA_STABLE_REF" \
-			"The new release $latest builds with nDPI and the plugin and loads the installer's configuration. To accept it: change SURICATA_STABLE_REF in lib/step_suricata.sh to $latest, update the version in tech.md and go the usual way: dev, gate, PR to main."
+			"The new release $latest builds with nDPI and the plugin and loads the installer's configuration. To accept it: change SURICATA_STABLE_REF in lib/step_suricata.sh to $latest, update the version in the documentation and go the usual way: dev, gate, PR to main."
 	else
 		issue "Suricata $latest failed the build check" \
 			"The new release $latest did not build with nDPI and the plugin or did not load the configuration. SURICATA_STABLE_REF stays $current. Find out what changed (minimum Rust, the nDPI plugin API) and fix the installer."
