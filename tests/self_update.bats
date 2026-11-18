@@ -253,3 +253,64 @@ base() {
 	[ "$status" -eq 2 ]
 	[[ "$output" == *"plan"* ]]
 }
+
+@test "run starts a repair when the installer is the newest but the panel runs an older version" {
+	latest "v$CUR"
+	export MOCK_CALLS_LOG="$DPISTACK_ROOT/calls.log"
+	run bash "$REPO_DIR/install.sh" self-update run --panel-version 0.0.1
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"repair started"* ]]
+	grep -q "systemd-run .*self-update apply --repair" "$MOCK_CALLS_LOG"
+}
+
+@test "run does not repair when the panel runs the installed version" {
+	latest "v$CUR"
+	run bash "$REPO_DIR/install.sh" self-update run --panel-version "$CUR"
+	[ "$status" -eq 3 ]
+	[[ "$output" == *"no newer release"* ]]
+}
+
+@test "a repair is refused, naming the file, when a drop-in pins the command line of the panel" {
+	latest "v$CUR"
+	mkdir -p "$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service.d"
+	printf '[Service]\nExecStart=\nExecStart=/usr/local/bin/dpistack-panel -version 0.0.1\n' \
+		>"$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service.d/old.conf"
+	export MOCK_CALLS_LOG="$DPISTACK_ROOT/calls.log"
+	run bash "$REPO_DIR/install.sh" self-update run --panel-version 0.0.1
+	[ "$status" -eq 1 ]
+	[[ "$output" == *"old.conf"* && "$output" == *"replaces its command line"* ]]
+	! grep -q "systemd-run" "$MOCK_CALLS_LOG" 2>/dev/null
+}
+
+@test "a drop-in that only resets ExecStart does not block a repair" {
+	latest "v$CUR"
+	mkdir -p "$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service.d"
+	printf '[Service]\nExecStart=\n' >"$DPISTACK_ROOT/etc/systemd/system/dpistack-panel.service.d/reset.conf"
+	run bash "$REPO_DIR/install.sh" self-update run --panel-version 0.0.1
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"repair started"* ]]
+}
+
+@test "run takes only a plain version as the panel version" {
+	latest v99.0.0
+	# the dispatcher stops an argument with shell characters before the verb sees it
+	run bash "$REPO_DIR/install.sh" self-update run --panel-version '1.2.3; rm -rf /'
+	[ "$status" -eq 5 ]
+	run bash "$REPO_DIR/install.sh" self-update run --panel-version latest
+	[ "$status" -eq 2 ]
+	run bash "$REPO_DIR/install.sh" self-update run --bogus
+	[ "$status" -eq 2 ]
+}
+
+@test "apply --repair installs the same release again and restarts the panel" {
+	run base
+	[ "$status" -eq 0 ]
+	latest "v$CUR"
+	release "$CUR"
+	export MOCK_CALLS_LOG="$DPISTACK_ROOT/calls.log"
+	run bash "$REPO_DIR/install.sh" self-update apply --repair
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"installing $CUR"* ]]
+	run bash "$REPO_DIR/install.sh" self-update apply
+	[[ "$output" == *"nothing to do"* ]]
+}

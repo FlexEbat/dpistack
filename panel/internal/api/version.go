@@ -55,11 +55,13 @@ func (s *server) updateStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "there is no newer release")
 		return
 	}
-	out, err := s.cfg.Ctl.SelfUpdateStart(r.Context())
+	out, err := s.cfg.Ctl.SelfUpdateStart(r.Context(), s.cfg.Version)
 	if err != nil {
+		auditDetail(r, errText(err))
 		opError(w, err)
 		return
 	}
+	auditDetail(r, "to="+info.Latest)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "latest": info.Latest, "output": out})
 }
 
