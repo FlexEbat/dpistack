@@ -9,7 +9,7 @@ import (
 )
 
 // Exception is one entry of threshold.config as `exceptions list --json`
-// prints it (section 18.40). DaysLeft is nil for an entry that never
+// prints it. DaysLeft is nil for an entry that never
 // expires.
 type Exception struct {
 	ID       string `json:"id"`

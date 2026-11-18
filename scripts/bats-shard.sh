@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bats-shard.sh <I> <N> - prints the bats files of shard I of N (1-based), one
-# per line, for the CI jobs that run the suite in parallel (section 18.58).
+# per line, for the CI jobs that run the suite in parallel.
 # The files are dealt out largest first, each to the shard with the smallest
 # total so far (size in bytes stands in for run time), so the shards come out
 # close in length and a new file lands in a shard without any list to edit.

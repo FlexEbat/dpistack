@@ -150,7 +150,7 @@ export function needsAccessConfirm(changed, keys) {
   return Boolean(k && "ACCESS_MODE" in changed && changed.ACCESS_MODE !== "localhost");
 }
 
-// ---- Settings v2 (task 44): search, when a key applies, the staged change,
+// ---- Settings v2: search, when a key applies, the staged change,
 // profiles. Pure functions again: the screen only draws what they return.
 
 const lower = (s) => String(s || "").toLowerCase();

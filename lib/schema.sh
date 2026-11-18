@@ -188,7 +188,7 @@ schema_init() {
 
 schema_init
 
-# --- settings v2 (section 18.44): when a key applies, and what a change touches ---
+# --- settings v2: when a key applies, and what a change touches ---
 #
 # SCHEMA_DEPENDS[KEY] holds the conditions under which the key means anything,
 # separated by spaces, all of which must hold. A condition is
@@ -371,7 +371,7 @@ schema_validate_one() {
 	return 0
 }
 
-# --- what a person may type (18.55) ---
+# --- what a person may type ---
 # schema_validate_one is what a saved file must pass (lenient on purpose: a
 # file written by an older version must still load). The checks below are
 # stricter and run where a value is typed or set: the menu, --set and
@@ -540,7 +540,7 @@ schema_effective() {
 }
 
 # schema_empty_meaning <key> - what an empty value of an optional key does, for
-# the prompts of the menu (R193 of 18.46: they showed <empty> and nothing else).
+# the prompts of the menu (R193: they showed <empty> and nothing else).
 # Prints nothing for a key whose empty value needs no explanation.
 schema_empty_meaning() {
 	case "$1" in

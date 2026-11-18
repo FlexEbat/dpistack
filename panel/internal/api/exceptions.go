@@ -11,7 +11,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 )
 
-// The exceptions of Suricata (section 18.40). The screen and the CLI are the
+// The exceptions of Suricata. The screen and the CLI are the
 // same thing: every route runs one `dpistack exceptions` verb, which checks
 // the values, writes threshold.config, tests it with `suricata -T` and
 // reloads Suricata. The checks here only keep a value that ctl would refuse

@@ -245,7 +245,7 @@ menu_mark_for_key() {
 # menu_reconcile_conflicts - keys that cannot be on together are settled at
 # the moment they are set, not only at the preflight: the Suricata image of
 # the docker runtime has no nDPI plugin, so choosing that runtime switches
-# the plugin off and says so (decision D6 of 18.27).
+# the plugin off and says so (decision D6).
 menu_reconcile_conflicts() {
 	if [[ "${CONF[SURICATA_RUNTIME]:-native}" == "docker" && "${CONF[NDPI_ENABLE]:-no}" == "yes" ]]; then
 		config_set_kv NDPI_ENABLE no
@@ -308,7 +308,7 @@ menu_group_summary() {
 }
 
 # menu_say_empty <key> - one line under a prompt whose value is empty: what
-# empty does (R193 of 18.46).
+# empty does (R193).
 menu_say_empty() {
 	local meaning
 	meaning=$(schema_empty_meaning "$1")
@@ -1181,7 +1181,7 @@ menu_diff_screen() {
 }
 
 # menu_reconfigure_screen - 5.3's section screen. `0) Back` only makes
-# sense when opened from the control menu (not built until task 15),
+# sense when opened from the control menu (not built until the persistent command and the control menu is added),
 # so a direct `dpistack reconfigure` behaves like `q` there, per spec.
 menu_reconfigure_screen() {
 	while true; do
@@ -1414,7 +1414,7 @@ menu_manage_uninstall() {
 	esac
 }
 
-# --- the submenus of the control menu (18.54): the commands that were only
+# --- the submenus of the control menu: the commands that were only
 # on the command line, grouped by task. Each one only calls the same verb a
 # person would type, so nothing here has a rule of its own.
 

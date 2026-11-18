@@ -6,7 +6,7 @@ import (
 	"regexp"
 )
 
-// The IPS page (section 18.42). Both routes run one verb and send its JSON on
+// The IPS page. Both routes run one verb and send its JSON on
 // as it is, so the page and `dpistack ips status|test` show the same thing.
 var pcapName = regexp.MustCompile(`^[a-z0-9_-]{1,40}$`)
 

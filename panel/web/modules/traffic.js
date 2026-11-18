@@ -1,4 +1,4 @@
-// The Traffic Explorer screen (task 39): devices, applications, domains and
+// The Traffic Explorer screen: devices, applications, domains and
 // connections from the newest flow, dns and tls events. It only reads. Every
 // source is extra; one that fails is left out and only a 401 signs the user
 // out. The model is in traffic-model.js.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 12 criteria 1-6 (dpistack test, tests-last.json, the
+# Covers the BitTorrent and HTTPS tests, criteria 1-6 (dpistack test, tests-last.json, the
 # verify step) on stubs: suricata -r and curl are fakes that leave the
 # same traces the real ones would.
 

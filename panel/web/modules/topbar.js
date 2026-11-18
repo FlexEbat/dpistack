@@ -1,4 +1,4 @@
-// The top bar (task 37): the host name, the overall state, the mode (IDS or
+// The top bar: the host name, the overall state, the mode (IDS or
 // IPS), the user menu and the theme. The chips only show what the server
 // says; they have no controls, because the switches live on their screens.
 // No DOM work at import time, so node --test can load it.

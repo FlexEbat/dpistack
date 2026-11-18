@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rules: suricata-update sources from RULES_SOURCES/RULES_URLS,
 # enable.conf from RULES_GROUPS, and the dpistack-rules timer
-# (task 3). suricata-update itself tests the new ruleset with
+# (rules). suricata-update itself tests the new ruleset with
 # `suricata -T` before replacing suricata.rules and keeps the old one
 # on failure (--no-test is never passed), so step_rules.sh does not
 # reimplement that rollback.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
-# Task 26 criteria 4 and 5: versionlock on the dnf family, and a missing
+# The RHEL family and SELinux, criteria 4 and 5: versionlock on the dnf family, and a missing
 # source for the OS release stops the install in preflight with code 3.
 # Everything runs against mocks: not verified on a real Rocky, Alma or
-# Fedora host (section 18.16).
+# Fedora host.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

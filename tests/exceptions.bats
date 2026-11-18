@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Task 40 (18.40), the exceptions of Suricata: `dpistack exceptions` and the
+# The exceptions of Suricata: `dpistack exceptions` and the
 # threshold.config behind it. Criteria are listed in the entry of 18.40.
 
 setup() {

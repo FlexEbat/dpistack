@@ -1,4 +1,4 @@
-// The Security screen (task 45): the security check, the sessions of the
+// The Security screen: the security check, the sessions of the
 // signed in user, API tokens, and the history of sign ins. Everything is read
 // from /api/security/*. Ending sessions and making or revoking tokens is a
 // request each, after which the lists are read again. The secret of a new

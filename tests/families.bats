@@ -2,7 +2,7 @@
 # The package-manager families (apt, dnf), the fallbacks between package
 # and source builds, interface detection and pinned refs. The dnf paths
 # run against mocks only: they are not verified on a real Fedora or RHEL
-# host (section 18.4).
+# host.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
-# Task 29 (section 17), criteria 1-5 and 7 against stateful iptables mocks.
+# IPS mode, criteria 1-5 and 7 against stateful iptables mocks.
 # Criterion 6 (the panel) is in panel/internal/api/mode_test.go. Not covered:
-# a real NFQUEUE, a real reboot and a real rollback timer (section 18.19).
+# a real NFQUEUE, a real reboot and a real rollback timer.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

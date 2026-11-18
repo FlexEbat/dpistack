@@ -5,7 +5,7 @@ import (
 	"strconv"
 )
 
-// The security page (section 18.45). Each method runs one verb and returns
+// The security page. Each method runs one verb and returns
 // what it printed on stdout, unchanged. The caller has checked the values
 // against the same patterns as the verb.
 

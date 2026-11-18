@@ -497,8 +497,8 @@ autorestart() {
 	done
 }
 
-# prune_exceptions - the exceptions past their last day are removed (section
-# 18.40). Suricata does not know about dates, so someone has to take them out.
+# prune_exceptions - the exceptions past their last day are removed.
+# Suricata does not know about dates, so someone has to take them out.
 # A failure is not a health problem of the stand: it is left for the next run.
 prune_exceptions() {
 	"$CTL" exceptions prune >/dev/null 2>&1 || true

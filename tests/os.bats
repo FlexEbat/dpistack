@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 1 criterion 6: os.sh must tell apt from dnf using
+# Covers the skeleton, criterion 6: os.sh must tell apt from dnf using
 # os-release stubs, including derivatives that only carry ID_LIKE.
 
 setup() {

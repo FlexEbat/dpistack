@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
-# Task 42 (18.42), the IPS page: `ips status` and `ips test`. Suricata is a
+# The IPS page: `ips status` and `ips test`. Suricata is a
 # stub that writes the alerts a real offline run would write for the rules it
-# is given; the stub is not the real engine (see "Open" in 18.42).
+# is given; the stub is not the real engine.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 3 criteria 2, 3, 4, 5 (per the note, on the
+# Covers rules, criteria 2, 3, 4, 5 (per the note, on the
 # mocked suricata-update from tests/mocks).
 
 setup() {

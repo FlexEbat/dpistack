@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # EveBox: official apt repo (evebox.org/docs/install/debian), package,
-# evebox.yaml from templates/evebox.yaml.tpl (task 6). Bound to
-# Bind address comes from access_effective_bind_host (task 7). The
+# evebox.yaml from templates/evebox.yaml.tpl (EveBox). Bound to
+# Bind address comes from access_effective_bind_host (access and the firewall). The
 # package ships the evebox.service unit and
 # EveBox's built-in database.retention.days handles retention (A9,
 # SQLite only; 0 disables).

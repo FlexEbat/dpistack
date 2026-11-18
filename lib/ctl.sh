@@ -295,7 +295,7 @@ ctl_cmd_status() {
 
 # resolve_component <id> - validates the id (5) and presence (4), then
 # prints the unit. Runtime other than native is not supported yet:
-# the schema rejects docker until task 27.
+# the schema rejects docker until the Docker runtime is added.
 resolve_component() {
 	local id="$1"
 	in_list "$id" "${COMPONENTS[@]}" || fail 5 "unknown component: $id"
@@ -885,7 +885,7 @@ settings_port_warnings() {
 }
 
 # settings_entry_problems <KEY=VALUE>... - the meaning checks of a value that
-# a person sets (18.55), one line per problem. The saved file is not held to
+# a person sets, one line per problem. The saved file is not held to
 # them (R210), only the keys of this change.
 settings_entry_problems() {
 	local pair key value
@@ -1975,7 +1975,7 @@ cmd_runtime() {
 	fi
 }
 
-# --- users, roles and permissions (4.5, 4.8; task 34) ---
+# --- users, roles and permissions (users and roles) ---
 
 USERS_PERMS=(view events.ack tests.run components.control rules.edit settings.edit configs.edit ips.manage backup.manage update.manage audit.view users.manage)
 USERS_ROLES=(viewer analyst operator admin custom)
@@ -2196,7 +2196,7 @@ diagnose_unit() {
 # have no fixed table and `df -i` shows 0 free for them (a real btrfs host was
 # told it had no inodes left).
 # evebox_kernel_denials - the last lines of the kernel log in which AppArmor or
-# SELinux refused something to evebox (R195 of 18.47: a profile denied the temp
+# SELinux refused something to evebox (R195: a profile denied the temp
 # file of SQLite, and only the kernel log said so). Empty when there are none or
 # the log cannot be read.
 evebox_kernel_denials() {
@@ -2304,7 +2304,7 @@ cmd_diagnose() {
 }
 
 # ---------------------------------------------------------------- backup
-# Task 36 (section 4.5, 18.36): one tar.gz of the configs with a manifest
+# Backup and restore: one tar.gz of the configs with a manifest
 # (the program version, the sha256 and the mode of every file). Logs and
 # secrets.conf are not in it.
 
@@ -2659,7 +2659,7 @@ cmd_backup() {
 	esac
 }
 
-# --- audit log of verbs run by hand (section 4.5, task 35) ---
+# --- audit log of verbs run by hand (the audit log) ---
 
 # audit_wanted <verb> [<subverb>] - does this call change something? Reads
 # (list, status, check) are not logged.
@@ -2731,7 +2731,7 @@ audit_run() {
 	return "$rc"
 }
 
-# --- info: where to open the web screens (18.54) ---
+# --- info: where to open the web screens ---
 
 # ctl_info_host - the address the web services answer on for the current
 # ACCESS_MODE: this machine in localhost mode, otherwise BIND_ADDR when it
@@ -2785,7 +2785,7 @@ cmd_info() {
 	return 0
 }
 
-# --- help (section 4.5, 18.54) ---
+# --- help ---
 
 # ctl_help_overview - the same verbs as ctl_usage, grouped by what a person
 # wants to do. `dpistack help`; the flat reference is `dpistack help --all`.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Step 4 of the menu review (18.54): the control menu has submenus for what
+# Step 4 of the menu review: the control menu has submenus for what
 # used to be command-line only. Every submenu calls the same verb a person
 # would type, so a stub that logs its arguments is enough to see what ran.
 

@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// The permissions of the panel (section 4.5, task 34). A route names one.
+// The permissions of the panel (users and roles). A route names one.
 const (
 	PermView             = "view"
 	PermEventsAck        = "events.ack"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 9 criteria 1-5, 7-12 (per the test scope;
+# Covers the install menu, criteria 1-5, 7-12 (per the test scope;
 # criterion 6, quick install's interface picker, needs `ip -o link`
 # output this suite's mocks don't model and was verified manually).
 #
@@ -358,7 +358,7 @@ run_menu() {
 	! grep -q '<empty>' "$BATS_TEST_DIRNAME/../lib/menu.sh"
 }
 
-# Step 1 of the menu review (18.54): the install screen says what is wrong
+# Step 1 of the menu review: the install screen says what is wrong
 # and what to do next.
 
 @test "the install screen counts the missing panel password as a problem and says the next step" {
@@ -429,7 +429,7 @@ run_menu() {
 	[[ "$output" == *"unclear choice: 0 (type a number"* ]]
 }
 
-# Step 2 of the menu review (18.54): a section says what each key is for.
+# Step 2 of the menu review: a section says what each key is for.
 
 @test "a section prints the hint of every key under it, and the count of the advanced keys" {
 	run_menu "2\nq\ny\n"

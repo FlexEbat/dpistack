@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Task 34: users, roles and permissions: the verb `dpistack users ...`.
+# Users, roles and permissions: the verb `dpistack users ...`.
 # The table of the roles is compared with panel/internal/auth/testdata/presets.json,
 # which the Go tests compare with the table of the panel.
 

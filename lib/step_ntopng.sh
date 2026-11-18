@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ntopng: ntop.org apt repo, ntopng package, ntopng.conf rendered from
 # NTOPNG_IFACES/NTOPNG_PORT. Bind address comes from
-# access_effective_bind_host (lib/step_access.sh, task 7): 127.0.0.1
+# access_effective_bind_host (lib/step_access.sh): 127.0.0.1
 # for localhost/nginx modes, 0.0.0.0 for lan.
 
 NTOPNG_PACKAGE="ntopng"

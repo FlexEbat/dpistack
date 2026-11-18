@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exceptions (section 18.40): what Suricata should not alert on, or should
+# Exceptions: what Suricata should not alert on, or should
 # alert on less often. The entries live in Suricata's own file,
 # threshold.config, in Suricata's own syntax, so nothing is rendered and
 # nothing can differ between the CLI and the dashboard: both call the verb

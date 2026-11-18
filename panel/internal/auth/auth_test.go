@@ -57,7 +57,7 @@ type clock struct{ t time.Time }
 
 func (c *clock) now() time.Time { return c.t }
 
-// Task 16 criterion 2: the sixth attempt inside 5 minutes is refused.
+// Sign-in criterion 2: the sixth attempt inside 5 minutes is refused.
 func TestLimiterSixthAttempt(t *testing.T) {
 	c := &clock{t: time.Unix(1000, 0)}
 	l := NewLimiter(5, 5*time.Minute, c.now)
@@ -128,7 +128,7 @@ func TestSessionsAreBounded(t *testing.T) {
 	}
 }
 
-// Task 16 criterion 4.
+// Sign-in criterion 4.
 func TestPolicy(t *testing.T) {
 	tests := []struct {
 		name, mode, cidr, remote, xff string

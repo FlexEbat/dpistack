@@ -2,7 +2,7 @@
 # R144-R146: how eve.json is rotated, who can read it, and where the command
 # socket is. Each of these was wrong while the tests only looked at the
 # rendered text; the facts they now pin down were checked against a real
-# Suricata 7.0.3 and a real logrotate (section 18.22).
+# Suricata 7.0.3 and a real logrotate.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
