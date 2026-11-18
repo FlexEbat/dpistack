@@ -1133,18 +1133,73 @@ selfupdate_check() {
 	fi
 }
 
+# selfupdate_version_lt <a> <b> - 0 when version a is lower than version b.
+selfupdate_version_lt() {
+	[[ "$1" != "$2" ]] && [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$1" ]]
+}
+
+# selfupdate_panel_override - prints the first drop-in of the panel unit that
+# sets ExecStart (it replaces the command line the installer renders, so the
+# panel keeps running with the old version and options). Nothing is printed
+# when there is none. An empty "ExecStart=" line is only a reset.
+selfupdate_panel_override() {
+	local dir f
+	dir="$(path_panel_service_unit).d"
+	[[ -d "$dir" ]] || return 0
+	for f in "$dir"/*.conf; do
+		[[ -e "$f" ]] || continue
+		if grep -Eq '^[[:space:]]*ExecStart=[^[:space:]]' "$f"; then
+			echo "$f"
+			return 0
+		fi
+	done
+	return 0
+}
+
+# selfupdate_run [--panel-version X] - starts the update as its own unit. The
+# panel passes the version it runs: when the installed dpistack is already the
+# newest but the panel still runs an older one (an update that stopped before
+# the panel was rebuilt or restarted), the same release is installed again to
+# repair it, unless a drop-in of the panel unit pins the old command line, which
+# no reinstall can fix and which is named instead.
 selfupdate_run() {
-	local tag
+	local tag panel_version="" repair=0
+	while (($#)); do
+		case "$1" in
+		--panel-version)
+			[[ "${2:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 2 "self-update run: --panel-version needs a version like 1.2.3"
+			panel_version="$2"
+			shift 2
+			;;
+		*) fail 2 "self-update run: unknown argument $1" ;;
+		esac
+	done
 	tag=$(selfupdate_latest_tag) || exit 1
-	selfupdate_is_newer "$tag" || fail 3 "there is no newer release than $DPISTACK_VERSION"
+	if ! selfupdate_is_newer "$tag"; then
+		if [[ -n "$panel_version" ]] && selfupdate_version_lt "$panel_version" "$DPISTACK_VERSION"; then
+			local override
+			override=$(selfupdate_panel_override)
+			[[ -z "$override" ]] ||
+				fail 1 "the panel runs $panel_version but dpistack $DPISTACK_VERSION is installed: $override sets ExecStart for the panel unit and replaces its command line. Move that file away, then run: systemctl daemon-reload && systemctl restart ${PANEL_SERVICE:-dpistack-panel.service}"
+			repair=1
+		else
+			fail 3 "there is no newer release than $DPISTACK_VERSION"
+		fi
+	fi
 	case "$(systemctl is-active "$SELFUPDATE_UNIT.service" 2>/dev/null)" in
 	active | activating) fail 3 "an update is already running" ;;
 	esac
 	systemctl reset-failed "$SELFUPDATE_UNIT.service" >/dev/null 2>&1 || true
+	local -a apply=("$SCRIPT_DIR/install.sh" self-update apply)
+	((repair)) && apply+=(--repair)
 	systemd-run --quiet --unit="$SELFUPDATE_UNIT" --description="dpistack: updating to ${tag#v}" \
-		--collect "$SCRIPT_DIR/install.sh" self-update apply >/dev/null ||
+		--collect "${apply[@]}" >/dev/null ||
 		fail 1 "could not start the update"
-	echo "update to ${tag#v} started: $SELFUPDATE_UNIT"
+	if ((repair)); then
+		echo "repair started: the panel runs $panel_version, dpistack $DPISTACK_VERSION is installed again to rebuild and restart it: $SELFUPDATE_UNIT"
+	else
+		echo "update to ${tag#v} started: $SELFUPDATE_UNIT"
+	fi
 }
 
 selfupdate_job() {
@@ -1197,11 +1252,16 @@ selfupdate_plan() {
 }
 
 selfupdate_apply() {
-	local tag tmp src
+	local tag tmp src repair=0
+	[[ "${1:-}" == "--repair" ]] && repair=1
 	tag=$(selfupdate_latest_tag) || exit 1
 	if ! selfupdate_is_newer "$tag"; then
-		echo "dpistack $DPISTACK_VERSION is the latest version, nothing to do"
-		return 0
+		if ((repair)); then
+			echo "dpistack $DPISTACK_VERSION is installed but the panel runs an older version: installing $tag again"
+		else
+			echo "dpistack $DPISTACK_VERSION is the latest version, nothing to do"
+			return 0
+		fi
 	fi
 	tmp=$(mktemp -d) || fail 1 "no temporary directory"
 	# shellcheck disable=SC2064
@@ -1215,7 +1275,12 @@ selfupdate_apply() {
 	# one already applied stays confirmed; a mode edited by hand after the last
 	# apply is not, and the validation still stops there.
 	selfupdate_access_unchanged && args+=(--set ACCESS_CONFIRM=yes)
-	(cd "$src" && bash ./install.sh "${args[@]}")
+	(cd "$src" && bash ./install.sh "${args[@]}") || return $?
+	# A repair reinstalls what is already installed, so the panel may see no
+	# change and keep running: it is restarted here.
+	if ((repair)) && [[ "$(systemctl is-active "${PANEL_SERVICE:-dpistack-panel.service}" 2>/dev/null)" == "active" ]]; then
+		systemctl restart "${PANEL_SERVICE:-dpistack-panel.service}" || true
+	fi
 }
 
 # selfupdate_access_unchanged - the access mode and the bind address in the
@@ -1234,12 +1299,12 @@ cmd_self_update() {
 	case "$sub" in
 	"" | --check) selfupdate_check ;;
 	--json | check) selfupdate_check --json ;;
-	run) selfupdate_run ;;
+	run) selfupdate_run "$@" ;;
 	job) selfupdate_job ;;
 	plan) selfupdate_plan ;;
 	apply)
 		restricted_caller && fail 2 "self-update apply: not for the panel, use run"
-		selfupdate_apply
+		selfupdate_apply "$@"
 		;;
 	*) fail 2 "self-update: [--check] | check | run | job | plan | apply" ;;
 	esac

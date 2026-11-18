@@ -4,9 +4,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/FlexEbat/dpistack/panel/internal/audit"
+	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 	"github.com/FlexEbat/dpistack/panel/internal/update"
 )
 
@@ -75,8 +78,38 @@ func TestUpdateStartsTheRootVerbOnlyWhenNewer(t *testing.T) {
 	e, c := updateEnv(t, "0.25.2", "v0.26.0")
 	cookies, csrf := e.login()
 	w := send(e, "POST", "/api/update", "", cookies, csrf)
-	if w.Code != 202 || !c.called(t, "self-update run") {
+	// root gets the version the panel runs, to tell a stale panel from no release
+	if w.Code != 202 || !c.called(t, "self-update run --panel-version 0.25.2") {
 		t.Fatalf("%d %s calls=%q", w.Code, w.Body, c.calls(t))
+	}
+}
+
+func TestUpdateRefusedByRootIsShownAndAudited(t *testing.T) {
+	srv := releaseServer(t, "v0.26.0")
+	e := setup(t, func(cfg *Config, dir string) {
+		path := filepath.Join(dir, "users.json")
+		if err := os.WriteFile(path, []byte(usersJSON(false)), 0o640); err != nil {
+			t.Fatal(err)
+		}
+		cfg.UsersFile = path
+		script := filepath.Join(dir, "ctl")
+		body := "#!/bin/sh\necho 'there is no newer release than 0.26.0' >&2\nexit 3\n"
+		if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cfg.Ctl = &ctl.Runner{Path: script}
+		cfg.Audit = &audit.Log{Path: filepath.Join(dir, "audit.jsonl")}
+		cfg.Version = "0.25.2"
+		cfg.Update = &update.Checker{Current: "0.25.2", URL: srv.URL}
+	})
+	cookies, csrf := e.login()
+	w := send(e, "POST", "/api/update", "", cookies, csrf)
+	if w.Code != 409 || !strings.Contains(w.Body.String(), "no newer release than 0.26.0") {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	l := find(e.auditLines(), "POST /api/update")
+	if l == nil || l.Result != audit.ResultError || !strings.Contains(l.Detail, "no newer release than 0.26.0") {
+		t.Fatalf("the refusal has no detail in the audit log: %+v", l)
 	}
 }
 

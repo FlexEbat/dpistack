@@ -1,23 +1,23 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v85** (2026-11-17)
-**Program version: v0.51.2** (tasks 0-51 and 53-56 are done, 52 is partly done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v86** (2026-11-18)
+**Program version: v0.51.3** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.3: the Update button when the panel runs an older version than the installed dpistack (18.63): root repairs it by installing the release again, or names the drop-in that pins the old command line; the refusal and its reason are in the audit log.
 - v0.51.2: the last screens of task 55 (18.62): the IPS badge names the mode (IDS) instead of `na` and an empty Drop rules section says so, Settings no longer says "No changes" twice, card headings have room above their text.
 - v0.51.1: the screens of task 55 that were not yet looked at (18.61): the Events filters are a labelled grid card and are hidden with the viewer off, the Traffic controls are hidden without an event view, the Network parts sit in a card and a missing speed says so, a failed Backups load leaves no placeholder.
 - v0.51.0: the next tasks (18.58, 18.59): the gate runs in parallel (4 bats shards, the checks, one `gate (ubuntu-24.04)` check); the Redis output is a stream bounded by `EVE_REDIS_MAXLEN` and the health check `redis.eve_stream` watches it; the migration 0.51.0 deletes the list that 0.50.0 pushed to.
 - v0.50.0: the panel pass of 2026-11-15 (18.56): the Redis output of Suricata (`EVE_REDIS`) is real; Metrics takes 12 hours and an own number of hours (1 to 24); Rules is split into four tabs and Custom rules has seven described templates; Components is a grid of cards with the mode and the interfaces beside it; the "Under development" note is the top bar of the signed-in page; quieter chrome and a colour for each menu group, test status and check report; the migrations of an upgrade, the build recipes and `dpistack update` (18.57); the nine settings that showed `<empty>` show the value in effect.
-- v0.49.0: input checks (18.55): a busy port is found while the answers are given and the next free one is offered at once; jq and the other base tools are installed before the menu asks anything and the panel password step installs jq and argon2 itself; a value that is typed is checked for its meaning (impossible addresses and networks, unknown eve types and alert channels, a time systemd does not accept, a Redis output that does not exist, an interface that is not on the machine); EVE_MAX_SIZE_MB is asked only for the size rotation and EVE_REDIS is not asked.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v86: v0.51.3. 18.63 written (decisions D169 and D170); the row of `POST /api/update` in 4.5.
 - v85: documentation wording: the unit of work is a task (D168).
 - v84: v0.51.2. 18.62 written (decision D167); the task row 55 of 18.0 is done.
 - v83: v0.51.1. 18.61 written (decisions D164 to D166); the task row 55 of 18.0.
 - v81: v0.51.0. 18.58 (tasks 50 to 56 planned) and 18.59 written (decisions D158 to D160); rows 50 to 56 of the task table; `EVE_REDIS_MAXLEN` in 4.3; the check `redis.eve_stream`; `scripts/bats-shard.sh` and the modes of `scripts/gate.sh`.
-- v80: v0.50.0. 18.56 and 18.57 written (decisions D143 to D157; 18.59: D158 to D160; 18.60: D161 to D163); D138 superseded; the `EVE_REDIS` and `EVE_MAX_SIZE_MB` contracts in 4.3; the verbs `update` and `migrate`; the state keys `install.version` and `build.<part>.recipe`.
 - v79: v0.49.0. 18.55 written (decisions D135 to D142); 4.3 and 5.0 name the entry checks; the task row 48 of 18.0.
 
 ---
@@ -504,7 +504,7 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 | `GET /api/system` | permission `view`; the host state read from `/proc`, `/sys` and statfs: `uptime_seconds`, `load` (3 numbers), `cpu` (`cores`, `percent` since the previous call, `null` on the first), `memory` (kB), `disks` (`/`, `/var/lib/dpistack`, `/var/log`; a missing path is left out and paths on one filesystem count once), `interfaces` (`state`, `mac`, `mtu`, `speed_mbps` or `null`, byte, packet, error and drop counters, `virtual` when there is no `device` link, `capture` from `ctl iface list`, left out when that fails), `systemd_present`, `docker_socket`, `hostname` (from `/proc/sys/kernel/hostname`, empty when it cannot be read) |
 | `GET /api/status` | the components (`ctl status`) + `health.json` |
 | `GET /api/version` | the running version and, from the latest GitHub release of the project (checked at most every 6 hours, a failed check again after 15 minutes), `latest`, `update_available`, `release_url`, `check_error`. The version comes from the panel flag `-version`, which `panel_args` fills, so an update that changes the unit restarts the panel with the new number |
-| `POST /api/update` | the Update button after the confirmation dialog: refused with 409 unless a newer release exists, otherwise `ctl self-update run` (202) |
+| `POST /api/update` | the Update button after the confirmation dialog: refused with 409 unless a newer release exists, otherwise `ctl self-update run --panel-version <running version>` (202); a refusal of the verb is shown as it is said and goes to the audit log as its detail |
 | `GET /api/update/job` | the state and the last lines of the update unit (`ctl self-update job`) |
 | `POST /api/components/{id}/{start\|stop\|restart}` | through `ctl`; stopping or restarting `panel` needs `?confirm=yes` |
 | `POST /api/suricata/reload` | `ctl reload suricata` |
@@ -2472,3 +2472,21 @@ Verified: `panel/web/test/empty-states.test.mjs` (4 cases; they fail on the code
 | D168 | **The unit of work is called a task.** The index in 18.0, the headings of section 18 and the references in tests and comments say `task N` |
 
 Verified: a new case in `panel/web/test/empty-states.test.mjs`, the other JS tests, `ui-check` at three widths.
+
+### 18.63 The Update button when the panel is older than the installed dpistack (v0.51.3)
+
+**Status:** done. Found on a host whose panel said `v0.50.0` while the installed `dpistack` was 0.51.2: the Update button showed "Update available to v0.51.2" and the click ended with `there is no newer release than 0.51.2`, and the audit line had the result `error` with an empty detail.
+
+1. **Cause.** The panel decides that an update exists from the version it runs (the `-version` flag of its unit); root decides from the installed installer. When an update stopped before the panel was rebuilt or restarted, or a drop-in of `dpistack-panel.service` pins an old `ExecStart`, the two differ and every click was refused with exit 3.
+2. **Repair.** `ctl self-update run` takes `--panel-version X` (a plain `1.2.3`, nothing else). The panel sends the version it runs. When the installed dpistack is the newest but the panel runs an older one, root starts the update unit with `self-update apply --repair`: the same release is downloaded and installed again, and the panel is restarted at the end, because a reinstall of the same version may see no change.
+3. **A pinned command line.** When a drop-in of the panel unit sets `ExecStart` (an empty `ExecStart=` is only a reset), no reinstall can help; root refuses with exit 1 and names the file and what to do (move it away, `daemon-reload`, restart the panel). The file is never touched.
+4. **Audit.** A refusal of `POST /api/update` writes the sentence of the verb as the detail of the audit line, a start writes `to=<version>`.
+
+| id | decision |
+| --- | --- |
+| D169 | **The panel tells root what it runs.** Only the panel knows the version in its corner; guessing it from the unit would repeat the mistake of a pinned `ExecStart` |
+| D170 | **A repair never edits a file of the person.** A drop-in with its own `ExecStart` is named, not moved |
+
+An old panel does not send the argument, so the first repair of such a host is a manual run of the new release (`dpistack update --yes` from the command line, which sees the new release as newer); the button works from then on.
+
+Verified: 6 cases in `tests/self_update.bats` (a repair is started, no repair when the versions are equal, a pinned drop-in is named and nothing is started, a reset-only drop-in does not block, the argument is checked, `apply --repair` installs again), 2 cases in the Go tests of the update API (the version is passed to the verb, a refusal is shown and audited).
