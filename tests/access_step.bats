@@ -315,3 +315,20 @@ load_preflight() {
 	run install_base --set ACCESS_MODE=lan --set ACCESS_CONFIRM=yes --set LAN_CIDR=192.168.1.0/24,
 	[ "$status" -eq 2 ]
 }
+
+@test "a port held by the old service of dpistack is not a conflict at the start of an upgrade" {
+	MOCK_SS_LISTEN=9800 MOCK_SS_PROC=dpistack-panel run load_preflight 'CONF[ACCESS_MODE]=localhost; step_preflight_reasons'
+	[[ "$output" != *"PANEL_PORT"* ]]
+	MOCK_SS_LISTEN=5636 MOCK_SS_PROC=evebox run load_preflight 'CONF[ACCESS_MODE]=localhost; step_preflight_reasons'
+	[[ "$output" != *"EVEBOX_PORT"* ]]
+	MOCK_SS_LISTEN=3001 MOCK_SS_PROC=ntopng run load_preflight 'CONF[ACCESS_MODE]=localhost; step_preflight_reasons'
+	[[ "$output" != *"NTOPNG_PORT"* ]]
+}
+
+@test "a port held by another program is still a conflict, also on the port of the panel" {
+	MOCK_SS_LISTEN=9800 MOCK_SS_PROC=python3 run load_preflight 'CONF[ACCESS_MODE]=localhost; step_preflight_reasons'
+	[[ "$output" == *"port 9800 (PANEL_PORT) is already busy (held by: python3)"* ]]
+	# the panel's name on the port of another service is not ours either
+	MOCK_SS_LISTEN=5636 MOCK_SS_PROC=dpistack-panel run load_preflight 'CONF[ACCESS_MODE]=localhost; step_preflight_reasons'
+	[[ "$output" == *"EVEBOX_PORT"* ]]
+}

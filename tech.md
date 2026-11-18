@@ -1,23 +1,23 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v86** (2026-11-18)
-**Program version: v0.51.3** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v87** (2026-11-18)
+**Program version: v0.51.4** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.4: an upgrade no longer stops on the port of dpistack's own running service (18.64): the preflight knows the panel, EveBox, ntopng and the metrics backend by their process names.
 - v0.51.3: the Update button when the panel runs an older version than the installed dpistack (18.63): root repairs it by installing the release again, or names the drop-in that pins the old command line; the refusal and its reason are in the audit log.
 - v0.51.2: the last screens of task 55 (18.62): the IPS badge names the mode (IDS) instead of `na` and an empty Drop rules section says so, Settings no longer says "No changes" twice, card headings have room above their text.
 - v0.51.1: the screens of task 55 that were not yet looked at (18.61): the Events filters are a labelled grid card and are hidden with the viewer off, the Traffic controls are hidden without an event view, the Network parts sit in a card and a missing speed says so, a failed Backups load leaves no placeholder.
 - v0.51.0: the next tasks (18.58, 18.59): the gate runs in parallel (4 bats shards, the checks, one `gate (ubuntu-24.04)` check); the Redis output is a stream bounded by `EVE_REDIS_MAXLEN` and the health check `redis.eve_stream` watches it; the migration 0.51.0 deletes the list that 0.50.0 pushed to.
-- v0.50.0: the panel pass of 2026-11-15 (18.56): the Redis output of Suricata (`EVE_REDIS`) is real; Metrics takes 12 hours and an own number of hours (1 to 24); Rules is split into four tabs and Custom rules has seven described templates; Components is a grid of cards with the mode and the interfaces beside it; the "Under development" note is the top bar of the signed-in page; quieter chrome and a colour for each menu group, test status and check report; the migrations of an upgrade, the build recipes and `dpistack update` (18.57); the nine settings that showed `<empty>` show the value in effect.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v87: v0.51.4. 18.64 written (decision D171).
 - v86: v0.51.3. 18.63 written (decisions D169 and D170); the row of `POST /api/update` in 4.5.
 - v85: documentation wording: the unit of work is a task (D168).
 - v84: v0.51.2. 18.62 written (decision D167); the task row 55 of 18.0 is done.
 - v83: v0.51.1. 18.61 written (decisions D164 to D166); the task row 55 of 18.0.
-- v81: v0.51.0. 18.58 (tasks 50 to 56 planned) and 18.59 written (decisions D158 to D160); rows 50 to 56 of the task table; `EVE_REDIS_MAXLEN` in 4.3; the check `redis.eve_stream`; `scripts/bats-shard.sh` and the modes of `scripts/gate.sh`.
 - v79: v0.49.0. 18.55 written (decisions D135 to D142); 4.3 and 5.0 name the entry checks; the task row 48 of 18.0.
 
 ---
@@ -2490,3 +2490,17 @@ Verified: a new case in `panel/web/test/empty-states.test.mjs`, the other JS tes
 An old panel does not send the argument, so the first repair of such a host is a manual run of the new release (`dpistack update --yes` from the command line, which sees the new release as newer); the button works from then on.
 
 Verified: 6 cases in `tests/self_update.bats` (a repair is started, no repair when the versions are equal, a pinned drop-in is named and nothing is started, a reset-only drop-in does not block, the argument is checked, `apply --repair` installs again), 2 cases in the Go tests of the update API (the version is passed to the verb, a refusal is shown and audited).
+
+### 18.64 An upgrade stopped on the port of the running panel (v0.51.4)
+
+**Status:** done. Found on the host of 18.63: `dpistack update --yes` downloaded the release, printed the plan, and ended with `preflight: port 9800 (PANEL_PORT) is already busy (held by: dpistack-panel)` and `nothing was installed`. The installer copy had been renewed before that, so the host showed the new `dpistack` and the old panel, and the earlier click of the Update button had stopped the same way. This is the real cause of the state that 18.63 repairs.
+
+1. **Cause.** A port held by a service that dpistack installed is not a conflict when the step of that service is current (`step_<name>_check` passes). At the start of an upgrade the step is never current: the new release has a new panel binary or unit, so the check fails, and the old service, which still holds its port, was reported as a stranger. The tests did not see it because the mock `ss` shows no real service.
+2. **Fix.** `preflight_port_is_ours <step> <holder>`: the process that listens is the service of that step by its name (`dpistack-panel` for the panel, `evebox`, `ntopng`, `victoria-metric*` or `prometheus` for the metrics backend), or `docker-proxy` when the step runs in Docker. The same function serves the check of `settings set --apply`, which shares `preflight_port_conflicts`.
+3. **Not weakened.** Another program on the port is still a conflict, and the name of one service on the port of another (`dpistack-panel` on the port of EveBox) is too.
+
+| id | decision |
+| --- | --- |
+| D171 | **A service is known by what listens, not by whether its step is current.** The step is allowed to be out of date during an upgrade, the port of the old process is the same port |
+
+Verified: 2 cases in `tests/access_step.bats` (the three services are not conflicts on their own ports; another program and a wrong pairing are), the first fails on the code of v0.51.3.
