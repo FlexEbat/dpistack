@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers slice 3 criteria 2, 3, 4, 5 (per tech.md's own note, on the
+# Covers task 3 criteria 2, 3, 4, 5 (per tech.md's own note, on the
 # mocked suricata-update from tests/mocks).
 
 setup() {

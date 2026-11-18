@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers slice 10 criteria 1-4 (status, start|stop|restart, logs,
+# Covers task 10 criteria 1-4 (status, start|stop|restart, logs,
 # argument checks). Criterion 5 (sudo as the dpistack user) needs a real
 # host and is checked by hand.
 
@@ -168,7 +168,7 @@ teardown() {
 	[ "$output" = "$want" ]
 }
 
-@test "commands owned by later slices exit 4, unknown commands exit 2" {
+@test "commands owned by later tasks exit 4, unknown commands exit 2" {
 	run "$CTL" config-read suricata.yaml
 	[ "$status" -eq 4 ]
 	run "$CTL" frobnicate

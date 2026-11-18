@@ -1,4 +1,4 @@
-// The model of the Rules v2 part of the Rules screen (slice 41): the counts
+// The model of the Rules v2 part of the Rules screen (task 41): the counts
 // per rule source, the history of updates, the filters of the rule search,
 // the report of the check of local.rules and the difference between two
 // versions of a file. Pure functions, no DOM. The numbers come from

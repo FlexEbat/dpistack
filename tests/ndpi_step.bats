@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
-# Covers slice 4 criteria 3 and 6 (per tech.md's own test scope for
-# this slice). git/autogen.sh/configure/make are real, relative-path
+# Covers task 4 criteria 3 and 6 (per tech.md's own test scope for
+# this task). git/autogen.sh/configure/make are real, relative-path
 # invocations inside a cloned tree, not PATH-resolved commands, so
 # they can't be intercepted the way apt-get/systemctl are; criterion 6
 # (idempotency) is exercised directly against step_ndpi_check's state

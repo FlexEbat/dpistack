@@ -1,4 +1,4 @@
-// The shell of the page (slice 37): which screen the address names, the
+// The shell of the page (task 37): which screen the address names, the
 // groups of the menu that disappear when none of their entries is allowed,
 // and the collapsed menu that is remembered. No DOM work at import time.
 

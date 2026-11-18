@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers slice 15: selfinstall, the persistent `dpistack` command and the
+# Covers task 15: selfinstall, the persistent `dpistack` command and the
 # management menu. dpistack is replaced by a stub for the menu, so the menu
 # is tested on what it calls, not on the helper itself.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# An upgrade from a REAL earlier release (tech.md 18.58, slice 52): the tagged
+# An upgrade from a REAL earlier release (tech.md 18.58, task 52): the tagged
 # archive of the previous version is installed in the sandbox, then this tree
 # migrates it. The synthetic old states of migrate.bats and self_update.bats
 # cannot show a break between two real releases. Skipped unless

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Suricata IDS: package install from distro/oisf, suricata.yaml and
-# logrotate rendering, systemd unit (tech.md slice 2). Source builds
-# and nDPI are schema.sh "not supported yet" until slice 4.
+# logrotate rendering, systemd unit (tech.md task 2). Source builds
+# and nDPI are schema.sh "not supported yet" until task 4.
 
 SURICATA_PACKAGE="suricata"
 SURICATA_UNIT="suricata.service"

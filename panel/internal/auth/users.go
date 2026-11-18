@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// The permissions of the panel (tech.md 4.5, slice 34). A route names one.
+// The permissions of the panel (tech.md 4.5, task 34). A route names one.
 const (
 	PermView             = "view"
 	PermEventsAck        = "events.ack"

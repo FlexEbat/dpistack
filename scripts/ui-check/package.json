@@ -2,7 +2,7 @@
   "name": "dpistack-ui-check",
   "private": true,
   "type": "module",
-  "description": "Headless-browser check of the panel screens (tech.md 18.58, slice 55)",
+  "description": "Headless-browser check of the panel screens (tech.md 18.58, task 55)",
   "dependencies": {
     "@sparticuz/chromium": "153.0.0",
     "puppeteer-core": "25.17.0"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers slice 9 criteria 1-5, 7-12 (per tech.md's own test scope;
+# Covers task 9 criteria 1-5, 7-12 (per tech.md's own test scope;
 # criterion 6, quick install's interface picker, needs `ip -o link`
 # output this suite's mocks don't model and was verified manually).
 #

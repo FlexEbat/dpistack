@@ -11,7 +11,7 @@ SELFINSTALL_PAYLOAD=(install.sh lib templates bin tests/data)
 SELFINSTALL_HASH_KEY="selfinstall.tree_hash"
 
 # Hash of everything that would be copied: when it is unchanged the step
-# copies nothing (slice 15 criterion 2).
+# copies nothing (task 15 criterion 2).
 selfinstall_source_hash() {
 	(cd "$SCRIPT_DIR" && find "${SELFINSTALL_PAYLOAD[@]}" -type f 2>/dev/null |
 		LC_ALL=C sort | xargs sha256sum | sha256sum | cut -d' ' -f1)

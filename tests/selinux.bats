@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Slice 26 criteria 2 and 3: SELinux labels and ports, and firewalld rules
+# Task 26 criteria 2 and 3: SELinux labels and ports, and firewalld rules
 # for LAN_CIDR only. Mocks only (getenforce, semanage, restorecon,
 # firewall-cmd): no AVC denial was observed on a real Enforcing host, see
 # tech.md 18.16.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers slice 11 criteria 1-7 (config-read|write|revert, reconfigure,
+# Covers task 11 criteria 1-7 (config-read|write|revert, reconfigure,
 # rules-*, iface, panel-passwd). Criterion 8 (A8) is a design note: with
 # no component test mode known, evebox.yaml and ntopng.conf are only
 # checked for being non-empty, and the tests below cover that.
@@ -259,7 +259,7 @@ FAKE
 	grep -q "keep me" "$ruleset"
 }
 
-@test "slice 20: rules-sources list --enabled asks suricata-update for the enabled sources only" {
+@test "task 20: rules-sources list --enabled asks suricata-update for the enabled sources only" {
 	run "$CTL" rules-sources list --enabled
 	[ "$status" -eq 0 ]
 	grep -q "suricata-update list-enabled-sources -D $DPISTACK_ROOT/var/lib/suricata" "$MOCK_CALLS_LOG"
@@ -269,7 +269,7 @@ FAKE
 	[ "$status" -eq 2 ]
 }
 
-@test "slice 20: a failed rules-update prints the reason on stdout, not only on stderr" {
+@test "task 20: a failed rules-update prints the reason on stdout, not only on stderr" {
 	ruleset="$DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules"
 	mkdir -p "$(dirname "$ruleset")"
 	echo 'alert tcp any any -> any any (msg:"keep me"; sid:1;)' >"$ruleset"
@@ -279,7 +279,7 @@ FAKE
 	grep -q "keep me" "$ruleset"
 }
 
-@test "slice 20: a ruleset that suricata -T rejects is rolled back and says why" {
+@test "task 20: a ruleset that suricata -T rejects is rolled back and says why" {
 	ruleset="$DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules"
 	mkdir -p "$(dirname "$ruleset")"
 	echo 'alert tcp any any -> any any (msg:"keep me"; sid:1;)' >"$ruleset"
@@ -291,7 +291,7 @@ FAKE
 	grep -q "keep me" "$ruleset"
 }
 
-@test "slice 20: a good rules-update exits 0 and shows what suricata-update wrote" {
+@test "task 20: a good rules-update exits 0 and shows what suricata-update wrote" {
 	ruleset="$DPISTACK_ROOT/var/lib/suricata/rules/suricata.rules"
 	mkdir -p "$(dirname "$ruleset")"
 	echo 'alert tcp any any -> any any (msg:"old"; sid:1;)' >"$ruleset"

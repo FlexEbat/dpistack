@@ -1,4 +1,4 @@
-// The Rules v2 part of the Rules screen (slice 41): the rule sets with their
+// The Rules v2 part of the Rules screen (task 41): the rule sets with their
 // counts, the history of updates, a rule search by category, source, state
 // and text, and an editor for local.rules with a check and a history of
 // changes. Every number is the answer of a `dpistack` verb behind

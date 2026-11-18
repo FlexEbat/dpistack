@@ -295,7 +295,7 @@ ctl_cmd_status() {
 
 # resolve_component <id> - validates the id (5) and presence (4), then
 # prints the unit. Runtime other than native is not supported yet:
-# the schema rejects docker until slice 27.
+# the schema rejects docker until task 27.
 resolve_component() {
 	local id="$1"
 	in_list "$id" "${COMPONENTS[@]}" || fail 5 "unknown component: $id"
@@ -1975,7 +1975,7 @@ cmd_runtime() {
 	fi
 }
 
-# --- users, roles and permissions (4.5, 4.8; slice 34) ---
+# --- users, roles and permissions (4.5, 4.8; task 34) ---
 
 USERS_PERMS=(view events.ack tests.run components.control rules.edit settings.edit configs.edit ips.manage backup.manage update.manage audit.view users.manage)
 USERS_ROLES=(viewer analyst operator admin custom)
@@ -2304,7 +2304,7 @@ cmd_diagnose() {
 }
 
 # ---------------------------------------------------------------- backup
-# Slice 36 (tech.md 4.5, 18.36): one tar.gz of the configs with a manifest
+# Task 36 (tech.md 4.5, 18.36): one tar.gz of the configs with a manifest
 # (the program version, the sha256 and the mode of every file). Logs and
 # secrets.conf are not in it.
 
@@ -2659,7 +2659,7 @@ cmd_backup() {
 	esac
 }
 
-# --- audit log of verbs run by hand (tech.md 4.5, slice 35) ---
+# --- audit log of verbs run by hand (tech.md 4.5, task 35) ---
 
 # audit_wanted <verb> [<subverb>] - does this call change something? Reads
 # (list, status, check) are not logged.

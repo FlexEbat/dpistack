@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Slice 42 (18.42), the IPS page: `ips status` and `ips test`. Suricata is a
+# Task 42 (18.42), the IPS page: `ips status` and `ips test`. Suricata is a
 # stub that writes the alerts a real offline run would write for the rules it
 # is given; the stub is not the real engine (see "Open" in 18.42).
 
