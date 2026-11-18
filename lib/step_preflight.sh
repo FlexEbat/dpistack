@@ -72,6 +72,21 @@ preflight_free_port() {
 	return 1
 }
 
+# preflight_port_is_ours <owner-step> <holder> - the process that listens on
+# the port is the service of that step, which dpistack installed itself. At
+# the start of an upgrade the step is not "current" yet (the new release has
+# a new binary or unit), but the old service still holds its port: that is
+# not a conflict, the step restarts it. A container of the step shows up as
+# docker-proxy.
+preflight_port_is_ours() {
+	local step="$1" who="$2"
+	case "$step:$who" in
+	ntopng:ntopng | evebox:evebox | panel:dpistack-panel) return 0 ;;
+	metrics:victoria-metric* | metrics:prometheus) return 0 ;;
+	esac
+	[[ "$who" == "docker-proxy" ]] && declare -F docker_wanted >/dev/null 2>&1 && docker_wanted "$step"
+}
+
 # preflight_port_conflicts - one line per busy port: KEY|port|who|suggestion.
 # A port held by a service dpistack already installed is not a conflict on a
 # repeat run, so ports whose step is already applied are skipped. With
@@ -99,6 +114,7 @@ preflight_port_conflicts() {
 		fi
 		if preflight_port_busy "$port"; then
 			who=$(preflight_port_owner "$port")
+			preflight_port_is_ours "$owner_step" "$who" && continue
 			echo "$port_key|$port|${who:-unknown process}|$(preflight_free_port "$port_key" "$((public + 1))")|service"
 		fi
 	done
