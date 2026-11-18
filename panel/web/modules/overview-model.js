@@ -1,4 +1,4 @@
-// What the Overview says at a glance (slice 38): four state cards, the
+// What the Overview says at a glance (task 38): four state cards, the
 // warnings, alerts by severity and the latest alerts. Pure functions over the
 // answers of /api/status, /api/system, /api/mode and /api/eve, so node --test
 // can check them. A piece whose source did not answer is left out, never

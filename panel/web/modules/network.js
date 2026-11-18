@@ -1,4 +1,4 @@
-// The Network screen (slice 38): the topology of the capture chain and the
+// The Network screen (task 38): the topology of the capture chain and the
 // table of the interfaces. It only reads: adding or removing a capture
 // interface stays on Components, where it is confirmed and applied. Every
 // source is extra; one that fails is left out and only a 401 signs the user out.

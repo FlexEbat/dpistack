@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Slice 30 (tech.md 17): dpistack-install.sh, the installer in one file.
+# Task 30 (tech.md 17): dpistack-install.sh, the installer in one file.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

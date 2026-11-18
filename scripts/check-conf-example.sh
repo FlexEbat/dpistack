@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Slice 25, criterion 5: every key in dpistack.conf.example is in the
+# Task 25, criterion 5: every key in dpistack.conf.example is in the
 # tech.md 4.3 table, and the other way round. Secrets (the "secret" rows)
 # are not dpistack.conf keys and must not appear in the example. Also
 # checks that each key's example value equals the default in lib/schema.sh,

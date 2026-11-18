@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
-# Covers slice 1 criteria 2, 5, 9. SURICATA_SOURCE=oisf/NDPI_ENABLE=no
-# are set explicitly because slice 2 marks their defaults
-# (source/yes) as "not supported yet" until slice 4.
+# Covers task 1 criteria 2, 5, 9. SURICATA_SOURCE=oisf/NDPI_ENABLE=no
+# are set explicitly because task 2 marks their defaults
+# (source/yes) as "not supported yet" until task 4.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -31,7 +31,7 @@ teardown() {
 		[[ "$output" == *"$step ... no changes"* ]]
 	done
 	# suricata, rules, redis, ntopng, evebox, access, panel have real check/apply logic by now
-	# (slices 2-7, 10, 12, 13, 15): a fresh root has nothing installed yet, so they
+	# (tasks 2-7, 10, 12, 13, 15): a fresh root has nothing installed yet, so they
 	# correctly plan work instead of claiming "no changes" - dry-run's
 	# job is to not touch disk, not to pretend there is nothing to do.
 	[[ "$output" == *"suricata ... needs applying"* ]]
@@ -49,7 +49,7 @@ teardown() {
 	[ ! -e "$DPISTACK_ROOT/etc/suricata/suricata.yaml" ]
 }
 
-# The interactive flow is the real menu as of slice 9 - its save/
+# The interactive flow is the real menu as of task 9 - its save/
 # replay behaviour is covered in tests/menu.bats instead.
 
 @test "reconfigure --dry-run shows the key diff and affected steps, changes nothing" {

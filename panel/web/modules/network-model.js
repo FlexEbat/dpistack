@@ -1,4 +1,4 @@
-// The model of the Network screen (slice 38): a simple topology of what the
+// The model of the Network screen (task 38): a simple topology of what the
 // panel knows, made in the browser from answers that exist (/api/status,
 // /api/system, /api/mode). Pure functions, no DOM, so node --test can load it.
 //

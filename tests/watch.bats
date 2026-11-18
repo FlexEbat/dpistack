@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers slice 13 criteria 1-8: dpistack-watch and `dpistack health`.
+# Covers task 13 criteria 1-8: dpistack-watch and `dpistack health`.
 # systemctl, ss and df are fakes; the clock is pinned with DPISTACK_NOW
 # and file ages are set with touch, so threshold edges are exact.
 

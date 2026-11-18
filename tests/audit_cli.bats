@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Slice 35: a verb that changes something and is run by hand leaves a line in
+# Task 35: a verb that changes something and is run by hand leaves a line in
 # the audit log; reads and the panel's own calls do not.
 
 setup() {

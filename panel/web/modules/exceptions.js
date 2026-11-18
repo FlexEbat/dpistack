@@ -1,4 +1,4 @@
-// The Exceptions screen (slice 40): what Suricata stays silent about or
+// The Exceptions screen (task 40): what Suricata stays silent about or
 // reports less often. Every action is one `dpistack exceptions` verb behind
 // /api/exceptions, so the CLI and this screen are the same thing. The words
 // and the checks are in exceptions-model.js.

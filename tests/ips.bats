@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Slice 29 (tech.md 17), criteria 1-5 and 7 against stateful iptables mocks.
+# Task 29 (tech.md 17), criteria 1-5 and 7 against stateful iptables mocks.
 # Criterion 6 (the panel) is in panel/internal/api/mode_test.go. Not covered:
 # a real NFQUEUE, a real reboot and a real rollback timer (tech.md 18.19).
 

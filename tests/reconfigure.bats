@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers slice 8 criteria 1-5, 9 for `reconfigure` and `upgrade`.
+# Covers task 8 criteria 1-5, 9 for `reconfigure` and `upgrade`.
 
 setup() {
 	# The older tests drive the screens with fixed lines; the confirmations have tests/menu_confirm.bats.

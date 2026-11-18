@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
-# Covers slice 2 criteria 2, 3, 5, 6, 7 (on stubs/mocks, per tech.md's
-# own note for this slice's test scope).
+# Covers task 2 criteria 2, 3, 5, 6, 7 (on stubs/mocks, per tech.md's
+# own note for this task's test scope).
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

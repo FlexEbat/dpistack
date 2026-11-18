@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Metrics backend (slice 28): VictoriaMetrics single-node or Prometheus,
+# Metrics backend (task 28): VictoriaMetrics single-node or Prometheus,
 # native or docker, scraping GET /metrics of the panel. METRICS_BACKEND=none
 # means only the endpoint exists and the user brings their own collector
 # (README), so the step has nothing to install - and stops a backend this

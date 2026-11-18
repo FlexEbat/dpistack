@@ -339,7 +339,7 @@ step_panel_apply() {
 	fi
 	run chown "$PANEL_USER:$PANEL_USER" "$mfile" || return 1
 
-	# The audit log (slice 35) has a directory of its own, because the panel
+	# The audit log (task 35) has a directory of its own, because the panel
 	# rotates it (it renames files) and the state directory stays root's.
 	# Root appends to the same file when it runs a verb by hand.
 	local adir

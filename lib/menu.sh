@@ -1181,7 +1181,7 @@ menu_diff_screen() {
 }
 
 # menu_reconfigure_screen - 5.3's section screen. `0) Back` only makes
-# sense when opened from the control menu (not built until slice 15),
+# sense when opened from the control menu (not built until task 15),
 # so a direct `dpistack reconfigure` behaves like `q` there, per spec.
 menu_reconfigure_screen() {
 	while true; do

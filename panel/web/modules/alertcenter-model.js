@@ -1,4 +1,4 @@
-// The model of the Alert Center (slice 43), the top of the Alerts screen:
+// The model of the Alert Center (task 43), the top of the Alerts screen:
 // wording, levels and the actions that make sense for an alert. Pure
 // functions, no DOM, so node --test can load it. The alerts, the states and
 // the counts are those of `dpistack alerts list`; nothing is computed here.

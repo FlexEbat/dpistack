@@ -142,7 +142,7 @@ lock_acquire() {
 	echo "$$" >"$lock_file" 2>/dev/null || true
 }
 
-# SELinux (slice 26). "Active" means Enforcing or Permissive: labels are
+# SELinux (task 26). "Active" means Enforcing or Permissive: labels are
 # worth setting in Permissive too, otherwise switching to Enforcing later
 # starts denying what worked. Disabled or no getenforce: nothing to do.
 selinux_active() {
@@ -283,7 +283,7 @@ panel_hash() {
 }
 
 # panel_auth_write <plaintext> - writes the hash into panel.auth and into the
-# user admin of users.json (4.5, slice 34), so both stay the same.
+# user admin of users.json (4.5, task 34), so both stay the same.
 panel_auth_write() {
 	local plaintext="$1" hash
 	hash=$(panel_hash "$plaintext") || return $?

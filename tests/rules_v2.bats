@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Slice 41 (18.41), Rules v2: rules-stats, rules-history, rules-describe,
+# Task 41 (18.41), Rules v2: rules-stats, rules-history, rules-describe,
 # rules-local check and config-history. The cache naming and the merged-set
 # format in the fixtures are the ones suricata-update 1.3.3 really writes.
 

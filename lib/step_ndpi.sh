@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # nDPI: NDPI_SOURCE=pkg installs the distro's libndpi-dev, NDPI_SOURCE=source
-# clones and builds ntop/nDPI from GitHub (tech.md slice 4).
+# clones and builds ntop/nDPI from GitHub (tech.md task 4).
 
 NDPI_PACKAGE="libndpi-dev"
 # The dnf name is set once the family is known (see os_detect).

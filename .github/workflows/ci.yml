@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   # The bats suite is dealt out over parallel runners (scripts/bats-shard.sh):
-  # one runner took 39 minutes of the 45 allowed (tech.md 18.58, slice 50).
+  # one runner took 39 minutes of the 45 allowed (tech.md 18.58, task 50).
   bats:
     name: bats (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-24.04
@@ -91,7 +91,7 @@ jobs:
 
   # The panel in a headless browser: every screen at 390, 768 and 1440 px must
   # not scroll sideways, the note must be the first thing on the page, and no
-  # script may throw (tech.md 18.58, slice 55). It is not part of `gate`: a
+  # script may throw (tech.md 18.58, task 55). It is not part of `gate`: a
   # browser that fails to download must not block a merge. The shots are kept.
   ui:
     name: ui (headless screenshots)
@@ -120,7 +120,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # An upgrade from a REAL earlier release (tech.md 18.58, slice 52): the last
+  # An upgrade from a REAL earlier release (tech.md 18.58, task 52): the last
   # published release is installed in the test sandbox and this tree migrates
   # it, once through `migrate --yes` and once through `update --yes`. Not part
   # of `gate`: it needs the release list of GitHub, and an outage there must not

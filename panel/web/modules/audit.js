@@ -1,4 +1,4 @@
-// The Audit screen (slice 35): who did what and when, with filters and an
+// The Audit screen (task 35): who did what and when, with filters and an
 // export. The panel decides who may read it (audit.view); the screen only
 // shows what comes back.
 

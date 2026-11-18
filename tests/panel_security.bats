@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Slice 45 (18.45), the security of the panel: `tokens create|list|revoke` and
+# Task 45 (18.45), the security of the panel: `tokens create|list|revoke` and
 # `security check`. Time is fixed with DPISTACK_NOW_CMD.
 
 setup() {

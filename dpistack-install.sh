@@ -36,7 +36,7 @@ put install.sh 755 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Entry point for both the pre-install invocation (install.sh) and,
 # once selfinstall has run, the persistent `dpistack` command
-# (tech.md 4.4, 5.1, 5.2). Slice 1 wires the CLI, config layering and
+# (tech.md 4.4, 5.1, 5.2). Task 1 wires the CLI, config layering and
 # an all-stub step pipeline; components fill in their steps later.
 set -uo pipefail
 
@@ -229,7 +229,7 @@ parse_args() {
 			shift
 			;;
 		--purge)
-			# shellcheck disable=SC2034 # consumed by uninstall's slice
+			# shellcheck disable=SC2034 # consumed by uninstall's task
 			PURGE=1
 			shift
 			;;
@@ -574,7 +574,7 @@ cmd_reconfigure() {
 			fi
 		fi
 
-		# criterion 4 (slice 8): validate the new suricata.yaml with a
+		# criterion 4 (task 8): validate the new suricata.yaml with a
 		# real `suricata -T` before touching anything on disk, so a
 		# failed check leaves the old suricata.yaml and dpistack.conf
 		# alone. (Non-interactive -y path only now; see above.)
@@ -2002,7 +2002,7 @@ lock_acquire() {
 	echo "$$" >"$lock_file" 2>/dev/null || true
 }
 
-# SELinux (slice 26). "Active" means Enforcing or Permissive: labels are
+# SELinux (task 26). "Active" means Enforcing or Permissive: labels are
 # worth setting in Permissive too, otherwise switching to Enforcing later
 # starts denying what worked. Disabled or no getenforce: nothing to do.
 selinux_active() {
@@ -2143,7 +2143,7 @@ panel_hash() {
 }
 
 # panel_auth_write <plaintext> - writes the hash into panel.auth and into the
-# user admin of users.json (4.5, slice 34), so both stay the same.
+# user admin of users.json (4.5, task 34), so both stay the same.
 panel_auth_write() {
 	local plaintext="$1" hash
 	hash=$(panel_hash "$plaintext") || return $?
@@ -2912,7 +2912,7 @@ ctl_cmd_status() {
 
 # resolve_component <id> - validates the id (5) and presence (4), then
 # prints the unit. Runtime other than native is not supported yet:
-# the schema rejects docker until slice 27.
+# the schema rejects docker until task 27.
 resolve_component() {
 	local id="$1"
 	in_list "$id" "${COMPONENTS[@]}" || fail 5 "unknown component: $id"
@@ -4592,7 +4592,7 @@ cmd_runtime() {
 	fi
 }
 
-# --- users, roles and permissions (4.5, 4.8; slice 34) ---
+# --- users, roles and permissions (4.5, 4.8; task 34) ---
 
 USERS_PERMS=(view events.ack tests.run components.control rules.edit settings.edit configs.edit ips.manage backup.manage update.manage audit.view users.manage)
 USERS_ROLES=(viewer analyst operator admin custom)
@@ -4921,7 +4921,7 @@ cmd_diagnose() {
 }
 
 # ---------------------------------------------------------------- backup
-# Slice 36 (tech.md 4.5, 18.36): one tar.gz of the configs with a manifest
+# Task 36 (tech.md 4.5, 18.36): one tar.gz of the configs with a manifest
 # (the program version, the sha256 and the mode of every file). Logs and
 # secrets.conf are not in it.
 
@@ -5276,7 +5276,7 @@ cmd_backup() {
 	esac
 }
 
-# --- audit log of verbs run by hand (tech.md 4.5, slice 35) ---
+# --- audit log of verbs run by hand (tech.md 4.5, task 35) ---
 
 # audit_wanted <verb> [<subverb>] - does this call change something? Reads
 # (list, status, check) are not logged.
@@ -6058,7 +6058,7 @@ cmd_exceptions() {
 DPISTACK_BUNDLE_END
 put lib/ips.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# IPS mode (slice 29): the DPISTACK chain and its jumps. Shared by
+# IPS mode (task 29): the DPISTACK chain and its jumps. Shared by
 # dpistack (mode, fw) and the installer (uninstall).
 #
 # The installer never flushes, deletes or reorders a chain that is not its
@@ -7770,7 +7770,7 @@ menu_diff_screen() {
 }
 
 # menu_reconfigure_screen - 5.3's section screen. `0) Back` only makes
-# sense when opened from the control menu (not built until slice 15),
+# sense when opened from the control menu (not built until task 15),
 # so a direct `dpistack reconfigure` behaves like `q` there, per spec.
 menu_reconfigure_screen() {
 	while true; do
@@ -9123,7 +9123,7 @@ path_profiles_json() { echo "$(path_state_dir)/profiles.json"; }
 path_tests_last_json() { echo "$(path_state_dir)/tests-last.json"; }
 path_metrics_json() { echo "$(path_state_dir)/metrics.json"; }
 path_backups_dir() { echo "$(path_state_dir)/backups"; }
-# Archives of `dpistack backup create` (slice 36); backups/ holds the single
+# Archives of `dpistack backup create` (task 36); backups/ holds the single
 # copies of a file made before it is replaced.
 path_backup_archives_dir() { echo "$(path_state_dir)/archives"; }
 path_staging_dir() { echo "$(path_state_dir)/staging"; }
@@ -10004,7 +10004,7 @@ config_history() {
 DPISTACK_BUNDLE_END
 put lib/runtime_docker.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# Docker runtime (slice 27): suricata, evebox, ntopng and the redis behind
+# Docker runtime (task 27): suricata, evebox, ntopng and the redis behind
 # ntopng as services of one compose project. Only Docker with the compose
 # plugin; podman, swarm and kubernetes are out of scope.
 #
@@ -11175,8 +11175,8 @@ state_install_finished() {
 }
 
 # Render-hash tracking for idempotency and the "manually edited file"
-# guard (tech.md 5.4). Added back in slice 2 once step_suricata.sh
-# actually renders something; slice 1 removed these as dead code
+# guard (tech.md 5.4). Added back in task 2 once step_suricata.sh
+# actually renders something; task 1 removed these as dead code
 # because nothing called them yet.
 
 state_file_hash() {
@@ -11219,7 +11219,7 @@ put lib/step_access.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Access: binds ntopng/EveBox/panel per ACCESS_MODE, an nginx reverse
 # proxy for ACCESS_MODE=nginx, and firewall rules for FIREWALL_MANAGE
-# (tech.md slice 7). ntopng/evebox stay on 127.0.0.1 for localhost and
+# (tech.md task 7). ntopng/evebox stay on 127.0.0.1 for localhost and
 # nginx modes (nginx does the proxying); lan makes them bind 0.0.0.0
 # directly - access_effective_bind_host is what their own render
 # functions call, so there is exactly one place that decides this.
@@ -11688,8 +11688,8 @@ DPISTACK_BUNDLE_END
 put lib/step_evebox.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # EveBox: official apt repo (evebox.org/docs/install/debian), package,
-# evebox.yaml from templates/evebox.yaml.tpl (tech.md slice 6). Bound to
-# Bind address comes from access_effective_bind_host (slice 7). The
+# evebox.yaml from templates/evebox.yaml.tpl (tech.md task 6). Bound to
+# Bind address comes from access_effective_bind_host (task 7). The
 # package ships the evebox.service unit and
 # EveBox's built-in database.retention.days handles retention (A9,
 # SQLite only; 0 disables).
@@ -12045,7 +12045,7 @@ step_grafana_plan() {
 DPISTACK_BUNDLE_END
 put lib/step_metrics.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# Metrics backend (slice 28): VictoriaMetrics single-node or Prometheus,
+# Metrics backend (task 28): VictoriaMetrics single-node or Prometheus,
 # native or docker, scraping GET /metrics of the panel. METRICS_BACKEND=none
 # means only the endpoint exists and the user brings their own collector
 # (README), so the step has nothing to install - and stops a backend this
@@ -12360,7 +12360,7 @@ DPISTACK_BUNDLE_END
 put lib/step_ndpi.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # nDPI: NDPI_SOURCE=pkg installs the distro's libndpi-dev, NDPI_SOURCE=source
-# clones and builds ntop/nDPI from GitHub (tech.md slice 4).
+# clones and builds ntop/nDPI from GitHub (tech.md task 4).
 
 NDPI_PACKAGE="libndpi-dev"
 # The dnf name is set once the family is known (see os_detect).
@@ -12649,7 +12649,7 @@ put lib/step_ntopng.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # ntopng: ntop.org apt repo, ntopng package, ntopng.conf rendered from
 # NTOPNG_IFACES/NTOPNG_PORT. Bind address comes from
-# access_effective_bind_host (lib/step_access.sh, slice 7): 127.0.0.1
+# access_effective_bind_host (lib/step_access.sh, task 7): 127.0.0.1
 # for localhost/nginx modes, 0.0.0.0 for lan.
 
 NTOPNG_PACKAGE="ntopng"
@@ -13152,7 +13152,7 @@ step_panel_apply() {
 	fi
 	run chown "$PANEL_USER:$PANEL_USER" "$mfile" || return 1
 
-	# The audit log (slice 35) has a directory of its own, because the panel
+	# The audit log (task 35) has a directory of its own, because the panel
 	# rotates it (it renames files) and the state directory stays root's.
 	# Root appends to the same file when it runs a verb by hand.
 	local adir
@@ -13629,7 +13629,7 @@ put lib/step_redis.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Redis: ntopng's own state/preferences store (admin password hash,
 # host stats cache), independent of any EVE_REDIS suricata setting
-# (tech.md slice 5). Plain distro package, default config, always on.
+# (tech.md task 5). Plain distro package, default config, always on.
 
 REDIS_PACKAGE="redis-server"
 REDIS_UNIT="redis-server.service"
@@ -13675,7 +13675,7 @@ put lib/step_rules.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Rules: suricata-update sources from RULES_SOURCES/RULES_URLS,
 # enable.conf from RULES_GROUPS, and the dpistack-rules timer
-# (tech.md slice 3). suricata-update itself tests the new ruleset with
+# (tech.md task 3). suricata-update itself tests the new ruleset with
 # `suricata -T` before replacing suricata.rules and keeps the old one
 # on failure (--no-test is never passed), so step_rules.sh does not
 # reimplement that rollback.
@@ -13932,7 +13932,7 @@ SELFINSTALL_PAYLOAD=(install.sh lib templates bin tests/data)
 SELFINSTALL_HASH_KEY="selfinstall.tree_hash"
 
 # Hash of everything that would be copied: when it is unchanged the step
-# copies nothing (slice 15 criterion 2).
+# copies nothing (task 15 criterion 2).
 selfinstall_source_hash() {
 	(cd "$SCRIPT_DIR" && find "${SELFINSTALL_PAYLOAD[@]}" -type f 2>/dev/null |
 		LC_ALL=C sort | xargs sha256sum | sha256sum | cut -d' ' -f1)
@@ -13985,8 +13985,8 @@ DPISTACK_BUNDLE_END
 put lib/step_suricata.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Suricata IDS: package install from distro/oisf, suricata.yaml and
-# logrotate rendering, systemd unit (tech.md slice 2). Source builds
-# and nDPI are schema.sh "not supported yet" until slice 4.
+# logrotate rendering, systemd unit (tech.md task 2). Source builds
+# and nDPI are schema.sh "not supported yet" until task 4.
 
 SURICATA_PACKAGE="suricata"
 SURICATA_UNIT="suricata.service"

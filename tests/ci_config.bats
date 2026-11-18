@@ -138,7 +138,7 @@ list_actions() {
 	[[ "$output" == *"default differs for PANEL_PORT"* ]]
 }
 
-@test "README covers what slice 25 requires" {
+@test "README covers what task 25 requires" {
 	for needle in "Topology limit" "Threat model" "Quick install" "dpistack.conf" "reconfigure" "dpistack" "scrape_configs" "VictoriaMetrics" "vmagent" "Prometheus"; do
 		grep -q "$needle" "$REPO_DIR/README.md" || {
 			echo "README lacks: $needle"

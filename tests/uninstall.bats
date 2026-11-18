@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers slice 8 criteria 6, 8 for `uninstall`/`uninstall --purge`.
+# Covers task 8 criteria 6, 8 for `uninstall`/`uninstall --purge`.
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

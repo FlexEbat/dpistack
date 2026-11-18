@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  # The same split as ci.yml (tech.md 18.58, slice 50): the bats suite over four
+  # The same split as ci.yml (tech.md 18.58, task 50): the bats suite over four
   # runners and the other checks on one; `gate` is green only when all are.
   bats:
     runs-on: ubuntu-24.04

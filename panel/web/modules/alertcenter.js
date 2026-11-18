@@ -1,4 +1,4 @@
-// The Alert Center (slice 43): the alerts of the watchdog and of Suricata with
+// The Alert Center (task 43): the alerts of the watchdog and of Suricata with
 // the state a person gave them, and what people decided. Everything is read
 // from /api/alert-center; a decision is one POST, after which the list is read
 // again. Without the permission events.ack there are no buttons. Only a 401

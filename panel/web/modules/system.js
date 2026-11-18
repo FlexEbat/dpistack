@@ -1,4 +1,4 @@
-// The host part of the Overview (slice 38): what /api/system says, as the
+// The host part of the Overview (task 38): what /api/system says, as the
 // numbers a person reads. The functions are pure so node --test can run them.
 
 export function humanBytes(n) {

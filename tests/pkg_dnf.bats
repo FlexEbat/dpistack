@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Slice 26 criteria 4 and 5: versionlock on the dnf family, and a missing
+# Task 26 criteria 4 and 5: versionlock on the dnf family, and a missing
 # source for the OS release stops the install in preflight with code 3.
 # Everything runs against mocks: not verified on a real Rocky, Alma or
 # Fedora host (tech.md 18.16).
