@@ -4,7 +4,7 @@
 // node --test can load it. Nothing here is invented: a field an event does
 // not carry stays empty, and `availability` says what is missing and why.
 
-// The server keeps at most 500 events per type (tech.md 4.8); the numbers
+// The server keeps at most 500 events per type (section 4.8); the numbers
 // below are therefore "in the newest events", never "all time".
 
 const HEX = /^[0-9a-f:]+$/i;

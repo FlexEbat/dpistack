@@ -1,4 +1,4 @@
-// Package health reads the watchdog's health.json (tech.md 4.6).
+// Package health reads the watchdog's health.json (section 4.6).
 package health
 
 import (

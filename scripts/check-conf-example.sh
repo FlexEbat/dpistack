@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Task 25, criterion 5: every key in dpistack.conf.example is in the
-# tech.md 4.3 table, and the other way round. Secrets (the "secret" rows)
+# section 4.3 table of the specification, and the other way round. Secrets (the "secret" rows)
 # are not dpistack.conf keys and must not appear in the example. Also
 # checks that each key's example value equals the default in lib/schema.sh,
 # so the example can't drift from what the installer really does.
@@ -34,13 +34,13 @@ only_example=$(comm -13 <(echo "$tech_keys") <(echo "$example_keys"))
 only_tech=$(comm -23 <(echo "$tech_keys") <(echo "$example_keys"))
 
 if [[ -n "$only_example" ]]; then
-	echo "in $example but not in tech.md 4.3:"
+	echo "in $example but not in the 4.3 table:"
 	mapfile -t lines <<<"$only_example"
 	printf '  %s\n' "${lines[@]}"
 	status=1
 fi
 if [[ -n "$only_tech" ]]; then
-	echo "in tech.md 4.3 but not in $example:"
+	echo "in the 4.3 table but not in $example:"
 	mapfile -t lines <<<"$only_tech"
 	printf '  %s\n' "${lines[@]}"
 	status=1
@@ -67,5 +67,5 @@ for key in "${SCHEMA_KEYS[@]}"; do
 	}
 done
 
-[[ $status -eq 0 ]] && echo "ok: $(echo "$example_keys" | wc -l) keys match tech.md 4.3 and lib/schema.sh"
+[[ $status -eq 0 ]] && echo "ok: $(echo "$example_keys" | wc -l) keys match the 4.3 table and lib/schema.sh"
 exit $status

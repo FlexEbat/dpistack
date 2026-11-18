@@ -3,7 +3,7 @@
 // The file is never parsed as a whole: a Reader remembers how far it has
 // read and, on every Poll, reads only what was appended since. It keeps the
 // newest events in memory, per event type, in rings whose sizes add up to at
-// most RingLimit (tech.md 9).
+// most RingLimit (section 9).
 package eve
 
 import (
@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	// PerTypeCap and MaxTypes together make the ring of tech.md 9: no more
+	// PerTypeCap and MaxTypes together make the ring of section 9: no more
 	// than RingLimit events in memory.
 	PerTypeCap = 500
 	MaxTypes   = 10

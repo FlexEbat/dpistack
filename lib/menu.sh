@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Plain-Bash text menu for `install`/`reconfigure` (tech.md 5.0, 5.1,
+# Plain-Bash text menu for `install`/`reconfigure` (section 5.0, 5.1,
 # 5.3). No dialog/whiptail/ncurses/cursor codes: every screen is just
 # printed again, so it works over SSH, in tmux, and stays in scrollback.
 
@@ -1274,7 +1274,7 @@ menu_run_reconfigure() {
 }
 
 # ------------------------------------------------------------------
-# Management menu (tech.md 5.2): `dpistack` with an installed config.
+# Management menu (section 5.2): `dpistack` with an installed config.
 # Each action runs in a subshell, so its lock and `exit` calls end with
 # the action and the menu carries on.
 # ------------------------------------------------------------------

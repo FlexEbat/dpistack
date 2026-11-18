@@ -36,7 +36,7 @@ put install.sh 755 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Entry point for both the pre-install invocation (install.sh) and,
 # once selfinstall has run, the persistent `dpistack` command
-# (tech.md 4.4, 5.1, 5.2). Task 1 wires the CLI, config layering and
+# (section 4.4, 5.1, 5.2). Task 1 wires the CLI, config layering and
 # an all-stub step pipeline; components fill in their steps later.
 set -uo pipefail
 
@@ -926,7 +926,7 @@ require_root() {
 	fi
 }
 
-# The verbs that act on an installed system (tech.md 4.5). `status` and
+# The verbs that act on an installed system (section 4.5). `status` and
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
@@ -1038,7 +1038,7 @@ main "$@"
 DPISTACK_BUNDLE_END
 put bin/dpistack-watch 755 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# dpistack watchdog (tech.md 8): one run per call, started by
+# dpistack watchdog (section 8): one run per call, started by
 # dpistack-watch.timer or by `dpistack health`. It writes
 # health.json atomically and a line to events.jsonl for every status
 # change. It repairs nothing unless WATCH_AUTORESTART=yes.
@@ -1129,7 +1129,7 @@ check_process() {
 }
 
 # backend_port <public-port> - with ACCESS_MODE=nginx the services listen
-# on <public>+10000 behind nginx (tech.md 7, same rule as access_backend_port
+# on <public>+10000 behind nginx (section 7, same rule as access_backend_port
 # in the installer); the check must look at the service, not at nginx.
 backend_port() {
 	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
@@ -1536,7 +1536,7 @@ autorestart() {
 	done
 }
 
-# prune_exceptions - the exceptions past their last day are removed (tech.md
+# prune_exceptions - the exceptions past their last day are removed (section
 # 18.40). Suricata does not know about dates, so someone has to take them out.
 # A failure is not a health problem of the stand: it is left for the next run.
 prune_exceptions() {
@@ -1578,7 +1578,7 @@ main "$@"
 DPISTACK_BUNDLE_END
 put lib/alerts.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# The Alert Center (tech.md 18.43): the alerts of the watchdog and of
+# The Alert Center (section 18.43): the alerts of the watchdog and of
 # Suricata, with a state a person sets: new, acknowledged, snoozed until,
 # resolved. Nothing is stored about the alerts themselves: they are read each
 # time, a watchdog alert from health.json (a check that is warn or crit) and a
@@ -1860,7 +1860,7 @@ DPISTACK_BUNDLE_END
 put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Shared primitives every step and lib file uses instead of calling
-# system commands or writing files directly (tech.md section 3, 5.6).
+# system commands or writing files directly (section 3, 5.6).
 
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
@@ -2196,7 +2196,7 @@ put lib/config.sh 644 <<'DPISTACK_BUNDLE_END'
 # Layers dpistack.conf together (schema defaults -> dpistack.conf ->
 # secrets.conf/env -> --config -> --set -> interactive answers),
 # validates the result against lib/schema.sh, and can diff two
-# configs for `reconfigure` (tech.md 5.1, 5.3, 4.3).
+# configs for `reconfigure` (section 5.1, 5.3, 4.3).
 
 declare -A CONF SECRETS
 ACCESS_CONFIRM=""
@@ -2226,7 +2226,7 @@ config_load_defaults() {
 }
 
 # config_load_kv_file <path>
-# Reads KEY=value lines (tech.md 4.3: one per line, no quotes, no
+# Reads KEY=value lines (section 4.3: one per line, no quotes, no
 # substitution), skipping blanks and comments, and applies each
 # through config_set_kv so secrets land in the right array.
 config_load_kv_file() {
@@ -2274,7 +2274,7 @@ config_apply_set() {
 }
 
 # config_validate
-# Prints every problem found (schema + cross-field, tech.md 4.3) and
+# Prints every problem found (schema + cross-field, section 4.3) and
 # returns the number of errors.
 config_validate() {
 	local errors=0
@@ -2441,7 +2441,7 @@ config_generate_metrics_token_if_needed() {
 
 # config_write_conf <path>
 # Deterministic, sorted output so two runs with the same values give
-# byte-identical files (tech.md 5.1 criterion: repeat -y = same conf).
+# byte-identical files (section 5.1 criterion: repeat -y = same conf).
 config_write_conf() {
 	local path="$1"
 	local key
@@ -2488,7 +2488,7 @@ config_write_secrets() {
 }
 
 # config_print_summary
-# Secrets never show their value, only whether one is set (tech.md 5.0).
+# Secrets never show their value, only whether one is set (section 5.0).
 config_print_summary() {
 	local key
 	for key in $(printf '%s\n' "${!CONF[@]}" | sort); do
@@ -2507,7 +2507,7 @@ config_print_summary() {
 # Compares CONF (already layered/validated) against a previously
 # applied dpistack.conf, prints "KEY: old -> new", and returns the
 # affected steps and worst weight on stdout after a marker line
-# (tech.md 5.3).
+# (section 5.3).
 # shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure after calling config_diff_and_steps
 CONFIG_CHANGE_WEIGHT="none"
 # shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure after calling config_diff_and_steps
@@ -2616,7 +2616,7 @@ suricata_redis_target() {
 DPISTACK_BUNDLE_END
 put lib/ctl.sh 755 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# The privileged verbs of dpistack (tech.md 4.5): status, start, stop, config
+# The privileged verbs of dpistack (section 4.5): status, start, stop, config
 # editing, rules, interfaces, mode, tests, health, panel password. They are
 # part of the one `dpistack` command (install.sh dispatches here); the panel
 # and the watchdog reach them through `sudo -n dpistack <verb>`. Sourced by
@@ -3287,7 +3287,7 @@ ctl_cmd_reconfigure() {
 }
 
 # -------------------------------------------------------------- settings
-# The dashboard's settings screen (tech.md 9): every key of the schema
+# The dashboard's settings screen (section 9): every key of the schema
 # (lib/schema.sh), its value, the checks of config_validate, and the
 # application of a change. The panel never edits dpistack.conf as text for
 # this; it sends KEY=VALUE pairs.
@@ -4465,7 +4465,7 @@ cmd_panel_passwd() {
 # --- runtime: what can run in Docker, and the links between parts (4.10) ---
 
 # RUNTIME_MATRIX rows: id|docker (yes|no|follows:<id>)|why. The same table is
-# in tech.md 4.10 and docs/runtimes.md; tests/runtime_matrix.bats compares the
+# in section 4.10 and docs/runtimes.md; tests/runtime_matrix.bats compares the
 # ids with COMPONENTS and the docker keys with the schema.
 RUNTIME_MATRIX=(
 	"suricata|yes|image jasonish/suricata; no nDPI plugin in the image and no IPS (mode ips needs a native Suricata)"
@@ -4921,7 +4921,7 @@ cmd_diagnose() {
 }
 
 # ---------------------------------------------------------------- backup
-# Task 36 (tech.md 4.5, 18.36): one tar.gz of the configs with a manifest
+# Task 36 (section 4.5, 18.36): one tar.gz of the configs with a manifest
 # (the program version, the sha256 and the mode of every file). Logs and
 # secrets.conf are not in it.
 
@@ -5276,7 +5276,7 @@ cmd_backup() {
 	esac
 }
 
-# --- audit log of verbs run by hand (tech.md 4.5, task 35) ---
+# --- audit log of verbs run by hand (section 4.5, task 35) ---
 
 # audit_wanted <verb> [<subverb>] - does this call change something? Reads
 # (list, status, check) are not logged.
@@ -5402,7 +5402,7 @@ cmd_info() {
 	return 0
 }
 
-# --- help (tech.md 4.5, 18.54) ---
+# --- help (section 4.5, 18.54) ---
 
 # ctl_help_overview - the same verbs as ctl_usage, grouped by what a person
 # wants to do. `dpistack help`; the flat reference is `dpistack help --all`.
@@ -5628,7 +5628,7 @@ ctl_main() {
 DPISTACK_BUNDLE_END
 put lib/exceptions.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# Exceptions (tech.md 18.40): what Suricata should not alert on, or should
+# Exceptions (section 18.40): what Suricata should not alert on, or should
 # alert on less often. The entries live in Suricata's own file,
 # threshold.config, in Suricata's own syntax, so nothing is rendered and
 # nothing can differ between the CLI and the dashboard: both call the verb
@@ -6196,7 +6196,7 @@ ips_nft_remove() {
 	return 0
 }
 
-# --- the IPS page (tech.md 18.42): `dpistack ips status|test` ---
+# --- the IPS page (section 18.42): `dpistack ips status|test` ---
 # Both only read. The dashboard calls the same verbs and shows their JSON,
 # so the CLI and the page cannot disagree. The pcap replay of `ips test`
 # writes into a private temporary directory and never touches the capture.
@@ -6588,7 +6588,7 @@ declare -gA KEY_HINT=(
 DPISTACK_BUNDLE_END
 put lib/menu.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# Plain-Bash text menu for `install`/`reconfigure` (tech.md 5.0, 5.1,
+# Plain-Bash text menu for `install`/`reconfigure` (section 5.0, 5.1,
 # 5.3). No dialog/whiptail/ncurses/cursor codes: every screen is just
 # printed again, so it works over SSH, in tmux, and stays in scrollback.
 
@@ -7863,7 +7863,7 @@ menu_run_reconfigure() {
 }
 
 # ------------------------------------------------------------------
-# Management menu (tech.md 5.2): `dpistack` with an installed config.
+# Management menu (section 5.2): `dpistack` with an installed config.
 # Each action runs in a subshell, so its lock and `exit` calls end with
 # the action and the menu carries on.
 # ------------------------------------------------------------------
@@ -8314,7 +8314,7 @@ menu_run_manage() {
 DPISTACK_BUNDLE_END
 put lib/migrate.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# Migrations: what an upgrade to a new version does by itself (tech.md 18.57).
+# Migrations: what an upgrade to a new version does by itself (section 18.57).
 #
 # Three things change between releases and none of them may be left to the
 # person who upgrades:
@@ -8504,7 +8504,7 @@ DPISTACK_BUNDLE_END
 put lib/os.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # OS detection and package-manager wrappers. Steps call pkg_install,
-# never apt-get/dnf directly (tech.md section 3).
+# never apt-get/dnf directly (section 3).
 
 OS_ID=""
 OS_ID_LIKE=""
@@ -8646,7 +8646,7 @@ SURICATA_COPR="@oisf/suricata-8.0"
 
 pkg_repo_add() {
 	# pkg_repo_add <name>
-	# Only "oisf" exists as a named repo (tech.md 4.3 SURICATA_SOURCE=oisf):
+	# Only "oisf" exists as a named repo (section 4.3 SURICATA_SOURCE=oisf):
 	# the OISF PPA on Ubuntu, the OISF COPR on the RHEL family and Fedora.
 	local name="$1"
 	case "$OS_FAMILY:$name" in
@@ -9094,7 +9094,7 @@ copr_chroot() {
 DPISTACK_BUNDLE_END
 put lib/paths.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# Single source of paths, built from DPISTACK_ROOT (tech.md 4.2, 3).
+# Single source of paths, built from DPISTACK_ROOT (section 4.2, 3).
 # No step reads /etc/... or /var/... directly; every path comes from here
 # so tests can redirect the whole tree into a temp dir.
 
@@ -9210,7 +9210,7 @@ path_ndpi_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib"; }
 DPISTACK_BUNDLE_END
 put lib/profiles.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# Settings profiles (tech.md 18.44): a profile is a name for a set of
+# Settings profiles (section 18.44): a profile is a name for a set of
 # KEY=VALUE pairs of dpistack.conf, saved in /var/lib/dpistack/profiles.json
 # and applied later through the same path as `settings set`, so a profile gets
 # the same checks, the same light or heavy weight and the same confirmation of
@@ -9436,7 +9436,7 @@ settings_profile() {
 DPISTACK_BUNDLE_END
 put lib/render.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# Template rendering (tech.md section 3: "substitution of @@KEY@@ and blocks
+# Template rendering (section 3: "substitution of @@KEY@@ and blocks
 # in templates/"). One implementation for every step, instead of a
 # private awk in each step file.
 #
@@ -9501,7 +9501,7 @@ render_template() {
 DPISTACK_BUNDLE_END
 put lib/rules_stats.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# Rules v2 (tech.md 18.41): what the rule sets hold, when they were updated,
+# Rules v2 (section 18.41): what the rule sets hold, when they were updated,
 # what a rule says, whether a custom rule is sound, and how a config file
 # changed. The verbs only read (`rules-local check` reads what it is given),
 # so the CLI and the dashboard show the same numbers: the panel calls these
@@ -10390,7 +10390,7 @@ docker_component_state() {
 DPISTACK_BUNDLE_END
 put lib/schema.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# The dpistack.conf key table (tech.md 4.3), plus the menu group (5.0)
+# The dpistack.conf key table (section 4.3), plus the menu group (5.0)
 # and reconfigure step/weight metadata (5.3) that lib/schema.sh is also
 # the single source for. Every dpistack.conf key must appear here; no
 # step reads or invents a key outside this table.
@@ -10414,7 +10414,7 @@ declare -A SCHEMA_TYPE SCHEMA_DEFAULT SCHEMA_OPTIONS SCHEMA_LEVEL \
 SCHEMA_KEYS=()
 
 # Key/value combinations whose implementation does not exist yet
-# (tech.md 4.3: "docker", "ips", METRICS_BACKEND other than "none").
+# (section 4.3: "docker", "ips", METRICS_BACKEND other than "none").
 # Present as valid enum members so the schema does not reject them
 # outright, but installer rejects them with "not supported yet".
 # Shape of every free-text key. These values end up in YAML, nginx and
@@ -10579,7 +10579,7 @@ schema_init() {
 
 schema_init
 
-# --- settings v2 (tech.md 18.44): when a key applies, and what a change touches ---
+# --- settings v2 (section 18.44): when a key applies, and what a change touches ---
 #
 # SCHEMA_DEPENDS[KEY] holds the conditions under which the key means anything,
 # separated by spaces, all of which must hold. A condition is
@@ -10949,7 +10949,7 @@ schema_empty_meaning() {
 DPISTACK_BUNDLE_END
 put lib/security.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# The security check of the panel (tech.md 18.45): `dpistack security check
+# The security check of the panel (section 18.45): `dpistack security check
 # [--json]`. It reads the settings, the modes of a few files and the audit log,
 # changes nothing, and answers with a list, each item with a level (ok, warn,
 # crit or na) and a hint for the fix. The panel shows the same list. Sourced by
@@ -11125,7 +11125,7 @@ DPISTACK_BUNDLE_END
 put lib/state.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Flat "key=value" step-completion log, rewritten atomically, plus
-# render-hash tracking for idempotency (tech.md 5.4).
+# render-hash tracking for idempotency (section 5.4).
 
 state_read_value() {
 	# state_read_value <key>
@@ -11175,7 +11175,7 @@ state_install_finished() {
 }
 
 # Render-hash tracking for idempotency and the "manually edited file"
-# guard (tech.md 5.4). Added back in task 2 once step_suricata.sh
+# guard (section 5.4). Added back in task 2 once step_suricata.sh
 # actually renders something; task 1 removed these as dead code
 # because nothing called them yet.
 
@@ -11219,7 +11219,7 @@ put lib/step_access.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Access: binds ntopng/EveBox/panel per ACCESS_MODE, an nginx reverse
 # proxy for ACCESS_MODE=nginx, and firewall rules for FIREWALL_MANAGE
-# (tech.md task 7). ntopng/evebox stay on 127.0.0.1 for localhost and
+# (task 7). ntopng/evebox stay on 127.0.0.1 for localhost and
 # nginx modes (nginx does the proxying); lan makes them bind 0.0.0.0
 # directly - access_effective_bind_host is what their own render
 # functions call, so there is exactly one place that decides this.
@@ -11688,7 +11688,7 @@ DPISTACK_BUNDLE_END
 put lib/step_evebox.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # EveBox: official apt repo (evebox.org/docs/install/debian), package,
-# evebox.yaml from templates/evebox.yaml.tpl (tech.md task 6). Bound to
+# evebox.yaml from templates/evebox.yaml.tpl (task 6). Bound to
 # Bind address comes from access_effective_bind_host (task 7). The
 # package ships the evebox.service unit and
 # EveBox's built-in database.retention.days handles retention (A9,
@@ -12052,7 +12052,7 @@ put lib/step_metrics.sh 644 <<'DPISTACK_BUNDLE_END'
 # installer started earlier, keeping its data (removed only by --purge).
 #
 # Native binaries come from the projects' GitHub releases: a pinned
-# version and the pinned sha256 of the tarball (A10, tech.md). The pins
+# version and the pinned sha256 of the tarball (A10). The pins
 # below were taken from the release checksum files; DPISTACK_METRICS_*
 # overrides exist for tests and for moving to a newer release by hand.
 
@@ -12360,7 +12360,7 @@ DPISTACK_BUNDLE_END
 put lib/step_ndpi.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # nDPI: NDPI_SOURCE=pkg installs the distro's libndpi-dev, NDPI_SOURCE=source
-# clones and builds ntop/nDPI from GitHub (tech.md task 4).
+# clones and builds ntop/nDPI from GitHub (task 4).
 
 NDPI_PACKAGE="libndpi-dev"
 # The dnf name is set once the family is known (see os_detect).
@@ -12813,9 +12813,9 @@ DPISTACK_BUNDLE_END
 put lib/step_panel.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # "panel" step: the system user `dpistack`, the sudoers rule that lets it
-# run only dpistack (tech.md 4.2, 4.5), the panel binary (PANEL_SOURCE:
+# run only dpistack (section 4.2, 4.5), the panel binary (PANEL_SOURCE:
 # built from panel/ with Go, or a ready dpistack-panel next to install.sh)
-# and the systemd unit (tech.md 9).
+# and the systemd unit (section 9).
 
 PANEL_USER="dpistack"
 PANEL_SERVICE="dpistack-panel.service"
@@ -12885,7 +12885,7 @@ panel_token_matches() {
 	fi
 }
 
-# panel_args - the flags of the panel (tech.md 9). The panel does not read
+# panel_args - the flags of the panel (section 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
 	local mode port
@@ -13260,7 +13260,7 @@ EOF
 DPISTACK_BUNDLE_END
 put lib/step_preflight.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# Real preflight (tech.md 5.5). Runs once, before any package gets
+# Real preflight (section 5.5). Runs once, before any package gets
 # installed; collects every failure reason instead of stopping at the
 # first one (install.sh's cmd_install dies with all of them, code 3).
 
@@ -13506,7 +13506,7 @@ step_preflight_reasons() {
 		fi
 		;;
 	unverified)
-		log "WARN" "$OS_ID ${OS_VERSION_ID:-} is not in the list of tested platforms (tech.md 11), the installation goes on"
+		log "WARN" "$OS_ID ${OS_VERSION_ID:-} is not in the list of tested platforms (section 11), the installation goes on"
 		;;
 	esac
 
@@ -13629,7 +13629,7 @@ put lib/step_redis.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Redis: ntopng's own state/preferences store (admin password hash,
 # host stats cache), independent of any EVE_REDIS suricata setting
-# (tech.md task 5). Plain distro package, default config, always on.
+# (task 5). Plain distro package, default config, always on.
 
 REDIS_PACKAGE="redis-server"
 REDIS_UNIT="redis-server.service"
@@ -13675,7 +13675,7 @@ put lib/step_rules.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Rules: suricata-update sources from RULES_SOURCES/RULES_URLS,
 # enable.conf from RULES_GROUPS, and the dpistack-rules timer
-# (tech.md task 3). suricata-update itself tests the new ruleset with
+# (task 3). suricata-update itself tests the new ruleset with
 # `suricata -T` before replacing suricata.rules and keeps the old one
 # on failure (--no-test is never passed), so step_rules.sh does not
 # reimplement that rollback.
@@ -13920,7 +13920,7 @@ step_rules_plan() {
 DPISTACK_BUNDLE_END
 put lib/step_selfinstall.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# "selfinstall" step (tech.md 5.2): copies the installer and its helpers
+# "selfinstall" step (section 5.2): copies the installer and its helpers
 # to /usr/local/lib/dpistack/installer/ and puts the persistent commands
 # in /usr/local/sbin: `dpistack` (a symlink to install.sh, so $0 is
 # "dpistack"; it carries the privileged verbs too) and dpistack-watch, and the
@@ -13985,7 +13985,7 @@ DPISTACK_BUNDLE_END
 put lib/step_suricata.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Suricata IDS: package install from distro/oisf, suricata.yaml and
-# logrotate rendering, systemd unit (tech.md task 2). Source builds
+# logrotate rendering, systemd unit (task 2). Source builds
 # and nDPI are schema.sh "not supported yet" until task 4.
 
 SURICATA_PACKAGE="suricata"
@@ -14243,7 +14243,7 @@ suricata_installed_version() {
 
 # suricata_validate_render <rendered-yaml-content>
 # Runs the real `suricata -T` against a temp copy, never against the
-# live suricata.yaml (tech.md 5.3 step 5: a failed check must leave
+# live suricata.yaml (section 5.3 step 5: a failed check must leave
 # the old file and the old dpistack.conf alone). Prints suricata's own
 # output and returns its exit code.
 suricata_validate_render() {
@@ -14541,7 +14541,7 @@ SYSCONFIG
 }
 
 # suricata_log_access - who may read eve.json: the group "suricata", which
-# the panel and EveBox users join (tech.md 4.2). The Debian and Ubuntu
+# the panel and EveBox users join (section 4.2). The Debian and Ubuntu
 # packages make no such group and run Suricata as root, so the group is
 # created here and the root-owned log directory handed to it (setgid, so
 # files Suricata creates later, also after logrotate, keep the group). Where
@@ -14711,7 +14711,7 @@ step_suricata_plan() {
 DPISTACK_BUNDLE_END
 put lib/step_verify.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# "verify" step and the checks behind `dpistack test` (tech.md 10).
+# "verify" step and the checks behind `dpistack test` (section 10).
 # The same functions serve the step (TEST_ON_INSTALL=yes) and the ctl
 # command, so the two cannot drift apart.
 #
@@ -15025,7 +15025,7 @@ step_verify_plan() {
 DPISTACK_BUNDLE_END
 put lib/step_watch.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# "watch" step: the systemd service and timer of dpistack-watch (tech.md
+# "watch" step: the systemd service and timer of dpistack-watch (section
 # 8). The binary itself is placed by the selfinstall step, which runs
 # before this one. jq is a hard dependency of the watchdog, so the step
 # installs it. The service skips its run while the installer copy is
@@ -15097,7 +15097,7 @@ step_watch_plan() {
 DPISTACK_BUNDLE_END
 put lib/tokens.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
-# API tokens (tech.md 18.45): `dpistack tokens create|list|revoke`. A token
+# API tokens (section 18.45): `dpistack tokens create|list|revoke`. A token
 # lets a script call the panel API as `Authorization: Bearer dpt_...`. The
 # secret is printed once, by `create`; /etc/dpistack/api-tokens.json (0640,
 # root:dpistack, beside users.json) keeps only its SHA-256, so a copy of the
@@ -15638,13 +15638,13 @@ scrape_configs:
 DPISTACK_BUNDLE_END
 put templates/sudoers.tpl 644 <<'DPISTACK_BUNDLE_END'
 # Managed by dpistack. The panel user may run only dpistack;
-# dpistack checks every argument itself (tech.md 4.5).
+# dpistack checks every argument itself (section 4.5).
 @@PANEL_USER@@ ALL=(root) NOPASSWD: @@CTL_BIN@@
 DPISTACK_BUNDLE_END
 put templates/suricata-test.yaml.tpl 644 <<'DPISTACK_BUNDLE_END'
 %YAML 1.1
 ---
-# Offline config for `dpistack test bittorrent` (tech.md 10).
+# Offline config for `dpistack test bittorrent` (section 10).
 # Same ruleset and plugins as production. Events go only to the -l
 # directory, so the main eve.json is never touched.
 # The sample pcap is a flow between two private hosts. With the real

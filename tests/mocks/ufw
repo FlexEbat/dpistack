@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mock of ufw for bats tests (tech.md 11): records the call and keeps the
+# Mock of ufw for bats tests (section 11): records the call and keeps the
 # user rules in ${MOCK_CALLS_LOG}.ufw, the way `ufw show added` lists them.
 # MOCK_EXIT (default 0) is the exit code of every other call.
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then

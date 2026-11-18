@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Task 33: `dpistack runtime` (tech.md 4.10): the matrix of what can run in
+# Task 33: `dpistack runtime` (section 4.10): the matrix of what can run in
 # Docker, the mixed flag and the links between the parts.
 
 setup() {

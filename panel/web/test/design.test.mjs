@@ -1,4 +1,4 @@
-// The design rules of tech.md 9.1 (the Aurora NOC design, v0.47.0) as tests:
+// The design rules of section 9.1 (the Aurora NOC design, v0.47.0) as tests:
 // they read the stylesheets and the page and fail when a rule is broken, so
 // the look cannot drift into ad hoc values. There is no browser in CI, so
 // what a browser would render is checked by the rules, not by pixels.

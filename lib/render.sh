@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Template rendering (tech.md section 3: "substitution of @@KEY@@ and blocks
+# Template rendering (section 3: "substitution of @@KEY@@ and blocks
 # in templates/"). One implementation for every step, instead of a
 # private awk in each step file.
 #

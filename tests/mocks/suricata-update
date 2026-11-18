@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smarter mock for bats tests (tech.md 11): a plain pass-through mock
+# Smarter mock for bats tests (section 11): a plain pass-through mock
 # can't exercise criteria 3 (rollback) or 5 (custom source ends up in
 # the set), so this one tracks calls via MOCK_CALLS_LOG (already
 # logging add-source/enable-source) and, on a plain "update" run,

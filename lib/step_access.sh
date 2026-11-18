@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Access: binds ntopng/EveBox/panel per ACCESS_MODE, an nginx reverse
 # proxy for ACCESS_MODE=nginx, and firewall rules for FIREWALL_MANAGE
-# (tech.md task 7). ntopng/evebox stay on 127.0.0.1 for localhost and
+# (task 7). ntopng/evebox stay on 127.0.0.1 for localhost and
 # nginx modes (nginx does the proxying); lan makes them bind 0.0.0.0
 # directly - access_effective_bind_host is what their own render
 # functions call, so there is exactly one place that decides this.

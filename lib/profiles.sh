@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Settings profiles (tech.md 18.44): a profile is a name for a set of
+# Settings profiles (section 18.44): a profile is a name for a set of
 # KEY=VALUE pairs of dpistack.conf, saved in /var/lib/dpistack/profiles.json
 # and applied later through the same path as `settings set`, so a profile gets
 # the same checks, the same light or heavy weight and the same confirmation of

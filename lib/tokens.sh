@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# API tokens (tech.md 18.45): `dpistack tokens create|list|revoke`. A token
+# API tokens (section 18.45): `dpistack tokens create|list|revoke`. A token
 # lets a script call the panel API as `Authorization: Bearer dpt_...`. The
 # secret is printed once, by `create`; /etc/dpistack/api-tokens.json (0640,
 # root:dpistack, beside users.json) keeps only its SHA-256, so a copy of the

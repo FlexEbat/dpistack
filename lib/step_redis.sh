@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Redis: ntopng's own state/preferences store (admin password hash,
 # host stats cache), independent of any EVE_REDIS suricata setting
-# (tech.md task 5). Plain distro package, default config, always on.
+# (task 5). Plain distro package, default config, always on.
 
 REDIS_PACKAGE="redis-server"
 REDIS_UNIT="redis-server.service"

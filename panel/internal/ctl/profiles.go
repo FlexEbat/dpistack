@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-// Settings profiles (tech.md 18.44). Each method runs one `settings profile`
+// Settings profiles (section 18.44). Each method runs one `settings profile`
 // verb and returns the JSON it printed, unchanged. The caller has checked the
 // name against the same pattern as the verb.
 

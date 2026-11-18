@@ -2,7 +2,7 @@
 # Layers dpistack.conf together (schema defaults -> dpistack.conf ->
 # secrets.conf/env -> --config -> --set -> interactive answers),
 # validates the result against lib/schema.sh, and can diff two
-# configs for `reconfigure` (tech.md 5.1, 5.3, 4.3).
+# configs for `reconfigure` (section 5.1, 5.3, 4.3).
 
 declare -A CONF SECRETS
 ACCESS_CONFIRM=""
@@ -32,7 +32,7 @@ config_load_defaults() {
 }
 
 # config_load_kv_file <path>
-# Reads KEY=value lines (tech.md 4.3: one per line, no quotes, no
+# Reads KEY=value lines (section 4.3: one per line, no quotes, no
 # substitution), skipping blanks and comments, and applies each
 # through config_set_kv so secrets land in the right array.
 config_load_kv_file() {
@@ -80,7 +80,7 @@ config_apply_set() {
 }
 
 # config_validate
-# Prints every problem found (schema + cross-field, tech.md 4.3) and
+# Prints every problem found (schema + cross-field, section 4.3) and
 # returns the number of errors.
 config_validate() {
 	local errors=0
@@ -247,7 +247,7 @@ config_generate_metrics_token_if_needed() {
 
 # config_write_conf <path>
 # Deterministic, sorted output so two runs with the same values give
-# byte-identical files (tech.md 5.1 criterion: repeat -y = same conf).
+# byte-identical files (section 5.1 criterion: repeat -y = same conf).
 config_write_conf() {
 	local path="$1"
 	local key
@@ -294,7 +294,7 @@ config_write_secrets() {
 }
 
 # config_print_summary
-# Secrets never show their value, only whether one is set (tech.md 5.0).
+# Secrets never show their value, only whether one is set (section 5.0).
 config_print_summary() {
 	local key
 	for key in $(printf '%s\n' "${!CONF[@]}" | sort); do
@@ -313,7 +313,7 @@ config_print_summary() {
 # Compares CONF (already layered/validated) against a previously
 # applied dpistack.conf, prints "KEY: old -> new", and returns the
 # affected steps and worst weight on stdout after a marker line
-# (tech.md 5.3).
+# (section 5.3).
 # shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure after calling config_diff_and_steps
 CONFIG_CHANGE_WEIGHT="none"
 # shellcheck disable=SC2034 # read by install.sh's cmd_reconfigure after calling config_diff_and_steps

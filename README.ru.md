@@ -174,7 +174,6 @@ README и руководства есть на английском и русс�
 | [docs/platforms.ru.md](docs/platforms.ru.md) | поддерживаемые дистрибутивы |
 | [docs/operations.ru.md](docs/operations.ru.md) | команды, правила, IPS, watchdog, стек метрик |
 | [docs/troubleshooting.ru.md](docs/troubleshooting.ru.md) | типичные сообщения и что делать |
-| [tech.md](tech.md) | спецификация, контракты и история проекта (на английском) |
 | [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) | разработка (на английском) |
 
 ## Разработка

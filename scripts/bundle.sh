@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds dpistack-install.sh: install.sh, lib/, templates/, bin/ and
-# tests/data/ in one file (tech.md task 30). The logic is not rewritten:
+# tests/data/ in one file (task 30). The logic is not rewritten:
 # the file carries the files as heredocs, unpacks them into a temporary
 # directory when it starts and runs the real install.sh from there, so the
 # modular and the single-file installer are the same code.

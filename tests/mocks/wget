@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mock for bats tests (tech.md 11): records the call, creates an empty
+# Mock for bats tests (section 11): records the call, creates an empty
 # output file if -O/-o is given (so callers that then `apt-get install
 # ./file.deb` on it don't choke on a missing path), exits MOCK_EXIT.
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then

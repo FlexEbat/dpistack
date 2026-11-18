@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dpistack watchdog (tech.md 8): one run per call, started by
+# dpistack watchdog (section 8): one run per call, started by
 # dpistack-watch.timer or by `dpistack health`. It writes
 # health.json atomically and a line to events.jsonl for every status
 # change. It repairs nothing unless WATCH_AUTORESTART=yes.
@@ -90,7 +90,7 @@ check_process() {
 }
 
 # backend_port <public-port> - with ACCESS_MODE=nginx the services listen
-# on <public>+10000 behind nginx (tech.md 7, same rule as access_backend_port
+# on <public>+10000 behind nginx (section 7, same rule as access_backend_port
 # in the installer); the check must look at the service, not at nginx.
 backend_port() {
 	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
@@ -497,7 +497,7 @@ autorestart() {
 	done
 }
 
-# prune_exceptions - the exceptions past their last day are removed (tech.md
+# prune_exceptions - the exceptions past their last day are removed (section
 # 18.40). Suricata does not know about dates, so someone has to take them out.
 # A failure is not a health problem of the stand: it is left for the next run.
 prune_exceptions() {

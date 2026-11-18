@@ -14,7 +14,7 @@ import (
 )
 
 // componentID is only a sanity filter on the path: which components exist
-// is for dpistack to say (tech.md 4.1), not a list copied here.
+// is for dpistack to say (section 4.1), not a list copied here.
 var componentID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
 // control handles POST /api/components/{id}/{start|stop|restart}.

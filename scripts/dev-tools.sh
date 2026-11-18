@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # dev-tools.sh [--check | --install] - the lint tools of the CI, in the same
-# versions, for local work (tech.md 18.58, task 56).
+# versions, for local work (section 18.58, task 56).
 #
 # The CI installs shellcheck and shfmt from Ubuntu 24.04. A newer build on a
 # developer machine passes what the CI refuses (the style finding SC2015 of

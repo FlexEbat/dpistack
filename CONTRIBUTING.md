@@ -27,12 +27,12 @@ bash scripts/gate.sh
 
 The gate runs `shfmt`, `shellcheck`, the security checks (`scripts/security.sh`), the single file (`scripts/bundle.sh --check`), the config example and the reference of settings, `bats tests`, `gofmt`, `go vet`, `go test`, the interface tests (`node --test`). The same checks run in CI on Ubuntu 22.04 and 24.04, plus `actionlint`, `trivy` and `gitleaks`.
 
-If `install.sh`, `lib/`, `templates/` or `bin/` changed, rebuild the single file: `bash scripts/bundle.sh`. If the settings schema changed, update the config example, the hints of the Settings screen, the table in tech.md and the reference (`bash scripts/gen-config-doc.sh`) and the menu hints (`bash scripts/gen-key-hints.sh`).
+If `install.sh`, `lib/`, `templates/` or `bin/` changed, rebuild the single file: `bash scripts/bundle.sh`. If the settings schema changed, update the config example, the hints of the Settings screen, the key table of the specification and the reference (`bash scripts/gen-config-doc.sh`) and the menu hints (`bash scripts/gen-key-hints.sh`).
 
 ## What a change must contain
 
 1. Code and a test: bats for the shell, `go test` for Go, `node --test` for the interface logic. External commands in tests are replaced by stubs (`tests/mocks/`).
-2. A note in tech.md: what changed and why, the decision taken, the version. The program version is in `lib/common.sh` and in the header of tech.md.
+2. A note in the specification: what changed and why, the decision taken, the version. The program version is in `lib/common.sh` and in the header of the specification.
 3. Documentation: if the behavior changes, update the matching file in `docs/` or the README, in English and in Russian (`*.ru.md`).
 4. Security: no secrets in logs, command arguments, API answers or commits; values are checked against the schema before use; the panel interface has no external resources.
 

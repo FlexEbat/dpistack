@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 5 criteria 2 and 4 (per tech.md's own test scope).
+# Covers task 5 criteria 2 and 4 (per the test scope).
 
 setup() {
 	REPO_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

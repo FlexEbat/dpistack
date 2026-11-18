@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared primitives every step and lib file uses instead of calling
-# system commands or writing files directly (tech.md section 3, 5.6).
+# system commands or writing files directly (section 3, 5.6).
 
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.

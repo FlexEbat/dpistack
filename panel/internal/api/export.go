@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// metricsExport handles GET /metrics (tech.md 4.9): Prometheus text, for a
+// metricsExport handles GET /metrics (section 4.9): Prometheus text, for a
 // scraper that sends the token as "Authorization: Bearer <token>". No
 // session is involved; the address policy of 4.8 still applies, because it
 // guards every request. Without a token configured the page does not exist.

@@ -1,6 +1,6 @@
 %YAML 1.1
 ---
-# Offline config for `dpistack test bittorrent` (tech.md 10).
+# Offline config for `dpistack test bittorrent` (section 10).
 # Same ruleset and plugins as production. Events go only to the -l
 # directory, so the main eve.json is never touched.
 # The sample pcap is a flow between two private hosts. With the real

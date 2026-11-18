@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # OS detection and package-manager wrappers. Steps call pkg_install,
-# never apt-get/dnf directly (tech.md section 3).
+# never apt-get/dnf directly (section 3).
 
 OS_ID=""
 OS_ID_LIKE=""
@@ -142,7 +142,7 @@ SURICATA_COPR="@oisf/suricata-8.0"
 
 pkg_repo_add() {
 	# pkg_repo_add <name>
-	# Only "oisf" exists as a named repo (tech.md 4.3 SURICATA_SOURCE=oisf):
+	# Only "oisf" exists as a named repo (section 4.3 SURICATA_SOURCE=oisf):
 	# the OISF PPA on Ubuntu, the OISF COPR on the RHEL family and Fedora.
 	local name="$1"
 	case "$OS_FAMILY:$name" in

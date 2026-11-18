@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Covers task 2 criteria 2, 3, 5, 6, 7 (on stubs/mocks, per tech.md's
+# Covers task 2 criteria 2, 3, 5, 6, 7 (on stubs/mocks, per the
 # own note for this task's test scope).
 
 setup() {

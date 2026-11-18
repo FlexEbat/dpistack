@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# "selfinstall" step (tech.md 5.2): copies the installer and its helpers
+# "selfinstall" step (section 5.2): copies the installer and its helpers
 # to /usr/local/lib/dpistack/installer/ and puts the persistent commands
 # in /usr/local/sbin: `dpistack` (a symlink to install.sh, so $0 is
 # "dpistack"; it carries the privileged verbs too) and dpistack-watch, and the

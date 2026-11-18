@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Entry point for both the pre-install invocation (install.sh) and,
 # once selfinstall has run, the persistent `dpistack` command
-# (tech.md 4.4, 5.1, 5.2). Task 1 wires the CLI, config layering and
+# (section 4.4, 5.1, 5.2). Task 1 wires the CLI, config layering and
 # an all-stub step pipeline; components fill in their steps later.
 set -uo pipefail
 
@@ -891,7 +891,7 @@ require_root() {
 	fi
 }
 
-# The verbs that act on an installed system (tech.md 4.5). `status` and
+# The verbs that act on an installed system (section 4.5). `status` and
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode

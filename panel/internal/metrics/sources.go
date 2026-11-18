@@ -72,7 +72,7 @@ func FileSize(path string) func() (int64, bool) {
 }
 
 // FreeRatio is the free share (0..1) of the filesystem that holds dir
-// (statfs, as tech.md 3 allows).
+// (statfs, as section 3 allows).
 func FreeRatio(dir string) (float64, bool) {
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(dir, &st); err != nil || st.Blocks == 0 {

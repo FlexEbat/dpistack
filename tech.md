@@ -1,4 +1,4 @@
-# tech.md: dpistack (nDPI + Suricata + EveBox + ntopng)
+# dpistack (nDPI + Suricata + EveBox + ntopng)
 
 **Document version: v85** (2026-11-17)
 **Program version: v0.51.2** (tasks 0-51 and 53-56 are done, 52 is partly done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
@@ -99,7 +99,7 @@ No ORM, no database in the panel, no Node/npm at runtime, no CSS frameworks.
 ```
 install.sh                    the entry point: argument parsing, loading lib/, running the steps
 dpistack.conf.example         an example config with every key
-README.md  README.ru.md  LICENSE  SECURITY.md  AGENTS.md  CONTRIBUTING.md  tech.md
+README.md  README.ru.md  LICENSE  SECURITY.md  AGENTS.md  CONTRIBUTING.md
 .github/
   workflows/ci.yml            the gate on every push and pull request (12.1)
   workflows/security.yml      gitleaks, security.sh, trivy (12.1)
@@ -1050,7 +1050,7 @@ node --test panel/web/test/*.test.mjs
 - `security.yml` on push, pull request and once a week: `gitleaks` over the whole history (a token that got into an old commit stays in it); it runs as a ready binary of version 8.30.1 from the release with a SHA-256 check (`gitleaks/gitleaks-action` failed on every pull request from Dependabot with no findings and needs a license for organizations); `dependabot` does not update the version and the sum, they are changed together by hand; `scripts/security.sh`, `shellcheck -S style`, `trivy fs` (secrets and configuration errors, HIGH and CRITICAL) with SARIF sent to code scanning. A finding that is not a secret (an invented token in a test) does not turn the rule off: the fingerprint of that one finding goes into `.gitleaksignore` with a reason above the line, and the file in the tree no longer contains the literal; the first such case is the test `/metrics` token of task 23 (the commit `76a0b94` stayed in the history, the history was not rewritten).
 - `release.yml` by the tag `vX.Y.Z`: the same `gate.sh`, then a check that the tag equals `DPISTACK_VERSION` in `lib/common.sh`, building `dpistack-X.Y.Z.tar.gz` (`install.sh`, `lib`, `templates`, `bin`, `panel`, `tests/data` and the ready panel binaries `dpistack-panel-linux-amd64` and `dpistack-panel-linux-arm64` built with `CGO_ENABLED=0` in the `publish` job through the pinned `actions/setup-go`), the `.sha256` file, an attestation of the origin (`actions/attest-build-provenance`) and publishing the release. Only the `publish` job has write rights.
 - `dependabot.yml` updates the versions of GitHub Actions once a week.
-- The rules for workflows, checked by `tests/ci_config.bats`: every one has an explicit `permissions` block, no `pull_request_target`, no text of an event (`head_ref`, issue titles and comments) in `run:`, every third-party action is pinned by a version, the version of the program in `tech.md` equals the version in the code.
+- The rules for workflows, checked by `tests/ci_config.bats`: every one has an explicit `permissions` block, no `pull_request_target`, no text of an event (`head_ref`, issue titles and comments) in `run:`, every third-party action is pinned by a version, the version of the program in this document equals the version in the code.
 - The review (v7) added: all actions are pinned by the full SHA of a commit with a version comment (`dependabot` updates them), `actionlint` runs as a ready image, not as a script piped into `bash`; `trivy-action` v0.36.0 (v0.28.0 pulled a removed `setup-trivy@v0.2.1` and the job failed at preparation); a release is published only if the tag is on `main`; uploading SARIF is skipped for a pull request from a fork (its token is read-only). `tests/ci_config.bats` checks the pinning by SHA, the absence of `curl | sh`, the check of the tag and the presence of the files that `release.yml` copies. The first runs on GitHub were red from the first commit for two reasons, both found only there: (1) the `preflight` of the installer requires root, and the steps of the runner run as an ordinary user, so every test with an install failed; the gate on the runner now runs as `sudo -E env "PATH=$PATH" bash scripts/gate.sh`; (2) `trivy-action` v0.28.0 pulled the nested action `setup-trivy@v0.2.1`, which no longer exists, and the job failed at preparation; now v0.36.0, whose nested actions are pinned by SHA. Checked locally on the tool versions of Ubuntu 22.04 (`shfmt` 3.4.3, `shellcheck` 0.8.0, `bats` 1.2.1). The logs of the runs from the development environment are unavailable, so the reasons were confirmed by reproduction, not by reading a log. So that a red gate does not have to be sorted out blindly, the step `Report failing checks` in `ci.yml` publishes the names of the first six failed checks as a commit status with the context `gate <OS> #N` (the right `statuses: write` is only in that job). Two more defects found there: a test looked for `uses: ` as a substring and took `statuses: write` for an action (now the parsing is tied to the start of the line), and the stub of `journalctl` in a test did not stop on an ignored `SIGPIPE`, as on the runners of GitHub.
 
 ### 12.4 The automatic check of Suricata releases (v12)
@@ -1139,7 +1139,7 @@ Other conventions: decisions marked "choose yourself" are taken by the developer
 4. There are no new files and abstractions beyond section 3.
 5. There is no dead code: no unused functions, templates, schema keys, JS modules.
 6. Commits by the convention of section 13.
-7. `tech.md` is not changed (a change of a contract goes separately, through section 15). In practice the owner allows the developer to update this file for the decisions of a task and to record them in the log.
+7. This document is not changed (a change of a contract goes separately, through section 15). In practice the owner allows the developer to update this file for the decisions of a task and to record them in the log.
 
 ---
 

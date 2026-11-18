@@ -318,7 +318,7 @@ func TestRingLimits(t *testing.T) {
 		t.Fatalf("%d types kept, want %d", n, MaxTypes)
 	}
 	if RingLimit != 5000 {
-		t.Fatalf("RingLimit is %d, tech.md says 5000", RingLimit)
+		t.Fatalf("RingLimit is %d, the specification says 5000", RingLimit)
 	}
 }
 

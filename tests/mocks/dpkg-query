@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mock for bats tests (tech.md 11): reports every package as installed at 1.0,
+# Mock for bats tests (section 11): reports every package as installed at 1.0,
 # so checks do not depend on what the host has installed, except the
 # ones named in MOCK_DPKG_ABSENT.
 if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then

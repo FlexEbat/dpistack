@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The Alert Center (tech.md 18.43): the alerts of the watchdog and of
+# The Alert Center (section 18.43): the alerts of the watchdog and of
 # Suricata, with a state a person sets: new, acknowledged, snoozed until,
 # resolved. Nothing is stored about the alerts themselves: they are read each
 # time, a watchdog alert from health.json (a check that is warn or crit) and a
