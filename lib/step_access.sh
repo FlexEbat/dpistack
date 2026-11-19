@@ -329,6 +329,15 @@ access_firewall_sync() {
 		fi
 		return 0
 	fi
+	# ufw that is installed but switched off keeps rules and enforces none, so
+	# the ports stay open to everyone the host can be reached from. The rules are
+	# still written (they apply once ufw is on); enabling it is left to the
+	# administrator, since a ufw that is turned on without an ssh rule locks them out.
+	if [[ "$tool" == "ufw" ]] && ufw status 2>/dev/null | grep -qi '^Status: inactive'; then
+		if [[ ${#wanted[@]} -gt 0 ]]; then
+			echo "access: ufw is installed but inactive - the rules are added and not enforced; allow ssh and run: sudo ufw enable" >&2
+		fi
+	fi
 	ACCESS_FW_OWNED=()
 	for rule in $old; do
 		if [[ " ${wanted[*]} " == *" $rule "* ]]; then

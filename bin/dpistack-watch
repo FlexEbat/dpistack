@@ -254,6 +254,12 @@ check_redis_stream() {
 		return
 	fi
 	read -r host port key <<<"$target"
+	# Without hiredis the installer leaves the Redis output out of suricata.yaml:
+	# the stream stays empty, which would otherwise read as a healthy 0.
+	if ! suricata_has_redis; then
+		record redis.eve_stream warn "" "EVE_REDIS is set but this Suricata was built without hiredis, so nothing is written to the stream (use SURICATA_SOURCE=source or a Suricata built with Redis support)"
+		return
+	fi
 	maxlen="${CONF[EVE_REDIS_MAXLEN]:-100000}"
 	if ! len=$(redis-cli -h "$host" -p "$port" xlen "$key" 2>/dev/null) || [[ ! "$len" =~ ^[0-9]+$ ]]; then
 		record redis.eve_stream warn "" "the stream $key on $host:$port cannot be read"

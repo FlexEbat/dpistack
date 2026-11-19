@@ -8,8 +8,13 @@ fi
 if [[ "${1:-}" == "-V" && -n "${MOCK_SURICATA_VERSION:-}" ]]; then
 	echo "This is Suricata version $MOCK_SURICATA_VERSION RELEASE"
 fi
-# "suricata --build-info" lists Redis support; MOCK_SURICATA_REDIS=no turns it off.
+# "suricata --build-info" lists hiredis the way the configure summary of
+# Suricata does (checked against the 8.0.8 configure.ac): "hiredis support:".
+# MOCK_SURICATA_REDIS=no turns it off.
 if [[ "${1:-}" == "--build-info" ]]; then
-	echo "Redis support:                           ${MOCK_SURICATA_REDIS:-yes}"
+	echo "Suricata Configuration:"
+	echo "  AF_PACKET support:                       yes"
+	echo "  hiredis support:                         ${MOCK_SURICATA_REDIS:-yes}"
+	echo "  hiredis async with libevent:             no"
 fi
 exit "${MOCK_EXIT:-0}"

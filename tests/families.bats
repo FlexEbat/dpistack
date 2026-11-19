@@ -191,6 +191,20 @@ fam() {
 	[[ "$output" != *"10.9.0.0/24,3000"* ]]
 }
 
+@test "firewall: an inactive ufw gets the rules and a warning that nothing is enforced" {
+	os_release ubuntu debian 24.04
+	MOCK_UFW_STATUS=inactive run fam 'access_firewall_sync 10.1.0.0/24,3000'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"ufw is installed but inactive"* ]]
+	grep -q '^ufw allow from 10.1.0.0/24 to any port 3000 proto tcp$' "$CALLS"
+	: >"$CALLS"
+	run fam 'access_firewall_sync 10.1.0.0/24,3000'
+	[[ "$output" != *"inactive"* ]]
+	# nothing wanted and nothing recorded: nothing to say
+	MOCK_UFW_STATUS=inactive run fam 'access_firewall_sync'
+	[[ "$output" != *"inactive"* ]]
+}
+
 @test "SELinux Enforcing with nginx turns on httpd_can_network_connect" {
 	os_release rocky "rhel centos fedora" 9.4
 	MOCK_GETENFORCE=Enforcing fam 'CONF[ACCESS_MODE]=nginx; access_selinux_notice' >/dev/null
@@ -538,6 +552,36 @@ preflight_reasons() {
 	if grep -q '12345:abcdef' "$out"; then false; fi
 	grep -q '<hidden>' "$out"
 	[[ "$output" != *"s3cret"* ]]
+}
+
+@test "diag asks Suricata for -V, shows its hiredis line, and keeps eve events out of the journal section" {
+	os_release ubuntu debian 24.04
+	local bin out
+	bin="$(mktemp -d)"
+	out="$DPISTACK_ROOT/diag.txt"
+	cat >"$bin/suricata" <<'FAKE'
+#!/usr/bin/env bash
+case "$1" in
+-V) echo "This is Suricata version 8.0.8 RELEASE" ;;
+--build-info) printf 'This is Suricata version 8.0.8 RELEASE\n  hiredis support:                         yes\n' ;;
+--version) echo "suricata: unrecognized option '--version'" ;;
+esac
+FAKE
+	cat >"$bin/journalctl" <<'FAKE'
+#!/usr/bin/env bash
+echo 'Nov 19 00:25:22 h suricata[1]: {"timestamp": "t", "event_type": "stats", "stats": {}}'
+echo 'Nov 19 00:25:23 h suricata[1]: Error: something real went wrong'
+echo 'Nov 19 00:25:24 h suricata[1]: {"timestamp":"t","event_type":"alert"}'
+FAKE
+	chmod +x "$bin/suricata" "$bin/journalctl"
+	run env PATH="$bin:$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" DIAG_OUT="$out" bash "$REPO_DIR/install.sh" diag --no-color
+	[ "$status" -eq 0 ]
+	grep -q '^suricata: This is Suricata version 8.0.8 RELEASE$' "$out"
+	if grep -q 'unrecognized option' "$out"; then false; fi
+	grep -q 'hiredis support: *yes' "$out"
+	grep -q 'Error: something real went wrong' "$out"
+	if grep -q '"event_type"' "$out"; then false; fi
+	rm -rf "$bin"
 }
 
 @test "a Suricata rebuild does not run make install-conf over the rendered suricata.yaml (R134)" {

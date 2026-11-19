@@ -815,7 +815,12 @@ diag_tool_versions() {
 	for tool in suricata evebox ntopng nginx redis-server rustc gcc git curl; do
 		if command -v "$tool" >/dev/null 2>&1; then
 			printf '%s: ' "$tool"
-			"$tool" --version 2>&1 | head -n 1
+			# Suricata has no --version: it is -V.
+			if [[ "$tool" == suricata ]]; then
+				"$tool" -V 2>&1 | head -n 1
+			else
+				"$tool" --version 2>&1 | head -n 1
+			fi
 		else
 			echo "$tool: missing"
 		fi
@@ -824,8 +829,8 @@ diag_tool_versions() {
 
 diag_packages() {
 	case "$OS_FAMILY" in
-	apt) dpkg -l 2>/dev/null | grep -E ' (suricata|libndpi|ntopng|evebox|redis|nginx|ufw|iproute2)' ;;
-	dnf) rpm -qa 2>/dev/null | grep -Ei '^(suricata|ndpi|ntopng|evebox|redis|valkey|nginx|firewalld)' ;;
+	apt) dpkg -l 2>/dev/null | grep -E ' (suricata|libndpi|libhiredis|ntopng|evebox|redis|nginx|ufw|iproute2)' ;;
+	dnf) rpm -qa 2>/dev/null | grep -Ei '^(suricata|ndpi|hiredis|ntopng|evebox|redis|valkey|nginx|firewalld)' ;;
 	esac
 }
 
@@ -857,7 +862,7 @@ diag_report() {
 	diag_section "platform" bash -c 'echo "$1 $2 family=$3 level=$4"; cat "$5"; uname -a; nproc; free -m | sed -n 1,2p; df -h / | tail -n 1' _ "$OS_ID" "$OS_VERSION_ID" "$OS_FAMILY" "$(os_support_level)" "$(path_os_release)"
 	diag_section "versions" diag_tool_versions
 	if command -v suricata >/dev/null 2>&1; then
-		diag_section "suricata --build-info" bash -c 'suricata --build-info 2>&1 | grep -E "^This is|Rust|nDPI|AF_PACKET|Features"'
+		diag_section "suricata --build-info" bash -c 'suricata --build-info 2>&1 | grep -E "^This is|Rust|nDPI|AF_PACKET|Features|hiredis"; ldd "$(command -v suricata)" 2>/dev/null | grep -i hiredis || echo "libhiredis: not linked"'
 	fi
 	diag_section "packages" diag_packages
 	diag_section "repositories" diag_repos
@@ -871,7 +876,10 @@ diag_report() {
 	fi
 	diag_section "dpistack log (last 80 lines)" bash -c 'tail -n 80 "$1" 2>&1' _ "$(path_install_log)"
 	if command -v journalctl >/dev/null 2>&1; then
-		diag_section "journalctl (suricata, evebox, ntopng)" bash -c 'journalctl -u suricata -u evebox -u ntopng -n 40 --no-pager 2>&1'
+		# EVE_SYSLOG=yes sends every event to the journal as one JSON line; they are left out
+		# here, or the last 40 lines would hold nothing but events and the messages of the
+		# services would never show.
+		diag_section "journalctl (suricata, evebox, ntopng)" bash -c 'journalctl -u suricata -u evebox -u ntopng -n 400 --no-pager 2>&1 | grep -v "\"event_type\"" | tail -n 40'
 	fi
 }
 

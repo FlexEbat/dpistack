@@ -850,7 +850,12 @@ diag_tool_versions() {
 	for tool in suricata evebox ntopng nginx redis-server rustc gcc git curl; do
 		if command -v "$tool" >/dev/null 2>&1; then
 			printf '%s: ' "$tool"
-			"$tool" --version 2>&1 | head -n 1
+			# Suricata has no --version: it is -V.
+			if [[ "$tool" == suricata ]]; then
+				"$tool" -V 2>&1 | head -n 1
+			else
+				"$tool" --version 2>&1 | head -n 1
+			fi
 		else
 			echo "$tool: missing"
 		fi
@@ -859,8 +864,8 @@ diag_tool_versions() {
 
 diag_packages() {
 	case "$OS_FAMILY" in
-	apt) dpkg -l 2>/dev/null | grep -E ' (suricata|libndpi|ntopng|evebox|redis|nginx|ufw|iproute2)' ;;
-	dnf) rpm -qa 2>/dev/null | grep -Ei '^(suricata|ndpi|ntopng|evebox|redis|valkey|nginx|firewalld)' ;;
+	apt) dpkg -l 2>/dev/null | grep -E ' (suricata|libndpi|libhiredis|ntopng|evebox|redis|nginx|ufw|iproute2)' ;;
+	dnf) rpm -qa 2>/dev/null | grep -Ei '^(suricata|ndpi|hiredis|ntopng|evebox|redis|valkey|nginx|firewalld)' ;;
 	esac
 }
 
@@ -892,7 +897,7 @@ diag_report() {
 	diag_section "platform" bash -c 'echo "$1 $2 family=$3 level=$4"; cat "$5"; uname -a; nproc; free -m | sed -n 1,2p; df -h / | tail -n 1' _ "$OS_ID" "$OS_VERSION_ID" "$OS_FAMILY" "$(os_support_level)" "$(path_os_release)"
 	diag_section "versions" diag_tool_versions
 	if command -v suricata >/dev/null 2>&1; then
-		diag_section "suricata --build-info" bash -c 'suricata --build-info 2>&1 | grep -E "^This is|Rust|nDPI|AF_PACKET|Features"'
+		diag_section "suricata --build-info" bash -c 'suricata --build-info 2>&1 | grep -E "^This is|Rust|nDPI|AF_PACKET|Features|hiredis"; ldd "$(command -v suricata)" 2>/dev/null | grep -i hiredis || echo "libhiredis: not linked"'
 	fi
 	diag_section "packages" diag_packages
 	diag_section "repositories" diag_repos
@@ -906,7 +911,10 @@ diag_report() {
 	fi
 	diag_section "dpistack log (last 80 lines)" bash -c 'tail -n 80 "$1" 2>&1' _ "$(path_install_log)"
 	if command -v journalctl >/dev/null 2>&1; then
-		diag_section "journalctl (suricata, evebox, ntopng)" bash -c 'journalctl -u suricata -u evebox -u ntopng -n 40 --no-pager 2>&1'
+		# EVE_SYSLOG=yes sends every event to the journal as one JSON line; they are left out
+		# here, or the last 40 lines would hold nothing but events and the messages of the
+		# services would never show.
+		diag_section "journalctl (suricata, evebox, ntopng)" bash -c 'journalctl -u suricata -u evebox -u ntopng -n 400 --no-pager 2>&1 | grep -v "\"event_type\"" | tail -n 40'
 	fi
 }
 
@@ -1296,6 +1304,12 @@ check_redis_stream() {
 		return
 	fi
 	read -r host port key <<<"$target"
+	# Without hiredis the installer leaves the Redis output out of suricata.yaml:
+	# the stream stays empty, which would otherwise read as a healthy 0.
+	if ! suricata_has_redis; then
+		record redis.eve_stream warn "" "EVE_REDIS is set but this Suricata was built without hiredis, so nothing is written to the stream (use SURICATA_SOURCE=source or a Suricata built with Redis support)"
+		return
+	fi
 	maxlen="${CONF[EVE_REDIS_MAXLEN]:-100000}"
 	if ! len=$(redis-cli -h "$host" -p "$port" xlen "$key" 2>/dev/null) || [[ ! "$len" =~ ^[0-9]+$ ]]; then
 		record redis.eve_stream warn "" "the stream $key on $host:$port cannot be read"
@@ -1884,7 +1898,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.51.7"
+DPISTACK_VERSION="0.51.8"
 
 : "${DRY_RUN:=0}"
 
@@ -2640,6 +2654,22 @@ suricata_redis_target() {
 	fi
 	[[ -n "$host" ]] || return 1
 	echo "$host $port $key"
+}
+
+# suricata_has_redis - 0 when the Suricata that is installed can write to
+# Redis (it was built with hiredis); 0 as well when there is no binary yet: the
+# source build of this installer adds --enable-hiredis, and suricata -T checks
+# the rendered file before anything is replaced.
+#
+# `suricata --build-info` prints "hiredis support: yes", the line of the
+# configure summary of Suricata. Up to v0.51.7 this looked for "Redis support:",
+# a line Suricata does not print, so a Suricata built with hiredis was taken for
+# one without and the Redis output never reached suricata.yaml (D176). The
+# libraries the binary is linked against say the same, and are a second source.
+suricata_has_redis() {
+	command -v suricata >/dev/null 2>&1 || return 0
+	suricata --build-info 2>/dev/null | grep -Eqi '^[[:space:]]*(hiredis|redis) support:[[:space:]]*yes' && return 0
+	ldd "$(command -v suricata)" 2>/dev/null | grep -qi 'libhiredis'
 }
 DPISTACK_BUNDLE_END
 put lib/ctl.sh 755 <<'DPISTACK_BUNDLE_END'
@@ -11640,6 +11670,15 @@ access_firewall_sync() {
 		fi
 		return 0
 	fi
+	# ufw that is installed but switched off keeps rules and enforces none, so
+	# the ports stay open to everyone the host can be reached from. The rules are
+	# still written (they apply once ufw is on); enabling it is left to the
+	# administrator, since a ufw that is turned on without an ssh rule locks them out.
+	if [[ "$tool" == "ufw" ]] && ufw status 2>/dev/null | grep -qi '^Status: inactive'; then
+		if [[ ${#wanted[@]} -gt 0 ]]; then
+			echo "access: ufw is installed but inactive - the rules are added and not enforced; allow ssh and run: sudo ufw enable" >&2
+		fi
+	fi
 	ACCESS_FW_OWNED=()
 	for rule in $old; do
 		if [[ " ${wanted[*]} " == *" $rule "* ]]; then
@@ -14175,14 +14214,7 @@ suricata_render_plugins_block() {
 
 # suricata_redis_target is in lib/config.sh: the watchdog reads it too.
 
-# suricata_has_redis - 0 when the installed Suricata was built with hiredis
-# (`suricata --build-info` says "Redis support: yes"); 0 as well when there is
-# no binary yet: the source build of this installer adds --enable-hiredis, and
-# suricata -T checks the rendered file before anything is replaced.
-suricata_has_redis() {
-	command -v suricata >/dev/null 2>&1 || return 0
-	suricata --build-info 2>/dev/null | grep -Eqi '^[[:space:]]*Redis support:[[:space:]]*yes'
-}
+# suricata_has_redis is in lib/config.sh: the watchdog reads it too.
 
 # suricata_render_redis_output - a second eve-log output with the same types:
 # the events go to Redis as well, the file stays (EveBox and the panel read
