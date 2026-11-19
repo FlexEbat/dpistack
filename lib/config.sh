@@ -419,3 +419,19 @@ suricata_redis_target() {
 	[[ -n "$host" ]] || return 1
 	echo "$host $port $key"
 }
+
+# suricata_has_redis - 0 when the Suricata that is installed can write to
+# Redis (it was built with hiredis); 0 as well when there is no binary yet: the
+# source build of this installer adds --enable-hiredis, and suricata -T checks
+# the rendered file before anything is replaced.
+#
+# `suricata --build-info` prints "hiredis support: yes", the line of the
+# configure summary of Suricata. Up to v0.51.7 this looked for "Redis support:",
+# a line Suricata does not print, so a Suricata built with hiredis was taken for
+# one without and the Redis output never reached suricata.yaml (D176). The
+# libraries the binary is linked against say the same, and are a second source.
+suricata_has_redis() {
+	command -v suricata >/dev/null 2>&1 || return 0
+	suricata --build-info 2>/dev/null | grep -Eqi '^[[:space:]]*(hiredis|redis) support:[[:space:]]*yes' && return 0
+	ldd "$(command -v suricata)" 2>/dev/null | grep -qi 'libhiredis'
+}

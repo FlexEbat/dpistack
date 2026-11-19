@@ -15,6 +15,10 @@ if [[ -n "${MOCK_CALLS_LOG:-}" ]]; then
 		grep -vxF "ufw $*" "$state" >"$state.new" || true
 		mv "$state.new" "$state"
 		;;
+	"status"*)
+		echo "Status: ${MOCK_UFW_STATUS:-active}"
+		exit 0
+		;;
 	"show added")
 		echo "Added user rules (see 'ufw status' for running firewall):"
 		cat "$state"

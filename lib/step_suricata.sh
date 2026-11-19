@@ -72,14 +72,7 @@ suricata_render_plugins_block() {
 
 # suricata_redis_target is in lib/config.sh: the watchdog reads it too.
 
-# suricata_has_redis - 0 when the installed Suricata was built with hiredis
-# (`suricata --build-info` says "Redis support: yes"); 0 as well when there is
-# no binary yet: the source build of this installer adds --enable-hiredis, and
-# suricata -T checks the rendered file before anything is replaced.
-suricata_has_redis() {
-	command -v suricata >/dev/null 2>&1 || return 0
-	suricata --build-info 2>/dev/null | grep -Eqi '^[[:space:]]*Redis support:[[:space:]]*yes'
-}
+# suricata_has_redis is in lib/config.sh: the watchdog reads it too.
 
 # suricata_render_redis_output - a second eve-log output with the same types:
 # the events go to Redis as well, the file stays (EveBox and the panel read

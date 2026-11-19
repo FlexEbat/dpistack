@@ -319,6 +319,20 @@ FAKE
 	[[ "$(field redis.eve_stream detail)" == *"cannot be read"* ]]
 }
 
+@test "redis.eve_stream is a warning when EVE_REDIS is set but this Suricata has no hiredis" {
+	printf 'EVE_REDIS=yes\n' >"$CONF_FILE"
+	printf '#!/usr/bin/env bash\necho 0\n' >"$FAKE_BIN/redis-cli"
+	printf '#!/usr/bin/env bash\n[[ "$1" == "--build-info" ]] && echo "  hiredis support:   no"\nexit 0\n' >"$FAKE_BIN/suricata"
+	chmod +x "$FAKE_BIN/redis-cli" "$FAKE_BIN/suricata"
+	run "$WATCH"
+	[ "$(field redis.eve_stream status)" = "warn" ]
+	[[ "$(field redis.eve_stream detail)" == *"built without hiredis"* ]]
+	# with hiredis the same empty stream is fine
+	printf '#!/usr/bin/env bash\n[[ "$1" == "--build-info" ]] && echo "  hiredis support:   yes"\nexit 0\n' >"$FAKE_BIN/suricata"
+	run "$WATCH"
+	[ "$(field redis.eve_stream status)" = "ok" ]
+}
+
 @test "migrate.pending is na without an install, warn when an upgrade left work, ok when it is done" {
 	run "$WATCH"
 	[ "$(field migrate.pending status)" = "na" ]

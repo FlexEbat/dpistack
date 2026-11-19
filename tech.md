@@ -1,24 +1,24 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v90** (2026-11-19)
-**Program version: v0.51.7** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v91** (2026-11-19)
+**Program version: v0.51.8** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.8: found on a real host (18.68): `EVE_REDIS` never reached suricata.yaml because the installer looked for a build-info line Suricata does not print (`hiredis support:`); the watchdog warns when EVE_REDIS is set without hiredis; `dpistack diag` asks Suricata for `-V`, leaves eve events out of the journal section and shows the hiredis state; an inactive ufw gets a warning.
 - v0.51.7: the firewall rules of ACCESS_MODE (18.67): an IPv6 network in `LAN_CIDR` gets a firewalld rule of family ipv6, and the rules added before a failure are written down as ours.
 - v0.51.6: the watchdog no longer calls a host healthy when it cannot read the component states (18.66): a new check `watch.status` is `warn` then, and the Overview shows it.
 - v0.51.5: the heartbeat ticker of a source build no longer outlives its stop (18.65): its `sleep` is killed with it, so whatever reads the installer output (a pipe, `$(...)`, the panel's update job) is not held for up to a minute after the build; the `bash -c` scripts of `dpistack diag` take paths as arguments; one bats test no longer clones the OISF repository.
 - v0.51.4: an upgrade no longer stops on the port of dpistack's own running service (18.64): the preflight knows the panel, EveBox, ntopng and the metrics backend by their process names.
-- v0.51.3: the Update button when the panel runs an older version than the installed dpistack (18.63): root repairs it by installing the release again, or names the drop-in that pins the old command line; the refusal and its reason are in the audit log.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v91: v0.51.8. 18.68 written (decisions D176 to D178); D144 now names the real build-info line.
 - v90: v0.51.7. 18.67 written (decision D175).
 - v89: v0.51.6. 18.66 written (decision D174); the list of watchdog check ids in 4.6 now names `redis.eve_stream`, `migrate.pending` and `watch.status`.
 - v88: v0.51.5. 18.65 written (decisions D172 and D173).
 - v87: v0.51.4. 18.64 written (decision D171).
 - v86: v0.51.3. 18.63 written (decisions D169 and D170); the row of `POST /api/update` in 4.5.
-- v85: documentation wording: the unit of work is a task (D168).
 
 ---
 
@@ -2360,7 +2360,7 @@ Tests: `tests/input_checks.bats` (14), changes in `tests/menu.bats` (the busy-po
 | id | decision |
 | --- | --- |
 | D143 | **`EVE_REDIS` is `no`, `yes` or `host[:port][/key]`.** A single key keeps old saved files valid; `yes` means the Redis of this host with key `suricata`. A value that an older version ignored is now active |
-| D144 | **No hiredis, no block.** If `suricata --build-info` says `Redis support: no`, the block is left out with a warning, because Suricata would stop at `filetype: redis`. With no binary yet the block is written and `suricata -T` checks the file |
+| D144 | **No hiredis, no block.** If `suricata --build-info` says `hiredis support: no`, the block is left out with a warning, because Suricata would stop at `filetype: redis`. With no binary yet the block is written and `suricata -T` checks the file |
 | D145 | **The source build always asks for hiredis.** `--enable-hiredis` and `libhiredis-dev` (`hiredis-devel`) cost almost nothing and make a later switch of `EVE_REDIS` work without a rebuild |
 | D146 | **The own period is whole hours, 1 to 24.** The ring holds one day. Other periods get about 180 points, the step rounded up to 30 seconds (12 hours: 4 minutes); the three old periods keep their grids |
 | D147 | **Tabs, not a longer page.** The Rules screen groups its tasks; a small `tabs.js` (roles, arrow keys) is used, no library |
@@ -2555,3 +2555,23 @@ Tests: `tests/watch.bats` (a status that exits non-zero, a status that prints no
 | D175 | **The rules that were added are written down even when the run fails.** What dpistack added is dpistack's to remove; losing the record on an error would turn its rules into the administrator's |
 
 Tests: `tests/families.bats` (the rich rule of an IPv6 and an IPv4 network, and the state after a failed second rule); both fail on v0.51.6.
+
+### 18.68 What a real host showed: hiredis, the diag report and an inactive ufw (v0.51.8)
+
+**Status:** done. Found by reading the `dpistack diag`, `health` and `status` output of a real Debian 13 host (Suricata 8.0.8 built from source with nDPI, ACCESS_MODE=lan, EVE_REDIS=yes).
+
+| No | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | medium | **`EVE_REDIS=yes` never worked.** The install and every `dpistack status` printed `EVE_REDIS=yes is not used: this Suricata was built without hiredis`, and `redis.eve_stream` read `ok 0`. The build did pass `--enable-hiredis` (recipe 2). The cause was `suricata_has_redis`: it looked for a line `Redis support: yes` in `suricata --build-info`, and Suricata prints `hiredis support: yes` (the configure summary of 8.0.8; there is no `Redis support:` line). The check could never succeed, so the Redis output was never written to `suricata.yaml`. The mock of `suricata` in the tests printed the invented line, which is why the tests passed | the check reads `hiredis support: yes` (or the old spelling) and, failing that, whether the binary links `libhiredis`; it moved to `lib/config.sh` next to `suricata_redis_target`. The mock prints the real line, with tests for the real line, for `no`, and for the invented line not counting |
+| 2 | medium | with `EVE_REDIS` set and no hiredis the watchdog said `redis.eve_stream ok 0`: an empty stream read as a healthy one | the check is `warn`, with the reason, when `suricata_has_redis` fails |
+| 3 | low | `dpistack diag` ran `suricata --version`, which Suricata does not have (`unrecognized option`) | `suricata -V` |
+| 4 | low | with `EVE_SYSLOG=yes` the journal section of the report held 40 lines of eve events (stats, flows) and no message of any service | the events (`"event_type"`) are filtered out of that section, which takes the last 40 of 400 other lines; the Suricata section also lists the hiredis line and whether the binary links `libhiredis`, and the package list names `libhiredis` |
+| 5 | low | ufw was installed but inactive, `FIREWALL_MANAGE=auto` added its rules, and nothing said that none of them was enforced (the web ports listened on every address) | a warning when rules are added to an inactive ufw; ufw is not turned on by the installer (without an ssh rule that would lock the administrator out) |
+
+| id | decision |
+| --- | --- |
+| D176 | **A test double copies the real output, not the output the code expects.** The mock of `suricata --build-info` now prints the line the 8.0.8 `configure.ac` has; the invented one is a test that must not count |
+| D177 | **A configured output that cannot work is a `warn` check, not a quiet `ok`.** An empty Redis stream with `EVE_REDIS` on and no hiredis is told by `redis.eve_stream` |
+| D178 | **ufw is never turned on by the installer.** An inactive ufw gets the rules and a warning with the command; firewalld that is not running keeps the earlier message and no rules |
+
+On the host: `sudo dpistack update` (or `reconfigure`) renders the Redis block; then `redis-cli xlen suricata` should grow. Not changed: the watchdog uses about 1.1 s of CPU per run (`dpistack status --json` asks every component for its version); that is a cost, not an error.

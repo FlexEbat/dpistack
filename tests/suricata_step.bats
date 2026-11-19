@@ -253,7 +253,24 @@ load_step() {
 	[[ "$output" == *"built without hiredis"* ]]
 }
 
-@test "EVE_REDIS is kept out when the Suricata build info says Redis support: no" {
+@test "EVE_REDIS is written when the Suricata build info says hiredis support: yes (the line Suricata really prints)" {
+	run load_step 'CONF[EVE_REDIS]="yes"' 'suricata_render_eve_log_block'
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"filetype: redis"* ]]
+	[[ "$output" != *"built without hiredis"* ]]
+}
+
+@test "a build info that has only the old, invented line Redis support: yes does not count" {
+	local bin
+	bin="$(mktemp -d)"
+	printf '#!/usr/bin/env bash\n[[ "$1" == "--build-info" ]] && echo "  Redis support:   no"\nexit 0\n' >"$bin/suricata"
+	chmod +x "$bin/suricata"
+	run env PATH="$bin:$PATH" bash -c "cd '$REPO_DIR'; source lib/config.sh; suricata_has_redis"
+	[ "$status" -eq 1 ]
+	rm -rf "$bin"
+}
+
+@test "EVE_REDIS is kept out when the Suricata build info says hiredis support: no" {
 	run load_step 'CONF[EVE_REDIS]="yes"; export MOCK_SURICATA_REDIS=no' 'suricata_render_eve_log_block'
 	[ "$status" -eq 0 ]
 	[[ "$output" != *"filetype: redis"* ]]
