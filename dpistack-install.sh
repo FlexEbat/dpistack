@@ -1898,7 +1898,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.51.8"
+DPISTACK_VERSION="0.51.9"
 
 : "${DRY_RUN:=0}"
 
@@ -14470,7 +14470,26 @@ suricata_resolve_source() {
 	CONF[SURICATA_SOURCE]=source
 }
 
+# suricata_source_build_current - the Suricata in /usr/local is the build of
+# the wanted ref made with the current recipe. The state holds the commit that
+# was built; the target tag or branch is compared as the commit it names, not as
+# text. A build of an older recipe is built again (lib/migrate.sh).
+suricata_source_build_current() {
+	suricata_source_binary_present || return 1
+	local wanted have
+	have=$(state_read_value "$SURICATA_BUILT_REF_STATE_KEY")
+	wanted=$(git_ref_commit "$(path_suricata_src_dir)" "$(suricata_target_ref)")
+	[[ -n "$wanted" && "$wanted" == "$have" ]] || return 1
+	[[ "$(build_recipe_have suricata)" == "$SURICATA_BUILD_RECIPE" ]]
+}
+
 suricata_build_from_source() {
+	# The step is applied for any change of the configuration (a new field in
+	# suricata.yaml, a mode switch), not only for a new release: a build that
+	# is already the wanted one is left alone, or every such change would fetch,
+	# configure and compile Suricata again (many minutes on a small host, and
+	# not possible offline).
+	suricata_source_build_current && return 0
 	local src_dir ref
 	src_dir=$(path_suricata_src_dir)
 	pkg_build_deps suricata || return 1
@@ -14626,15 +14645,7 @@ step_suricata_check() {
 	[[ "$source" =~ ^(distro|oisf|source)$ ]] || return 1
 
 	if [[ "$source" == "source" ]]; then
-		suricata_source_binary_present || return 1
-		local wanted have
-		have=$(state_read_value "$SURICATA_BUILT_REF_STATE_KEY")
-		# The state holds the commit that was built; the target tag or
-		# branch is compared as the commit it names, not as text.
-		wanted=$(git_ref_commit "$(path_suricata_src_dir)" "$(suricata_target_ref)")
-		[[ -n "$wanted" && "$wanted" == "$have" ]] || return 1
-		# a build of an older recipe is built again (lib/migrate.sh)
-		[[ "$(build_recipe_have suricata)" == "$SURICATA_BUILD_RECIPE" ]] || return 1
+		suricata_source_build_current || return 1
 	else
 		command -v suricata >/dev/null 2>&1 || return 1
 		[[ -n "$(suricata_installed_version)" ]] || return 1

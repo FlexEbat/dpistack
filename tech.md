@@ -1,24 +1,24 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v91** (2026-11-19)
-**Program version: v0.51.8** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v92** (2026-11-19)
+**Program version: v0.51.9** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.9: a Suricata that was built from source is no longer fetched and built again when only the configuration changed (18.69).
 - v0.51.8: found on a real host (18.68): `EVE_REDIS` never reached suricata.yaml because the installer looked for a build-info line Suricata does not print (`hiredis support:`); the watchdog warns when EVE_REDIS is set without hiredis; `dpistack diag` asks Suricata for `-V`, leaves eve events out of the journal section and shows the hiredis state; an inactive ufw gets a warning.
 - v0.51.7: the firewall rules of ACCESS_MODE (18.67): an IPv6 network in `LAN_CIDR` gets a firewalld rule of family ipv6, and the rules added before a failure are written down as ours.
 - v0.51.6: the watchdog no longer calls a host healthy when it cannot read the component states (18.66): a new check `watch.status` is `warn` then, and the Overview shows it.
 - v0.51.5: the heartbeat ticker of a source build no longer outlives its stop (18.65): its `sleep` is killed with it, so whatever reads the installer output (a pipe, `$(...)`, the panel's update job) is not held for up to a minute after the build; the `bash -c` scripts of `dpistack diag` take paths as arguments; one bats test no longer clones the OISF repository.
-- v0.51.4: an upgrade no longer stops on the port of dpistack's own running service (18.64): the preflight knows the panel, EveBox, ntopng and the metrics backend by their process names.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v92: v0.51.9. 18.69 written (decision D179).
 - v91: v0.51.8. 18.68 written (decisions D176 to D178); D144 now names the real build-info line.
 - v90: v0.51.7. 18.67 written (decision D175).
 - v89: v0.51.6. 18.66 written (decision D174); the list of watchdog check ids in 4.6 now names `redis.eve_stream`, `migrate.pending` and `watch.status`.
 - v88: v0.51.5. 18.65 written (decisions D172 and D173).
 - v87: v0.51.4. 18.64 written (decision D171).
-- v86: v0.51.3. 18.63 written (decisions D169 and D170); the row of `POST /api/update` in 4.5.
 
 ---
 
@@ -2575,3 +2575,19 @@ Tests: `tests/families.bats` (the rich rule of an IPv6 and an IPv4 network, and 
 | D178 | **ufw is never turned on by the installer.** An inactive ufw gets the rules and a warning with the command; firewalld that is not running keeps the earlier message and no rules |
 
 On the host: `sudo dpistack update` (or `reconfigure`) renders the Redis block; then `redis-cli xlen suricata` should grow. Not changed: the watchdog uses about 1.1 s of CPU per run (`dpistack status --json` asks every component for its version); that is a cost, not an error.
+
+### 18.69 A configuration change that rebuilt Suricata (v0.51.9)
+
+**Status:** done. Found while reading `lib/step_suricata.sh` for the effect of the v0.51.8 change on a host that builds Suricata from source.
+
+| No | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | medium | with `SURICATA_SOURCE=source`, `step_suricata_apply` always called `suricata_build_from_source`. The step is applied whenever its check fails, and the check also compares `suricata.yaml`, the logrotate file, the unit and the drop-in with their rendered text, so any change of the configuration (a new field in `suricata.yaml`, a mode switch, `STATS_INTERVAL_SEC`) ran `git fetch`, `submodule update`, `autogen.sh`, `configure` and `make` again although the built commit and the build recipe were the wanted ones. That takes many minutes on a small host, and cannot be done offline: a failed `git fetch` stopped the step, so the configuration change was not applied. The nDPI step does not have this, because its check is about nDPI alone | `suricata_source_build_current` (the binary is the one in `/usr/local`, its commit is the commit of the wanted ref, its recipe is the current one) is used by the check and at the start of `suricata_build_from_source`, which returns at once when the build is the wanted one |
+
+| id | decision |
+| --- | --- |
+| D179 | **A build is made when its input changed, not when anything else did.** A new release (the commit of the wanted ref), a new recipe, or no build at all builds Suricata; a changed configuration only renders and restarts. To build again by hand, remove the line `suricata.built_ref` from the state file and apply the step |
+
+Note: the nDPI plugin is built inside the Suricata tree against the nDPI sources. A new nDPI release alone does not rebuild Suricata (it did not before either, unless some other change applied the step); raise `SURICATA_BUILD_RECIPE` or remove `suricata.built_ref` when that is wanted.
+
+Tests: `tests/families.bats` (a current build runs nothing; an older recipe fetches and configures once); it fails on v0.51.8 (two configures).

@@ -584,6 +584,33 @@ FAKE
 	rm -rf "$bin"
 }
 
+@test "a config change on a Suricata built from source does not fetch and build it again" {
+	os_release ubuntu debian 24.04
+	local script='
+		pkg_build_deps() { :; }; pkg_select_rust() { :; }
+		run() { echo "RUN $*" >>"$MOCK_CALLS_LOG"; }
+		src=$(path_suricata_src_dir); mkdir -p "$src"
+		git -C "$src" init -q
+		git -C "$src" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x
+		git -C "$src" tag "$(suricata_target_ref)"
+		mkdir -p "$DPISTACK_ROOT/usr/local/bin"
+		printf "#!/bin/sh\n" >"$DPISTACK_ROOT/usr/local/bin/suricata"
+		chmod +x "$DPISTACK_ROOT/usr/local/bin/suricata"
+		PATH="$DPISTACK_ROOT/usr/local/bin:$PATH"
+		state_write_value "$SURICATA_BUILT_REF_STATE_KEY" "$(git -C "$src" rev-parse HEAD)"
+		state_write_value build.suricata.recipe "$SURICATA_BUILD_RECIPE"
+		suricata_build_from_source; echo "rc=$?"
+		state_write_value build.suricata.recipe "$((SURICATA_BUILD_RECIPE - 1))"
+		suricata_build_from_source; echo "rc=$?"'
+	: >"$CALLS"
+	run fam "$script"
+	[ "$status" -eq 0 ]
+	# the first call (the build is the wanted one) ran nothing, the second (an older recipe) built
+	[ "$(grep -c 'rc=0' <<<"$output")" -eq 2 ]
+	[ "$(grep -c '^RUN ./configure' "$CALLS")" -eq 1 ]
+	[ "$(grep -c '^RUN git -C .* fetch' "$CALLS")" -eq 1 ]
+}
+
 @test "a Suricata rebuild does not run make install-conf over the rendered suricata.yaml (R134)" {
 	os_release ubuntu debian 24.04
 	local script='
