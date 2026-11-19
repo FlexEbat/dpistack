@@ -1114,12 +1114,27 @@ eve_checks_apply() {
 
 declare -A COMP_STATE
 
+# STATUS_READ is "yes" when `dpistack status --json` gave a component list.
+# Without it no component is checked at all, so the run must not look healthy:
+# check_status_read turns the failure into a check of its own.
+STATUS_READ=no
+
 load_component_states() {
 	local out
 	out=$("$CTL" status --json 2>/dev/null) || return 0
+	jq -e '.components | type == "array"' >/dev/null 2>&1 <<<"$out" || return 0
+	STATUS_READ=yes
 	while IFS=$'\t' read -r id state; do
 		COMP_STATE[$id]="$state"
 	done < <(jq -r '.components[] | [.id, .state] | @tsv' <<<"$out" 2>/dev/null)
+}
+
+check_status_read() {
+	if [[ "$STATUS_READ" == "yes" ]]; then
+		record watch.status ok "" ""
+	else
+		record watch.status warn "" "the component states could not be read (dpistack status --json failed or printed no list), so no component was checked in this run; run: dpistack status"
+	fi
 }
 
 check_process() {
@@ -1558,6 +1573,7 @@ main() {
 	IFS=',' read -ra CHANNELS <<<"${CONF[ALERT_CHANNELS]}"
 
 	load_component_states
+	check_status_read
 	local id
 	for id in suricata evebox ntopng redis panel victoriametrics prometheus node_exporter grafana; do
 		# Backends are listed by `ctl status` only when selected.
@@ -1868,7 +1884,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.51.5"
+DPISTACK_VERSION="0.51.6"
 
 : "${DRY_RUN:=0}"
 

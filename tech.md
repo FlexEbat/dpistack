@@ -1,24 +1,24 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v88** (2026-11-18)
-**Program version: v0.51.5** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v89** (2026-11-19)
+**Program version: v0.51.6** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.6: the watchdog no longer calls a host healthy when it cannot read the component states (18.66): a new check `watch.status` is `warn` then, and the Overview shows it.
 - v0.51.5: the heartbeat ticker of a source build no longer outlives its stop (18.65): its `sleep` is killed with it, so whatever reads the installer output (a pipe, `$(...)`, the panel's update job) is not held for up to a minute after the build; the `bash -c` scripts of `dpistack diag` take paths as arguments; one bats test no longer clones the OISF repository.
 - v0.51.4: an upgrade no longer stops on the port of dpistack's own running service (18.64): the preflight knows the panel, EveBox, ntopng and the metrics backend by their process names.
 - v0.51.3: the Update button when the panel runs an older version than the installed dpistack (18.63): root repairs it by installing the release again, or names the drop-in that pins the old command line; the refusal and its reason are in the audit log.
 - v0.51.2: the last screens of task 55 (18.62): the IPS badge names the mode (IDS) instead of `na` and an empty Drop rules section says so, Settings no longer says "No changes" twice, card headings have room above their text.
-- v0.51.1: the screens of task 55 that were not yet looked at (18.61): the Events filters are a labelled grid card and are hidden with the viewer off, the Traffic controls are hidden without an event view, the Network parts sit in a card and a missing speed says so, a failed Backups load leaves no placeholder.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v89: v0.51.6. 18.66 written (decision D174); the list of watchdog check ids in 4.6 now names `redis.eve_stream`, `migrate.pending` and `watch.status`.
 - v88: v0.51.5. 18.65 written (decisions D172 and D173).
 - v87: v0.51.4. 18.64 written (decision D171).
 - v86: v0.51.3. 18.63 written (decisions D169 and D170); the row of `POST /api/update` in 4.5.
 - v85: documentation wording: the unit of work is a task (D168).
 - v84: v0.51.2. 18.62 written (decision D167); the task row 55 of 18.0 is done.
-- v83: v0.51.1. 18.61 written (decisions D164 to D166); the task row 55 of 18.0.
 
 ---
 
@@ -454,7 +454,7 @@ Exit codes: `0` success, `1` error, `2` misuse, `3` the check failed or the acti
 
 `status` is only `ok`, `warn`, `crit`, `na`. `overall` takes the worst status, `na` does not count. `since` changes only when the status changes.
 
-The ids of the checks: `<id>.process` and `<id>.port` for `suricata` (there is no port, only the process), `evebox`, `ntopng`, `redis`, `panel`, and, when installed, `victoriametrics` or `prometheus`, `node_exporter` and `grafana`; `suricata.eve_fresh`, `suricata.drop_rate`, `disk.free`, `rules.age`.
+The ids of the checks: `<id>.process` and `<id>.port` for `suricata` (there is no port, only the process), `evebox`, `ntopng`, `redis`, `panel`, and, when installed, `victoriametrics` or `prometheus`, `node_exporter` and `grafana`; `suricata.eve_fresh`, `suricata.drop_rate`, `disk.free`, `redis.eve_stream`, `migrate.pending`, `rules.age`, `watch.status`.
 
 `/var/lib/dpistack/events.jsonl`: a line per status change of a check, the `panel` channel:
 
@@ -883,6 +883,7 @@ The details of the checks:
 - `suricata.drop_rate`: by the last two `stats` from the tail of the file (the last 4 MB, the file is not read whole). Fewer than two events give `na`. A reset of the counter (a value lower than before) gives `ok` with a note, the interval is skipped.
 - `disk.free`: the partitions of the directory of `eve.json` and `/var/lib/evebox` (with `sqlite`) and of the data directory of the metrics backend. The smallest share of free space wins.
 - `rules.age`: no `suricata.rules` file gives `warn`.
+- `watch.status`: `ok` when `dpistack status --json` gave a component list, `warn` when it failed or printed something else (D174). Without that list no component is checked, so the run would otherwise look healthy. It never starts a restart (only `<id>.process` does).
 - With `WATCH_AUTORESTART=yes` a failed (`crit`) component is restarted through `dpistack restart <id>`, at most 3 times in a sliding hour, the time marks are in `state` (`watch.restarts.<id>`). The restart is written to the journal of the unit.
 - Dependencies: `jq` (the `watch` step installs it), `flock` (util-linux): a second simultaneous run exits quietly. The unit skips the start while there is no copy of the installer and of `dpistack` (`ConditionPathExists`).
 - `dpistack-watch` takes no arguments; `dpistack health` runs it once and prints `health.json`.
@@ -2523,3 +2524,19 @@ Verified: `tests/heartbeat.bats` has a test that fails on v0.51.4 (31 s against 
 | D173 | **No global `git` mock.** A test that must not reach the network puts a stand-in `git` on its own `PATH` |
 
 Open: the update archive (`selfupdate_fetch`) is checked for unsafe paths and for the version in `lib/common.sh`, but not against a checksum or a signature published with the release, so the Update button trusts the tag as GitHub serves it (the panel runs the update as root). A checksum file next to a release is cheap but is served from the same place, so it protects against a damaged download only; a signature (for example `minisign` or `cosign`, with a key kept off GitHub) protects against a moved tag and needs the owner's key and a change to the release workflow and to 4.5. That is a contract change (section 15) and is not made here. `self-update plan` also runs `install.sh migrate --plan` of the new release as root before the person confirms; that is the same trust as the update itself.
+
+### 18.66 A watchdog that could not read the states looked healthy (v0.51.6)
+
+**Status:** done. Found while reviewing `bin/dpistack-watch`.
+
+`load_component_states` asked `dpistack status --json` and returned quietly when it failed (a broken `dpistack.conf`, a `dpistack` that dies before it prints). `main` then skips every component whose state is empty, so a run with an unreadable status wrote no component check at all and `health.json` said `overall: ok`: the watchdog was blind exactly when something was wrong, and no alert went out. Reproduced by two tests that failed before the change.
+
+| No | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | medium | an unreadable `dpistack status --json` (non-zero exit, or output without a `components` list) gave a healthy `health.json` and no alert | the check `watch.status` is always written: `ok`, or `warn` with the reason; the alert channels, the recovery message and the Overview of the panel treat it like the other checks |
+
+| id | decision |
+| --- | --- |
+| D174 | **An unreadable status is a `warn` check of its own, not `crit` and not silence.** It is loud (`overall` becomes `warn`, one alert and a recovery message, the Overview line) but cannot start `WATCH_AUTORESTART`, which acts only on `<id>.process`, and a short failure of `dpistack status` does not page like a stopped Suricata. The old component checks are not carried over from the last good run: they would show a state that nobody read |
+
+Tests: `tests/watch.bats` (a status that exits non-zero, a status that prints no list, and the recovery on the next run), `panel/web/test/overview-model.test.mjs`.
