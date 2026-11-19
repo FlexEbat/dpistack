@@ -331,3 +331,32 @@ FAKE
 	run "$WATCH"
 	[ "$(field migrate.pending status)" = "ok" ]
 }
+
+@test "a status that cannot be read is a warning, not a healthy host" {
+	local bad
+	bad="$(mktemp)"
+	printf '#!/usr/bin/env bash\necho "dpistack: broken" >&2\nexit 1\n' >"$bad"
+	chmod +x "$bad"
+	DPISTACK_BIN="$bad" FAKE_STOPPED="suricata.service" run "$WATCH"
+	[ "$status" -eq 0 ]
+	[ "$(field watch.status status)" = "warn" ]
+	[ "$(jq -r '.overall' "$HEALTH")" = "warn" ]
+	# the stopped Suricata could not be seen, and the host is not called ok
+	rm -f "$bad"
+
+	# the next run reads the states again: the warning clears and says so
+	run "$WATCH"
+	[ "$(field watch.status status)" = "ok" ]
+	[ "$(field suricata.process status)" = "ok" ]
+	[ "$(jq -r 'select(.check == "watch.status") | .kind' "$EVENTS" | tail -n 1)" = "recovery" ]
+}
+
+@test "a status that prints something that is not the component list is also a warning" {
+	local bad
+	bad="$(mktemp)"
+	printf '#!/usr/bin/env bash\necho "not json"\n' >"$bad"
+	chmod +x "$bad"
+	DPISTACK_BIN="$bad" run "$WATCH"
+	[ "$(field watch.status status)" = "warn" ]
+	rm -f "$bad"
+}

@@ -95,3 +95,17 @@ test("pending work after an upgrade and an over-long Redis stream are warnings o
   assert.match(w[0], /^This host still has work from an earlier version: run sudo dpistack migrate\.$/);
   assert.match(w[1], /the bound is 100000\.$/);
 });
+
+test("a watchdog that could not read the component states is a warning on the Overview", () => {
+  const w = warnings({
+    status: { components: [] },
+    health: {
+      checks: [
+        { id: "watch.status", status: "warn", detail: "the component states could not be read, so no component was checked in this run" },
+      ],
+    },
+  });
+  assert.equal(w.length, 1);
+  assert.match(w[0], /^The component states could not be read/);
+  assert.deepEqual(warnings({ status: { components: [] }, health: { checks: [{ id: "watch.status", status: "ok", detail: "" }] } }), []);
+});
