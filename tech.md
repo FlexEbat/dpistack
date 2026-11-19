@@ -1,24 +1,24 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v89** (2026-11-19)
-**Program version: v0.51.6** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v90** (2026-11-19)
+**Program version: v0.51.7** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.7: the firewall rules of ACCESS_MODE (18.67): an IPv6 network in `LAN_CIDR` gets a firewalld rule of family ipv6, and the rules added before a failure are written down as ours.
 - v0.51.6: the watchdog no longer calls a host healthy when it cannot read the component states (18.66): a new check `watch.status` is `warn` then, and the Overview shows it.
 - v0.51.5: the heartbeat ticker of a source build no longer outlives its stop (18.65): its `sleep` is killed with it, so whatever reads the installer output (a pipe, `$(...)`, the panel's update job) is not held for up to a minute after the build; the `bash -c` scripts of `dpistack diag` take paths as arguments; one bats test no longer clones the OISF repository.
 - v0.51.4: an upgrade no longer stops on the port of dpistack's own running service (18.64): the preflight knows the panel, EveBox, ntopng and the metrics backend by their process names.
 - v0.51.3: the Update button when the panel runs an older version than the installed dpistack (18.63): root repairs it by installing the release again, or names the drop-in that pins the old command line; the refusal and its reason are in the audit log.
-- v0.51.2: the last screens of task 55 (18.62): the IPS badge names the mode (IDS) instead of `na` and an empty Drop rules section says so, Settings no longer says "No changes" twice, card headings have room above their text.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v90: v0.51.7. 18.67 written (decision D175).
 - v89: v0.51.6. 18.66 written (decision D174); the list of watchdog check ids in 4.6 now names `redis.eve_stream`, `migrate.pending` and `watch.status`.
 - v88: v0.51.5. 18.65 written (decisions D172 and D173).
 - v87: v0.51.4. 18.64 written (decision D171).
 - v86: v0.51.3. 18.63 written (decisions D169 and D170); the row of `POST /api/update` in 4.5.
 - v85: documentation wording: the unit of work is a task (D168).
-- v84: v0.51.2. 18.62 written (decision D167); the task row 55 of 18.0 is done.
 
 ---
 
@@ -2540,3 +2540,18 @@ Open: the update archive (`selfupdate_fetch`) is checked for unsafe paths and fo
 | D174 | **An unreadable status is a `warn` check of its own, not `crit` and not silence.** It is loud (`overall` becomes `warn`, one alert and a recovery message, the Overview line) but cannot start `WATCH_AUTORESTART`, which acts only on `<id>.process`, and a short failure of `dpistack status` does not page like a stopped Suricata. The old component checks are not carried over from the last good run: they would show a state that nobody read |
 
 Tests: `tests/watch.bats` (a status that exits non-zero, a status that prints no list, and the recovery on the next run), `panel/web/test/overview-model.test.mjs`.
+
+### 18.67 The firewall rules for an IPv6 network, and the rules of a failed run (v0.51.7)
+
+**Status:** done. Found while reviewing `lib/step_access.sh`.
+
+| No | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | medium | `LAN_CIDR` accepts IPv6 networks (`schema_cidr_ok`, the same check as `HOME_NET`), but `access_fw_rich_rule` wrote `family=ipv4` for every network. firewalld rejects an IPv6 address in a rule of family ipv4, so with `FIREWALL_MANAGE=auto` on a firewalld host an IPv6 entry made the access step fail | the family follows the address: a network with a colon is `family=ipv6`, any other `family=ipv4` (ufw takes both as they are) |
+| 2 | low | when adding a rule failed part-way in `access_firewall_sync`, the rules added before it were not written to `access.fw.rules`. The next run saw them as the administrator's own and uninstall never took them out | the rules added so far are written down before the step returns the failure |
+
+| id | decision |
+| --- | --- |
+| D175 | **The rules that were added are written down even when the run fails.** What dpistack added is dpistack's to remove; losing the record on an error would turn its rules into the administrator's |
+
+Tests: `tests/families.bats` (the rich rule of an IPv6 and an IPv4 network, and the state after a failed second rule); both fail on v0.51.6.

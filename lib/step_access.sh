@@ -226,8 +226,12 @@ access_fw_tool() {
 	return 0
 }
 
+# The family has to match the address: firewalld rejects an IPv6 network in
+# a rule of family ipv4, and LAN_CIDR may hold IPv6 networks (schema_cidr_ok).
 access_fw_rich_rule() {
-	echo "rule family=ipv4 source address=${1} port port=${2} protocol=tcp accept"
+	local family=ipv4
+	[[ "$1" == *:* ]] && family=ipv6
+	echo "rule family=${family} source address=${1} port port=${2} protocol=tcp accept"
 }
 
 # access_fw_has <cidr> <port> - the rule is there, whoever added it.
@@ -336,7 +340,12 @@ access_firewall_sync() {
 	done
 	for rule in "${wanted[@]}"; do
 		[[ " ${ACCESS_FW_OWNED[*]} " == *" $rule "* ]] && continue
-		access_allow_port "${rule%,*}" "${rule#*,}" || return 1
+		if ! access_allow_port "${rule%,*}" "${rule#*,}"; then
+			# What was added before the failure is ours: write it down, or
+			# it would never be taken out again.
+			state_write_value "$ACCESS_FW_STATE_KEY" "${ACCESS_FW_OWNED[*]}"
+			return 1
+		fi
 		changed=1
 	done
 	# firewalld keeps permanent rules apart from the running ones.
