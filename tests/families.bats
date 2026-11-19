@@ -167,6 +167,30 @@ fam() {
 	grep -q '^firewall-cmd --reload$' "$CALLS"
 }
 
+@test "firewall: a rich rule for an IPv6 network says family=ipv6, an IPv4 one family=ipv4" {
+	os_release rocky "rhel centos fedora" 9.4
+	run fam 'access_fw_rich_rule fd00::/8 3000'
+	[ "$output" = "rule family=ipv6 source address=fd00::/8 port port=3000 protocol=tcp accept" ]
+	run fam 'access_fw_rich_rule 10.0.0.0/24 3000'
+	[ "$output" = "rule family=ipv4 source address=10.0.0.0/24 port port=3000 protocol=tcp accept" ]
+	: >"$CALLS"
+	fam 'command() { if [[ "$1" == "-v" && "$2" == "ufw" ]]; then return 1; else builtin command "$@"; fi; }
+		access_allow_port fd00::/8 3000' >/dev/null
+	grep -q '^firewall-cmd --permanent --add-rich-rule=rule family=ipv6 source address=fd00::/8 port port=3000 protocol=tcp accept$' "$CALLS"
+}
+
+@test "firewall: when adding a rule fails, the rules already added are still written down as ours" {
+	os_release ubuntu debian 24.04
+	run fam 'ufw() { if [[ "$1 $2" == "allow from" && "$3" == "10.9.0.0/24" ]]; then return 1; fi; return 0; }
+		access_fw_has() { return 1; }
+		access_firewall_sync 10.1.0.0/24,3000 10.9.0.0/24,3000
+		echo "rc=$?"
+		state_read_value access.fw.rules'
+	[[ "$output" == *"rc=1"* ]]
+	[[ "$output" == *"10.1.0.0/24,3000"* ]]
+	[[ "$output" != *"10.9.0.0/24,3000"* ]]
+}
+
 @test "SELinux Enforcing with nginx turns on httpd_can_network_connect" {
 	os_release rocky "rhel centos fedora" 9.4
 	MOCK_GETENFORCE=Enforcing fam 'CONF[ACCESS_MODE]=nginx; access_selinux_notice' >/dev/null
