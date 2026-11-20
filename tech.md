@@ -1,24 +1,24 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v92** (2026-11-19)
-**Program version: v0.51.9** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v93** (2026-11-19)
+**Program version: v0.51.10** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.10: the watchdog service has a start timeout (18.70), so a run that hangs cannot silence it.
 - v0.51.9: a Suricata that was built from source is no longer fetched and built again when only the configuration changed (18.69).
 - v0.51.8: found on a real host (18.68): `EVE_REDIS` never reached suricata.yaml because the installer looked for a build-info line Suricata does not print (`hiredis support:`); the watchdog warns when EVE_REDIS is set without hiredis; `dpistack diag` asks Suricata for `-V`, leaves eve events out of the journal section and shows the hiredis state; an inactive ufw gets a warning.
 - v0.51.7: the firewall rules of ACCESS_MODE (18.67): an IPv6 network in `LAN_CIDR` gets a firewalld rule of family ipv6, and the rules added before a failure are written down as ours.
 - v0.51.6: the watchdog no longer calls a host healthy when it cannot read the component states (18.66): a new check `watch.status` is `warn` then, and the Overview shows it.
-- v0.51.5: the heartbeat ticker of a source build no longer outlives its stop (18.65): its `sleep` is killed with it, so whatever reads the installer output (a pipe, `$(...)`, the panel's update job) is not held for up to a minute after the build; the `bash -c` scripts of `dpistack diag` take paths as arguments; one bats test no longer clones the OISF repository.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v93: v0.51.10. 18.70 written (decision D180).
 - v92: v0.51.9. 18.69 written (decision D179).
 - v91: v0.51.8. 18.68 written (decisions D176 to D178); D144 now names the real build-info line.
 - v90: v0.51.7. 18.67 written (decision D175).
 - v89: v0.51.6. 18.66 written (decision D174); the list of watchdog check ids in 4.6 now names `redis.eve_stream`, `migrate.pending` and `watch.status`.
 - v88: v0.51.5. 18.65 written (decisions D172 and D173).
-- v87: v0.51.4. 18.64 written (decision D171).
 
 ---
 
@@ -2591,3 +2591,19 @@ On the host: `sudo dpistack update` (or `reconfigure`) renders the Redis block; 
 Note: the nDPI plugin is built inside the Suricata tree against the nDPI sources. A new nDPI release alone does not rebuild Suricata (it did not before either, unless some other change applied the step); raise `SURICATA_BUILD_RECIPE` or remove `suricata.built_ref` when that is wanted.
 
 Tests: `tests/families.bats` (a current build runs nothing; an older recipe fetches and configures once); it fails on v0.51.8 (two configures).
+
+### 18.70 A watchdog run that never ends (v0.51.10)
+
+**Status:** done. A hardening found while reading `templates/dpistack-watch.service.tpl`; no host has shown it.
+
+`dpistack-watch.service` is `Type=oneshot` and had no `TimeoutStartSec`; systemd gives a oneshot unit no start timeout unless one is set. The watchdog takes a `flock` (`flock -n 9 || exit 0`) so two runs do not overlap, and its alert calls have `--max-time`, but `dpistack status --json` and the checks it starts (`systemctl`, `redis-cli`, `ss`) have none. One call that never answers would keep the first run alive and the lock held; every later run of the timer would find the lock and exit at once, and `health.json` would stop moving with nothing to say so.
+
+| No | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | low (not seen on a host) | a hung run of the watchdog silences it | `TimeoutStartSec=600` in the unit: systemd ends a run that lasts ten minutes and the next timer run starts. A normal run takes seconds; a component it restarts can take minutes (Suricata loading its rules) |
+
+| id | decision |
+| --- | --- |
+| D180 | **Every unit that the watchdog or the installer runs on a timer has a start timeout.** A job that can wait on something outside it must be ended by systemd, or it ends the monitoring it belongs to |
+
+Test: `tests/watch_step.bats` (the rendered unit has the line); it fails on v0.51.9.

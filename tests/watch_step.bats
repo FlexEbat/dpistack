@@ -35,6 +35,8 @@ install_base() {
 	[ -x "$BIN" ]
 	grep -qx "OnUnitActiveSec=60s" "$TIMER"
 	grep -qx "ExecStart=$BIN" "$SERVICE"
+	# a hung run must end, or it holds the lock and the watchdog goes silent
+	grep -qx 'TimeoutStartSec=600' "$SERVICE"
 	grep -q "^ConditionPathExists=$DPISTACK_ROOT/usr/local/lib/dpistack/installer/lib/paths.sh$" "$SERVICE"
 	grep -q "^systemctl enable --now dpistack-watch.timer" "$MOCK_CALLS_LOG"
 }
