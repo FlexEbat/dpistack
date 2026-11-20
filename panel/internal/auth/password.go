@@ -19,8 +19,11 @@ import (
 // cgroup while it is being checked.
 const maxMemoryKiB = 32 * 1024
 
-// maxPasswordLen keeps a huge request body from reaching argon2.
-const maxPasswordLen = 512
+// MaxPasswordBytes is the longest password Verify takes (it keeps a huge
+// request body from reaching argon2). It counts bytes, not characters, and the
+// API holds an account to it when the password is set: a password the API took
+// and Verify refused would be an account that can never sign in.
+const MaxPasswordBytes = 512
 
 var (
 	// ErrNoPassword means panel.auth does not exist or is empty.
@@ -79,7 +82,7 @@ func Verify(phc, password string) (bool, error) {
 	if err != nil || len(want) < 16 || len(want) > 64 {
 		return false, ErrHashFormat
 	}
-	if len(password) > maxPasswordLen {
+	if len(password) > MaxPasswordBytes {
 		return false, nil
 	}
 

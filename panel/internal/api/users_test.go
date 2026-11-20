@@ -296,6 +296,8 @@ func TestCreateUserChecksItsInput(t *testing.T) {
 		"custom empty":  `{"name":"bob","role":"custom","password":"long enough pw"}`,
 		"unknown perm":  `{"name":"bob","role":"custom","perms":["fly"],"password":"long enough pw"}`,
 		"newline in pw": `{"name":"bob","role":"viewer","password":"long enough\npw"}`,
+		// 200 characters but 600 bytes: Verify would refuse it at sign-in
+		"too many bytes": `{"name":"bob","role":"viewer","password":"` + strings.Repeat("字", 200) + `"}`,
 	} {
 		if w := e.as("admin", "POST", "/api/users", body); w.Code != 400 {
 			t.Errorf("%s: %d, want 400", name, w.Code)
