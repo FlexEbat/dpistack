@@ -1898,7 +1898,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.51.9"
+DPISTACK_VERSION="0.51.10"
 
 : "${DRY_RUN:=0}"
 
@@ -15557,6 +15557,12 @@ ConditionPathExists=@@CTL_BIN@@
 [Service]
 Type=oneshot
 ExecStart=@@WATCH_BIN@@
+# A oneshot service has no start timeout unless one is set. A run that hangs
+# (a command that never answers) would then hold the flock, every later run of
+# the timer would exit at once, and nothing would be watched or reported. A
+# normal run takes a few seconds; a restart of a component it starts can take
+# minutes (Suricata loading its rules).
+TimeoutStartSec=600
 DPISTACK_BUNDLE_END
 put templates/dpistack-watch.timer.tpl 644 <<'DPISTACK_BUNDLE_END'
 [Unit]
