@@ -119,8 +119,11 @@ func checkRole(w http.ResponseWriter, b userBody) bool {
 
 func checkPassword(w http.ResponseWriter, pw string) bool {
 	n := utf8.RuneCountInString(pw)
-	if n < minPassword || n > maxPassword || strings.ContainsAny(pw, "\r\n") {
-		writeError(w, http.StatusBadRequest, "the password has 8 to 256 characters and one line")
+	// The length in bytes is held to what Verify takes: 256 characters of
+	// Chinese are 768 bytes, and an account whose password cannot be checked
+	// at sign-in is locked out for good.
+	if n < minPassword || n > maxPassword || len(pw) > auth.MaxPasswordBytes || strings.ContainsAny(pw, "\r\n") {
+		writeError(w, http.StatusBadRequest, "the password has 8 to 256 characters (at most 512 bytes) and one line")
 		return false
 	}
 	return true

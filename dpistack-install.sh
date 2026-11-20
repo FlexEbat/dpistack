@@ -1898,7 +1898,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.51.10"
+DPISTACK_VERSION="0.51.11"
 
 : "${DRY_RUN:=0}"
 

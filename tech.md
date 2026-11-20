@@ -1,24 +1,24 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v93** (2026-11-19)
-**Program version: v0.51.10** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v94** (2026-11-19)
+**Program version: v0.51.11** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.11: the panel no longer creates an account with a password that cannot sign in (18.71).
 - v0.51.10: the watchdog service has a start timeout (18.70), so a run that hangs cannot silence it.
 - v0.51.9: a Suricata that was built from source is no longer fetched and built again when only the configuration changed (18.69).
 - v0.51.8: found on a real host (18.68): `EVE_REDIS` never reached suricata.yaml because the installer looked for a build-info line Suricata does not print (`hiredis support:`); the watchdog warns when EVE_REDIS is set without hiredis; `dpistack diag` asks Suricata for `-V`, leaves eve events out of the journal section and shows the hiredis state; an inactive ufw gets a warning.
 - v0.51.7: the firewall rules of ACCESS_MODE (18.67): an IPv6 network in `LAN_CIDR` gets a firewalld rule of family ipv6, and the rules added before a failure are written down as ours.
-- v0.51.6: the watchdog no longer calls a host healthy when it cannot read the component states (18.66): a new check `watch.status` is `warn` then, and the Overview shows it.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v94: v0.51.11. 18.71 written (decision D181).
 - v93: v0.51.10. 18.70 written (decision D180).
 - v92: v0.51.9. 18.69 written (decision D179).
 - v91: v0.51.8. 18.68 written (decisions D176 to D178); D144 now names the real build-info line.
 - v90: v0.51.7. 18.67 written (decision D175).
 - v89: v0.51.6. 18.66 written (decision D174); the list of watchdog check ids in 4.6 now names `redis.eve_stream`, `migrate.pending` and `watch.status`.
-- v88: v0.51.5. 18.65 written (decisions D172 and D173).
 
 ---
 
@@ -2607,3 +2607,19 @@ Tests: `tests/families.bats` (a current build runs nothing; an older recipe fetc
 | D180 | **Every unit that the watchdog or the installer runs on a timer has a start timeout.** A job that can wait on something outside it must be ended by systemd, or it ends the monitoring it belongs to |
 
 Test: `tests/watch_step.bats` (the rendered unit has the line); it fails on v0.51.9.
+
+### 18.71 A password the API took and the sign-in refused (v0.51.11)
+
+**Status:** done. Found while reading `panel/internal/api/users.go`.
+
+`checkPassword` held a password to 8 to 256 characters (`utf8.RuneCountInString`), but `auth.Verify` returns false for a password longer than 512 bytes (`maxPasswordLen`, there to keep a huge body from reaching argon2). A password of 200 Chinese characters is 600 bytes: the API accepted it when the account was made or the password changed, and the account could never sign in, with no message at any step.
+
+| No | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | low to medium (rare: long passwords in scripts that use more than one byte per character) | the API accepted a password that `Verify` always refuses | the limit is `auth.MaxPasswordBytes` (512, exported); `checkPassword` refuses a longer password with a message that names both limits, for creating a user, editing one and changing one's own password |
+
+| id | decision |
+| --- | --- |
+| D181 | **A limit is held where the value comes in, with the unit it is checked in.** The sign-in checks bytes, so the API checks bytes too; a value that is accepted must be a value that works |
+
+Test: `TestCreateUserChecksItsInput` posts 200 characters of 3 bytes each; on v0.51.10 the API answered 201 and called `ctl users add`, now it answers 400. The Go tests were run with Go 1.27.4 (the module needs 1.26); `go vet` and `go test ./...` are clean.
