@@ -569,9 +569,18 @@ esac
 FAKE
 	cat >"$bin/journalctl" <<'FAKE'
 #!/usr/bin/env bash
-echo 'Nov 19 00:25:22 h suricata[1]: {"timestamp": "t", "event_type": "stats", "stats": {}}'
-echo 'Nov 19 00:25:23 h suricata[1]: Error: something real went wrong'
-echo 'Nov 19 00:25:24 h suricata[1]: {"timestamp":"t","event_type":"alert"}'
+case " $* " in
+*" -p warning "*) echo 'Nov 19 00:20:00 h ntopng[2]: Warning: a warning by priority' ;;
+*)
+	if [[ -f "$ONLY_EVENTS" ]]; then
+		echo 'Nov 19 00:25:22 h suricata[1]: {"timestamp": "t", "event_type": "stats", "stats": {}}'
+	else
+		echo 'Nov 19 00:25:22 h suricata[1]: {"timestamp": "t", "event_type": "stats", "stats": {}}'
+		echo 'Nov 19 00:25:23 h suricata[1]: Error: something real went wrong'
+		echo 'Nov 19 00:25:24 h suricata[1]: {"timestamp":"t","event_type":"alert"}'
+	fi
+	;;
+esac
 FAKE
 	chmod +x "$bin/suricata" "$bin/journalctl"
 	run env PATH="$bin:$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" DIAG_OUT="$out" bash "$REPO_DIR/install.sh" diag --no-color
@@ -580,6 +589,13 @@ FAKE
 	if grep -q 'unrecognized option' "$out"; then false; fi
 	grep -q 'hiredis support: *yes' "$out"
 	grep -q 'Error: something real went wrong' "$out"
+	grep -q 'a warning by priority' "$out"
+	if grep -q '"event_type"' "$out"; then false; fi
+	# a journal that holds nothing but events says so, instead of an empty section
+	: >"$bin/only"
+	run env ONLY_EVENTS="$bin/only" PATH="$bin:$REPO_DIR/tests/mocks:$PATH" MOCK_CALLS_LOG="$CALLS" DIAG_OUT="$out" bash "$REPO_DIR/install.sh" diag --no-color
+	[ "$status" -eq 0 ]
+	grep -q 'only eve events in the last 5000 journal lines' "$out"
 	if grep -q '"event_type"' "$out"; then false; fi
 	rm -rf "$bin"
 }

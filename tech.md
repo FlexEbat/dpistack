@@ -1,24 +1,24 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v94** (2026-11-19)
-**Program version: v0.51.11** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v95** (2026-11-20)
+**Program version: v0.51.12** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.51.12: the journal part of `dpistack diag` is no longer empty on a host with `EVE_SYSLOG=yes` (18.72).
 - v0.51.11: the panel no longer creates an account with a password that cannot sign in (18.71).
 - v0.51.10: the watchdog service has a start timeout (18.70), so a run that hangs cannot silence it.
 - v0.51.9: a Suricata that was built from source is no longer fetched and built again when only the configuration changed (18.69).
 - v0.51.8: found on a real host (18.68): `EVE_REDIS` never reached suricata.yaml because the installer looked for a build-info line Suricata does not print (`hiredis support:`); the watchdog warns when EVE_REDIS is set without hiredis; `dpistack diag` asks Suricata for `-V`, leaves eve events out of the journal section and shows the hiredis state; an inactive ufw gets a warning.
-- v0.51.7: the firewall rules of ACCESS_MODE (18.67): an IPv6 network in `LAN_CIDR` gets a firewalld rule of family ipv6, and the rules added before a failure are written down as ours.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v95: v0.51.12. 18.72 written (decision D182).
 - v94: v0.51.11. 18.71 written (decision D181).
 - v93: v0.51.10. 18.70 written (decision D180).
 - v92: v0.51.9. 18.69 written (decision D179).
 - v91: v0.51.8. 18.68 written (decisions D176 to D178); D144 now names the real build-info line.
 - v90: v0.51.7. 18.67 written (decision D175).
-- v89: v0.51.6. 18.66 written (decision D174); the list of watchdog check ids in 4.6 now names `redis.eve_stream`, `migrate.pending` and `watch.status`.
 
 ---
 
@@ -2623,3 +2623,19 @@ Test: `tests/watch_step.bats` (the rendered unit has the line); it fails on v0.5
 | D181 | **A limit is held where the value comes in, with the unit it is checked in.** The sign-in checks bytes, so the API checks bytes too; a value that is accepted must be a value that works |
 
 Test: `TestCreateUserChecksItsInput` posts 200 characters of 3 bytes each; on v0.51.10 the API answered 201 and called `ctl users add`, now it answers 400. The Go tests were run with Go 1.27.4 (the module needs 1.26); `go vet` and `go test ./...` are clean.
+
+### 18.72 The journal part of the report that came out empty (v0.51.12)
+
+**Status:** done. Found in the `dpistack diag` of the real host after the update to v0.51.10 (Redis stream filling at about 4 events in 23 s, `hiredis support: yes`, no Suricata rebuild between the update steps).
+
+| No | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | low | the journal section of v0.51.8 took the last 400 lines and left out the eve events. With `EVE_SYSLOG=yes` the events are one line every ten seconds or so, so 400 lines are under an hour and hold no message of any service: the section came out empty, with nothing to say why | two sections. `journalctl: warnings and errors` takes the lines of priority warning and above of the six services (the events are info), and `journalctl: recent messages` takes the last 5000 lines, drops the events and keeps 40, and says `(only eve events in the last 5000 journal lines)` when nothing is left |
+
+| id | decision |
+| --- | --- |
+| D182 | **A diagnostic that filters must say when the filter removed everything.** An empty section reads as "nothing to report"; it has to tell "nothing happened" from "all of it was left out" |
+
+Not a bug: the EVE-to-Redis stream has no reader in dpistack. ntopng's `--redis` is its own store, not the stream; the stream is an output for the administrator's own consumers, bounded by `EVE_REDIS_MAXLEN`, and `redis.eve_stream` watches the bound. Also not in the code: two lines of the report were split in the middle (`step.panel.ts=2` and `026-...`, earlier `enabled=ena` and `bled`); `diag_section` prints what the command prints and nothing in the installer wraps lines, so this comes from the terminal or the copy. The saved file `/tmp/dpistack-diag.*` would show it.
+
+Test: `tests/families.bats` (the warning by priority shows, the error among the events shows, the events do not, and a journal of events only says so); it fails on v0.51.11.
