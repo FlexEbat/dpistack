@@ -911,10 +911,13 @@ diag_report() {
 	fi
 	diag_section "dpistack log (last 80 lines)" bash -c 'tail -n 80 "$1" 2>&1' _ "$(path_install_log)"
 	if command -v journalctl >/dev/null 2>&1; then
-		# EVE_SYSLOG=yes sends every event to the journal as one JSON line; they are left out
-		# here, or the last 40 lines would hold nothing but events and the messages of the
-		# services would never show.
-		diag_section "journalctl (suricata, evebox, ntopng)" bash -c 'journalctl -u suricata -u evebox -u ntopng -n 400 --no-pager 2>&1 | grep -v "\"event_type\"" | tail -n 40'
+		# EVE_SYSLOG=yes sends every event to the journal as one JSON line, about
+		# one every ten seconds on a quiet host: the last 400 lines are under an hour
+		# of events and none of the services' own messages. The warnings and errors are
+		# taken by priority (the events are info), and the recent messages from a
+		# window deep enough to reach them, with the events left out.
+		diag_section "journalctl: warnings and errors" bash -c 'journalctl -p warning -u suricata -u evebox -u ntopng -u redis-server -u dpistack-panel -u dpistack-watch -n 40 --no-pager 2>&1'
+		diag_section "journalctl: recent messages (eve events left out)" bash -c 'journalctl -u suricata -u evebox -u ntopng -n 5000 --no-pager 2>&1 | grep -v "\"event_type\"" | tail -n 40 | grep . || echo "(only eve events in the last 5000 journal lines)"'
 	fi
 }
 
@@ -1898,7 +1901,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.51.11"
+DPISTACK_VERSION="0.51.12"
 
 : "${DRY_RUN:=0}"
 
