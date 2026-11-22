@@ -238,6 +238,26 @@ config_validate() {
 		echo "ALERT_CHANNELS contains syslog: needs ALERT_SYSLOG_TARGET"
 		errors=$((errors + 1))
 	fi
+	if [[ "${CONF[CAPTURE_TPACKET]:-auto}" == "v3" && "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "afpacket" ]]; then
+		echo "CAPTURE_TPACKET=v3 does not work with IPS over af-packet (copy mode): use auto or v2"
+		errors=$((errors + 1))
+	fi
+	if [[ "${CONF[NIC_OFFLOADS_OFF]:-no}" == "yes" && "${CONF[SURICATA_RUNTIME]:-native}" == "docker" ]]; then
+		echo "NIC_OFFLOADS_OFF=yes needs SURICATA_RUNTIME=native: the switch is a drop-in of suricata.service, which a container does not have"
+		errors=$((errors + 1))
+	fi
+	if [[ -n "${CONF[CAPTURE_CPUS]:-}" ]]; then
+		local cpart cpus_ok=yes
+		local -a cparts=()
+		IFS=',' read -ra cparts <<<"${CONF[CAPTURE_CPUS]}"
+		for cpart in "${cparts[@]}"; do
+			if [[ "$cpart" == *-* ]] && ((10#${cpart%-*} > 10#${cpart#*-})); then
+				echo "CAPTURE_CPUS: the range $cpart runs backwards"
+				cpus_ok=no
+			fi
+		done
+		[[ "$cpus_ok" == yes ]] || errors=$((errors + 1))
+	fi
 	# Detection alerts go to the channels of DETECT_NOTIFY_CHANNELS, or to those
 	# of ALERT_CHANNELS when it is empty; the panel is not a delivery channel for
 	# them (the Alert Center lists them already), so a list with only that is empty.

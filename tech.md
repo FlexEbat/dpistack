@@ -1,18 +1,19 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v98** (2026-11-22)
-**Program version: v0.53.1** (tasks 0-56 are done (18.58), 57 and 58 are done, 59 to 65 are planned (18.73); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v99** (2026-11-22)
+**Program version: v0.54.0** (tasks 0-56 are done (18.58), 57 to 59 are done, 60 to 65 are planned (18.73); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.54.0: task 59 (18.73): the capture is tuned by keys (threads, ring and block size, tpacket, flow and stream memcaps, CPU pinning) and the NIC offloads can be switched off by a drop-in of `suricata.service`.
 - v0.53.1: CI failures are reported with their reasons (annotations, job summary, statuses) and the gate says what it saw (18.74); the Rules screen can switch a rule or a group to drop.
 - v0.53.0: task 58 (18.73): a rule or group can be switched to `drop` (`rules-sid`, `rules-group`), hosts are blocked or allowed with `ips block|allow`, and the IPS and Events screens offer it.
 - v0.52.0: task 57 (18.73): Suricata detections are sent to the delivery channels (`DETECT_NOTIFY`), with a severity threshold, de-duplication and an hourly limit; new channels `webhook` (json, Slack, Discord, ntfy) and `syslog`.
-- v0.51.11: the panel no longer creates an account with a password that cannot sign in (18.71).
 - v0.51.10: the watchdog service has a start timeout (18.70), so a run that hangs cannot silence it.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v99: v0.54.0. Task 59 done (decision D191), keys in 4.3, the Capture bullet of the Suricata section.
 - v98: v0.53.1. 18.74 written (decision D190).
 - v97: v0.53.0. Task 58 done (D187 to D189), the API rows of 5 and the verbs of 4.5 name the lists.
 - v96: v0.52.0. Task 57 done, tasks 58 to 65 written as 18.73 (decisions D183 to D186); 4.3 and section 8 name the new keys and channels.
@@ -249,6 +250,13 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `SURICATA_MODE` | `ids` | `ids` `ips` |
 | `IFACES` | `enp2s0` | names, comma separated; if the value is still the default and there is no such interface, `install` takes the default-route interface (else the first non-`lo`) and says so; a value you typed is not replaced |
 | `BPF_FILTER` | empty | a BPF expression |
+| `CAPTURE_THREADS` | `auto` | `auto` or 1 to 999: `threads` of every `af-packet` block (task 59; `auto` writes no line, Suricata's own default) |
+| `CAPTURE_TPACKET` | `auto` | `auto` (no line), `v2` (`tpacket-v3: no`), `v3` (`tpacket-v3: yes`); IPS over af-packet is always `v2`, and `v3` there is refused |
+| `CAPTURE_RING_SIZE` | `0` | 0 to 1048576 frames, `ring-size`; 0 writes no line |
+| `CAPTURE_BLOCK_SIZE` | `0` | 0 or a multiple of 4096 from 32768 up to 67108864, `block-size` (only written when the ring is not `v2`) |
+| `CAPTURE_CPUS` | empty | CPUs as `2-5,8`: `set-cpu-affinity: yes` and the worker threads on those CPUs; empty: no pinning |
+| `NIC_OFFLOADS_OFF` | `no` | `yes` writes the drop-in `suricata.service.d/dpistack-nic.conf`: `ExecStartPre=-ethtool -K IFACE gro off lro off gso off tso off` for every interface of `IFACES` (installs `ethtool` when missing; refused with `SURICATA_RUNTIME=docker`); `no` removes it; `uninstall` removes it (D191) |
+| `FLOW_MEMCAP` `STREAM_MEMCAP` `STREAM_REASSEMBLY_MEMCAP` | `128mb` `64mb` `256mb` | a number with `kb`, `mb` or `gb`: `flow.memcap`, `stream.memcap`, `stream.reassembly.memcap` (the defaults are the values the template always had) |
 | `HOME_NET` | auto | a list of CIDRs; auto = the RFC 1918 private ranges |
 | `IPS_METHOD` | `nfq` | `nfq` `afpacket` |
 | `IPS_NFQ_CHAINS` | `INPUT,OUTPUT,FORWARD` | a subset of these chains |
@@ -643,7 +651,7 @@ The sections of the config screen (the "group" column is the column of `lib/sche
 
 | group | menu item | keys |
 | --- | --- | --- |
-| `capture` | Capture and mode | `IFACES`, `BPF_FILTER`, `HOME_NET`, `SURICATA_MODE`, `IPS_METHOD`, `IPS_NFQ_CHAINS`, `NTOPNG_IFACES` |
+| `capture` | Capture and mode | `IFACES`, `BPF_FILTER`, `CAPTURE_*`, `NIC_OFFLOADS_OFF`, `FLOW_MEMCAP`, `STREAM_MEMCAP`, `STREAM_REASSEMBLY_MEMCAP`, `HOME_NET`, `SURICATA_MODE`, `IPS_METHOD`, `IPS_NFQ_CHAINS`, `NTOPNG_IFACES` |
 | `components` | Components and sources | `SURICATA_RUNTIME`, `EVEBOX_RUNTIME`, `NTOPNG_RUNTIME`, `SURICATA_SOURCE`, `SURICATA_VERSION`, `NDPI_ENABLE`, `NDPI_SOURCE`, `NDPI_VERSION`, `NTOPNG_VERSION`, `EVEBOX_VERSION`, `PIN_VERSIONS`, `PANEL_SOURCE` |
 | `eve` | EVE and storage | `EVE_FILE`, `EVE_TYPES`, `EVE_SYSLOG`, `EVE_REDIS`, `EVE_REDIS_MAXLEN`, `EVE_ROTATE`, `EVE_KEEP`, `EVE_MAX_SIZE_MB`, `STATS_INTERVAL_SEC`, `EVEBOX_DB`, `EVEBOX_ES_URL`, `EVEBOX_RETENTION_DAYS` |
 | `rules` | Rules | `RULES_SOURCES`, `RULES_URLS`, `RULES_GROUPS`, `RULES_UPDATE`, `RULES_UPDATE_CALENDAR`, `EXCEPTIONS_DEFAULT_DAYS` |
@@ -806,7 +814,7 @@ The keys and the affected steps:
 
 | key group | steps | type |
 | --- | --- | --- |
-| `IFACES`, `BPF_FILTER`, `HOME_NET`, `SURICATA_MODE`, `IPS_*`, `EVE_*`, `STATS_INTERVAL_SEC` | `suricata` (rendering, restart), `ntopng` for `IFACES`, `watch` for `EVE_*` and `STATS_*` | light |
+| `IFACES`, `BPF_FILTER`, `CAPTURE_*`, `NIC_OFFLOADS_OFF`, `FLOW_MEMCAP`, `STREAM_MEMCAP`, `STREAM_REASSEMBLY_MEMCAP`, `HOME_NET`, `SURICATA_MODE`, `IPS_*`, `EVE_*`, `STATS_INTERVAL_SEC` | `suricata` (rendering, restart), `ntopng` for `IFACES`, `watch` for `EVE_*` and `STATS_*` | light |
 | `RULES_*` | `rules` | light |
 | `NTOPNG_IFACES`, `NTOPNG_PORT`, `EVEBOX_PORT`, `EVEBOX_RETENTION_DAYS`, `EVEBOX_ES_URL` | `ntopng` or `evebox`, `access` | light |
 | `ACCESS_MODE`, `BIND_ADDR`, `LAN_CIDR`, `PANEL_PORT`, `NGINX_*`, `FIREWALL_MANAGE` | `access`, `panel`; `BIND_ADDR` and `ACCESS_MODE` also `evebox`, `ntopng`, `metrics`, `nodeexp`, `grafana` | light |
@@ -854,7 +862,7 @@ Root, Bash 4.4+, a distribution and an architecture from the supported ones, `sy
 
 ## 6. Suricata and nDPI: integration rules
 
-- **Capture:** `af-packet`, a block per interface of `IFACES`, `cluster-type: cluster_flow`, `defrag: yes`, `threads: auto`, `cluster-id` is unique for an interface. `BPF_FILTER` is substituted if set.
+- **Capture:** `af-packet`, a block per interface of `IFACES`, `cluster-type: cluster_flow`, `defrag: yes`, `cluster-id` is unique for an interface. `BPF_FILTER` is substituted if set. The tuning keys of task 59 add `threads`, `tpacket-v3`, `ring-size` and `block-size` to every block when they are not at their defaults, and `FLOW_MEMCAP`, `STREAM_MEMCAP`, `STREAM_REASSEMBLY_MEMCAP` and `CAPTURE_CPUS` fill the placeholders of `flow`, `stream`, `stream.reassembly` and `threading`.
 - **nDPI:** with `NDPI_ENABLE=yes` the `ndpi.so` from the plugin directory of the installed Suricata is added to `plugins:`. Rules that use `ndpi-protocol` and `ndpi-risk` must start with `requires: keyword ndpi-protocol` (and/or `ndpi-risk`), so that a Suricata without the plugin skips them instead of failing.
 - **Building from source:** `./configure --enable-ndpi --with-ndpi=<prefix>`. The version of nDPI is set by the requirement of the chosen version of Suricata. An incompatibility is caught at `configure` and printed as it is, there are no workarounds. After the build the installer checks for `ndpi.so` and `suricata --build-info`.
 - **The unit** with `source` is rendered from `templates/`, with packages the distribution one is used and complemented with a drop-in file.
@@ -1298,7 +1306,7 @@ One row per task. **Done** means the Definition of Done of section 14 was met; a
 | 56 | small things | **done.** The selected Rules tab is kept for the session; three more templates (a file type over HTTP, a JA3 hash, many outward connections); `scripts/dev-tools.sh --check|--install` for the CI versions of shellcheck 0.9.0 and shfmt 3.8.0; Metrics keeps one day because the ring holds one day (the hint on the screen says so) | v0.51.0 | 18.60 |
 | 57 | detection alerts leave the panel | **done.** A Suricata alert of a chosen severity reaches the delivery channels: the new channels `webhook` (JSON, Slack, Discord, ntfy) and `syslog` beside `log`, `tg` and `mail`, a severity threshold, a de-duplication window and an hourly limit | v0.52.0 | 18.73 |
 | 58 | block from the program | **done.** `rules-sid` and `rules-group` `drop\|alert`, the verb `ips block\|allow` with its lists, the API routes, the lists and form on the IPS page, "Block source/destination" on Events, the Drop and Alert only buttons on Rules. The Rules screen switches a rule (search results) or a group to drop and back, and lists what drops (v0.53.1) | v0.53.0 | 18.73 |
-| 59 | capture performance | planned. Threads, ring and block size (`tpacket-v3`), flow and stream memcaps, CPU affinity and NIC offloads as keys, with a recommendation from the drop rate | v0.54.0 | 18.73 |
+| 59 | capture performance | **done.** `CAPTURE_THREADS`, `CAPTURE_TPACKET`, `CAPTURE_RING_SIZE`, `CAPTURE_BLOCK_SIZE`, `CAPTURE_CPUS`, `FLOW_MEMCAP`, `STREAM_MEMCAP`, `STREAM_REASSEMBLY_MEMCAP` and the offload switch `NIC_OFFLOADS_OFF`; the drop alert names the keys | v0.54.0 | 18.73 |
 | 60 | your own pcap | planned. `dpistack pcap analyze FILE` and an upload in the panel show the alerts and the application protocols of a capture you bring | v0.55.0 | 18.73 |
 | 61 | history and traffic intelligence | planned. Daily and weekly reports, per device history, a new device alert, GeoIP and blocklists (Suricata datasets) | v0.56.0 | 18.73 |
 | 62 | alert state that does not lose alerts | planned. A persistent alert index that does not depend on the last 8 MiB of `eve.json`, and a rotation of `events.jsonl` | v0.57.0 | 18.73 |
@@ -2696,6 +2704,12 @@ Open: the state of triage (acknowledged, snoozed) does not silence a delivery (d
 **Task 58, block from the program.** The finding: `rules-sid` and `rules-group` only enable and disable; no switch to `drop`, no block of a host from an event, no allow or deny list; the Exceptions screen suppresses and does not block. Planned form: `dpistack ips rule drop|alert <sid>` and `ips group drop|alert <group>` write `modify.conf` through `suricata-update` (`modify` lines that turn `alert` into `drop`); `ips block add|remove|list <addr> [--days N] [--note T]` writes the generated `dpistack-block.rules` (`drop ip <addr> any <> any any`, sids 9100000 to 9199999); `ips allow add|remove|list <addr>` writes `pass ip` rules ahead of them. The Events screen gets "Block this host" next to "Create exception", the IPS page gets the lists. In IDS mode a drop rule only alerts, the page says so.
 
 **Task 59, capture performance.** The finding: the `af-packet` block has no threads, ring size, `tpacket-v3`, block size, memcaps or CPU affinity, and nothing turns off GRO, LRO, GSO and TSO. Planned keys: `CAPTURE_THREADS` (`auto|N`), `CAPTURE_RING_SIZE`, `CAPTURE_BLOCK_SIZE`, `FLOW_MEMCAP`, `STREAM_MEMCAP`, `CAPTURE_CPUS`, `NIC_OFFLOADS_OFF` (`yes|no`); the offloads are turned off by a small unit that runs `ethtool -K` for the capture interfaces at boot and again after a reconfigure; the watchdog message for packet drops names the key to raise.
+
+**Task 59, what was done (v0.54.0).** The keys and what each writes are in 4.3. Every default writes what the template always had, so an upgrade changes nothing until a key is set. `suricata_render_af_packet_block` adds `threads` (not for `auto`), `tpacket-v3`, `ring-size` and `block-size` to every interface; `suricata_render_yaml` fills `flow.memcap`, `stream.memcap`, `stream.reassembly.memcap` and the worker CPU set through placeholders. `NIC_OFFLOADS_OFF=yes` writes `suricata.service.d/dpistack-nic.conf` with one `ExecStartPre=-ethtool -K IFACE gro off lro off gso off tso off` per interface, installs `ethtool` when it is missing, is checked and applied with the mode drop-in (`suricata_mode_files_current` and `_apply`) and is removed by `uninstall`. `config_validate` refuses `CAPTURE_TPACKET=v3` with IPS over af-packet, a backwards CPU range and `NIC_OFFLOADS_OFF=yes` with a container. The watchdog's drop message ends with the keys that reduce drops. Not done, on purpose: no automatic sizing from the host (the right ring and memcap depend on the traffic, and the message points the owner to them), and the panel only shows the keys on the Settings screen. `tests/capture_tuning.bats` has 13 tests.
+
+| id | decision |
+| --- | --- |
+| D191 | **Offloads are switched off by a drop-in, off by default.** A drop-in of `suricata.service` runs before every start, so a reboot or a NIC reset cannot leave them on; it touches only the capture interfaces named in `IFACES`. The default is `no` because on a single-NIC host `IFACES` is also the management interface, and turning offloads off there costs CPU the owner did not ask to spend. The drop alert tells the owner when it is the right switch |
 
 **Task 60, your own pcap.** The finding: offline replay takes only the shipped pcaps. Planned: `dpistack pcap analyze FILE [--json]` runs Suricata offline on a file in a private directory (`-r`, its own log directory, the live rules, nothing written to the live logs) and prints the alerts, the application protocols of the flows (nDPI) and the counts; the panel uploads a file up to a limit set by `PCAP_MAX_MB` and shows the same. The file is deleted after the run unless `--keep` is given.
 

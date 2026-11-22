@@ -154,6 +154,8 @@ stats_line() {
 	done
 	[ "$(field suricata.drop_rate value)" = "5.00" ]
 	[ "$(jq -r '.overall' "$HEALTH")" = "crit" ]
+	# task 59: the message says which keys reduce drops
+	[[ "$(field suricata.drop_rate detail)" == *"drops 5.00%; to reduce them raise CAPTURE_THREADS, CAPTURE_RING_SIZE or the memcaps, and set NIC_OFFLOADS_OFF=yes"* ]]
 }
 
 @test "criterion 4: a counter reset is not a false drop rate" {

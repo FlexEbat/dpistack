@@ -43,6 +43,11 @@ SCHEMA_PATTERN[EVEBOX_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
 SCHEMA_PATTERN[BIND_ADDR]='^(auto|[0-9]{1,3}(\.[0-9]{1,3}){3})$'
 SCHEMA_PATTERN[IFACES]="^${_word}(,${_word})*\$"
 SCHEMA_PATTERN[NTOPNG_IFACES]="^${_word}(,${_word})*\$"
+SCHEMA_PATTERN[CAPTURE_THREADS]='^(auto|[1-9][0-9]{0,2})$'
+SCHEMA_PATTERN[FLOW_MEMCAP]='^[1-9][0-9]{0,5}(kb|mb|gb)$'
+SCHEMA_PATTERN[STREAM_MEMCAP]='^[1-9][0-9]{0,5}(kb|mb|gb)$'
+SCHEMA_PATTERN[STREAM_REASSEMBLY_MEMCAP]='^[1-9][0-9]{0,5}(kb|mb|gb)$'
+SCHEMA_PATTERN[CAPTURE_CPUS]='^([0-9]{1,4}(-[0-9]{1,4})?(,[0-9]{1,4}(-[0-9]{1,4})?)*)?$'
 SCHEMA_PATTERN[BPF_FILTER]='^[]A-Za-z0-9 .,:/()!&|<>=+*%_[-]*$'
 SCHEMA_PATTERN[HOME_NET]="^(auto|[0-9A-Fa-f:.]+(/[0-9]{1,3})?(,[0-9A-Fa-f:.]+(/[0-9]{1,3})?)*)\$"
 SCHEMA_PATTERN[IPS_NFQ_CHAINS]='^[A-Z]+(,[A-Z]+)*$'
@@ -111,6 +116,15 @@ schema_init() {
 	_schema_add 'SURICATA_MODE|enum|ids|ids,ips|advanced|capture|suricata|light|no'
 	_schema_add 'IFACES|free|enp2s0||basic|capture|suricata ntopng|light|no'
 	_schema_add 'BPF_FILTER|free|||advanced|capture|suricata|light|no'
+	_schema_add 'CAPTURE_THREADS|free|auto||advanced|capture|suricata|light|no'
+	_schema_add 'CAPTURE_TPACKET|enum|auto|auto,v2,v3|advanced|capture|suricata|light|no'
+	_schema_add 'CAPTURE_RING_SIZE|int|0|0..1048576|advanced|capture|suricata|light|no'
+	_schema_add 'CAPTURE_BLOCK_SIZE|int|0|0..67108864|advanced|capture|suricata|light|no'
+	_schema_add 'CAPTURE_CPUS|free|||advanced|capture|suricata|light|no'
+	_schema_add 'NIC_OFFLOADS_OFF|enum|no|yes,no|advanced|capture|suricata|light|no'
+	_schema_add 'FLOW_MEMCAP|free|128mb||advanced|capture|suricata|light|no'
+	_schema_add 'STREAM_MEMCAP|free|64mb||advanced|capture|suricata|light|no'
+	_schema_add 'STREAM_REASSEMBLY_MEMCAP|free|256mb||advanced|capture|suricata|light|no'
 	_schema_add 'HOME_NET|free|auto||advanced|capture|suricata|light|no'
 	_schema_add 'IPS_METHOD|enum|nfq|nfq,afpacket|advanced|capture|suricata|light|no'
 	_schema_add 'IPS_NFQ_CHAINS|free|INPUT,OUTPUT,FORWARD||advanced|capture|suricata|light|no'
@@ -238,7 +252,7 @@ schema_depends_init() {
 	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
 	_schema_depend 'SURICATA_ENABLE=yes RULES_ENABLE=yes' 'RULES_*'
 	_schema_depend 'SURICATA_ENABLE=yes' SURICATA_RUNTIME SURICATA_SOURCE SURICATA_VERSION SURICATA_MODE IFACES \
-		BPF_FILTER HOME_NET EVE_SYSLOG EVE_REDIS EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
+		BPF_FILTER 'CAPTURE_*' NIC_OFFLOADS_OFF FLOW_MEMCAP STREAM_MEMCAP STREAM_REASSEMBLY_MEMCAP HOME_NET EVE_SYSLOG EVE_REDIS EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
 	_schema_depend '' EVEBOX_ENABLE NTOPNG_ENABLE PANEL_ENABLE NODE_EXPORTER_ENABLE GRAFANA_ENABLE WATCH_ENABLE METRICS_BACKEND
 	_schema_depend 'EVEBOX_ENABLE=yes EVEBOX_DB=elasticsearch' EVEBOX_ES_URL
 	_schema_depend 'EVEBOX_ENABLE=yes' 'EVEBOX_*'
@@ -499,6 +513,12 @@ schema_validate_entry() {
 			}
 		done
 		;;
+	CAPTURE_BLOCK_SIZE)
+		if ((10#$value != 0 && (10#$value < 32768 || 10#$value % 4096 != 0))); then
+			echo "$key=$value: 0 (Suricata's default) or a multiple of 4096 from 32768"
+			return 1
+		fi
+		;;
 	DETECT_NOTIFY_CHANNELS)
 		for el in $value; do
 			[[ "$el" != panel && "$SCHEMA_ALERT_CHANNELS" == *" $el "* ]] || {
@@ -553,6 +573,7 @@ schema_effective() {
 	fi
 	case "$key" in
 	BPF_FILTER) echo "none: all the traffic is analysed" ;;
+	CAPTURE_CPUS) echo "none: the system decides where the threads run" ;;
 	NTOPNG_IFACES) echo "same as IFACES (${ifaces:-auto})" ;;
 	SURICATA_VERSION)
 		declare -F suricata_installed_version >/dev/null && v=$(suricata_installed_version 2>/dev/null || true)
@@ -577,6 +598,7 @@ schema_effective() {
 schema_empty_meaning() {
 	case "$1" in
 	BPF_FILTER) echo "no filter: Suricata analyzes all the traffic it sees" ;;
+	CAPTURE_CPUS) echo "no pinning: the system decides which CPU runs each thread" ;;
 	NTOPNG_IFACES) echo "ntopng watches the same interfaces as Suricata (IFACES)" ;;
 	SURICATA_VERSION) echo "the newest tested release of the stable series" ;;
 	NDPI_VERSION) echo "the nDPI release the Suricata plugin is built with" ;;
