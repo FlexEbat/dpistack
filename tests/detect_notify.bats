@@ -165,7 +165,7 @@ detect_lines() { grep -c 'detection' "$LOGGER_LOG" || true; }
 	# still inside the hour: nothing more, no summary yet
 	DPISTACK_NOW=$((NOW + 1800)) run "$WATCH"
 	[ "$(detect_lines)" -eq 2 ]
-	! grep -q 'were not sent' "$LOGGER_LOG"
+	[ "$(grep -c 'were not sent' "$LOGGER_LOG")" -eq 0 ]
 
 	# the hour turned: one summary, the counters start again
 	DPISTACK_NOW=$((NOW + 3700)) run "$WATCH"
@@ -234,7 +234,7 @@ detect_lines() { grep -c 'detection' "$LOGGER_LOG" || true; }
 	alert 1 1 "ET P2P BitTorrent" 10.0.0.5 203.0.113.7
 	run "$WATCH"
 	grep -q '^ARGS -sS --fail --max-time 10 -o /dev/null -K -$' "$CURL_LOG"
-	! grep '^ARGS' "$CURL_LOG" | grep -q SECRETTOKEN
+	[ "$(grep '^ARGS' "$CURL_LOG" | grep -c SECRETTOKEN)" -eq 0 ]
 	grep -q 'url = "https://hooks.example.com/SECRETTOKEN"' "$CURL_LOG"
 	grep -q 'header = "Content-Type: application/json"' "$CURL_LOG"
 	local body
