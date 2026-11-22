@@ -86,3 +86,48 @@ export function testSummary(res) {
   if (!res.ran) return `The test did not run: ${res.reason || "unknown reason"}.`;
   return `Replayed ${res.pcap}.pcap offline with ${res.loaded} rule${res.loaded === 1 ? "" : "s"}: ${res.would_drop} would drop, ${(res.matched || []).length} matched.`;
 }
+
+// The block and allow lists of hosts (/api/ips/block, /api/ips/allow).
+
+const HOST_ADDRESS = /^[0-9A-Fa-f.:/]{1,60}$/;
+const HOST_NOTE = /^[A-Za-z0-9 ._:/@+,=-]{0,80}$/;
+
+export function hostExpiry(entry) {
+  return !entry || entry.expires === "never" ? "never" : "until " + entry.expires;
+}
+
+// hostRows is what a list shows: address, rule number, when it ends, who and why.
+export function hostRows(entries) {
+  return (entries || []).map((e) => ({ address: e.address, sid: e.sid, expires: hostExpiry(e), by: e.by || "", note: e.note || "" }));
+}
+
+// hostBody checks what the form holds before it is sent. The verb checks
+// again (loopback, a prefix that names too much); this only spares a round
+// trip for a value it would refuse at once. Days empty means no expiry.
+export function hostBody(address, days, note) {
+  const a = String(address || "").trim();
+  if (!HOST_ADDRESS.test(a)) return { error: "Enter an IP address or a network such as 203.0.113.0/24." };
+  const d = String(days === undefined || days === null ? "" : days).trim();
+  const body = { address: a };
+  if (d !== "") {
+    if (!/^[0-9]{1,4}$/.test(d) || Number(d) < 1 || Number(d) > 3650) return { error: "Days is a number from 1 to 3650, or empty for no end." };
+    body.days = Number(d);
+  }
+  const n = String(note || "").trim();
+  if (!HOST_NOTE.test(n)) return { error: "The note is up to 80 characters: Latin letters, digits, space and . _ : / @ + , = -" };
+  if (n) body.note = n;
+  return { body };
+}
+
+// blockTargets are the addresses of an alert that can be blocked from the
+// Events screen, source first. Nothing else qualifies: only an alert names
+// two hosts, and a loopback address is never offered.
+export function blockTargets(ev) {
+  const e = ev && ev.event;
+  if (!ev || ev.type !== "alert" || !e) return [];
+  const out = [];
+  for (const [side, ip] of [["source", e.src_ip], ["destination", e.dest_ip]]) {
+    if (typeof ip === "string" && ip && !/^(127\.|::1$)/.test(ip) && !out.some((t) => t.ip === ip)) out.push({ side, ip });
+  }
+  return out;
+}

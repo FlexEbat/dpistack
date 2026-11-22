@@ -68,16 +68,22 @@ func (r *Runner) RulesSource(ctx context.Context, action, arg string) (string, e
 
 // RulesGroup runs `rules-group enable|disable <group>`.
 func (r *Runner) RulesGroup(ctx context.Context, verb, group string) (string, error) {
-	if verb != "enable" && verb != "disable" {
+	if !ruleVerb(verb) {
 		return "", fmt.Errorf("ctl: rules-group verb %q is not allowed", verb)
 	}
 	out, err := r.runWith(ctx, maxOutput, rulesTimeout, nil, "rules-group", verb, group)
 	return strings.TrimSpace(string(out)), err
 }
 
-// RulesSID runs `rules-sid enable|disable <sid>`.
+// ruleVerb is what rules-group and rules-sid take: enable and disable edit
+// the lists of what is on, drop and alert switch the action of a rule (IPS).
+func ruleVerb(v string) bool {
+	return v == "enable" || v == "disable" || v == "drop" || v == "alert"
+}
+
+// RulesSID runs `rules-sid enable|disable|drop|alert <sid>`.
 func (r *Runner) RulesSID(ctx context.Context, verb, sid string) (string, error) {
-	if verb != "enable" && verb != "disable" {
+	if !ruleVerb(verb) {
 		return "", fmt.Errorf("ctl: rules-sid verb %q is not allowed", verb)
 	}
 	out, err := r.runWith(ctx, maxOutput, rulesTimeout, nil, "rules-sid", verb, sid)

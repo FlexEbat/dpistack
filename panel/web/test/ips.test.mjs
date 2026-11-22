@@ -155,3 +155,54 @@ test("the page has the IPS screen: view, menu entry in Protection, route and sta
   assert.match(app, /"components", "ips", "settings"/);
   assert.match(app, /ips: \(\) =>/);
 });
+
+import { hostRows, hostBody, hostExpiry, blockTargets } from "../modules/ips-model.js";
+import { renderHosts } from "../modules/ips.js";
+
+test("task 58: a list of hosts shows the address, the rule, when it ends, who and why", () => {
+  const rows = hostRows([
+    { address: "198.51.100.7", sid: 9100000, expires: "never", by: "admin", note: "scanner" },
+    { address: "203.0.113.0/24", sid: 9100001, expires: "2026-12-01" },
+  ]);
+  assert.deepEqual(rows[0], { address: "198.51.100.7", sid: 9100000, expires: "never", by: "admin", note: "scanner" });
+  assert.equal(rows[1].expires, "until 2026-12-01");
+  assert.equal(rows[1].by, "");
+  assert.deepEqual(hostRows(null), []);
+  assert.equal(hostExpiry({ expires: "never" }), "never");
+});
+
+test("task 58: the form sends an address with days and a note, or says why not", () => {
+  assert.deepEqual(hostBody(" 203.0.113.7 ", "", "").body, { address: "203.0.113.7" });
+  assert.deepEqual(hostBody("203.0.113.0/24", "7", "scanner").body, { address: "203.0.113.0/24", days: 7, note: "scanner" });
+  assert.deepEqual(hostBody("2001:db8::1", "", "").body, { address: "2001:db8::1" });
+  assert.match(hostBody("not an ip", "", "").error, /IP address/);
+  assert.match(hostBody("", "", "").error, /IP address/);
+  assert.match(hostBody("203.0.113.7", "0", "").error, /1 to 3650/);
+  assert.match(hostBody("203.0.113.7", "3651", "").error, /1 to 3650/);
+  assert.match(hostBody("203.0.113.7", "x", "").error, /1 to 3650/);
+  assert.match(hostBody("203.0.113.7", "", "bad;note").error, /note/);
+});
+
+test("task 58: an alert offers its source and destination to block, nothing else does", () => {
+  const alert = { type: "alert", event: { src_ip: "10.0.0.5", dest_ip: "203.0.113.7" } };
+  assert.deepEqual(blockTargets(alert), [{ side: "source", ip: "10.0.0.5" }, { side: "destination", ip: "203.0.113.7" }]);
+  assert.deepEqual(blockTargets({ type: "dns", event: { src_ip: "10.0.0.5" } }), []);
+  assert.deepEqual(blockTargets({ type: "alert", event: { src_ip: "127.0.0.1", dest_ip: "::1" } }), []);
+  assert.deepEqual(blockTargets({ type: "alert", event: { src_ip: "10.0.0.5", dest_ip: "10.0.0.5" } }).length, 1);
+  assert.deepEqual(blockTargets(null), []);
+});
+
+test("task 58: the IPS page has its lists and form, wired in app.js", () => {
+  const html = here("index.html");
+  for (const id of ["ips-host-address", "ips-host-days", "ips-host-note", "ips-host-block", "ips-host-allow", "ips-host-msg", "ips-block", "ips-allow"]) {
+    assert.match(html, new RegExp(`id="${id}"`), id);
+    assert.match(here("app.js"), new RegExp(`"${id}"`), id);
+  }
+});
+
+test("task 58: Events offers Block for the hosts of an alert and asks first", () => {
+  const src = here("modules/events.js");
+  assert.match(src, /blockTargets\(ev\)/);
+  assert.match(src, /confirm\(`Block \$\{t\.ip\}\?/);
+  assert.match(src, /"\/api\/ips\/block"/);
+});

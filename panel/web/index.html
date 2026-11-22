@@ -349,6 +349,20 @@
     <section id="ips-rules"></section>
     <h2>Latest blocked</h2>
     <section id="ips-blocked"></section>
+    <h2>Blocked and allowed hosts</h2>
+    <p class="muted">A blocked host is dropped by a Suricata rule; an allowed host is never blocked, even by a rule for its whole network. A drop rule only alerts while the mode is IDS.</p>
+    <div class="toolbar">
+      <label>Address <input id="ips-host-address" type="text" placeholder="203.0.113.7 or 203.0.113.0/24" autocomplete="off"></label>
+      <label>Days (empty: no end) <input id="ips-host-days" type="text" inputmode="numeric" autocomplete="off"></label>
+      <label>Note <input id="ips-host-note" type="text" autocomplete="off"></label>
+      <button id="ips-host-block" type="button">Block</button>
+      <button id="ips-host-allow" type="button">Allow</button>
+    </div>
+    <p id="ips-host-msg" class="muted" aria-live="polite"></p>
+    <h3>Block list</h3>
+    <section id="ips-block"></section>
+    <h3>Allow list</h3>
+    <section id="ips-allow"></section>
     <h2>Rule test</h2>
     <p class="muted">Replays a sample capture through Suricata offline with the drop rules (or the rule numbers given). Live traffic is never touched.</p>
     <div class="toolbar">

@@ -1,23 +1,23 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v96** (2026-11-21)
-**Program version: v0.52.0** (tasks 0-56 are done (18.58), 57 is done, 58 to 65 are planned (18.73); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v97** (2026-11-22)
+**Program version: v0.53.0** (tasks 0-56 are done (18.58), 57 and 58 are done, 59 to 65 are planned (18.73); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.53.0: task 58 (18.73): a rule or group can be switched to `drop` (`rules-sid`, `rules-group`), hosts are blocked or allowed with `ips block|allow`, and the IPS and Events screens offer it.
 - v0.52.0: task 57 (18.73): Suricata detections are sent to the delivery channels (`DETECT_NOTIFY`), with a severity threshold, de-duplication and an hourly limit; new channels `webhook` (json, Slack, Discord, ntfy) and `syslog`.
 - v0.51.12: the journal part of `dpistack diag` is no longer empty on a host with `EVE_SYSLOG=yes` (18.72).
 - v0.51.11: the panel no longer creates an account with a password that cannot sign in (18.71).
 - v0.51.10: the watchdog service has a start timeout (18.70), so a run that hangs cannot silence it.
-- v0.51.9: a Suricata that was built from source is no longer fetched and built again when only the configuration changed (18.69).
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v97: v0.53.0. Task 58 done (D187 to D189), the API rows of 5 and the verbs of 4.5 name the lists.
 - v96: v0.52.0. Task 57 done, tasks 58 to 65 written as 18.73 (decisions D183 to D186); 4.3 and section 8 name the new keys and channels.
 - v95: v0.51.12. 18.72 written (decision D182).
 - v94: v0.51.11. 18.71 written (decision D181).
 - v93: v0.51.10. 18.70 written (decision D180).
-- v92: v0.51.9. 18.69 written (decision D179).
 - v90: v0.51.7. 18.67 written (decision D175).
 
 ---
@@ -532,11 +532,14 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 | `POST /api/rules/local/check` | the body is the candidate `local.rules` as text (1 MiB, 413 above); `ctl rules-local check`; permission `rules.edit`; writes nothing |
 | `GET /api/config/{name}/history` and `/history/{id}` | `ctl config-history`; permission `configs.edit`; an id that is not `YYYYMMDDTHHMMSSZ` is 400, a version that is not there is 409 |
 | `GET /api/rules/search?q=` | `{results:[{sid,msg}], truncated}`, up to 50 rules: `ctl rules-search` |
-| `POST /api/rules/groups/{group}/{enable\|disable}` | `ctl rules-group` |
-| `POST /api/rules/sid/{sid}/{enable\|disable}` | `ctl rules-sid` |
+| `POST /api/rules/groups/{group}/{enable\|disable\|drop\|alert}` | `ctl rules-group` |
+| `POST /api/rules/sid/{sid}/{enable\|disable\|drop\|alert}` | `ctl rules-sid` |
 | `GET /api/exceptions` | `ctl exceptions list --json`; permission `view`; the answer is `{default_days,today,entries:[...]}` of 4.5 |
 | `POST /api/exceptions` | `ctl exceptions add`; permission `rules.edit`; JSON body `{kind,sid,track,ip,count,seconds,days,never,note}`; `--by` is the signed in user, never a body field; 400 for a value ctl refuses (exit 2 or 5), 422 with the `suricata -T` output when the file does not pass (exit 3), 409 when a tool is missing (exit 4), 500 with the reason for exit 1 such as a duplicate |
 | `POST /api/exceptions/remove` | `ctl exceptions remove <id>`; permission `rules.edit`; body `{id}` (the id holds `:` and `/`, so it travels in the body) |
+| `GET /api/ips/{block\|allow}` | `ctl ips block\|allow list --json`; permission `view`; `{kind, entries: [{address, sid, added, expires, by, note}]}` (task 58) |
+| `POST /api/ips/{block\|allow}` | `ctl ips block\|allow add`; permission `rules.edit`; body `{address, days?, note?}`, `by` is the signed-in user; 400 for a value the verb refuses (exit 2 or 5), 422 for a file that does not pass `suricata -T` |
+| `POST /api/ips/{block\|allow}/remove` | `ctl ips block\|allow remove`; permission `rules.edit`; body `{what}`: an address or a sid of that list |
 | `GET /api/logs/{id}?lines=N` | the last lines |
 | `GET /api/logs/{id}/stream` | SSE, a live tail (at most 4 streams at once) |
 | `GET /api/eve?type=&q=&since=&limit=` | `{available, reason?, file_present, types, events:[{id,type,time,event}]}`, newest first; `limit` 1-500 (50 by default), `since` in RFC 3339; with `EVE_FILE=no` `available` is false with a reason |
@@ -1294,7 +1297,7 @@ One row per task. **Done** means the Definition of Done of section 14 was met; a
 | 55 | design pass, part two | **done.** Every screen opened at 390, 768 and 1440 px (a CI job `ui` and `scripts/ui-check/`, with sample events), the sideways scroll of Components on a phone fixed, the note kept at the very top and the floating menu below it on a phone, reduced motion was already in place; then the screens looked at one by one: Network, Traffic, Events and Backups (v0.51.1, 18.61), IPS and Settings (v0.51.2, 18.62) | v0.51.2 | 18.60, 18.61, 18.62 |
 | 56 | small things | **done.** The selected Rules tab is kept for the session; three more templates (a file type over HTTP, a JA3 hash, many outward connections); `scripts/dev-tools.sh --check|--install` for the CI versions of shellcheck 0.9.0 and shfmt 3.8.0; Metrics keeps one day because the ring holds one day (the hint on the screen says so) | v0.51.0 | 18.60 |
 | 57 | detection alerts leave the panel | **done.** A Suricata alert of a chosen severity reaches the delivery channels: the new channels `webhook` (JSON, Slack, Discord, ntfy) and `syslog` beside `log`, `tg` and `mail`, a severity threshold, a de-duplication window and an hourly limit | v0.52.0 | 18.73 |
-| 58 | block from the program | **in progress.** Done: `rules-sid` and `rules-group` `drop\|alert`, the verb `ips block\|allow` with its lists. Left: the panel (the API, the IPS page lists, "Block this host" on Events) | v0.53.0 | 18.73 |
+| 58 | block from the program | **done.** `rules-sid` and `rules-group` `drop\|alert`, the verb `ips block\|allow` with its lists, the API routes, the lists and form on the IPS page, "Block source/destination" on Events. Open: the Rules screen has no per-rule drop toggle yet (the API and the verbs have it) | v0.53.0 | 18.73 |
 | 59 | capture performance | planned. Threads, ring and block size (`tpacket-v3`), flow and stream memcaps, CPU affinity and NIC offloads as keys, with a recommendation from the drop rate | v0.54.0 | 18.73 |
 | 60 | your own pcap | planned. `dpistack pcap analyze FILE` and an upload in the panel show the alerts and the application protocols of a capture you bring | v0.55.0 | 18.73 |
 | 61 | history and traffic intelligence | planned. Daily and weekly reports, per device history, a new device alert, GeoIP and blocklists (Suricata datasets) | v0.56.0 | 18.73 |

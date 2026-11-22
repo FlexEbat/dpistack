@@ -215,7 +215,7 @@ const SCREENS = {
   ips: () =>
     startIps(
       api,
-      { error: $("ips-error"), summary: $("ips-summary"), checks: $("ips-checks"), counters: $("ips-counters"), rules: $("ips-rules"), blocked: $("ips-blocked"), sids: $("ips-sids"), run: $("ips-run"), note: $("ips-test-note"), result: $("ips-test-result") },
+      { error: $("ips-error"), summary: $("ips-summary"), checks: $("ips-checks"), counters: $("ips-counters"), rules: $("ips-rules"), blocked: $("ips-blocked"), sids: $("ips-sids"), run: $("ips-run"), note: $("ips-test-note"), result: $("ips-test-result"), hosts: { block: $("ips-block"), allow: $("ips-allow"), address: $("ips-host-address"), days: $("ips-host-days"), note: $("ips-host-note"), addBlock: $("ips-host-block"), addAllow: $("ips-host-allow"), msg: $("ips-host-msg") } },
       showLogin,
     ),
   network: () =>
