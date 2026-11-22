@@ -188,6 +188,7 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/alert-center/history", s.need(auth.PermView, s.alertCenterHistory))
 	mux.HandleFunc("POST /api/alert-center", s.need(auth.PermEventsAck, s.alertCenterAct))
 	mux.HandleFunc("POST /api/ips/test", s.need(auth.PermTestsRun, s.ipsTest))
+	mux.HandleFunc("POST /api/pcap/analyze", s.need(auth.PermTestsRun, s.pcapAnalyze))
 	mux.HandleFunc("GET /api/eve", s.need(auth.PermView, s.eveList))
 	mux.HandleFunc("GET /api/eve/stream", s.need(auth.PermView, s.eveStream))
 	mux.HandleFunc("GET /api/logs/{id}", s.need(auth.PermView, s.logs))

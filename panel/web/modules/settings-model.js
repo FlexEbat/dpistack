@@ -39,6 +39,7 @@ export const HINTS = {
   CAPTURE_BLOCK_SIZE: "Block size of the v3 ring in bytes. 0: Suricata default; otherwise a multiple of 4096 from 32768.",
   CAPTURE_CPUS: "CPUs for the detection worker threads, for example 2-5,8. Empty: the system decides.",
   NIC_OFFLOADS_OFF: "Switch off GRO, LRO, GSO and TSO on the capture interfaces before each start of Suricata. They merge packets and hurt reassembly and detection. Needs the native runtime.",
+  PCAP_MAX_MB: "Largest capture file, in megabytes, that dpistack pcap analyze accepts.",
   FLOW_MEMCAP: "Memory for the flow table, for example 512mb or 1gb. Raise it when stats show flow memcap hits.",
   STREAM_MEMCAP: "Memory for TCP stream tracking, for example 256mb. Raise it when stats show stream memcap hits.",
   STREAM_REASSEMBLY_MEMCAP: "Memory for TCP stream reassembly, for example 512mb. Raise it when stats show reassembly memcap hits.",

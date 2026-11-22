@@ -96,6 +96,8 @@ step_call() {
 source "$LIB_DIR/exceptions.sh"
 # shellcheck source=lib/blocklist.sh
 source "$LIB_DIR/blocklist.sh"
+# shellcheck source=lib/pcap.sh
+source "$LIB_DIR/pcap.sh"
 # shellcheck source=lib/alerts.sh
 source "$LIB_DIR/alerts.sh"
 # shellcheck source=lib/profiles.sh
@@ -2452,7 +2454,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.54.0"
+DPISTACK_VERSION="0.55.0"
 
 : "${DRY_RUN:=0}"
 
@@ -3348,8 +3350,10 @@ Usage: dpistack <command> [arguments]
   mode-confirm                       confirm the switch to ips
   ips status [--json]                the IPS page: readiness, counters, drop rules, latest blocked events
   ips test [--sid N,...] [--pcap NAME] [--json]
-  ips block|allow list [--json] | add <addr[/prefix]> [--days N|--never] [--note T] | remove <addr|sid> | prune
                                      replays a shipped pcap offline and reports which rules would drop
+  ips block|allow list [--json] | add <addr[/prefix]> [--days N|--never] [--note T] | remove <addr|sid> | prune
+                                     blocked and allowed hosts (rules in local.rules)
+  pcap analyze <file> [--json]       replay a capture of yours with the live rules: alerts and application protocols
   fw apply|remove|restore            DPISTACK chain (restore: at boot)
   panel-passwd                       panel password from stdin
   test bittorrent|https|all [--json] check tests (section 10)
@@ -6312,6 +6316,7 @@ ctl_dispatch() {
 	mode) cmd_mode "$@" ;;
 	mode-confirm) cmd_mode_confirm "$@" ;;
 	ips) cmd_ips "$@" ;;
+	pcap) cmd_pcap "$@" ;;
 	mode-rollback) cmd_mode_rollback "$@" ;;
 	fw) cmd_fw "$@" ;;
 	panel-passwd) cmd_panel_passwd "$@" ;;
@@ -7255,6 +7260,7 @@ declare -gA KEY_HINT=(
 	[CAPTURE_BLOCK_SIZE]='Block size of the v3 ring in bytes. 0: Suricata default; otherwise a multiple of 4096 from 32768.'
 	[CAPTURE_CPUS]='CPUs for the detection worker threads, for example 2-5,8. Empty: the system decides.'
 	[NIC_OFFLOADS_OFF]='Switch off GRO, LRO, GSO and TSO on the capture interfaces before each start of Suricata. They merge packets and hurt reassembly and detection. Needs the native runtime.'
+	[PCAP_MAX_MB]='Largest capture file, in megabytes, that dpistack pcap analyze accepts.'
 	[FLOW_MEMCAP]='Memory for the flow table, for example 512mb or 1gb. Raise it when stats show flow memcap hits.'
 	[STREAM_MEMCAP]='Memory for TCP stream tracking, for example 256mb. Raise it when stats show stream memcap hits.'
 	[STREAM_REASSEMBLY_MEMCAP]='Memory for TCP stream reassembly, for example 512mb. Raise it when stats show reassembly memcap hits.'
@@ -8134,7 +8140,7 @@ menu_key_skipped() {
 		[[ "$suri" == "$n" ]] && return 0
 		redis_output_off "${CONF[EVE_REDIS]:-}" && return 0
 		;;
-	SURICATA_RUNTIME | SURICATA_SOURCE | SURICATA_VERSION | SURICATA_MODE | IFACES | BPF_FILTER | CAPTURE_* | NIC_OFFLOADS_OFF | FLOW_MEMCAP | STREAM_MEMCAP | STREAM_REASSEMBLY_MEMCAP | HOME_NET | \
+	SURICATA_RUNTIME | SURICATA_SOURCE | SURICATA_VERSION | SURICATA_MODE | IFACES | BPF_FILTER | CAPTURE_* | NIC_OFFLOADS_OFF | PCAP_MAX_MB | FLOW_MEMCAP | STREAM_MEMCAP | STREAM_REASSEMBLY_MEMCAP | HOME_NET | \
 		EVE_SYSLOG | EVE_REDIS | EVE_ROTATE | EVE_KEEP | STATS_INTERVAL_SEC | TEST_*)
 		[[ "$suri" == "$n" ]] && return 0
 		;;
@@ -9964,6 +9970,131 @@ path_systemd_marker() { echo "${DPISTACK_ROOT}/run/systemd/system"; }
 path_rules_data_dir() { echo "${DPISTACK_ROOT}/var/lib/suricata"; }
 path_ndpi_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib"; }
 DPISTACK_BUNDLE_END
+put lib/pcap.sh 644 <<'DPISTACK_BUNDLE_END'
+#!/usr/bin/env bash
+# `dpistack pcap analyze FILE`: replays a capture the owner brings through
+# Suricata offline with the live rules, the live exceptions and the real
+# HOME_NET, and says which alerts and which application protocols it
+# produced (task 60). Nothing is written to the live logs: the run has a
+# private directory that is deleted afterwards. Sourced by install.sh; it
+# defines functions only.
+
+PCAP_TIMEOUT_SEC=600
+PCAP_TEMPLATE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../templates" &>/dev/null && pwd)"
+
+# pcap_magic_ok <file> - classic pcap (both byte orders, micro and nano
+# seconds) or pcapng. Anything else is not a capture, whatever its name.
+pcap_magic_ok() {
+	local magic
+	magic=$(head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+	case "$magic" in
+	d4c3b2a1 | a1b2c3d4 | 4d3cb2a1 | a1b23c4d | 0a0d0d0a) return 0 ;;
+	esac
+	return 1
+}
+
+# pcap_emit <json:0|1> <doc>
+pcap_emit() {
+	if (($1)); then
+		jq -c . <<<"$2"
+		return 0
+	fi
+	jq -r '
+		if .ran | not then "not analyzed: " + .reason
+		else
+			"analyzed \(.file) (\(.bytes) bytes): \(.flows) flows, \(.packets) packets, \(.alerts | length) different alerts",
+			(if (.alerts | length) > 0 then "alerts:" else empty end),
+			(.alerts[] | "  sid \(.sid)  x\(.count)  severity \(.severity)  \(.msg)  (\(.src) -> \(.dest))" + (if .would_drop then "  [would drop]" else "" end)),
+			(if (.protocols | length) > 0 then "application protocols:" else "no application protocol was recognized" end),
+			(.protocols[] | "  \(.app_proto)  \(.flows) flows, \(.bytes) bytes")
+		end' <<<"$2"
+}
+
+# pcap_analyze <file> [--json]
+pcap_analyze() {
+	local file="" json=0
+	while (($#)); do
+		case "$1" in
+		--json)
+			json=1
+			shift
+			;;
+		-*) fail 2 "pcap analyze: unknown option: $1" ;;
+		*)
+			[[ -z "$file" ]] || fail 2 "pcap analyze: one file at a time"
+			file="$1"
+			shift
+			;;
+		esac
+	done
+	[[ -n "$file" ]] || fail 2 "pcap analyze: a capture file is needed"
+	[[ -f "$file" && -r "$file" ]] || fail 5 "pcap analyze: no such file: $file"
+	local bytes max_mb
+	bytes=$(stat -c %s "$file")
+	max_mb=$(conf_get PCAP_MAX_MB 100)
+	((bytes > 0)) || fail 5 "pcap analyze: the file is empty"
+	((bytes <= max_mb * 1048576)) || fail 5 "pcap analyze: the file is $((bytes / 1048576)) MiB, the limit is $max_mb MiB (PCAP_MAX_MB)"
+	pcap_magic_ok "$file" || fail 5 "pcap analyze: not a pcap or pcapng file"
+
+	local reason=""
+	if [[ "$(conf_get SURICATA_RUNTIME native)" == docker ]]; then
+		reason="Suricata runs in a container: the offline analysis needs a Suricata on the host"
+	elif ! command -v suricata >/dev/null 2>&1; then
+		reason="suricata is not installed"
+	elif [[ ! -f "$(path_suricata_ruleset)" ]]; then
+		reason="there is no rule set yet: run dpistack rules-update"
+	fi
+	local name
+	name=$(basename "$file")
+	if [[ -n "$reason" ]]; then
+		pcap_emit "$json" "$(jq -nc --arg r "$reason" --arg f "$name" '{ran:false, file:$f, reason:$r}')"
+		return 0
+	fi
+
+	local tmp rc=0 out plugins="" threshold="" home
+	tmp=$(mktemp -d)
+	chmod 0700 "$tmp"
+	[[ -e "$(path_suricata_ndpi_plugin)" ]] && plugins=$'plugins:\n'"  - $(path_suricata_ndpi_plugin)"
+	[[ -f "$(path_suricata_threshold)" ]] && threshold="threshold-file: $(path_suricata_threshold)"
+	home=$(conf_get HOME_NET auto)
+	[[ -z "$home" || "$home" == auto ]] && home='[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]'
+	render_template "$PCAP_TEMPLATE_DIR/suricata-analyze.yaml.tpl" \
+		"HOME_NET=$home" "RULE_DIR=$(dirname "$(path_suricata_ruleset)")" "RULE_FILE=$(path_suricata_ruleset)" \
+		"THRESHOLD=$threshold" "PLUGINS=$plugins" >"$tmp/analyze.yaml" || {
+		rm -rf "$tmp"
+		fail 1 "pcap analyze: could not prepare the offline configuration"
+	}
+	out=$(timeout "$PCAP_TIMEOUT_SEC" suricata -r "$file" -c "$tmp/analyze.yaml" -l "$tmp" -k none 2>&1) || rc=$?
+
+	local alerts='[]' protocols='[]' totals='{"flows":0,"packets":0}'
+	if [[ -f "$tmp/eve.json" ]]; then
+		alerts=$(jq -c 'select(.event_type == "alert") | {sid: .alert.signature_id, msg: .alert.signature, severity: (.alert.severity // 3), would_drop: (.alert.action == "blocked"), src: ((.src_ip // "?") + ":" + ((.src_port // 0) | tostring)), dest: ((.dest_ip // "?") + ":" + ((.dest_port // 0) | tostring))}' "$tmp/eve.json" 2>/dev/null |
+			jq -sc 'group_by(.sid) | map(.[0] + {count: length}) | sort_by(-.count, .sid)') || alerts='[]'
+		protocols=$(jq -c 'select(.event_type == "flow") | {app_proto: (.app_proto // "unknown"), bytes: (((.flow.bytes_toserver // 0) + (.flow.bytes_toclient // 0)))}' "$tmp/eve.json" 2>/dev/null |
+			jq -sc 'group_by(.app_proto) | map({app_proto: .[0].app_proto, flows: length, bytes: (map(.bytes) | add)}) | sort_by(-.flows, .app_proto)') || protocols='[]'
+		totals=$(jq -c 'select(.event_type == "flow") | {p: ((.flow.pkts_toserver // 0) + (.flow.pkts_toclient // 0))}' "$tmp/eve.json" 2>/dev/null |
+			jq -sc '{flows: length, packets: (map(.p) | add // 0)}') || totals='{"flows":0,"packets":0}'
+	fi
+	rm -rf "$tmp"
+	local doc
+	doc=$(jq -nc --arg f "$name" --argjson bytes "$bytes" --argjson rc "$rc" --argjson a "$alerts" --argjson p "$protocols" --argjson t "$totals" \
+		--arg tail "$( ((rc != 0)) && printf '%s' "$out" | tail -n 1)" \
+		'{ran: ($rc == 0), file: $f, bytes: $bytes, flows: $t.flows, packets: $t.packets, alerts: $a, protocols: $p}
+		 + (if $rc != 0 then {reason: ("suricata -r exited with code \($rc): " + $tail)} else {} end)')
+	pcap_emit "$json" "$doc"
+	return 0
+}
+
+# cmd_pcap analyze <file> [--json]
+cmd_pcap() {
+	local sub="${1:-}"
+	[[ $# -eq 0 ]] || shift
+	case "$sub" in
+	analyze) pcap_analyze "$@" ;;
+	*) fail 2 "pcap: analyze <file> [--json]" ;;
+	esac
+}
+DPISTACK_BUNDLE_END
 put lib/profiles.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
 # Settings profiles: a profile is a name for a set of
@@ -11269,6 +11400,7 @@ schema_init() {
 	_schema_add 'CAPTURE_BLOCK_SIZE|int|0|0..67108864|advanced|capture|suricata|light|no'
 	_schema_add 'CAPTURE_CPUS|free|||advanced|capture|suricata|light|no'
 	_schema_add 'NIC_OFFLOADS_OFF|enum|no|yes,no|advanced|capture|suricata|light|no'
+	_schema_add 'PCAP_MAX_MB|int|100|1..2048|advanced|capture|suricata|light|no'
 	_schema_add 'FLOW_MEMCAP|free|128mb||advanced|capture|suricata|light|no'
 	_schema_add 'STREAM_MEMCAP|free|64mb||advanced|capture|suricata|light|no'
 	_schema_add 'STREAM_REASSEMBLY_MEMCAP|free|256mb||advanced|capture|suricata|light|no'
@@ -11399,7 +11531,7 @@ schema_depends_init() {
 	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
 	_schema_depend 'SURICATA_ENABLE=yes RULES_ENABLE=yes' 'RULES_*'
 	_schema_depend 'SURICATA_ENABLE=yes' SURICATA_RUNTIME SURICATA_SOURCE SURICATA_VERSION SURICATA_MODE IFACES \
-		BPF_FILTER 'CAPTURE_*' NIC_OFFLOADS_OFF FLOW_MEMCAP STREAM_MEMCAP STREAM_REASSEMBLY_MEMCAP HOME_NET EVE_SYSLOG EVE_REDIS EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
+		BPF_FILTER 'CAPTURE_*' NIC_OFFLOADS_OFF PCAP_MAX_MB FLOW_MEMCAP STREAM_MEMCAP STREAM_REASSEMBLY_MEMCAP HOME_NET EVE_SYSLOG EVE_REDIS EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
 	_schema_depend '' EVEBOX_ENABLE NTOPNG_ENABLE PANEL_ENABLE NODE_EXPORTER_ENABLE GRAFANA_ENABLE WATCH_ENABLE METRICS_BACKEND
 	_schema_depend 'EVEBOX_ENABLE=yes EVEBOX_DB=elasticsearch' EVEBOX_ES_URL
 	_schema_depend 'EVEBOX_ENABLE=yes' 'EVEBOX_*'
@@ -14866,6 +14998,12 @@ suricata_render_af_packet_block() {
 		echo "    cluster-id: ${cluster_id}"
 		echo "    cluster-type: cluster_flow"
 		echo "    defrag: yes"
+		if ((ips_pairs)); then
+			echo "    copy-mode: ips"
+			echo "    copy-iface: ${all[$((idx ^ 1))]}"
+		fi
+		idx=$((idx + 1))
+		[[ -n "$bpf" ]] && echo "    bpf-filter: \"${bpf}\""
 		[[ "$threads" != "auto" ]] && echo "    threads: ${threads}"
 		case "$tpacket" in
 		v2) echo "    tpacket-v3: no" ;;
@@ -14873,12 +15011,6 @@ suricata_render_af_packet_block() {
 		esac
 		((ring > 0)) && echo "    ring-size: ${ring}"
 		((block > 0)) && [[ "$tpacket" != "v2" ]] && echo "    block-size: ${block}"
-		if ((ips_pairs)); then
-			echo "    copy-mode: ips"
-			echo "    copy-iface: ${all[$((idx ^ 1))]}"
-		fi
-		idx=$((idx + 1))
-		[[ -n "$bpf" ]] && echo "    bpf-filter: \"${bpf}\""
 		cluster_id=$((cluster_id + 1))
 	done
 	echo "  - interface: default"
@@ -16479,6 +16611,22 @@ server {
 @@ALLOW_BLOCK@@
     deny all;
 
+    # The capture upload of the panel (dpistack pcap analyze): nginx's
+    # defaults (1 MiB, 60 s) would stop a real capture. The panel caps it at
+    # 512 MiB itself and dpistack applies PCAP_MAX_MB.
+    location = /api/pcap/analyze {
+        client_max_body_size 512m;
+        proxy_request_buffering off;
+        proxy_read_timeout 900s;
+        proxy_send_timeout 900s;
+        proxy_pass http://127.0.0.1:@@UPSTREAM_PORT@@;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:@@UPSTREAM_PORT@@;
         proxy_http_version 1.1;
@@ -16566,6 +16714,89 @@ put templates/sudoers.tpl 644 <<'DPISTACK_BUNDLE_END'
 # Managed by dpistack. The panel user may run only dpistack;
 # dpistack checks every argument itself (section 4.5).
 @@PANEL_USER@@ ALL=(root) NOPASSWD: @@CTL_BIN@@
+DPISTACK_BUNDLE_END
+put templates/suricata-analyze.yaml.tpl 644 <<'DPISTACK_BUNDLE_END'
+%YAML 1.1
+---
+# Offline config for `dpistack pcap analyze`: the live rules, the live
+# exceptions and the real HOME_NET, replayed on a capture someone brings.
+# Events go only to the -l directory, so the live eve.json is never touched.
+vars:
+  address-groups:
+    HOME_NET: "@@HOME_NET@@"
+    EXTERNAL_NET: "!$HOME_NET"
+    HTTP_SERVERS: "$HOME_NET"
+    SMTP_SERVERS: "$HOME_NET"
+    SQL_SERVERS: "$HOME_NET"
+    DNS_SERVERS: "$HOME_NET"
+    TELNET_SERVERS: "$HOME_NET"
+    AIM_SERVERS: "$EXTERNAL_NET"
+    DC_SERVERS: "$HOME_NET"
+    DNP3_SERVER: "$HOME_NET"
+    DNP3_CLIENT: "$HOME_NET"
+    MODBUS_CLIENT: "$HOME_NET"
+    MODBUS_SERVER: "$HOME_NET"
+    ENIP_CLIENT: "$HOME_NET"
+    ENIP_SERVER: "$HOME_NET"
+  port-groups:
+    HTTP_PORTS: "80"
+    SHELLCODE_PORTS: "!80"
+    ORACLE_PORTS: 1521
+    SSH_PORTS: 22
+    DNP3_PORTS: 20000
+    MODBUS_PORTS: 502
+    FILE_DATA_PORTS: "[$HTTP_PORTS,110,143]"
+    FTP_PORTS: 21
+    GENEVE_PORTS: 6081
+    VXLAN_PORTS: 4789
+    TEREDO_PORTS: 3544
+
+default-rule-path: @@RULE_DIR@@
+rule-files:
+  - @@RULE_FILE@@
+@@THRESHOLD@@
+
+@@PLUGINS@@
+
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert
+        - flow
+
+app-layer:
+  protocols:
+    tls:
+      enabled: yes
+    http:
+      enabled: yes
+    dns:
+      enabled: yes
+    ssh:
+      enabled: yes
+    ftp:
+      enabled: yes
+    smtp:
+      enabled: yes
+    imap:
+      enabled: detection-only
+    smb:
+      enabled: yes
+    rdp:
+      enabled: yes
+    quic:
+      enabled: yes
+    mqtt:
+      enabled: yes
+    dhcp:
+      enabled: yes
+    ntp:
+      enabled: yes
+    sip:
+      enabled: yes
 DPISTACK_BUNDLE_END
 put templates/suricata-test.yaml.tpl 644 <<'DPISTACK_BUNDLE_END'
 %YAML 1.1

@@ -71,8 +71,10 @@ Usage: dpistack <command> [arguments]
   mode-confirm                       confirm the switch to ips
   ips status [--json]                the IPS page: readiness, counters, drop rules, latest blocked events
   ips test [--sid N,...] [--pcap NAME] [--json]
-  ips block|allow list [--json] | add <addr[/prefix]> [--days N|--never] [--note T] | remove <addr|sid> | prune
                                      replays a shipped pcap offline and reports which rules would drop
+  ips block|allow list [--json] | add <addr[/prefix]> [--days N|--never] [--note T] | remove <addr|sid> | prune
+                                     blocked and allowed hosts (rules in local.rules)
+  pcap analyze <file> [--json]       replay a capture of yours with the live rules: alerts and application protocols
   fw apply|remove|restore            DPISTACK chain (restore: at boot)
   panel-passwd                       panel password from stdin
   test bittorrent|https|all [--json] check tests (section 10)
@@ -3035,6 +3037,7 @@ ctl_dispatch() {
 	mode) cmd_mode "$@" ;;
 	mode-confirm) cmd_mode_confirm "$@" ;;
 	ips) cmd_ips "$@" ;;
+	pcap) cmd_pcap "$@" ;;
 	mode-rollback) cmd_mode_rollback "$@" ;;
 	fw) cmd_fw "$@" ;;
 	panel-passwd) cmd_panel_passwd "$@" ;;

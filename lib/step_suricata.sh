@@ -37,6 +37,12 @@ suricata_render_af_packet_block() {
 		echo "    cluster-id: ${cluster_id}"
 		echo "    cluster-type: cluster_flow"
 		echo "    defrag: yes"
+		if ((ips_pairs)); then
+			echo "    copy-mode: ips"
+			echo "    copy-iface: ${all[$((idx ^ 1))]}"
+		fi
+		idx=$((idx + 1))
+		[[ -n "$bpf" ]] && echo "    bpf-filter: \"${bpf}\""
 		[[ "$threads" != "auto" ]] && echo "    threads: ${threads}"
 		case "$tpacket" in
 		v2) echo "    tpacket-v3: no" ;;
@@ -44,12 +50,6 @@ suricata_render_af_packet_block() {
 		esac
 		((ring > 0)) && echo "    ring-size: ${ring}"
 		((block > 0)) && [[ "$tpacket" != "v2" ]] && echo "    block-size: ${block}"
-		if ((ips_pairs)); then
-			echo "    copy-mode: ips"
-			echo "    copy-iface: ${all[$((idx ^ 1))]}"
-		fi
-		idx=$((idx + 1))
-		[[ -n "$bpf" ]] && echo "    bpf-filter: \"${bpf}\""
 		cluster_id=$((cluster_id + 1))
 	done
 	echo "  - interface: default"

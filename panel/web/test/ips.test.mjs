@@ -206,3 +206,37 @@ test("task 58: Events offers Block for the hosts of an alert and asks first", ()
   assert.match(src, /confirm\(`Block \$\{t\.ip\}\?/);
   assert.match(src, /"\/api\/ips\/block"/);
 });
+
+import { pcapFileProblem, pcapSummary, pcapAlertRows, pcapProtocolRows } from "../modules/ips-model.js";
+
+test("task 60: a capture file is checked before it is sent", () => {
+  assert.match(pcapFileProblem(null), /Choose a capture/);
+  assert.match(pcapFileProblem({ size: 0 }), /empty/);
+  assert.match(pcapFileProblem({ size: 513 * 1048576 }), /512 MiB/);
+  assert.equal(pcapFileProblem({ size: 1000 }), "");
+});
+
+test("task 60: the answer is a sentence, an alerts table and a protocols table", () => {
+  const res = {
+    ran: true, file: "x.pcap", flows: 4, packets: 29,
+    alerts: [{ sid: 2000001, count: 2, severity: 2, msg: "ET P2P BitTorrent", src: "10.0.0.5:51234", dest: "203.0.113.7:6881", would_drop: true }],
+    protocols: [{ app_proto: "tls", flows: 2, bytes: 11000 }, { app_proto: "http", flows: 1, bytes: 100 }],
+  };
+  assert.equal(pcapSummary(res), "Analyzed x.pcap: 4 flows, 29 packets, 1 different alert.");
+  assert.deepEqual(pcapAlertRows(res)[0], ["2000001", "2", "2", "ET P2P BitTorrent", "10.0.0.5:51234 \u2192 203.0.113.7:6881 (would drop)"]);
+  assert.deepEqual(pcapProtocolRows(res), [["tls", "2", "10.7 KiB"], ["http", "1", "100 B"]]);
+  assert.equal(pcapSummary({ ran: false, reason: "suricata is not installed" }), "Not analyzed: suricata is not installed.");
+  assert.deepEqual(pcapAlertRows(null), []);
+  assert.equal(pcapSummary(null), "");
+});
+
+test("task 60: the IPS view has the upload and app.js wires it", () => {
+  const html = here("index.html");
+  for (const id of ["ips-pcap-file", "ips-pcap-run", "ips-pcap-msg", "ips-pcap-result"]) {
+    assert.match(html, new RegExp(`id="${id}"`), id);
+    assert.match(here("app.js"), new RegExp(`"${id}"`), id);
+  }
+  const src = here("modules/ips.js");
+  assert.match(src, /"\/api\/pcap\/analyze"/);
+  assert.match(src, /"Content-Type": "application\/octet-stream"/);
+});

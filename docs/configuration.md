@@ -21,6 +21,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `CAPTURE_BLOCK_SIZE` | integer 0..67108864 | `0` | light | Block size of the v3 ring in bytes. 0: Suricata default; otherwise a multiple of 4096 from 32768. (advanced) |
 | `CAPTURE_CPUS` | string | empty | light | CPUs for the detection worker threads, for example 2-5,8. Empty: the system decides. (advanced) |
 | `NIC_OFFLOADS_OFF` | yes \| no | `no` | light | Switch off GRO, LRO, GSO and TSO on the capture interfaces before each start of Suricata. They merge packets and hurt reassembly and detection. Needs the native runtime. (advanced) |
+| `PCAP_MAX_MB` | integer 1..2048 | `100` | light | Largest capture file, in megabytes, that dpistack pcap analyze accepts. (advanced) |
 | `FLOW_MEMCAP` | string | `128mb` | light | Memory for the flow table, for example 512mb or 1gb. Raise it when stats show flow memcap hits. (advanced) |
 | `STREAM_MEMCAP` | string | `64mb` | light | Memory for TCP stream tracking, for example 256mb. Raise it when stats show stream memcap hits. (advanced) |
 | `STREAM_REASSEMBLY_MEMCAP` | string | `256mb` | light | Memory for TCP stream reassembly, for example 512mb. Raise it when stats show reassembly memcap hits. (advanced) |

@@ -122,6 +122,7 @@ schema_init() {
 	_schema_add 'CAPTURE_BLOCK_SIZE|int|0|0..67108864|advanced|capture|suricata|light|no'
 	_schema_add 'CAPTURE_CPUS|free|||advanced|capture|suricata|light|no'
 	_schema_add 'NIC_OFFLOADS_OFF|enum|no|yes,no|advanced|capture|suricata|light|no'
+	_schema_add 'PCAP_MAX_MB|int|100|1..2048|advanced|capture|suricata|light|no'
 	_schema_add 'FLOW_MEMCAP|free|128mb||advanced|capture|suricata|light|no'
 	_schema_add 'STREAM_MEMCAP|free|64mb||advanced|capture|suricata|light|no'
 	_schema_add 'STREAM_REASSEMBLY_MEMCAP|free|256mb||advanced|capture|suricata|light|no'
@@ -252,7 +253,7 @@ schema_depends_init() {
 	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
 	_schema_depend 'SURICATA_ENABLE=yes RULES_ENABLE=yes' 'RULES_*'
 	_schema_depend 'SURICATA_ENABLE=yes' SURICATA_RUNTIME SURICATA_SOURCE SURICATA_VERSION SURICATA_MODE IFACES \
-		BPF_FILTER 'CAPTURE_*' NIC_OFFLOADS_OFF FLOW_MEMCAP STREAM_MEMCAP STREAM_REASSEMBLY_MEMCAP HOME_NET EVE_SYSLOG EVE_REDIS EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
+		BPF_FILTER 'CAPTURE_*' NIC_OFFLOADS_OFF PCAP_MAX_MB FLOW_MEMCAP STREAM_MEMCAP STREAM_REASSEMBLY_MEMCAP HOME_NET EVE_SYSLOG EVE_REDIS EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
 	_schema_depend '' EVEBOX_ENABLE NTOPNG_ENABLE PANEL_ENABLE NODE_EXPORTER_ENABLE GRAFANA_ENABLE WATCH_ENABLE METRICS_BACKEND
 	_schema_depend 'EVEBOX_ENABLE=yes EVEBOX_DB=elasticsearch' EVEBOX_ES_URL
 	_schema_depend 'EVEBOX_ENABLE=yes' 'EVEBOX_*'

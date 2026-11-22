@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // HostEntry is one entry of the block or allow list as
@@ -85,4 +86,12 @@ func (r *Runner) HostRemove(ctx context.Context, kind, what string) error {
 	}
 	_, err := r.runWith(ctx, maxOutput, rulesTimeout, nil, "ips", kind, "remove", what)
 	return err
+}
+
+// PcapTimeout bounds `pcap analyze`: Suricata gets 10 minutes itself.
+const PcapTimeout = 11 * time.Minute
+
+// PcapAnalyze runs `pcap analyze <path> --json` and returns its JSON.
+func (r *Runner) PcapAnalyze(ctx context.Context, path string) ([]byte, error) {
+	return r.runWith(ctx, maxOutput, PcapTimeout, nil, "pcap", "analyze", path, "--json")
 }
