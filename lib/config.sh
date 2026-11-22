@@ -211,9 +211,9 @@ config_validate() {
 	IFS=',' read -ra channels <<<"${CONF[ALERT_CHANNELS]:-}"
 	for channel in "${channels[@]}"; do
 		case "$channel" in
-		panel | log | tg | mail) ;;
+		panel | log | tg | mail | webhook | syslog) ;;
 		*)
-			echo "ALERT_CHANNELS: unknown channel '$channel' (panel, log, tg, mail are allowed)"
+			echo "ALERT_CHANNELS: unknown channel '$channel' (panel, log, tg, mail, webhook, syslog are allowed)"
 			errors=$((errors + 1))
 			;;
 		esac
@@ -227,6 +227,34 @@ config_validate() {
 	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",mail,"* ]]; then
 		if [[ -z "${SECRETS[ALERT_SMTP_URL]:-}" || -z "${CONF[ALERT_MAIL_TO]:-}" || -z "${CONF[ALERT_MAIL_FROM]:-}" ]]; then
 			echo "ALERT_CHANNELS contains mail: needs ALERT_SMTP_URL, ALERT_MAIL_TO and ALERT_MAIL_FROM"
+			errors=$((errors + 1))
+		fi
+	fi
+	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",webhook,"* && -z "${SECRETS[ALERT_WEBHOOK_URL]:-}" ]]; then
+		echo "ALERT_CHANNELS contains webhook: needs ALERT_WEBHOOK_URL"
+		errors=$((errors + 1))
+	fi
+	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",syslog,"* && -z "${CONF[ALERT_SYSLOG_TARGET]:-}" ]]; then
+		echo "ALERT_CHANNELS contains syslog: needs ALERT_SYSLOG_TARGET"
+		errors=$((errors + 1))
+	fi
+	# Detection alerts go to the channels of DETECT_NOTIFY_CHANNELS, or to those
+	# of ALERT_CHANNELS when it is empty; the panel is not a delivery channel for
+	# them (the Alert Center lists them already), so a list with only that is empty.
+	if [[ "${CONF[DETECT_NOTIFY]:-no}" == "yes" ]]; then
+		local dlist="${CONF[DETECT_NOTIFY_CHANNELS]:-${CONF[ALERT_CHANNELS]:-}}" dch dany=no
+		local -a dchannels=()
+		IFS=',' read -ra dchannels <<<"$dlist"
+		for dch in "${dchannels[@]}"; do
+			[[ "$dch" == "panel" || -z "$dch" ]] && continue
+			dany=yes
+			if [[ -n "${CONF[DETECT_NOTIFY_CHANNELS]:-}" && ",${CONF[ALERT_CHANNELS]:-}," != *",$dch,"* ]]; then
+				echo "DETECT_NOTIFY_CHANNELS: $dch is not in ALERT_CHANNELS, so it has no address set up"
+				errors=$((errors + 1))
+			fi
+		done
+		if [[ "$dany" == "no" ]]; then
+			echo "DETECT_NOTIFY=yes needs a delivery channel besides panel: add tg, mail, webhook, syslog or log to ALERT_CHANNELS (or set DETECT_NOTIFY_CHANNELS)"
 			errors=$((errors + 1))
 		fi
 	fi

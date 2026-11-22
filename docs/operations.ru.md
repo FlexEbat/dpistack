@@ -78,7 +78,7 @@ dpistack iface remove eth1       # последний интерфейс уда�
 
 ## Watchdog и оповещения
 
-Таймер `dpistack-watch` раз в `WATCH_INTERVAL_SEC` проверяет службы, порты, свежесть `eve.json`, потери пакетов, место на диске и возраст правил (пороги `WATCH_*`). Упавший компонент перезапускается не чаще трёх раз в час (`WATCH_AUTORESTART`). Оповещения идут в каналы `ALERT_CHANNELS`: `panel`, `log`, `telegram`, `mail`. Токен Telegram и адрес SMTP хранятся как секреты.
+Таймер `dpistack-watch` раз в `WATCH_INTERVAL_SEC` проверяет службы, порты, свежесть `eve.json`, потери пакетов, место на диске и возраст правил (пороги `WATCH_*`). Упавший компонент перезапускается не чаще трёх раз в час (`WATCH_AUTORESTART`). Оповещения идут в каналы `ALERT_CHANNELS`: `panel`, `log`, `tg` (Telegram), `mail`, `webhook` (JSON, Slack, Discord или ntfy) и `syslog`. Токен Telegram, адрес SMTP и адрес вебхука хранятся как секреты. При `DETECT_NOTIFY=yes` сторож также отправляет срабатывания Suricata важности `DETECT_NOTIFY_SEVERITY` и выше: раз в `DETECT_NOTIFY_DEDUP_MIN` минут на пару сигнатура и адреса и не больше `DETECT_NOTIFY_MAX_PER_HOUR` в час; то, что удержал лимит, объявляется одним сообщением.
 
 ## Метрики
 

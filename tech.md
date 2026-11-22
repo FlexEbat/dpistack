@@ -1,23 +1,23 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v95** (2026-11-20)
-**Program version: v0.51.12** (tasks 0-56 are done (18.58); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v96** (2026-11-21)
+**Program version: v0.52.0** (tasks 0-56 are done (18.58), 57 is done, 58 to 65 are planned (18.73); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.52.0: task 57 (18.73): Suricata detections are sent to the delivery channels (`DETECT_NOTIFY`), with a severity threshold, de-duplication and an hourly limit; new channels `webhook` (json, Slack, Discord, ntfy) and `syslog`.
 - v0.51.12: the journal part of `dpistack diag` is no longer empty on a host with `EVE_SYSLOG=yes` (18.72).
 - v0.51.11: the panel no longer creates an account with a password that cannot sign in (18.71).
 - v0.51.10: the watchdog service has a start timeout (18.70), so a run that hangs cannot silence it.
 - v0.51.9: a Suricata that was built from source is no longer fetched and built again when only the configuration changed (18.69).
-- v0.51.8: found on a real host (18.68): `EVE_REDIS` never reached suricata.yaml because the installer looked for a build-info line Suricata does not print (`hiredis support:`); the watchdog warns when EVE_REDIS is set without hiredis; `dpistack diag` asks Suricata for `-V`, leaves eve events out of the journal section and shows the hiredis state; an inactive ufw gets a warning.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v96: v0.52.0. Task 57 done, tasks 58 to 65 written as 18.73 (decisions D183 to D186); 4.3 and section 8 name the new keys and channels.
 - v95: v0.51.12. 18.72 written (decision D182).
 - v94: v0.51.11. 18.71 written (decision D181).
 - v93: v0.51.10. 18.70 written (decision D180).
 - v92: v0.51.9. 18.69 written (decision D179).
-- v91: v0.51.8. 18.68 written (decisions D176 to D178); D144 now names the real build-info line.
 - v90: v0.51.7. 18.67 written (decision D175).
 
 ---
@@ -302,14 +302,21 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `WATCH_RULES_WARN_DAYS` `WATCH_RULES_CRIT_DAYS` | `10` `30` | the age of the rules |
 | `WATCH_REPEAT_MIN` | `60` | repeat an alert until the status is `ok` |
 | `WATCH_AUTORESTART` | `no` | `yes` `no`; `yes` = at most 3 restarts an hour per component |
-| `ALERT_CHANNELS` | `panel,log` | a subset of `panel,log,tg,mail` |
+| `ALERT_CHANNELS` | `panel,log` | a subset of `panel,log,tg,mail,webhook,syslog` |
 | `ALERT_TG_CHAT_ID` | empty | needed with `tg` |
 | `ALERT_MAIL_TO` `ALERT_MAIL_FROM` | empty | addresses, needed with `mail` |
+| `ALERT_WEBHOOK_FORMAT` | `json` | `json` `slack` `discord` `ntfy`: the body of a `webhook` message (18.73) |
+| `ALERT_SYSLOG_TARGET` `ALERT_SYSLOG_PROTO` | empty, `udp` | `host`, `host:port` or `[ipv6]:port` (port 514), needed with `syslog`; `udp` or `tcp` |
+| `DETECT_NOTIFY` | `no` | `yes` sends Suricata alerts to the delivery channels (task 57) |
+| `DETECT_NOTIFY_SEVERITY` | `high` | `high` (severity 1), `medium` (1 and 2), `low` (1 to 3) |
+| `DETECT_NOTIFY_CHANNELS` | empty | a subset of `ALERT_CHANNELS` without `panel`; empty: all of `ALERT_CHANNELS` except `panel` |
+| `DETECT_NOTIFY_MAX_PER_HOUR` `DETECT_NOTIFY_DEDUP_MIN` | `20` `60` | 1 to 1000 messages an hour; the same signature, source and destination once in 0 to 1440 minutes (0: no de-duplication) |
 | `TEST_HTTPS_URL` | `https://example.com` | the URL of the live HTTPS test |
 | `TEST_BT_LIVE` | `no` | `yes` sends the pcap to a live interface with `tcpreplay` and adds one test rule (sid 9000100, `dpistack-test.rules`) to the live Suricata |
 | `TEST_ON_INSTALL` | `yes` | `yes` `no` |
 | secret `ALERT_TG_TOKEN` | empty | the bot token |
 | secret `ALERT_SMTP_URL` | empty | `smtp://user:pass@host:587` |
+| secret `ALERT_WEBHOOK_URL` | empty | `https://...`, needed with `webhook`; the URL of a Slack or Discord hook is the credential |
 | secret `METRICS_TOKEN` | generated | 32 random bytes in hex, created with `METRICS_EXPORT=yes` |
 
 Load-time checks (cross checks):
@@ -418,7 +425,7 @@ Arguments: letters, digits and `. _ : = / @ + , -` and a space are allowed (`rul
 
 `logs <id> -n N --until-stdin-closed` (v16): the same as `--follow`, but the stream ends when the stdin of `ctl` is closed. The panel needs it: it does not run as root and cannot send a signal to the `sudo` process, so it has no right to kill `ctl` when the connection breaks. The panel keeps stdin open while the client listens and closes it when the client has gone; `ctl` then stops `journalctl` even if there are no new lines. The other ways to call `--follow` do not change.
 
-`logs -n N`: `N` from 1 to 1000, leading zeros are a decimal notation (`08` is 8, `01750` is refused as 1750). `config-write dpistack.conf` refuses the secret keys (`ALERT_TG_TOKEN`, `ALERT_SMTP_URL`, `METRICS_TOKEN`): secrets live only in `secrets.conf`. Writing and rolling back configs take the installer lock (they wait up to 30 seconds) so that the file does not change while `install.sh` renders from it.
+`logs -n N`: `N` from 1 to 1000, leading zeros are a decimal notation (`08` is 8, `01750` is refused as 1750). `config-write dpistack.conf` refuses the secret keys (`ALERT_TG_TOKEN`, `ALERT_SMTP_URL`, `ALERT_WEBHOOK_URL`, `METRICS_TOKEN`): secrets live only in `secrets.conf`. Writing and rolling back configs take the installer lock (they wait up to 30 seconds) so that the file does not change while `install.sh` renders from it.
 
 `config-write --apply`: `dpistack.conf` runs `reconfigure`; `suricata.yaml` restarts `suricata`; `evebox.yaml` and `ntopng.conf` restart their component; `local.rules`, `enable.conf`, `disable.conf`, `modify.conf`, `drop.conf` run `rules-update`. A file written through `ctl` counts as hand-edited for the installer (5.4): `config-write` does not update the hash of the last render.
 
@@ -638,7 +645,7 @@ The sections of the config screen (the "group" column is the column of `lib/sche
 | `rules` | Rules | `RULES_SOURCES`, `RULES_URLS`, `RULES_GROUPS`, `RULES_UPDATE`, `RULES_UPDATE_CALENDAR`, `EXCEPTIONS_DEFAULT_DAYS` |
 | `access` | Access | `ACCESS_MODE`, `BIND_ADDR`, `LAN_CIDR`, `PANEL_PORT`, `PANEL_RUNTIME`, `NTOPNG_PORT`, `EVEBOX_PORT`, `NGINX_MANAGE`, `NGINX_TLS`, `NGINX_CERT`, `NGINX_KEY`, `FIREWALL_MANAGE` |
 | `metrics` | Metrics | `METRICS_EXPORT`, `METRICS_BACKEND`, `METRICS_BACKEND_RUNTIME`, `METRICS_BACKEND_PORT`, `METRICS_RETENTION`, `NODE_EXPORTER_*`, `GRAFANA_*` |
-| `watch` | Watch and alerts | `WATCH_ENABLE`, every `WATCH_*`, `ALERT_CHANNELS`, `ALERT_TG_CHAT_ID`, `ALERT_TG_TOKEN`, `ALERT_MAIL_TO`, `ALERT_MAIL_FROM`, `ALERT_SMTP_URL` |
+| `watch` | Watch and alerts | `WATCH_ENABLE`, every `WATCH_*`, `ALERT_CHANNELS`, `ALERT_TG_CHAT_ID`, `ALERT_TG_TOKEN`, `ALERT_MAIL_TO`, `ALERT_MAIL_FROM`, `ALERT_SMTP_URL`, `ALERT_WEBHOOK_*`, `ALERT_SYSLOG_*`, `DETECT_NOTIFY*` |
 | `tests` | Tests | `TEST_HTTPS_URL`, `TEST_BT_LIVE`, `TEST_ON_INSTALL` |
 | an action | Panel password | not a config key, kept only as a hash |
 
@@ -895,9 +902,19 @@ The details of the checks:
 - `panel`: a line in `events.jsonl`;
 - `log`: `logger -t dpistack-watch -p daemon.warning` (the level `err` for `crit`);
 - `tg`: `curl` to the Bot API, the token and `ALERT_TG_CHAT_ID`;
-- `mail`: `curl --url "$ALERT_SMTP_URL"` with `ALERT_MAIL_FROM` and `ALERT_MAIL_TO`, with no local MTA.
+- `mail`: `curl --url "$ALERT_SMTP_URL"` with `ALERT_MAIL_FROM` and `ALERT_MAIL_TO`, with no local MTA;
+- `webhook` (v0.52.0): one POST to `ALERT_WEBHOOK_URL`, in the body of `ALERT_WEBHOOK_FORMAT`: `json` is `{ts, host, severity, subject, message}`, `slack` is `{text}`, `discord` is `{content}` (2000 characters at most), `ntfy` is a plain text body with the headers `Title` and `Priority` (5 for `err`, 4 for `warning`, 3 otherwise). The URL and the body go to `curl` on stdin (`-K -`), so no secret is in `ps`;
+- `syslog` (v0.52.0): `logger -n HOST -P PORT --udp|--tcp` to `ALERT_SYSLOG_TARGET`, the same tag and priority as `log`.
 
 A failure of one channel is written to the journal and does not stop the others. The texts of the messages are in English, one line per check.
+
+**Detections (v0.52.0, task 57).** With `DETECT_NOTIFY=yes`, `EVE_FILE=yes` and Suricata enabled, the last step of a run reads the lines that `eve.json` gained since the previous run and sends each `alert` event whose severity is at or above `DETECT_NOTIFY_SEVERITY` (1 `high`, 2 `medium`, 3 `low`) to the channels of `DETECT_NOTIFY_CHANNELS` (empty: `ALERT_CHANNELS` without `panel`). This is not a health check: it has no row in `health.json`, no `since` and no recovery message. The position is `detect-notify.json` in the state directory (mode 0600): `{inode, offset, hour, sent, held, held_sigs, seen}`.
+
+- The first run only records the end of the file (D185). A different inode or a smaller size reads the file from its start. At most 4 MiB are read in a run and only whole lines; a line still being written waits for the next run.
+- One message per `signature_id`, source and destination address in `DETECT_NOTIFY_DEDUP_MIN` minutes; the alert that came again is dropped, not counted.
+- At most `DETECT_NOTIFY_MAX_PER_HOUR` messages in an hour and 25 in one run. The rest are counted with their signatures; when the hour turns one message says how many were held back and names the three most frequent signatures (D186).
+- The text: `[dpistack] HOST: HIGH detection: SIGNATURE (sid N, CATEGORY) SRC:PORT -> DEST:PORT PROTO/APP_PROTO`, with ` blocked` after the sid group when Suricata dropped the packet. The mail subject and the title of a webhook are `dpistack: HIGH SIGNATURE`.
+- It runs after `health.json` is written and after the restarts, so a channel that does not answer cannot delay the health file. An alert with an exception (18.40) never reaches `eve.json`, so it is not sent.
 
 ---
 
@@ -1275,6 +1292,15 @@ One row per task. **Done** means the Definition of Done of section 14 was met; a
 | 54 | pending work in the panel | **done.** The watchdog check `migrate.pending` (warn while `migrate_needed`); the Overview shows it, and the check `redis.eve_stream`, as warnings | v0.51.0 | 18.58 |
 | 55 | design pass, part two | **done.** Every screen opened at 390, 768 and 1440 px (a CI job `ui` and `scripts/ui-check/`, with sample events), the sideways scroll of Components on a phone fixed, the note kept at the very top and the floating menu below it on a phone, reduced motion was already in place; then the screens looked at one by one: Network, Traffic, Events and Backups (v0.51.1, 18.61), IPS and Settings (v0.51.2, 18.62) | v0.51.2 | 18.60, 18.61, 18.62 |
 | 56 | small things | **done.** The selected Rules tab is kept for the session; three more templates (a file type over HTTP, a JA3 hash, many outward connections); `scripts/dev-tools.sh --check|--install` for the CI versions of shellcheck 0.9.0 and shfmt 3.8.0; Metrics keeps one day because the ring holds one day (the hint on the screen says so) | v0.51.0 | 18.60 |
+| 57 | detection alerts leave the panel | **done.** A Suricata alert of a chosen severity reaches the delivery channels: the new channels `webhook` (JSON, Slack, Discord, ntfy) and `syslog` beside `log`, `tg` and `mail`, a severity threshold, a de-duplication window and an hourly limit | v0.52.0 | 18.73 |
+| 58 | block from the program | planned. A rule or group set to `drop`, a block of a host from an event, an allow list and a deny list, all through a verb and the panel | v0.53.0 | 18.73 |
+| 59 | capture performance | planned. Threads, ring and block size (`tpacket-v3`), flow and stream memcaps, CPU affinity and NIC offloads as keys, with a recommendation from the drop rate | v0.54.0 | 18.73 |
+| 60 | your own pcap | planned. `dpistack pcap analyze FILE` and an upload in the panel show the alerts and the application protocols of a capture you bring | v0.55.0 | 18.73 |
+| 61 | history and traffic intelligence | planned. Daily and weekly reports, per device history, a new device alert, GeoIP and blocklists (Suricata datasets) | v0.56.0 | 18.73 |
+| 62 | alert state that does not lose alerts | planned. A persistent alert index that does not depend on the last 8 MiB of `eve.json`, and a rotation of `events.jsonl` | v0.57.0 | 18.73 |
+| 63 | backup that looks after itself | planned. A schedule, retention, encryption, an upload in the panel, a safe place that `uninstall` keeps, a restore on another host that is tried in a test | v0.58.0 | 18.73 |
+| 64 | TLS of the panel, self-signed certificates | planned. The panel serves HTTPS itself with a self-signed certificate that the program makes, renews and shows the fingerprint of; the nginx certificate is made the same way | v0.59.0 | 18.73 |
+| 65 | two-factor sign-in | planned. TOTP for the accounts of the panel with recovery codes | v0.60.0 | 18.73 |
 
 **Rules for the tasks not yet done.** Decided on the request of 2026-10-31 (`todo.md`), "choose yourself". General rules for all of them: (1) Nothing is shown that the program cannot really do: the IPS page does not say "dry run" unless a drop is really tested (task 42 calls what it does a "rule test"). (2) Every change of the system goes through a verb of section 4.5; the panel never writes outside `/var/lib/dpistack`. (3) Every action that changes something is written to the audit log (task 35) with the user, the time, the address and the result. (4) The permission of the user is checked in the panel for every route (task 34), the verbs trust the panel. (5) There are no resource budgets for the panel. (6) New screens follow the design of 9.1 and work in both themes.
 
@@ -2639,3 +2665,49 @@ Test: `TestCreateUserChecksItsInput` posts 200 characters of 3 bytes each; on v0
 Not a bug: the EVE-to-Redis stream has no reader in dpistack. ntopng's `--redis` is its own store, not the stream; the stream is an output for the administrator's own consumers, bounded by `EVE_REDIS_MAXLEN`, and `redis.eve_stream` watches the bound. Also not in the code: two lines of the report were split in the middle (`step.panel.ts=2` and `026-...`, earlier `enabled=ena` and `bled`); `diag_section` prints what the command prints and nothing in the installer wraps lines, so this comes from the terminal or the copy. The saved file `/tmp/dpistack-diag.*` would show it.
 
 Test: `tests/families.bats` (the warning by priority shows, the error among the events shows, the events do not, and a journal of events only says so); it fails on v0.51.11.
+
+### 18.73 Tasks 57 to 65: the gaps found in a review of v0.51.12
+
+**Status:** 57 is done (v0.52.0, below), 58 to 65 are planned in this order. The owner listed nine gaps on 2026-11-21 and asked for them as tasks; items 1 to 7 of the list are tasks 57 to 63, item 8 (password only, no TLS) is split into task 64 (TLS) and task 65 (two-factor sign-in), and item 9 (self-signed certificates) is part of task 64. Rules for all of them: the general rules after the index in 18.0 hold; every new key is in the schema, the example, the hints (English and Russian) and the generated reference; every new verb is in 4.5; nothing is shown that the program cannot do; every change has a test; the version is raised by the PR that merges the task. "Choose yourself" decisions are taken here.
+
+**Task 57, detection alerts leave the panel.** The finding: the watchdog notifies only when one of its own health checks changes state; a Suricata alert (`event_type: alert`) is listed in the Alert Center and goes nowhere else; the channels are `panel`, `log`, `tg`, `mail`; there is no severity threshold and no rate limit for detections.
+
+- New channels in `ALERT_CHANNELS`: `webhook` and `syslog`. `webhook` POSTs to `ALERT_WEBHOOK_URL` (a secret, because the URL of a Slack or Discord hook is the credential) in the shape chosen by `ALERT_WEBHOOK_FORMAT` (`json`, `slack`, `discord`, `ntfy`). `syslog` sends one message to `ALERT_SYSLOG_TARGET` (`host[:port]`, 514 by default) over `ALERT_SYSLOG_PROTO` (`udp` or `tcp`) with `logger`. The health alerts use the new channels too.
+- New keys for detections: `DETECT_NOTIFY` (`yes|no`, default `no`), `DETECT_NOTIFY_SEVERITY` (`high|medium|low`, default `high`: this severity and the more severe ones; Suricata severity 1, 2, 3), `DETECT_NOTIFY_CHANNELS` (a subset of the channels without `panel`; empty means `ALERT_CHANNELS` without `panel`), `DETECT_NOTIFY_MAX_PER_HOUR` (1 to 1000, default 20), `DETECT_NOTIFY_DEDUP_MIN` (0 to 1440, default 60; 0 turns it off).
+- The watchdog reads the new lines of `eve.json` on every run from a saved position (`detect-notify.json` in the state directory: the inode, the offset, the hour window, the keys already sent), takes at most 4 MiB per run and only complete lines, and sends the alerts of the chosen severity. One alert per signature, source and destination in each de-duplication window; after `DETECT_NOTIFY_MAX_PER_HOUR` messages in an hour the rest are counted and one summary message goes out when the hour turns (the count and the three most frequent signatures).
+- Review of the task (second pass, found and fixed in the same session):
+
+| No | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | medium | the same stop-and-go risk as D180: a channel that does not answer holds the flock for 10 s per message | detection runs last (after `health.json`), at most 25 messages per run, `--max-time 10` on every call; the unit's `TimeoutStartSec=600` bounds the rest |
+| 2 | medium | a line still being written would be parsed as broken JSON and lost | only whole lines are consumed; the offset stops before a line without its newline; a single line over the 4 MiB cap is skipped so the reader cannot stall |
+| 3 | low | `jq` stops at the first line that is not JSON | the filter is `jq -R 'fromjson? | ...'`, a bad line is skipped |
+| 4 | low | the secret URL of a hook in the arguments of `curl` | the URL, the headers and the body go on stdin (`-K -`); a test checks `ps`-visible arguments |
+| 5 | low | `DETECT_NOTIFY_CHANNELS` could name a channel without an address | `config_validate` refuses a channel that is not in `ALERT_CHANNELS`, and `DETECT_NOTIFY=yes` without any channel but `panel` |
+
+Open: the state of triage (acknowledged, snoozed) does not silence a delivery (decided below); a delivery to a channel that failed is not retried, because the position moved on (a retry queue is not planned: the Alert Center still lists the alert).
+
+- The panel's Settings screen shows the keys (group `watch`); the Alert Center is unchanged: delivery is a side channel, the states `acknowledged` and `snoozed` do not change what is sent (a person who wants silence adds an exception, 18.40, and Suricata no longer writes the alert).
+
+**Task 58, block from the program.** The finding: `rules-sid` and `rules-group` only enable and disable; no switch to `drop`, no block of a host from an event, no allow or deny list; the Exceptions screen suppresses and does not block. Planned form: `dpistack ips rule drop|alert <sid>` and `ips group drop|alert <group>` write `modify.conf` through `suricata-update` (`modify` lines that turn `alert` into `drop`); `ips block add|remove|list <addr> [--days N] [--note T]` writes the generated `dpistack-block.rules` (`drop ip <addr> any <> any any`, sids 9100000 to 9199999); `ips allow add|remove|list <addr>` writes `pass ip` rules ahead of them. The Events screen gets "Block this host" next to "Create exception", the IPS page gets the lists. In IDS mode a drop rule only alerts, the page says so.
+
+**Task 59, capture performance.** The finding: the `af-packet` block has no threads, ring size, `tpacket-v3`, block size, memcaps or CPU affinity, and nothing turns off GRO, LRO, GSO and TSO. Planned keys: `CAPTURE_THREADS` (`auto|N`), `CAPTURE_RING_SIZE`, `CAPTURE_BLOCK_SIZE`, `FLOW_MEMCAP`, `STREAM_MEMCAP`, `CAPTURE_CPUS`, `NIC_OFFLOADS_OFF` (`yes|no`); the offloads are turned off by a small unit that runs `ethtool -K` for the capture interfaces at boot and again after a reconfigure; the watchdog message for packet drops names the key to raise.
+
+**Task 60, your own pcap.** The finding: offline replay takes only the shipped pcaps. Planned: `dpistack pcap analyze FILE [--json]` runs Suricata offline on a file in a private directory (`-r`, its own log directory, the live rules, nothing written to the live logs) and prints the alerts, the application protocols of the flows (nDPI) and the counts; the panel uploads a file up to a limit set by `PCAP_MAX_MB` and shows the same. The file is deleted after the run unless `--keep` is given.
+
+**Task 61, history and traffic intelligence.** The finding: Metrics keeps one day, Traffic and Events work on the newest 500 events, flows appear only when they end, no reports, no per-device history, no new device detection, no GeoIP or reputation lists. Planned: a daily roll-up file per day in `/var/lib/dpistack/history/` written by the watchdog from `flow` and `alert` events (per device: bytes, flows, top applications); `dpistack report daily|weekly`; a `device.new` alert when an address appears that was not in the last 30 days; GeoIP from the free DB-IP Lite country database (no account key, unlike GeoLite2); IP and domain blocklists as Suricata datasets from a list of URLs.
+
+**Task 62, alert state that does not lose alerts.** The finding: the Alert Center reads the last 8 MiB of `eve.json`, so an old un-triaged alert on a busy sensor drops out; `events.jsonl` is never rotated. Planned: the same cursor as in task 57 appends every alert to `alerts-index.jsonl` (bounded by age and size, with the state of triage kept by key), the Alert Center reads the index, and `events.jsonl` is rotated by size with five old files.
+
+**Task 63, backup that looks after itself.** The finding: no schedule, no retention, no encryption although the archive holds `users.json`; the archives sit in the state directory that `uninstall` deletes; the panel cannot upload; a restore onto another host was never tried. Planned keys: `BACKUP_SCHEDULE` (a systemd calendar, `off` by default), `BACKUP_KEEP`, `BACKUP_DIR` (default `/var/backups/dpistack`, which `uninstall` keeps), `BACKUP_AGE_RECIPIENT` (an `age` public key: the host can encrypt and cannot decrypt, so a stolen host does not open the archives); an upload verb and screen; a test that restores an archive into an empty root.
+
+**Task 64, TLS of the panel and self-signed certificates.** The finding: sign-in is password only over plain HTTP in `lan` mode, and there is no certificate automation. Planned: `PANEL_TLS` (`off|selfsigned|existing`, `selfsigned` by default for `ACCESS_MODE=lan`), `PANEL_TLS_CERT`, `PANEL_TLS_KEY`; the program makes an ECDSA P-256 certificate with the host names and addresses in the subject alternative names (`openssl`), renews it when under 30 days are left (the watchdog), shows the SHA-256 fingerprint in `dpistack status`, the install report and the panel; the cookie gets `Secure` when TLS is on; the existing nginx certificate of `NGINX_TLS=selfsigned` (RSA 2048, ten years, no SAN) is made the same way.
+
+**Task 65, two-factor sign-in.** The finding: password only. Planned: TOTP (RFC 6238, SHA-1, 6 digits, 30 seconds, written with the standard library: `crypto/hmac` and `crypto/sha1`, no new dependency) per account, switched on by the account in the panel, ten one-time recovery codes shown once, the secret kept in `users.json` in the file mode that it already has; `dpistack users 2fa-reset <name>` for a lost device (root only).
+
+| id | decision |
+| --- | --- |
+| D183 | **One `webhook` channel with a format, not one channel per service.** Slack, Discord and ntfy are an HTTP POST with a different body; three channels would triple the keys and the tests for the same transport. A fourth service is a new `ALERT_WEBHOOK_FORMAT` value |
+| D184 | **Detection notifications are off by default.** A sensor on a real network can raise thousands of alerts an hour; a default that sends them to a phone teaches the owner to mute the channel. The owner turns it on and picks a severity |
+| D185 | **The first run reads from the end of `eve.json`.** A watchdog that starts after an upgrade must not send the history of the file; a rotation (a new inode or a smaller size) reads the new file from its start |
+| D186 | **A limit is announced, not silent.** When the hourly limit is hit the rest is counted and one summary message says how many alerts were held back and which signatures led |

@@ -1446,6 +1446,83 @@ alert_mail() {
 	}
 }
 
+# alert_webhook <severity> <subject> <message> - one POST to ALERT_WEBHOOK_URL.
+# The body follows ALERT_WEBHOOK_FORMAT: json (our own shape), slack and
+# discord (a hook URL is the credential, which is why it is a secret), ntfy
+# (a plain text body, the subject and the priority in headers).
+alert_webhook() {
+	local sev="$1" subject="$2" msg="$3" url="${SECRETS[ALERT_WEBHOOK_URL]:-}"
+	local fmt="${CONF[ALERT_WEBHOOK_FORMAT]:-json}" body ctype="application/json" extra="" prio=3
+	if [[ -z "$url" ]]; then
+		channel_error webhook "ALERT_WEBHOOK_URL is not set"
+		return 1
+	fi
+	case "$fmt" in
+	slack) body=$(jq -nc --arg t "$msg" '{text: $t}') ;;
+	discord) body=$(jq -nc --arg t "$msg" '{content: $t[0:2000]}') ;;
+	ntfy)
+		body="$msg"
+		ctype="text/plain; charset=utf-8"
+		case "$sev" in
+		err) prio=5 ;;
+		warning) prio=4 ;;
+		esac
+		extra=$(printf 'header = "Title: %s"\nheader = "Priority: %s"\n' "$(curl_cfg_escape "$subject")" "$prio")
+		;;
+	*)
+		body=$(jq -nc --arg ts "$(iso "$(now)")" --arg host "$(hostname -s 2>/dev/null || echo host)" \
+			--arg sev "$sev" --arg subject "$subject" --arg message "$msg" \
+			'{ts: $ts, host: $host, severity: $sev, subject: $subject, message: $message}')
+		;;
+	esac
+	{
+		printf 'url = "%s"\nheader = "Content-Type: %s"\n' "$(curl_cfg_escape "$url")" "$ctype"
+		[[ -n "$extra" ]] && printf '%s\n' "$extra"
+		printf 'data-binary = "%s"\n' "$(curl_cfg_escape "$body")"
+	} | curl -sS --fail --max-time 10 -o /dev/null -K - 2>/dev/null || {
+		channel_error webhook "sending failed"
+		return 1
+	}
+}
+
+# alert_syslog <severity> <message> - one message to a remote syslog server.
+# The target is host[:port] or [v6address][:port]; the port is 514 by default.
+alert_syslog() {
+	local sev="$1" msg="$2" target="${CONF[ALERT_SYSLOG_TARGET]:-}" host port=514
+	local -a proto=(--udp)
+	if [[ -z "$target" ]]; then
+		channel_error syslog "ALERT_SYSLOG_TARGET is not set"
+		return 1
+	fi
+	if [[ "$target" =~ ^\[([0-9A-Fa-f:.]+)\](:([0-9]+))?$ ]]; then
+		host="${BASH_REMATCH[1]}"
+		port="${BASH_REMATCH[3]:-514}"
+	else
+		host="${target%%:*}"
+		[[ "$target" == *:* ]] && port="${target##*:}"
+	fi
+	[[ "${CONF[ALERT_SYSLOG_PROTO]:-udp}" == "tcp" ]] && proto=(--tcp)
+	logger -t dpistack-watch -p "daemon.$sev" -n "$host" -P "$port" "${proto[@]}" -- "$msg" || {
+		channel_error syslog "sending failed"
+		return 1
+	}
+}
+
+# deliver <channel> <severity> <subject> <message> - one message to one
+# delivery channel. The panel is not here: it has its own record (events.jsonl
+# for a health change). A failing channel reports itself and is not an error of
+# the run.
+deliver() {
+	case "$1" in
+	log) alert_log "$2" "$4" ;;
+	tg) alert_tg "$4" ;;
+	mail) alert_mail "$3" "$4" ;;
+	webhook) alert_webhook "$2" "$3" "$4" ;;
+	syslog) alert_syslog "$2" "$4" ;;
+	esac
+	return 0
+}
+
 # notify <id> <from> <to> <detail> <kind> <since>
 # kind: change | repeat | recovery. One message per channel.
 notify() {
@@ -1469,9 +1546,10 @@ notify() {
 			'{ts: $ts, check: $check, from: $from, to: $to, detail: $detail, kind: $kind}' >>"$(path_events_jsonl)"
 		chmod 0644 "$(path_events_jsonl)"
 	fi
-	channel_on log && alert_log "$sev" "$msg"
-	channel_on tg && { alert_tg "$msg" || true; }
-	channel_on mail && { alert_mail "dpistack: $id $to" "$msg" || true; }
+	local c
+	for c in log tg mail webhook syslog; do
+		channel_on "$c" && { deliver "$c" "$sev" "dpistack: $id $to" "$msg" || true; }
+	done
 	return 0
 }
 
@@ -1505,6 +1583,180 @@ alert_for() {
 		notify "$id" "$status" "$status" "$detail" repeat "$since"
 		state_write_value "$key" "$now_s"
 	fi
+}
+
+# ------------------------------------------------------- detection alerts
+# A Suricata alert is not a health check: nothing in the checks above would
+# report it. detect_notify reads what eve.json gained since the last run
+# (the position is kept in detect-notify.json: inode, offset, the hour window
+# and the alerts already sent), picks the alerts of the chosen severity and
+# sends each to the delivery channels, once per signature, source and
+# destination in the de-duplication window and at most
+# DETECT_NOTIFY_MAX_PER_HOUR in an hour. What the limit held back is counted
+# and announced in one message when the hour turns.
+
+DETECT_READ_CAP=4194304 # bytes of eve.json read in one run
+DETECT_MAX_PER_RUN=25   # a failing channel costs up to 10 s per message
+
+declare -A DETECT_SEEN DETECT_HELD_SIG
+
+# detect_severity_rank <name> - Suricata severity: 1 high, 2 medium, 3 low.
+detect_severity_rank() {
+	case "$1" in
+	high) echo 1 ;;
+	medium) echo 2 ;;
+	*) echo 3 ;;
+	esac
+}
+
+# detect_channels - the channels for detections, one per line, never panel.
+detect_channels() {
+	local list="${CONF[DETECT_NOTIFY_CHANNELS]:-}" c
+	[[ -n "$list" ]] || list="${CONF[ALERT_CHANNELS]}"
+	local -a all=()
+	IFS=',' read -ra all <<<"$list"
+	for c in "${all[@]}"; do
+		[[ -n "$c" && "$c" != "panel" ]] && echo "$c"
+	done
+	return 0
+}
+
+# detect_send <severity-rank> <subject> <message> - to every detection channel.
+detect_send() {
+	local rank="$1" subject="$2" msg="$3" sev=notice c
+	case "$rank" in
+	1) sev=err ;;
+	2) sev=warning ;;
+	esac
+	for c in "${DETECT_CHANNELS[@]}"; do
+		deliver "$c" "$sev" "$subject" "$msg" || true
+	done
+}
+
+# detect_save <inode> <offset> <hour-start> <sent> <held> - the state file.
+detect_save() {
+	local seen_json sig_json k
+	seen_json=$(for k in "${!DETECT_SEEN[@]}"; do printf '%s\t%s\n' "$k" "${DETECT_SEEN[$k]}"; done |
+		jq -Rn '[inputs | split("\t") | {key: .[0], value: (.[1] | tonumber)}] | from_entries')
+	sig_json=$(for k in "${!DETECT_HELD_SIG[@]}"; do printf '%s\t%s\n' "$k" "${DETECT_HELD_SIG[$k]}"; done |
+		jq -Rn '[inputs | split("\t") | {key: .[0], value: (.[1] | tonumber)}] | from_entries')
+	jq -n --argjson inode "$1" --argjson offset "$2" --argjson hour "$3" --argjson sent "$4" --argjson held "$5" \
+		--argjson seen "$seen_json" --argjson sigs "$sig_json" \
+		'{inode: $inode, offset: $offset, hour: $hour, sent: $sent, held: $held, held_sigs: $sigs, seen: $seen}' |
+		atomic_write "$(path_detect_notify_json)"
+	chmod 0600 "$(path_detect_notify_json)"
+}
+
+detect_notify() {
+	[[ "${CONF[DETECT_NOTIFY]:-no}" == "yes" && "${CONF[EVE_FILE]:-yes}" == "yes" && "${CONF[SURICATA_ENABLE]:-yes}" == "yes" ]] || return 0
+	local eve state_file now_s inode size
+	eve=$(path_suricata_eve_json)
+	[[ -r "$eve" ]] || return 0
+	mapfile -t DETECT_CHANNELS < <(detect_channels)
+	((${#DETECT_CHANNELS[@]} > 0)) || return 0
+	state_file=$(path_detect_notify_json)
+	now_s=$(now)
+	inode=$(stat -c %i "$eve")
+	size=$(stat -c %s "$eve")
+
+	local st="{}" old_inode offset hour sent held
+	[[ -r "$state_file" ]] && st=$(jq -c . "$state_file" 2>/dev/null || echo "{}")
+	old_inode=$(jq -r '.inode // empty' <<<"$st")
+	offset=$(jq -r '.offset // empty' <<<"$st")
+	hour=$(jq -r '.hour // 0' <<<"$st")
+	sent=$(jq -r '.sent // 0' <<<"$st")
+	held=$(jq -r '.held // 0' <<<"$st")
+	DETECT_SEEN=()
+	DETECT_HELD_SIG=()
+	local k v window=$((${CONF[DETECT_NOTIFY_DEDUP_MIN]:-60} * 60))
+	while IFS=$'\t' read -r k v; do
+		[[ -n "$k" ]] && ((now_s - v < window)) && DETECT_SEEN[$k]="$v"
+	done < <(jq -r '.seen // {} | to_entries[] | [.key, .value] | @tsv' <<<"$st" 2>/dev/null)
+	while IFS=$'\t' read -r k v; do
+		[[ -n "$k" ]] && DETECT_HELD_SIG[$k]="$v"
+	done < <(jq -r '.held_sigs // {} | to_entries[] | [.key, .value] | @tsv' <<<"$st" 2>/dev/null)
+
+	# The first run starts at the end of the file: the history that was there
+	# before the setting was turned on is not sent (D185).
+	if [[ -z "$offset" ]]; then
+		detect_save "$inode" "$size" "$now_s" 0 0
+		return 0
+	fi
+	# A new file (rotation) or a shorter one (truncation) is read from its start.
+	if [[ "$old_inode" != "$inode" ]] || ((size < offset)); then
+		offset=0
+	fi
+
+	# The hour turned: say what the limit held back.
+	if ((now_s - hour >= 3600)); then
+		if ((held > 0)); then
+			local top
+			top=$(for k in "${!DETECT_HELD_SIG[@]}"; do printf '%s\t%s\n' "${DETECT_HELD_SIG[$k]}" "$k"; done |
+				sort -rn | head -n 3 | awk -F'\t' '{printf "%s%s (%s)", sep, $2, $1; sep = "; "}')
+			detect_send 2 "dpistack: $held detections held back" \
+				"[dpistack] $(hostname -s 2>/dev/null || echo host): $held more detections in the last hour were not sent (limit ${CONF[DETECT_NOTIFY_MAX_PER_HOUR]:-20} per hour). Most frequent: ${top:-n/a}"
+		fi
+		hour="$now_s"
+		sent=0
+		held=0
+		DETECT_HELD_SIG=()
+	fi
+
+	local tmp consumed=0 bytes partial
+	tmp=$(mktemp)
+	if ((size > offset)); then
+		tail -c "+$((offset + 1))" "$eve" 2>/dev/null | head -c "$DETECT_READ_CAP" >"$tmp"
+		bytes=$(wc -c <"$tmp")
+		partial=$(tail -n 1 "$tmp" | wc -c)
+		# A last line without its newline is still being written: leave it.
+		if [[ "$(tail -c 1 "$tmp" | od -An -c | tr -d ' ')" == '\n' ]]; then
+			consumed="$bytes"
+		else
+			consumed=$((bytes - partial))
+		fi
+		# A single line longer than the cap would block the reader for good.
+		((consumed == 0 && bytes >= DETECT_READ_CAP)) && consumed="$bytes"
+	fi
+
+	local max_rank max_hour="${CONF[DETECT_NOTIFY_MAX_PER_HOUR]:-20}" this_run=0
+	max_rank=$(detect_severity_rank "${CONF[DETECT_NOTIFY_SEVERITY]:-high}")
+	local host rank sid sig cat src sport dst dport proto app action key label
+	host=$(hostname -s 2>/dev/null || echo host)
+	if ((consumed > 0)); then
+		while IFS=$'\t' read -r rank sid sig cat src sport dst dport proto app action; do
+			[[ -n "$rank" ]] || continue
+			key="$sid|$src|$dst"
+			if ((window > 0)) && [[ -n "${DETECT_SEEN[$key]:-}" ]]; then
+				continue
+			fi
+			if ((sent >= max_hour || this_run >= DETECT_MAX_PER_RUN)); then
+				held=$((held + 1))
+				DETECT_HELD_SIG[$sig]=$((${DETECT_HELD_SIG[$sig]:-0} + 1))
+				continue
+			fi
+			case "$rank" in
+			1) label=HIGH ;;
+			2) label=MEDIUM ;;
+			*) label=LOW ;;
+			esac
+			local flow="$src:$sport -> $dst:$dport $proto"
+			[[ -n "$app" && "$app" != "failed" ]] && flow+="/$app"
+			local what="$sig (sid $sid"
+			[[ -n "$cat" ]] && what+=", $cat"
+			what+=")"
+			[[ "$action" == "blocked" ]] && what+=" blocked"
+			detect_send "$rank" "dpistack: $label $sig" "[dpistack] $host: $label detection: $what $flow"
+			DETECT_SEEN[$key]="$now_s"
+			sent=$((sent + 1))
+			this_run=$((this_run + 1))
+		done < <(head -c "$consumed" "$tmp" | jq -rR --argjson max "$max_rank" '
+			fromjson? | select(.event_type == "alert" and ((.alert.severity // 3) <= $max))
+			| [(.alert.severity // 3), (.alert.signature_id // 0), ((.alert.signature // "") | .[0:200]),
+			   (.alert.category // ""), (.src_ip // ""), (.src_port // 0), (.dest_ip // ""), (.dest_port // 0),
+			   (.proto // ""), (.app_proto // ""), (.alert.action // "allowed")] | @tsv' 2>/dev/null)
+	fi
+	rm -f "$tmp"
+	detect_save "$inode" "$((offset + consumed))" "$hour" "$sent" "$held"
 }
 
 # write_health - `since` stays while a status is unchanged. Alerts go
@@ -1608,6 +1860,9 @@ main() {
 
 	write_health
 	autorestart
+	# Last: delivery can wait on a channel that does not answer, and the
+	# health file above must not wait for it.
+	detect_notify
 }
 
 main "$@"
@@ -1901,7 +2156,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.51.12"
+DPISTACK_VERSION="0.52.0"
 
 : "${DRY_RUN:=0}"
 
@@ -2450,9 +2705,9 @@ config_validate() {
 	IFS=',' read -ra channels <<<"${CONF[ALERT_CHANNELS]:-}"
 	for channel in "${channels[@]}"; do
 		case "$channel" in
-		panel | log | tg | mail) ;;
+		panel | log | tg | mail | webhook | syslog) ;;
 		*)
-			echo "ALERT_CHANNELS: unknown channel '$channel' (panel, log, tg, mail are allowed)"
+			echo "ALERT_CHANNELS: unknown channel '$channel' (panel, log, tg, mail, webhook, syslog are allowed)"
 			errors=$((errors + 1))
 			;;
 		esac
@@ -2466,6 +2721,34 @@ config_validate() {
 	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",mail,"* ]]; then
 		if [[ -z "${SECRETS[ALERT_SMTP_URL]:-}" || -z "${CONF[ALERT_MAIL_TO]:-}" || -z "${CONF[ALERT_MAIL_FROM]:-}" ]]; then
 			echo "ALERT_CHANNELS contains mail: needs ALERT_SMTP_URL, ALERT_MAIL_TO and ALERT_MAIL_FROM"
+			errors=$((errors + 1))
+		fi
+	fi
+	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",webhook,"* && -z "${SECRETS[ALERT_WEBHOOK_URL]:-}" ]]; then
+		echo "ALERT_CHANNELS contains webhook: needs ALERT_WEBHOOK_URL"
+		errors=$((errors + 1))
+	fi
+	if [[ ",${CONF[ALERT_CHANNELS]:-}," == *",syslog,"* && -z "${CONF[ALERT_SYSLOG_TARGET]:-}" ]]; then
+		echo "ALERT_CHANNELS contains syslog: needs ALERT_SYSLOG_TARGET"
+		errors=$((errors + 1))
+	fi
+	# Detection alerts go to the channels of DETECT_NOTIFY_CHANNELS, or to those
+	# of ALERT_CHANNELS when it is empty; the panel is not a delivery channel for
+	# them (the Alert Center lists them already), so a list with only that is empty.
+	if [[ "${CONF[DETECT_NOTIFY]:-no}" == "yes" ]]; then
+		local dlist="${CONF[DETECT_NOTIFY_CHANNELS]:-${CONF[ALERT_CHANNELS]:-}}" dch dany=no
+		local -a dchannels=()
+		IFS=',' read -ra dchannels <<<"$dlist"
+		for dch in "${dchannels[@]}"; do
+			[[ "$dch" == "panel" || -z "$dch" ]] && continue
+			dany=yes
+			if [[ -n "${CONF[DETECT_NOTIFY_CHANNELS]:-}" && ",${CONF[ALERT_CHANNELS]:-}," != *",$dch,"* ]]; then
+				echo "DETECT_NOTIFY_CHANNELS: $dch is not in ALERT_CHANNELS, so it has no address set up"
+				errors=$((errors + 1))
+			fi
+		done
+		if [[ "$dany" == "no" ]]; then
+			echo "DETECT_NOTIFY=yes needs a delivery channel besides panel: add tg, mail, webhook, syslog or log to ALERT_CHANNELS (or set DETECT_NOTIFY_CHANNELS)"
 			errors=$((errors + 1))
 		fi
 	fi
@@ -6700,15 +6983,24 @@ declare -gA KEY_HINT=(
 	[WATCH_RULES_CRIT_DAYS]='Age of the rules (days) for an alarm.'
 	[WATCH_REPEAT_MIN]='After how many minutes to repeat the same alert.'
 	[WATCH_AUTORESTART]='Restart a failed component automatically (at most three times an hour).'
-	[ALERT_CHANNELS]='Where to send alerts: panel, log, telegram, mail (comma separated).'
+	[ALERT_CHANNELS]='Where to send alerts: panel, log, tg (Telegram), mail, webhook, syslog (comma separated).'
 	[ALERT_TG_CHAT_ID]='Telegram chat for alerts.'
 	[ALERT_MAIL_TO]='Mail recipients, comma separated.'
 	[ALERT_MAIL_FROM]='Sender address.'
+	[ALERT_WEBHOOK_FORMAT]='Body of the webhook message: json (own shape), slack, discord or ntfy.'
+	[ALERT_SYSLOG_TARGET]='Syslog server for the syslog channel: host, host:port or [ipv6]:port (port 514 by default).'
+	[ALERT_SYSLOG_PROTO]='Transport to the syslog server: udp or tcp.'
+	[DETECT_NOTIFY]='Send Suricata detections (alerts) to the delivery channels, not only the health of the stack.'
+	[DETECT_NOTIFY_SEVERITY]='Weakest severity to send: high, medium (also high) or low (all).'
+	[DETECT_NOTIFY_CHANNELS]='Channels for detections, comma separated, from ALERT_CHANNELS. Empty: the channels of ALERT_CHANNELS except panel.'
+	[DETECT_NOTIFY_MAX_PER_HOUR]='Most detection messages in an hour. The rest are counted and one summary is sent.'
+	[DETECT_NOTIFY_DEDUP_MIN]='The same signature between the same two addresses is sent once in this many minutes (0: every alert).'
 	[TEST_HTTPS_URL]='Address for the HTTPS check on the Tests screen.'
 	[TEST_BT_LIVE]='Also replay the BitTorrent file out of the capture interface and look for an alert in the live log. Adds one small test rule (sid 9000100) to Suricata.'
 	[TEST_ON_INSTALL]='Run the checks after installation.'
 	[ALERT_TG_TOKEN]='Telegram bot token. Stored apart from the main configuration.'
 	[ALERT_SMTP_URL]='SMTP address, for example smtps://user:pass@host:465. Stored apart.'
+	[ALERT_WEBHOOK_URL]='Address of the webhook (Slack, Discord, ntfy topic or your own). It is the credential, so it is stored apart.'
 	[METRICS_TOKEN]='Access token for /metrics. Stored apart.'
 )
 DPISTACK_BUNDLE_END
@@ -7537,6 +7829,10 @@ menu_key_skipped() {
 	GRAFANA_*) [[ "${CONF[GRAFANA_ENABLE]:-no}" == "$n" ]] && return 0 ;;
 	ALERT_TG_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",tg,"* ]] && return 0 ;;
 	ALERT_MAIL_* | ALERT_SMTP_URL) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",mail,"* ]] && return 0 ;;
+	ALERT_WEBHOOK_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",webhook,"* ]] && return 0 ;;
+	ALERT_SYSLOG_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",syslog,"* ]] && return 0 ;;
+	DETECT_NOTIFY) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" ]] && return 0 ;;
+	DETECT_NOTIFY_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" || "${CONF[DETECT_NOTIFY]:-no}" != "$y" ]] && return 0 ;;
 	WATCH_* | ALERT_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
 	esac
 	: "$y"
@@ -9245,6 +9541,7 @@ path_audit_dir() { echo "$(path_state_dir)/audit"; }
 path_audit_jsonl() { echo "$(path_audit_dir)/audit.jsonl"; }
 path_events_jsonl() { echo "$(path_state_dir)/events.jsonl"; }
 path_alerts_state() { echo "$(path_state_dir)/alerts-state.json"; }
+path_detect_notify_json() { echo "$(path_state_dir)/detect-notify.json"; }
 path_profiles_json() { echo "$(path_state_dir)/profiles.json"; }
 path_tests_last_json() { echo "$(path_state_dir)/tests-last.json"; }
 path_metrics_json() { echo "$(path_state_dir)/metrics.json"; }
@@ -10581,6 +10878,9 @@ SCHEMA_PATTERN[ALERT_MAIL_TO]='^[A-Za-z0-9._%+@-]+(,[A-Za-z0-9._%+@-]+)*$'
 SCHEMA_PATTERN[ALERT_MAIL_FROM]='^[A-Za-z0-9._%+@-]+$'
 SCHEMA_PATTERN[ALERT_TG_TOKEN]='^[0-9A-Za-z:_-]+$'
 SCHEMA_PATTERN[ALERT_SMTP_URL]="^smtps?://${_url}\$"
+SCHEMA_PATTERN[ALERT_WEBHOOK_URL]="^https?://${_url}\$"
+SCHEMA_PATTERN[ALERT_SYSLOG_TARGET]='^[A-Za-z0-9._-]+(:[0-9]{1,5})?$|^\[[0-9A-Fa-f:.]+\](:[0-9]{1,5})?$'
+SCHEMA_PATTERN[DETECT_NOTIFY_CHANNELS]='^([a-z]+(,[a-z]+)*)?$'
 SCHEMA_PATTERN[METRICS_TOKEN]='^[A-Za-z0-9._~-]+$'
 unset _url _cidr _word
 
@@ -10692,6 +10992,14 @@ schema_init() {
 	_schema_add 'ALERT_TG_CHAT_ID|free|||advanced|watch|watch|light|no'
 	_schema_add 'ALERT_MAIL_TO|free|||advanced|watch|watch|light|no'
 	_schema_add 'ALERT_MAIL_FROM|free|||advanced|watch|watch|light|no'
+	_schema_add 'ALERT_WEBHOOK_FORMAT|enum|json|json,slack,discord,ntfy|advanced|watch|watch|light|no'
+	_schema_add 'ALERT_SYSLOG_TARGET|free|||advanced|watch|watch|light|no'
+	_schema_add 'ALERT_SYSLOG_PROTO|enum|udp|udp,tcp|advanced|watch|watch|light|no'
+	_schema_add 'DETECT_NOTIFY|enum|no|yes,no|advanced|watch|watch|light|no'
+	_schema_add 'DETECT_NOTIFY_SEVERITY|enum|high|high,medium,low|advanced|watch|watch|light|no'
+	_schema_add 'DETECT_NOTIFY_CHANNELS|free|||advanced|watch|watch|light|no'
+	_schema_add 'DETECT_NOTIFY_MAX_PER_HOUR|int|20|1..1000|advanced|watch|watch|light|no'
+	_schema_add 'DETECT_NOTIFY_DEDUP_MIN|int|60|0..1440|advanced|watch|watch|light|no'
 
 	_schema_add 'TEST_HTTPS_URL|free|https://example.com||advanced|tests|verify|light|no'
 	_schema_add 'TEST_BT_LIVE|enum|no|yes,no|advanced|tests|suricata|light|no'
@@ -10700,6 +11008,7 @@ schema_init() {
 	# Secrets: live in secrets.conf, never dpistack.conf, never printed.
 	_schema_add 'ALERT_TG_TOKEN|free|||advanced|watch|watch|light|yes'
 	_schema_add 'ALERT_SMTP_URL|free|||advanced|watch|watch|light|yes'
+	_schema_add 'ALERT_WEBHOOK_URL|free|||advanced|watch|watch|light|yes'
 	_schema_add 'METRICS_TOKEN|free|||advanced|metrics|metrics panel|heavy|yes'
 }
 
@@ -10757,6 +11066,10 @@ schema_depends_init() {
 	_schema_depend 'GRAFANA_ENABLE=yes' 'GRAFANA_*'
 	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~tg' 'ALERT_TG_*'
 	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~mail' 'ALERT_MAIL_*' ALERT_SMTP_URL
+	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~webhook' 'ALERT_WEBHOOK_*'
+	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~syslog' 'ALERT_SYSLOG_*'
+	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes' DETECT_NOTIFY
+	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes DETECT_NOTIFY=yes' 'DETECT_NOTIFY_*'
 	_schema_depend 'WATCH_ENABLE=yes' 'WATCH_*' 'ALERT_*'
 }
 
@@ -10897,7 +11210,7 @@ schema_validate_one() {
 # eve-log outputs of Suricata 8 (the names the configuration takes).
 SCHEMA_EVE_TYPES=" alert anomaly arp dcerpc dhcp dns drop files flow frame ftp http http2 ike krb5 ldap metadata mqtt netflow nfs pgsql quic rdp rfb sip smb smtp snmp ssh stats tftp tls "
 # the alert channels that dpistack-watch knows.
-SCHEMA_ALERT_CHANNELS=" panel log tg mail "
+SCHEMA_ALERT_CHANNELS=" panel log tg mail webhook syslog "
 
 # schema_ipv4_ok <a.b.c.d> - four octets, each 0..255.
 schema_ipv4_ok() {
@@ -10999,6 +11312,22 @@ schema_validate_entry() {
 				return 1
 			}
 		done
+		;;
+	DETECT_NOTIFY_CHANNELS)
+		for el in $value; do
+			[[ "$el" != panel && "$SCHEMA_ALERT_CHANNELS" == *" $el "* ]] || {
+				echo "$key=$value: $el is not a channel for detections, allowed:${SCHEMA_ALERT_CHANNELS% } (not panel)"
+				return 1
+			}
+		done
+		;;
+	ALERT_SYSLOG_TARGET)
+		local sport=""
+		[[ "$value" =~ :([0-9]+)$ ]] && sport="${BASH_REMATCH[1]}"
+		if [[ -n "$sport" ]] && ((10#$sport < 1 || 10#$sport > 65535)); then
+			echo "$key=$value: the port must be 1 to 65535"
+			return 1
+		fi
 		;;
 	RULES_UPDATE_CALENDAR)
 		if command -v systemd-analyze >/dev/null 2>&1 && ! systemd-analyze calendar "$value" >/dev/null 2>&1; then

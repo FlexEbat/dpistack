@@ -119,12 +119,21 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `WATCH_RULES_CRIT_DAYS` | integer 0..3650 | `30` | light | Age of the rules (days) for an alarm. (advanced) |
 | `WATCH_REPEAT_MIN` | integer 0..1440 | `60` | light | After how many minutes to repeat the same alert. (advanced) |
 | `WATCH_AUTORESTART` | yes \| no | `no` | light | Restart a failed component automatically (at most three times an hour). (advanced) |
-| `ALERT_CHANNELS` | string | `panel,log` | light | Where to send alerts: panel, log, telegram, mail (comma separated). |
+| `ALERT_CHANNELS` | string | `panel,log` | light | Where to send alerts: panel, log, tg (Telegram), mail, webhook, syslog (comma separated). |
 | `ALERT_TG_CHAT_ID` | string | empty | light | Telegram chat for alerts. (advanced) |
 | `ALERT_MAIL_TO` | string | empty | light | Mail recipients, comma separated. (advanced) |
 | `ALERT_MAIL_FROM` | string | empty | light | Sender address. (advanced) |
+| `ALERT_WEBHOOK_FORMAT` | json \| slack \| discord \| ntfy | `json` | light | Body of the webhook message: json (own shape), slack, discord or ntfy. (advanced) |
+| `ALERT_SYSLOG_TARGET` | string | empty | light | Syslog server for the syslog channel: host, host:port or [ipv6]:port (port 514 by default). (advanced) |
+| `ALERT_SYSLOG_PROTO` | udp \| tcp | `udp` | light | Transport to the syslog server: udp or tcp. (advanced) |
+| `DETECT_NOTIFY` | yes \| no | `no` | light | Send Suricata detections (alerts) to the delivery channels, not only the health of the stack. (advanced) |
+| `DETECT_NOTIFY_SEVERITY` | high \| medium \| low | `high` | light | Weakest severity to send: high, medium (also high) or low (all). (advanced) |
+| `DETECT_NOTIFY_CHANNELS` | string | empty | light | Channels for detections, comma separated, from ALERT_CHANNELS. Empty: the channels of ALERT_CHANNELS except panel. (advanced) |
+| `DETECT_NOTIFY_MAX_PER_HOUR` | integer 1..1000 | `20` | light | Most detection messages in an hour. The rest are counted and one summary is sent. (advanced) |
+| `DETECT_NOTIFY_DEDUP_MIN` | integer 0..1440 | `60` | light | The same signature between the same two addresses is sent once in this many minutes (0: every alert). (advanced) |
 | `ALERT_TG_TOKEN` | secret | empty | light | Telegram bot token. Stored apart from the main configuration. (advanced) |
 | `ALERT_SMTP_URL` | secret | empty | light | SMTP address, for example smtps://user:pass@host:465. Stored apart. (advanced) |
+| `ALERT_WEBHOOK_URL` | secret | empty | light | Address of the webhook (Slack, Discord, ntfy topic or your own). It is the credential, so it is stored apart. (advanced) |
 
 ## Test checks
 

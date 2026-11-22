@@ -157,7 +157,7 @@ The host sees only the traffic of its own interface. Passive capture (`af-packet
 - The panel itself serves HTTP without TLS. In `lan` mode the password and the `/metrics` token are visible on the network: use `nginx` with TLS or an SSH tunnel.
 - `eve.json` holds traffic metadata (SNI, DNS names, addresses), mode `0640`.
 - `dpistack` commands run as root only. The panel does not run as root and reaches only the control verbs through `sudo -n dpistack <command>`; every argument is checked against lists.
-- Secrets (`ALERT_TG_TOKEN`, `ALERT_SMTP_URL`, `METRICS_TOKEN`) live only in `/etc/dpistack/secrets.conf`. The panel password is stored as an argon2id hash.
+- Secrets (`ALERT_TG_TOKEN`, `ALERT_SMTP_URL`, `ALERT_WEBHOOK_URL`, `METRICS_TOKEN`) live only in `/etc/dpistack/secrets.conf`. The panel password is stored as an argon2id hash.
 
 Reporting vulnerabilities: [SECURITY.md](SECURITY.md).
 

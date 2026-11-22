@@ -78,7 +78,7 @@ By default Suricata works as IDS: it watches traffic and blocks nothing. `dpista
 
 ## Watchdog and alerts
 
-The `dpistack-watch` timer checks, every `WATCH_INTERVAL_SEC`, the services, the ports, the freshness of `eve.json`, packet drops, the disk space and the age of the rules (the `WATCH_*` thresholds). A failed component is restarted at most three times an hour (`WATCH_AUTORESTART`). Alerts go to the `ALERT_CHANNELS` channels: `panel`, `log`, `telegram`, `mail`. The Telegram token and the SMTP address are kept as secrets.
+The `dpistack-watch` timer checks, every `WATCH_INTERVAL_SEC`, the services, the ports, the freshness of `eve.json`, packet drops, the disk space and the age of the rules (the `WATCH_*` thresholds). A failed component is restarted at most three times an hour (`WATCH_AUTORESTART`). Alerts go to the `ALERT_CHANNELS` channels: `panel`, `log`, `tg` (Telegram), `mail`, `webhook` (JSON, Slack, Discord or ntfy) and `syslog`. The Telegram token, the SMTP address and the webhook address are kept as secrets. With `DETECT_NOTIFY=yes` the watchdog also sends the alerts of Suricata of the severity `DETECT_NOTIFY_SEVERITY` and above, once per signature and address pair in `DETECT_NOTIFY_DEDUP_MIN` minutes and at most `DETECT_NOTIFY_MAX_PER_HOUR` an hour; what the limit held back is announced in one message.
 
 ## Metrics
 
