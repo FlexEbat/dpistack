@@ -42,8 +42,8 @@ Usage: dpistack <command> [arguments]
   reconfigure [--dry-run]            applies the current dpistack.conf
   rules-update                       update the rules, roll back on error
   rules-sources list [--enabled]|enable|disable|add-url|remove [arg]
-  rules-group enable|disable <group>
-  rules-sid enable|disable <sid>
+  rules-group enable|disable|drop|alert <group>   drop: the group's rules drop (IPS), alert: back to the shipped action
+  rules-sid enable|disable|drop|alert <sid>       drop: this rule drops (IPS), alert: back to the shipped action
   rules-search <query>              up to 50 rules by sid or msg
   rules-stats [--json]               rules in the merged set, in local.rules and per enabled source (total, enabled, disabled)
   rules-history [--json]             the last rule updates: time, result, totals
@@ -71,6 +71,7 @@ Usage: dpistack <command> [arguments]
   mode-confirm                       confirm the switch to ips
   ips status [--json]                the IPS page: readiness, counters, drop rules, latest blocked events
   ips test [--sid N,...] [--pcap NAME] [--json]
+  ips block|allow list [--json] | add <addr[/prefix]> [--days N|--never] [--note T] | remove <addr|sid> | prune
                                      replays a shipped pcap offline and reports which rules would drop
   fw apply|remove|restore            DPISTACK chain (restore: at boot)
   panel-passwd                       panel password from stdin
@@ -1715,22 +1716,26 @@ rules_edit_line() {
 }
 
 cmd_rules_group() {
-	[[ $# -eq 2 ]] || fail 2 "rules-group: enable|disable <group>"
+	[[ $# -eq 2 ]] || fail 2 "rules-group: enable|disable|drop|alert <group>"
 	[[ "$2" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail 5 "invalid group name"
 	case "$1" in
 	enable) rules_edit_line enable.conf add "group:$2.rules" ;;
 	disable) rules_edit_line enable.conf remove "group:$2.rules" ;;
-	*) fail 2 "rules-group: enable|disable" ;;
+	drop) rules_edit_line drop.conf add "group:$2.rules" ;;
+	alert) rules_edit_line drop.conf remove "group:$2.rules" ;;
+	*) fail 2 "rules-group: enable|disable|drop|alert" ;;
 	esac
 }
 
 cmd_rules_sid() {
-	[[ $# -eq 2 ]] || fail 2 "rules-sid: enable|disable <sid>"
+	[[ $# -eq 2 ]] || fail 2 "rules-sid: enable|disable|drop|alert <sid>"
 	[[ "$2" =~ ^[0-9]+$ ]] || fail 5 "sid must be a number"
 	case "$1" in
 	disable) rules_edit_line disable.conf add "$2" ;;
 	enable) rules_edit_line disable.conf remove "$2" ;;
-	*) fail 2 "rules-sid: enable|disable" ;;
+	drop) rules_edit_line drop.conf add "$2" ;;
+	alert) rules_edit_line drop.conf remove "$2" ;;
+	*) fail 2 "rules-sid: enable|disable|drop|alert" ;;
 	esac
 }
 

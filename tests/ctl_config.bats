@@ -217,6 +217,30 @@ FAKE
 	! grep -q "2100498" "$DPISTACK_ROOT/etc/suricata/disable.conf"
 }
 
+@test "task 58: rules-sid and rules-group drop|alert switch a rule or a group to drop through drop.conf" {
+	local drop="$DPISTACK_ROOT/etc/suricata/drop.conf"
+	run "$CTL" rules-sid drop 2100498
+	[ "$status" -eq 0 ]
+	grep -qx "2100498" "$drop"
+	# twice is once
+	run "$CTL" rules-sid drop 2100498
+	[ "$(grep -cx 2100498 "$drop")" -eq 1 ]
+	run "$CTL" rules-group drop emerging-p2p
+	[ "$status" -eq 0 ]
+	grep -qx "group:emerging-p2p.rules" "$drop"
+	# drop does not touch the files that enable and disable use
+	[ "$(grep -c 2100498 "$DPISTACK_ROOT/etc/suricata/disable.conf" || true)" -eq 0 ]
+	run "$CTL" rules-sid alert 2100498
+	[ "$status" -eq 0 ]
+	run "$CTL" rules-group alert emerging-p2p
+	[ "$status" -eq 0 ]
+	[ "$(grep -Ec '^[[:space:]]*[^#[:space:]]' "$drop" || true)" -eq 0 ]
+	run "$CTL" rules-sid drop abc
+	[ "$status" -eq 5 ]
+	run "$CTL" rules-group drop 'a b'
+	[ "$status" -eq 5 ]
+}
+
 @test "criterion 6: rules-sources goes through suricata-update with the step's data dir" {
 	run "$CTL" rules-sources enable et/open
 	[ "$status" -eq 0 ]

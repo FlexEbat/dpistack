@@ -59,6 +59,8 @@ step_call() {
 }
 # shellcheck source=lib/exceptions.sh
 source "$LIB_DIR/exceptions.sh"
+# shellcheck source=lib/blocklist.sh
+source "$LIB_DIR/blocklist.sh"
 # shellcheck source=lib/alerts.sh
 source "$LIB_DIR/alerts.sh"
 # shellcheck source=lib/profiles.sh

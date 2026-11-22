@@ -57,10 +57,12 @@ dpistack config-revert suricata.yaml                          # вернуть �
 ```
 dpistack rules-update                         # suricata-update с откатом, если suricata -T отклонил набор
 dpistack rules-sources list [--enabled]       # enable|disable|add-url|remove <имя>
-dpistack rules-group enable|disable <группа>
-dpistack rules-sid enable|disable <sid>
+dpistack rules-group enable|disable|drop|alert <группа>
+dpistack rules-sid enable|disable|drop|alert <sid>
 dpistack rules-search <запрос>                # до 50 правил по sid или тексту
 ```
+
+**Блокировка.** `rules-sid drop <sid>` и `rules-group drop <группа>` заставляют правило или группу блокировать (drop) вместо оповещения (`alert` возвращает обратно); они правят `drop.conf`. Хост или сеть блокируется командой `dpistack ips block add <адрес[/префикс]> [--days N] [--note ТЕКСТ]` и разрешается командой `dpistack ips allow add ...`; `list`, `remove <адрес|sid>` и `prune` работают с каждым списком. Правило drop только оповещает, пока Suricata в режиме IDS (`dpistack mode ips`). Разрешённый адрес не блокируется никогда, даже блокировкой всей сети.
 
 Таймер обновления правил включается ключом `RULES_UPDATE`, расписание задаёт `RULES_UPDATE_CALENDAR`.
 

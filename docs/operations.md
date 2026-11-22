@@ -57,10 +57,12 @@ Names: `suricata.yaml`, `evebox.yaml`, `ntopng.conf`, `dpistack.conf`, `local.ru
 ```
 dpistack rules-update                         # suricata-update with a rollback if suricata -T rejects the set
 dpistack rules-sources list [--enabled]       # enable|disable|add-url|remove <name>
-dpistack rules-group enable|disable <group>
-dpistack rules-sid enable|disable <sid>
+dpistack rules-group enable|disable|drop|alert <group>
+dpistack rules-sid enable|disable|drop|alert <sid>
 dpistack rules-search <query>                 # up to 50 rules by sid or text
 ```
+
+**Blocking.** `rules-sid drop <sid>` and `rules-group drop <group>` make a rule or a group drop instead of alert (`alert` takes it back); they edit `drop.conf`. A host or a network is blocked with `dpistack ips block add <address[/prefix]> [--days N] [--note TEXT]` and allowed with `dpistack ips allow add ...`; `list`, `remove <address|sid>` and `prune` work on each list. A drop rule only alerts while Suricata is in IDS mode (`dpistack mode ips`). An allowed address is never blocked, even by a block of the whole network.
 
 The rules update timer is turned on with the `RULES_UPDATE` key, the schedule is `RULES_UPDATE_CALENDAR`.
 
