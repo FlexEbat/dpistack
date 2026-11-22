@@ -156,7 +156,7 @@ dpistack diag                             # отчёт для разбора п�
 - Сама панель отдаёт HTTP без TLS. В режиме `lan` пароль и токен `/metrics` видны в сети: используйте `nginx` с TLS или SSH-туннель.
 - `eve.json` содержит метаданные трафика (SNI, DNS-имена, адреса), права `0640`.
 - Команды `dpistack` запускаются только от root. Панель работает не от root и доходит лишь до глаголов управления через `sudo -n dpistack <команда>`; каждый аргумент сверяется со списками.
-- Секреты (`ALERT_TG_TOKEN`, `ALERT_SMTP_URL`, `METRICS_TOKEN`) лежат только в `/etc/dpistack/secrets.conf`. Пароль панели хранится как хэш argon2id.
+- Секреты (`ALERT_TG_TOKEN`, `ALERT_SMTP_URL`, `ALERT_WEBHOOK_URL`, `METRICS_TOKEN`) лежат только в `/etc/dpistack/secrets.conf`. Пароль панели хранится как хэш argon2id.
 
 О найденных уязвимостях сообщайте по [SECURITY.md](SECURITY.md).
 

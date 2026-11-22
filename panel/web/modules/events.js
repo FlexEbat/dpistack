@@ -1,4 +1,5 @@
 import { fromEvent, setDraft } from "./exceptions-model.js";
+import { blockTargets } from "./ips-model.js";
 import { activeFilters, exportName, filterEvents, groupBy, related, since, sidHistory, toCSV, toJSON } from "./events-model.js";
 
 // The Events screen: the newest events of eve.json by type, a text filter,
@@ -153,6 +154,22 @@ export function start(api, els, onError) {
       add("Create exception", () => {
         setDraft(fromEvent(ev));
         location.hash = "#exceptions";
+      });
+    }
+    // The hosts of an alert can be blocked from here: the same list as on the IPS screen.
+    for (const t of blockTargets(ev)) {
+      add(`Block ${t.side} ${t.ip}`, async () => {
+        if (!confirm(`Block ${t.ip}?\n\nA Suricata rule will drop its traffic (only alerts in IDS mode). The rules are checked and reloaded.`)) return;
+        try {
+          await api("/api/ips/block", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address: t.ip, note: "from an event" }),
+          });
+          alert(`Blocked ${t.ip}. It is on the IPS screen, where it can be removed.`);
+        } catch (err) {
+          alert(err.message + (err.body && err.body.output ? "\n" + err.body.output : ""));
+        }
       });
     }
     details.append(actions);

@@ -429,6 +429,8 @@ cmd_ips() {
 	case "$sub" in
 	status) ips_status "$@" ;;
 	test) ips_test "$@" ;;
-	*) fail 2 "ips: status [--json] | test [--sid N,...] [--pcap NAME] [--json]" ;;
+	block) cmd_ips_list block "$@" ;;
+	allow) cmd_ips_list allow "$@" ;;
+	*) fail 2 "ips: status [--json] | test [--sid N,...] [--pcap NAME] [--json] | block|allow list|add|remove|prune" ;;
 	esac
 }

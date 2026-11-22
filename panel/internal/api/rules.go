@@ -176,10 +176,16 @@ func (s *server) rulesSearch(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// rulesGroup handles POST /api/rules/groups/{group}/{enable|disable}.
+// ruleAction is the last part of the rule routes: enable and disable, and
+// drop and alert for the action of the rule.
+func ruleAction(a string) bool {
+	return a == "enable" || a == "disable" || a == "drop" || a == "alert"
+}
+
+// rulesGroup handles POST /api/rules/groups/{group}/{enable|disable|drop|alert}.
 func (s *server) rulesGroup(w http.ResponseWriter, r *http.Request) {
 	group, action := r.PathValue("group"), r.PathValue("action")
-	if !groupName.MatchString(group) || (action != "enable" && action != "disable") {
+	if !groupName.MatchString(group) || !ruleAction(action) {
 		writeError(w, http.StatusNotFound, "no such group or action")
 		return
 	}
@@ -191,10 +197,10 @@ func (s *server) rulesGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "output": out})
 }
 
-// rulesSID handles POST /api/rules/sid/{sid}/{enable|disable}.
+// rulesSID handles POST /api/rules/sid/{sid}/{enable|disable|drop|alert}.
 func (s *server) rulesSID(w http.ResponseWriter, r *http.Request) {
 	sid, action := r.PathValue("sid"), r.PathValue("action")
-	if !ruleSID.MatchString(sid) || (action != "enable" && action != "disable") {
+	if !ruleSID.MatchString(sid) || !ruleAction(action) {
 		writeError(w, http.StatusNotFound, "no such rule or action")
 		return
 	}

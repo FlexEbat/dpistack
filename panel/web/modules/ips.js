@@ -3,7 +3,7 @@
 // capture offline. It never switches the mode: that is confirmed and counted
 // down on Components. Only a 401 signs the user out.
 
-import { headline, checkRows, counterRows, NO_COUNTERS, ruleLines, parseSids, requestedText, testSummary } from "./ips-model.js";
+import { headline, checkRows, counterRows, NO_COUNTERS, ruleLines, parseSids, requestedText, testSummary, hostRows, hostBody } from "./ips-model.js";
 
 const POLL_MS = 5000;
 
@@ -77,6 +77,28 @@ export function renderTest(res, area) {
   area.replaceChildren(...parts);
 }
 
+// renderHosts shows one list of hosts with a Remove button for each entry.
+export function renderHosts(kind, entries, area, onRemove) {
+  const rows = hostRows(entries);
+  if (!rows.length) {
+    area.replaceChildren(el("p", "muted empty", `The ${kind} list is empty.`));
+    return;
+  }
+  area.replaceChildren(
+    table(
+      ["Address", "Rule", "Ends", "By", "Note", ""],
+      rows.map((r) => {
+        const td = el("td");
+        const b = el("button", "", "Remove");
+        b.type = "button";
+        b.addEventListener("click", () => onRemove(r));
+        td.append(b);
+        return [r.address, String(r.sid), r.expires, r.by, r.note, td];
+      }),
+    ),
+  );
+}
+
 export function start(api, areas, onError) {
   let running = true;
   let timer = null;
@@ -131,11 +153,78 @@ export function start(api, areas, onError) {
     }
   }
 
+  // The lists of hosts. The area is optional so a page without it still works.
+  const hosts = areas.hosts;
+  const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+  async function loadHosts() {
+    if (!hosts) return;
+    try {
+      const [b, a] = await Promise.all([api("/api/ips/block"), api("/api/ips/allow")]);
+      if (!running) return;
+      renderHosts("block", b.entries, hosts.block, (r) => removeHost("block", r));
+      renderHosts("allow", a.entries, hosts.allow, (r) => removeHost("allow", r));
+    } catch (err) {
+      if (running) fail(err);
+    }
+  }
+
+  function hostFail(err) {
+    if (err.status === 401) return onError(err);
+    const out = err.body && err.body.output ? "\n" + err.body.output : "";
+    hosts.msg.textContent = err.message + out;
+  }
+
+  async function addHost(kind) {
+    const checked = hostBody(hosts.address.value, hosts.days.value, hosts.note.value);
+    if (checked.error) {
+      hosts.msg.textContent = checked.error;
+      return;
+    }
+    const what = kind === "block" ? "Block" : "Allow";
+    if (!confirm(`${what} ${checked.body.address}?\n\nThe rules are checked with Suricata and reloaded.`)) return;
+    hosts.msg.textContent = "Applying: the rule set is rebuilt, this can take a minute.";
+    try {
+      await post("/api/ips/" + kind, checked.body);
+      if (!running) return;
+      hosts.msg.textContent = `${what === "Block" ? "Blocked" : "Allowed"} ${checked.body.address}.`;
+      hosts.address.value = "";
+      await loadHosts();
+    } catch (err) {
+      if (running) hostFail(err);
+    }
+  }
+
+  async function removeHost(kind, row) {
+    if (!confirm(`Remove ${row.address} from the ${kind} list?\n\nThe rules are checked with Suricata and reloaded.`)) return;
+    hosts.msg.textContent = "Applying: the rule set is rebuilt, this can take a minute.";
+    try {
+      await post(`/api/ips/${kind}/remove`, { what: String(row.sid) });
+      if (!running) return;
+      hosts.msg.textContent = `Removed ${row.address}.`;
+      await loadHosts();
+    } catch (err) {
+      if (running) hostFail(err);
+    }
+  }
+
+  const onBlock = () => addHost("block");
+  const onAllow = () => addHost("allow");
+  if (hosts) {
+    hosts.addBlock.addEventListener("click", onBlock);
+    hosts.addAllow.addEventListener("click", onAllow);
+    loadHosts();
+  }
+
   areas.run.addEventListener("click", run);
   once();
   timer = setInterval(once, POLL_MS);
   return () => {
     running = false;
+    if (hosts) {
+      hosts.addBlock.removeEventListener("click", onBlock);
+      hosts.addAllow.removeEventListener("click", onAllow);
+    }
     areas.run.removeEventListener("click", run);
     if (timer !== null) clearInterval(timer);
   };

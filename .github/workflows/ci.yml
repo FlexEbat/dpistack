@@ -31,6 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install tools
         run: |
+          echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80retries >/dev/null
           sudo apt-get update
           sudo apt-get install -y bats shellcheck shfmt jq util-linux
       - name: Bats shard
@@ -45,13 +46,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHARD: ${{ matrix.shard }}
-        run: |
-          n=0
-          { grep -E '^(not ok|FAIL:)' "$RUNNER_TEMP/gate.log" || tail -n 6 "$RUNNER_TEMP/gate.log"; } | head -6 | while IFS= read -r line; do
-            n=$((n + 1))
-            gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-              -f state=failure -f context="bats shard $SHARD #$n" -f description="${line:0:130}" >/dev/null
-          done
+        run: bash scripts/ci-report.sh "$RUNNER_TEMP/gate.log" "bats shard $SHARD"
 
   # Everything except bats: formatting, lint, security, bundle, docs, Go, panel JS.
   checks:
@@ -70,6 +65,7 @@ jobs:
           cache: false
       - name: Install tools
         run: |
+          echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80retries >/dev/null
           sudo apt-get update
           sudo apt-get install -y bats shellcheck shfmt jq util-linux
       - name: Checks (shfmt, shellcheck, security, bundle, docs, Go, panel JS)
@@ -81,13 +77,7 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          n=0
-          { grep -E '^(FAIL:|--- FAIL|FAIL[[:space:]]|panic:|go: [^d]|.*error:)' "$RUNNER_TEMP/gate.log" || tail -n 6 "$RUNNER_TEMP/gate.log"; } | head -6 | while IFS= read -r line; do
-            n=$((n + 1))
-            gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-              -f state=failure -f context="checks #$n" -f description="${line:0:130}" >/dev/null
-          done
+        run: bash scripts/ci-report.sh "$RUNNER_TEMP/gate.log" checks
 
   # The panel in a headless browser: every screen at 390, 768 and 1440 px must
   # not scroll sideways, the note must be the first thing on the page, and no
@@ -135,6 +125,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install tools
         run: |
+          echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80retries >/dev/null
           sudo apt-get update
           sudo apt-get install -y bats jq util-linux
       - name: Install the last release, then upgrade it with this tree
@@ -162,7 +153,17 @@ jobs:
           CHECKS: ${{ needs.checks.result }}
         run: |
           echo "bats shards: $BATS, checks: $CHECKS"
-          [ "$BATS" = success ] && [ "$CHECKS" = success ]
+          if [ "$BATS" = success ] && [ "$CHECKS" = success ]; then exit 0; fi
+          {
+            echo "### gate: not green"
+            echo
+            echo "- bats shards: $BATS"
+            echo "- checks: $CHECKS"
+            echo
+            echo "A result of \`failure\` names its tests in the annotations and in the summary of that job; \`cancelled\` or \`skipped\` means the job never reached its tests (a timeout, a runner that went away, or a job it needed)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=gate::bats shards: $BATS, checks: $CHECKS; open the failed job for the tests and the reason"
+          exit 1
 
   workflows:
     name: lint workflows

@@ -64,6 +64,9 @@ SCHEMA_PATTERN[ALERT_MAIL_TO]='^[A-Za-z0-9._%+@-]+(,[A-Za-z0-9._%+@-]+)*$'
 SCHEMA_PATTERN[ALERT_MAIL_FROM]='^[A-Za-z0-9._%+@-]+$'
 SCHEMA_PATTERN[ALERT_TG_TOKEN]='^[0-9A-Za-z:_-]+$'
 SCHEMA_PATTERN[ALERT_SMTP_URL]="^smtps?://${_url}\$"
+SCHEMA_PATTERN[ALERT_WEBHOOK_URL]="^https?://${_url}\$"
+SCHEMA_PATTERN[ALERT_SYSLOG_TARGET]='^[A-Za-z0-9._-]+(:[0-9]{1,5})?$|^\[[0-9A-Fa-f:.]+\](:[0-9]{1,5})?$'
+SCHEMA_PATTERN[DETECT_NOTIFY_CHANNELS]='^([a-z]+(,[a-z]+)*)?$'
 SCHEMA_PATTERN[METRICS_TOKEN]='^[A-Za-z0-9._~-]+$'
 unset _url _cidr _word
 
@@ -175,6 +178,14 @@ schema_init() {
 	_schema_add 'ALERT_TG_CHAT_ID|free|||advanced|watch|watch|light|no'
 	_schema_add 'ALERT_MAIL_TO|free|||advanced|watch|watch|light|no'
 	_schema_add 'ALERT_MAIL_FROM|free|||advanced|watch|watch|light|no'
+	_schema_add 'ALERT_WEBHOOK_FORMAT|enum|json|json,slack,discord,ntfy|advanced|watch|watch|light|no'
+	_schema_add 'ALERT_SYSLOG_TARGET|free|||advanced|watch|watch|light|no'
+	_schema_add 'ALERT_SYSLOG_PROTO|enum|udp|udp,tcp|advanced|watch|watch|light|no'
+	_schema_add 'DETECT_NOTIFY|enum|no|yes,no|advanced|watch|watch|light|no'
+	_schema_add 'DETECT_NOTIFY_SEVERITY|enum|high|high,medium,low|advanced|watch|watch|light|no'
+	_schema_add 'DETECT_NOTIFY_CHANNELS|free|||advanced|watch|watch|light|no'
+	_schema_add 'DETECT_NOTIFY_MAX_PER_HOUR|int|20|1..1000|advanced|watch|watch|light|no'
+	_schema_add 'DETECT_NOTIFY_DEDUP_MIN|int|60|0..1440|advanced|watch|watch|light|no'
 
 	_schema_add 'TEST_HTTPS_URL|free|https://example.com||advanced|tests|verify|light|no'
 	_schema_add 'TEST_BT_LIVE|enum|no|yes,no|advanced|tests|suricata|light|no'
@@ -183,6 +194,7 @@ schema_init() {
 	# Secrets: live in secrets.conf, never dpistack.conf, never printed.
 	_schema_add 'ALERT_TG_TOKEN|free|||advanced|watch|watch|light|yes'
 	_schema_add 'ALERT_SMTP_URL|free|||advanced|watch|watch|light|yes'
+	_schema_add 'ALERT_WEBHOOK_URL|free|||advanced|watch|watch|light|yes'
 	_schema_add 'METRICS_TOKEN|free|||advanced|metrics|metrics panel|heavy|yes'
 }
 
@@ -240,6 +252,10 @@ schema_depends_init() {
 	_schema_depend 'GRAFANA_ENABLE=yes' 'GRAFANA_*'
 	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~tg' 'ALERT_TG_*'
 	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~mail' 'ALERT_MAIL_*' ALERT_SMTP_URL
+	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~webhook' 'ALERT_WEBHOOK_*'
+	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~syslog' 'ALERT_SYSLOG_*'
+	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes' DETECT_NOTIFY
+	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes DETECT_NOTIFY=yes' 'DETECT_NOTIFY_*'
 	_schema_depend 'WATCH_ENABLE=yes' 'WATCH_*' 'ALERT_*'
 }
 
@@ -380,7 +396,7 @@ schema_validate_one() {
 # eve-log outputs of Suricata 8 (the names the configuration takes).
 SCHEMA_EVE_TYPES=" alert anomaly arp dcerpc dhcp dns drop files flow frame ftp http http2 ike krb5 ldap metadata mqtt netflow nfs pgsql quic rdp rfb sip smb smtp snmp ssh stats tftp tls "
 # the alert channels that dpistack-watch knows.
-SCHEMA_ALERT_CHANNELS=" panel log tg mail "
+SCHEMA_ALERT_CHANNELS=" panel log tg mail webhook syslog "
 
 # schema_ipv4_ok <a.b.c.d> - four octets, each 0..255.
 schema_ipv4_ok() {
@@ -482,6 +498,22 @@ schema_validate_entry() {
 				return 1
 			}
 		done
+		;;
+	DETECT_NOTIFY_CHANNELS)
+		for el in $value; do
+			[[ "$el" != panel && "$SCHEMA_ALERT_CHANNELS" == *" $el "* ]] || {
+				echo "$key=$value: $el is not a channel for detections, allowed:${SCHEMA_ALERT_CHANNELS% } (not panel)"
+				return 1
+			}
+		done
+		;;
+	ALERT_SYSLOG_TARGET)
+		local sport=""
+		[[ "$value" =~ :([0-9]+)$ ]] && sport="${BASH_REMATCH[1]}"
+		if [[ -n "$sport" ]] && ((10#$sport < 1 || 10#$sport > 65535)); then
+			echo "$key=$value: the port must be 1 to 65535"
+			return 1
+		fi
 		;;
 	RULES_UPDATE_CALENDAR)
 		if command -v systemd-analyze >/dev/null 2>&1 && ! systemd-analyze calendar "$value" >/dev/null 2>&1; then

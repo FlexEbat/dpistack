@@ -3,7 +3,7 @@
 # shell substitution. Unknown keys or values outside their documented
 # options stop the installer.
 #
-# Secrets (ALERT_TG_TOKEN, ALERT_SMTP_URL, METRICS_TOKEN) do not go in
+# Secrets (ALERT_TG_TOKEN, ALERT_SMTP_URL, ALERT_WEBHOOK_URL, METRICS_TOKEN) do not go in
 # this file: they live only in /etc/dpistack/secrets.conf (0600).
 #
 # "auto"/empty values mean "computed at install/apply time"; see the
@@ -15,8 +15,16 @@ BIND_ADDR=auto
 ALERT_CHANNELS=panel,log
 ALERT_MAIL_FROM=
 ALERT_MAIL_TO=
+ALERT_SYSLOG_PROTO=udp
+ALERT_SYSLOG_TARGET=
 ALERT_TG_CHAT_ID=
+ALERT_WEBHOOK_FORMAT=json
 BPF_FILTER=
+DETECT_NOTIFY=no
+DETECT_NOTIFY_CHANNELS=
+DETECT_NOTIFY_DEDUP_MIN=60
+DETECT_NOTIFY_MAX_PER_HOUR=20
+DETECT_NOTIFY_SEVERITY=high
 EVEBOX_DB=sqlite
 EVEBOX_ENABLE=yes
 EVEBOX_ES_URL=

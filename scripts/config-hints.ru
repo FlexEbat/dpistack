@@ -84,13 +84,22 @@ WATCH_RULES_WARN_DAYS|Возраст правил (дни) для предупр
 WATCH_RULES_CRIT_DAYS|Возраст правил (дни) для тревоги.
 WATCH_REPEAT_MIN|Через сколько минут повторять то же оповещение.
 WATCH_AUTORESTART|Перезапускать упавший компонент автоматически (не чаще трёх раз в час).
-ALERT_CHANNELS|Куда слать оповещения: panel, log, telegram, mail (через запятую).
+ALERT_CHANNELS| Куда слать оповещения: panel, log, tg (Telegram), mail, webhook, syslog (через запятую).
 ALERT_TG_CHAT_ID|Чат Telegram для оповещений.
 ALERT_MAIL_TO|Получатели почты, через запятую.
 ALERT_MAIL_FROM|Адрес отправителя.
+ALERT_WEBHOOK_FORMAT| Тело сообщения вебхука: json (своя форма), slack, discord или ntfy.
+ALERT_SYSLOG_TARGET| Сервер syslog для канала syslog: host, host:port или [ipv6]:port (порт 514 по умолчанию).
+ALERT_SYSLOG_PROTO| Транспорт до сервера syslog: udp или tcp.
+DETECT_NOTIFY| Отправлять срабатывания Suricata (alert) в каналы доставки, а не только состояние стека.
+DETECT_NOTIFY_SEVERITY| Самая слабая важность для отправки: high, medium (и high) или low (все).
+DETECT_NOTIFY_CHANNELS| Каналы для срабатываний через запятую, из ALERT_CHANNELS. Пусто: каналы ALERT_CHANNELS без panel.
+DETECT_NOTIFY_MAX_PER_HOUR| Сколько сообщений о срабатываниях в час. Остальные считаются, уходит одно сводное сообщение.
+DETECT_NOTIFY_DEDUP_MIN| Одна и та же сигнатура между теми же адресами отправляется раз в столько минут (0: каждое срабатывание).
 TEST_HTTPS_URL|Адрес для HTTPS-проверки на экране «Тесты».
 TEST_BT_LIVE|Дополнительно проиграть файл BitTorrent через интерфейс захвата и искать оповещение в живом журнале. Добавляет в Suricata одно небольшое тестовое правило (sid 9000100).
 TEST_ON_INSTALL|Запускать проверки после установки.
 ALERT_TG_TOKEN|Токен бота Telegram. Хранится отдельно от основной конфигурации.
 ALERT_SMTP_URL|Адрес SMTP, например smtps://user:pass@host:465. Хранится отдельно.
+ALERT_WEBHOOK_URL| Адрес вебхука (Slack, Discord, тема ntfy или свой). Это и есть секрет, хранится отдельно.
 METRICS_TOKEN|Токен доступа к /metrics. Хранится отдельно.
