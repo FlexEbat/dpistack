@@ -1,23 +1,23 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v97** (2026-11-22)
-**Program version: v0.53.0** (tasks 0-56 are done (18.58), 57 and 58 are done, 59 to 65 are planned (18.73); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v98** (2026-11-22)
+**Program version: v0.53.1** (tasks 0-56 are done (18.58), 57 and 58 are done, 59 to 65 are planned (18.73); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.53.1: CI failures are reported with their reasons (annotations, job summary, statuses) and the gate says what it saw (18.74); the Rules screen can switch a rule or a group to drop.
 - v0.53.0: task 58 (18.73): a rule or group can be switched to `drop` (`rules-sid`, `rules-group`), hosts are blocked or allowed with `ips block|allow`, and the IPS and Events screens offer it.
 - v0.52.0: task 57 (18.73): Suricata detections are sent to the delivery channels (`DETECT_NOTIFY`), with a severity threshold, de-duplication and an hourly limit; new channels `webhook` (json, Slack, Discord, ntfy) and `syslog`.
-- v0.51.12: the journal part of `dpistack diag` is no longer empty on a host with `EVE_SYSLOG=yes` (18.72).
 - v0.51.11: the panel no longer creates an account with a password that cannot sign in (18.71).
 - v0.51.10: the watchdog service has a start timeout (18.70), so a run that hangs cannot silence it.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v98: v0.53.1. 18.74 written (decision D190).
 - v97: v0.53.0. Task 58 done (D187 to D189), the API rows of 5 and the verbs of 4.5 name the lists.
 - v96: v0.52.0. Task 57 done, tasks 58 to 65 written as 18.73 (decisions D183 to D186); 4.3 and section 8 name the new keys and channels.
 - v95: v0.51.12. 18.72 written (decision D182).
 - v94: v0.51.11. 18.71 written (decision D181).
-- v93: v0.51.10. 18.70 written (decision D180).
 - v90: v0.51.7. 18.67 written (decision D175).
 
 ---
@@ -1297,7 +1297,7 @@ One row per task. **Done** means the Definition of Done of section 14 was met; a
 | 55 | design pass, part two | **done.** Every screen opened at 390, 768 and 1440 px (a CI job `ui` and `scripts/ui-check/`, with sample events), the sideways scroll of Components on a phone fixed, the note kept at the very top and the floating menu below it on a phone, reduced motion was already in place; then the screens looked at one by one: Network, Traffic, Events and Backups (v0.51.1, 18.61), IPS and Settings (v0.51.2, 18.62) | v0.51.2 | 18.60, 18.61, 18.62 |
 | 56 | small things | **done.** The selected Rules tab is kept for the session; three more templates (a file type over HTTP, a JA3 hash, many outward connections); `scripts/dev-tools.sh --check|--install` for the CI versions of shellcheck 0.9.0 and shfmt 3.8.0; Metrics keeps one day because the ring holds one day (the hint on the screen says so) | v0.51.0 | 18.60 |
 | 57 | detection alerts leave the panel | **done.** A Suricata alert of a chosen severity reaches the delivery channels: the new channels `webhook` (JSON, Slack, Discord, ntfy) and `syslog` beside `log`, `tg` and `mail`, a severity threshold, a de-duplication window and an hourly limit | v0.52.0 | 18.73 |
-| 58 | block from the program | **done.** `rules-sid` and `rules-group` `drop\|alert`, the verb `ips block\|allow` with its lists, the API routes, the lists and form on the IPS page, "Block source/destination" on Events. Open: the Rules screen has no per-rule drop toggle yet (the API and the verbs have it) | v0.53.0 | 18.73 |
+| 58 | block from the program | **done.** `rules-sid` and `rules-group` `drop\|alert`, the verb `ips block\|allow` with its lists, the API routes, the lists and form on the IPS page, "Block source/destination" on Events, the Drop and Alert only buttons on Rules. The Rules screen switches a rule (search results) or a group to drop and back, and lists what drops (v0.53.1) | v0.53.0 | 18.73 |
 | 59 | capture performance | planned. Threads, ring and block size (`tpacket-v3`), flow and stream memcaps, CPU affinity and NIC offloads as keys, with a recommendation from the drop rate | v0.54.0 | 18.73 |
 | 60 | your own pcap | planned. `dpistack pcap analyze FILE` and an upload in the panel show the alerts and the application protocols of a capture you bring | v0.55.0 | 18.73 |
 | 61 | history and traffic intelligence | planned. Daily and weekly reports, per device history, a new device alert, GeoIP and blocklists (Suricata datasets) | v0.56.0 | 18.73 |
@@ -2718,3 +2718,15 @@ Open: the state of triage (acknowledged, snoozed) does not silence a delivery (d
 | D187 | **Block and allow entries live in `local.rules`, not in a new rule file.** `suricata-update` already merges `local.rules` into the rule set, `rules-local check` and `suricata -T` already guard it, backups and restore already carry it, so a new file would need a template change, a migration and a second place to restore. Each entry is marked by a comment line so the verb never touches a rule written by hand |
 | D188 | **No expiry unless asked.** A block that vanishes on its own is a worse surprise than one that stays; `--days N` is there for a temporary block and `prune` removes what ran out. The owner already chose this for exceptions (18.41) |
 | D189 | **`rules-sid drop` and `rules-group drop` use `drop.conf`.** It is the file `suricata-update` reads for exactly this (it turns the named rules into `drop`), so the verb adds a line instead of rewriting rules; `alert` removes the line |
+
+**Task 58, the Rules screen (v0.53.1).** The screen reads `drop.conf` with the other two lists. A search result that is not disabled has a Drop button (Alert only when it already drops), a group enabled by hand has the same, and the section "Rules that drop" lists every sid and group of `drop.conf` with the way back. Drop asks for a confirmation that says it acts in IPS mode only; Alert only does not ask. Every change runs `POST /api/rules/sid/{sid}/{drop|alert}` or `POST /api/rules/groups/{group}/{drop|alert}` and says, like the other edits, that it takes effect with the next rules update. The section is optional in `start`, so a page without it works as before.
+
+### 18.74 CI failure reports (v0.53.1)
+
+**The finding.** CI for v0.53.0 failed on a rule of the suite (R138, a bare `!` in a test), and the failure was hard to read from outside GitHub: the commit status held only the name of the first failing test, without the reason under it, and the job log is served from a host that tools without a browser cannot always reach.
+
+**What changed.** `scripts/ci-report.sh LOG LABEL` reads the log the gate wrote and reports every failure in three places: workflow annotations (`::error::`, at most 10, readable through the check-runs API), the job summary (every failure with the `#` lines under its `not ok`), and commit statuses (at most 6, the test and the first line of its reason, 130 characters). A gate stage (`FAIL:`), a Go test (`--- FAIL`, `FAIL`) and a `panic:` count as failures; a log with none of them reports its last lines, so a job that died for another reason is never silent. A failing `gh` or a missing log does not turn into a second failure. The `Report failing checks` steps of `bats` and `checks` call it. The `gate` job writes which results it saw into the summary and an `::error::` that says that `failure` names its tests in the job and that `cancelled` or `skipped` means the job never reached them. The three `Install tools` steps set `Acquire::Retries "3"` for apt, so one slow mirror does not fail a run. `tests/ci_report.bats` has 8 tests.
+
+| id | decision |
+| --- | --- |
+| D190 | **Annotations and the summary, not only statuses.** A status holds 140 characters and one line; a failure needs its reason. Annotations are limited to 10 per step and are read through the API without the log host; the summary has no such limit. The statuses stay because branch protection and the commit list show them |

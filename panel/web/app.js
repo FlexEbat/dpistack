@@ -167,6 +167,7 @@ const SCREENS = {
         search: $("rules-search"),
         results: $("rules-results"),
         disabled: $("rules-disabled"),
+        dropping: $("rules-dropping"),
       },
       showLogin,
     );

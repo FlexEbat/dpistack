@@ -73,7 +73,7 @@ today() { date -u +%Y-%m-%d; }
 	"$CTL" ips block add 198.51.100.7 --note second
 	[ "$(grep -c 'drop ip 198.51.100.7 ' "$LOCAL")" -eq 1 ]
 	grep -q 'note=second' "$LOCAL"
-	! grep -q 'note=first' "$LOCAL" || false
+	[ "$(grep -c 'note=first' "$LOCAL")" -eq 0 ]
 	"$CTL" ips block add 203.0.113.9
 	run grep -c '^drop ip ' "$LOCAL"
 	[ "$output" -eq 2 ]

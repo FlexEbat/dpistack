@@ -44,6 +44,8 @@ function when(iso) {
 export function start(api, els, onError) {
   let running = true;
   let disabled = new Set();
+  let dropping = new Set(); // sids that drop (drop.conf)
+  let droppingGroups = new Set();
   let lastQuery = "";
 
   const post = (path, body) =>
@@ -127,6 +129,7 @@ export function start(api, els, onError) {
           change(() => post(`/api/rules/groups/${encodeURIComponent(g)}/disable`), `Group disabled: ${g}`),
         ),
       );
+      if (els.dropping) actions.append(button(droppingGroups.has(g) ? "Alert only" : "Drop", () => toggleGroupAction(g, droppingGroups.has(g) ? "alert" : "drop")));
       tr.append(actions);
       t.append(tr);
     }
@@ -150,6 +153,28 @@ export function start(api, els, onError) {
     els.disabled.replaceChildren(t);
   }
 
+  // renderDropping lists what drop.conf switches to drop, with the way back.
+  function renderDropping(sids, groups) {
+    if (!els.dropping) return;
+    if (sids.length === 0 && groups.length === 0) {
+      els.dropping.replaceChildren(el("p", "muted empty", "No rule or group is switched to drop. In IPS mode they alert only."));
+      return;
+    }
+    const t = el("table");
+    for (const [kind, name, undo] of [
+      ...groups.map((g) => ["Group", g, () => toggleGroupAction(g, "alert")]),
+      ...sids.map((sid) => ["Rule", sid, () => toggleAction(sid, "alert")]),
+    ]) {
+      const tr = el("tr");
+      tr.append(el("td", "", kind), el("td", "", name));
+      const actions = el("td", "actions");
+      actions.append(button("Alert only", undo));
+      tr.append(actions);
+      t.append(tr);
+    }
+    els.dropping.replaceChildren(t);
+  }
+
   function renderResults(res) {
     if (res.results.length === 0) {
       els.results.replaceChildren(el("p", "muted", "Nothing found."));
@@ -162,9 +187,10 @@ export function start(api, els, onError) {
     for (const r of res.results) {
       const tr = el("tr");
       const off = disabled.has(r.sid);
-      tr.append(el("td", "", r.sid), el("td", "", off ? `${r.msg} (disabled)` : r.msg));
+      tr.append(el("td", "", r.sid), el("td", "", off ? `${r.msg} (disabled)` : dropping.has(r.sid) ? `${r.msg} (drops)` : r.msg));
       const actions = el("td", "actions");
       actions.append(button(off ? "Enable" : "Disable", () => toggleSID(r.sid, off ? "enable" : "disable")));
+      if (els.dropping && !off) actions.append(button(dropping.has(r.sid) ? "Alert only" : "Drop", () => toggleAction(r.sid, dropping.has(r.sid) ? "alert" : "drop")));
       tr.append(actions);
       t.append(tr);
     }
@@ -178,16 +204,20 @@ export function start(api, els, onError) {
   // the rules commands edit, through the config API.
   async function refresh() {
     try {
-      const [src, enable, disable] = await Promise.all([
+      const [src, enable, disable, drop] = await Promise.all([
         api("/api/rules/sources"),
         conf("enable.conf"),
         conf("disable.conf"),
+        els.dropping ? conf("drop.conf") : Promise.resolve(parseConf("")),
       ]);
       if (!running) return;
       disabled = new Set(disable.sids);
+      dropping = new Set(drop.sids);
+      droppingGroups = new Set(drop.groups);
       renderSources(src.sources);
       renderGroups(enable.groups);
       renderDisabled(disable.sids);
+      renderDropping(drop.sids, drop.groups);
       renderLast(src.last_update, src.updating);
       if (src.updating) await waitIdle();
     } catch (err) {
@@ -218,6 +248,24 @@ export function start(api, els, onError) {
     return change(
       () => post(`/api/rules/sid/${sid}/${verb}`),
       verb === "disable" ? `Rule ${sid} disabled` : `Rule ${sid} enabled again`,
+    );
+  }
+
+  // Drop and alert change what a rule does when it matches; they only take
+  // effect in IPS mode, and like every rules edit with the next update.
+  function toggleAction(sid, verb) {
+    if (verb === "drop" && !confirm(`Make rule ${sid} drop the traffic it matches?\n\nOnly in IPS mode; in IDS mode it still alerts.`)) return Promise.resolve(false);
+    return change(
+      () => post(`/api/rules/sid/${sid}/${verb}`),
+      verb === "drop" ? `Rule ${sid} set to drop` : `Rule ${sid} back to alert only`,
+    );
+  }
+
+  function toggleGroupAction(group, verb) {
+    if (verb === "drop" && !confirm(`Make every rule of ${group} drop the traffic it matches?\n\nOnly in IPS mode; in IDS mode they still alert.`)) return Promise.resolve(false);
+    return change(
+      () => post(`/api/rules/groups/${encodeURIComponent(group)}/${verb}`),
+      verb === "drop" ? `Group ${group} set to drop` : `Group ${group} back to alert only`,
     );
   }
 
