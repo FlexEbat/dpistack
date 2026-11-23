@@ -61,6 +61,8 @@ step_call() {
 source "$LIB_DIR/exceptions.sh"
 # shellcheck source=lib/blocklist.sh
 source "$LIB_DIR/blocklist.sh"
+# shellcheck source=lib/pcap.sh
+source "$LIB_DIR/pcap.sh"
 # shellcheck source=lib/alerts.sh
 source "$LIB_DIR/alerts.sh"
 # shellcheck source=lib/profiles.sh
@@ -697,7 +699,7 @@ cmd_uninstall() {
 	# that nothing feeds any more instead of capturing like a plain install.
 	local was_ips=0
 	[[ -e "$(path_suricata_mode_dropin)" ]] && was_ips=1
-	rm -f "$(path_fw_unit)" "$(path_suricata_mode_dropin)"
+	rm -f "$(path_fw_unit)" "$(path_suricata_mode_dropin)" "$(path_suricata_nic_dropin)"
 	run systemctl daemon-reload
 	if [[ "$was_ips" == 1 && "${CONF[SURICATA_SOURCE]:-}" != "source" ]]; then
 		run systemctl restart "$SURICATA_UNIT" 2>/dev/null || true

@@ -39,6 +39,7 @@ path_scrape_yaml() { echo "$(path_state_dir)/scrape.yaml"; }
 path_metrics_data_dir() { echo "${DPISTACK_ROOT}/var/lib/dpistack-metrics"; }
 path_vm_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/victoria-metrics-prod"; }
 path_prometheus_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/prometheus"; }
+path_suricata_nic_dropin() { echo "${DPISTACK_ROOT}/etc/systemd/system/suricata.service.d/dpistack-nic.conf"; }
 path_suricata_mode_dropin() { echo "${DPISTACK_ROOT}/etc/systemd/system/suricata.service.d/dpistack-mode.conf"; }
 path_fw_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-fw.service"; }
 path_mode_pending() { echo "$(path_state_dir)/mode.pending"; }

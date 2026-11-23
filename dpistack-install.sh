@@ -96,6 +96,8 @@ step_call() {
 source "$LIB_DIR/exceptions.sh"
 # shellcheck source=lib/blocklist.sh
 source "$LIB_DIR/blocklist.sh"
+# shellcheck source=lib/pcap.sh
+source "$LIB_DIR/pcap.sh"
 # shellcheck source=lib/alerts.sh
 source "$LIB_DIR/alerts.sh"
 # shellcheck source=lib/profiles.sh
@@ -732,7 +734,7 @@ cmd_uninstall() {
 	# that nothing feeds any more instead of capturing like a plain install.
 	local was_ips=0
 	[[ -e "$(path_suricata_mode_dropin)" ]] && was_ips=1
-	rm -f "$(path_fw_unit)" "$(path_suricata_mode_dropin)"
+	rm -f "$(path_fw_unit)" "$(path_suricata_mode_dropin)" "$(path_suricata_nic_dropin)"
 	run systemctl daemon-reload
 	if [[ "$was_ips" == 1 && "${CONF[SURICATA_SOURCE]:-}" != "source" ]]; then
 		run systemctl restart "$SURICATA_UNIT" 2>/dev/null || true
@@ -1257,9 +1259,9 @@ check_drop_rate() {
 	local crit_pct="${CONF[WATCH_DROP_CRIT_PCT]}" warn_pct="${CONF[WATCH_DROP_WARN_PCT]}"
 	((dp > 0)) && pct=$(awk -v dp="$dp" -v dd="$dd" 'BEGIN{printf "%.2f", dd * 100 / dp}')
 	if ((dp > 0)) && ge "$((dd * 100))" "$((crit_pct * dp))"; then
-		record suricata.drop_rate crit "$pct" "drops $pct%"
+		record suricata.drop_rate crit "$pct" "drops $pct%; to reduce them raise CAPTURE_THREADS, CAPTURE_RING_SIZE or the memcaps, and set NIC_OFFLOADS_OFF=yes"
 	elif ((dp > 0)) && ge "$((dd * 100))" "$((warn_pct * dp))"; then
-		record suricata.drop_rate warn "$pct" "drops $pct%"
+		record suricata.drop_rate warn "$pct" "drops $pct%; to reduce them raise CAPTURE_THREADS, CAPTURE_RING_SIZE or the memcaps, and set NIC_OFFLOADS_OFF=yes"
 	else
 		record suricata.drop_rate ok "$pct" ""
 	fi
@@ -2452,7 +2454,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.53.1"
+DPISTACK_VERSION="0.55.0"
 
 : "${DRY_RUN:=0}"
 
@@ -3028,6 +3030,26 @@ config_validate() {
 		echo "ALERT_CHANNELS contains syslog: needs ALERT_SYSLOG_TARGET"
 		errors=$((errors + 1))
 	fi
+	if [[ "${CONF[CAPTURE_TPACKET]:-auto}" == "v3" && "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "afpacket" ]]; then
+		echo "CAPTURE_TPACKET=v3 does not work with IPS over af-packet (copy mode): use auto or v2"
+		errors=$((errors + 1))
+	fi
+	if [[ "${CONF[NIC_OFFLOADS_OFF]:-no}" == "yes" && "${CONF[SURICATA_RUNTIME]:-native}" == "docker" ]]; then
+		echo "NIC_OFFLOADS_OFF=yes needs SURICATA_RUNTIME=native: the switch is a drop-in of suricata.service, which a container does not have"
+		errors=$((errors + 1))
+	fi
+	if [[ -n "${CONF[CAPTURE_CPUS]:-}" ]]; then
+		local cpart cpus_ok=yes
+		local -a cparts=()
+		IFS=',' read -ra cparts <<<"${CONF[CAPTURE_CPUS]}"
+		for cpart in "${cparts[@]}"; do
+			if [[ "$cpart" == *-* ]] && ((10#${cpart%-*} > 10#${cpart#*-})); then
+				echo "CAPTURE_CPUS: the range $cpart runs backwards"
+				cpus_ok=no
+			fi
+		done
+		[[ "$cpus_ok" == yes ]] || errors=$((errors + 1))
+	fi
 	# Detection alerts go to the channels of DETECT_NOTIFY_CHANNELS, or to those
 	# of ALERT_CHANNELS when it is empty; the panel is not a delivery channel for
 	# them (the Alert Center lists them already), so a list with only that is empty.
@@ -3328,8 +3350,10 @@ Usage: dpistack <command> [arguments]
   mode-confirm                       confirm the switch to ips
   ips status [--json]                the IPS page: readiness, counters, drop rules, latest blocked events
   ips test [--sid N,...] [--pcap NAME] [--json]
-  ips block|allow list [--json] | add <addr[/prefix]> [--days N|--never] [--note T] | remove <addr|sid> | prune
                                      replays a shipped pcap offline and reports which rules would drop
+  ips block|allow list [--json] | add <addr[/prefix]> [--days N|--never] [--note T] | remove <addr|sid> | prune
+                                     blocked and allowed hosts (rules in local.rules)
+  pcap analyze <file> [--json]       replay a capture of yours with the live rules: alerts and application protocols
   fw apply|remove|restore            DPISTACK chain (restore: at boot)
   panel-passwd                       panel password from stdin
   test bittorrent|https|all [--json] check tests (section 10)
@@ -6292,6 +6316,7 @@ ctl_dispatch() {
 	mode) cmd_mode "$@" ;;
 	mode-confirm) cmd_mode_confirm "$@" ;;
 	ips) cmd_ips "$@" ;;
+	pcap) cmd_pcap "$@" ;;
 	mode-rollback) cmd_mode_rollback "$@" ;;
 	fw) cmd_fw "$@" ;;
 	panel-passwd) cmd_panel_passwd "$@" ;;
@@ -7229,6 +7254,16 @@ declare -gA KEY_HINT=(
 	[SURICATA_MODE]='ids only watches, ips can block. Switching is best done on the Components screen.'
 	[IFACES]='Interfaces Suricata captures from, comma separated.'
 	[BPF_FILTER]='BPF filter: which traffic to skip or to analyze. Examples: not port 22, host 10.0.0.5, net 192.168.0.0/16 and not port 53. Empty: all the traffic.'
+	[CAPTURE_THREADS]='Capture threads per interface: auto (one per receive queue) or a number. Raise it when the drop rate is high and CPUs are idle.'
+	[CAPTURE_TPACKET]='AF_PACKET ring version: auto (Suricata decides), v2 or v3. v3 is faster on busy links; IPS over AF_PACKET needs v2.'
+	[CAPTURE_RING_SIZE]='Frames in the capture ring of each thread. 0: Suricata default. Raise it (for example 8192) when packets are dropped in bursts.'
+	[CAPTURE_BLOCK_SIZE]='Block size of the v3 ring in bytes. 0: Suricata default; otherwise a multiple of 4096 from 32768.'
+	[CAPTURE_CPUS]='CPUs for the detection worker threads, for example 2-5,8. Empty: the system decides.'
+	[NIC_OFFLOADS_OFF]='Switch off GRO, LRO, GSO and TSO on the capture interfaces before each start of Suricata. They merge packets and hurt reassembly and detection. Needs the native runtime.'
+	[PCAP_MAX_MB]='Largest capture file, in megabytes, that dpistack pcap analyze accepts.'
+	[FLOW_MEMCAP]='Memory for the flow table, for example 512mb or 1gb. Raise it when stats show flow memcap hits.'
+	[STREAM_MEMCAP]='Memory for TCP stream tracking, for example 256mb. Raise it when stats show stream memcap hits.'
+	[STREAM_REASSEMBLY_MEMCAP]='Memory for TCP stream reassembly, for example 512mb. Raise it when stats show reassembly memcap hits.'
 	[HOME_NET]='Your networks (CIDR, comma separated) or auto: detect from the interfaces.'
 	[IPS_METHOD]='How IPS gets packets: the NFQUEUE queue or AF_PACKET.'
 	[IPS_NFQ_CHAINS]='iptables chains that send packets to the queue.'
@@ -8105,7 +8140,7 @@ menu_key_skipped() {
 		[[ "$suri" == "$n" ]] && return 0
 		redis_output_off "${CONF[EVE_REDIS]:-}" && return 0
 		;;
-	SURICATA_RUNTIME | SURICATA_SOURCE | SURICATA_VERSION | SURICATA_MODE | IFACES | BPF_FILTER | HOME_NET | \
+	SURICATA_RUNTIME | SURICATA_SOURCE | SURICATA_VERSION | SURICATA_MODE | IFACES | BPF_FILTER | CAPTURE_* | NIC_OFFLOADS_OFF | PCAP_MAX_MB | FLOW_MEMCAP | STREAM_MEMCAP | STREAM_REASSEMBLY_MEMCAP | HOME_NET | \
 		EVE_SYSLOG | EVE_REDIS | EVE_ROTATE | EVE_KEEP | STATS_INTERVAL_SEC | TEST_*)
 		[[ "$suri" == "$n" ]] && return 0
 		;;
@@ -9859,6 +9894,7 @@ path_scrape_yaml() { echo "$(path_state_dir)/scrape.yaml"; }
 path_metrics_data_dir() { echo "${DPISTACK_ROOT}/var/lib/dpistack-metrics"; }
 path_vm_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/victoria-metrics-prod"; }
 path_prometheus_bin() { echo "${DPISTACK_ROOT}/usr/local/bin/prometheus"; }
+path_suricata_nic_dropin() { echo "${DPISTACK_ROOT}/etc/systemd/system/suricata.service.d/dpistack-nic.conf"; }
 path_suricata_mode_dropin() { echo "${DPISTACK_ROOT}/etc/systemd/system/suricata.service.d/dpistack-mode.conf"; }
 path_fw_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-fw.service"; }
 path_mode_pending() { echo "$(path_state_dir)/mode.pending"; }
@@ -9933,6 +9969,131 @@ path_os_release() { echo "${DPISTACK_ROOT}/etc/os-release"; }
 path_systemd_marker() { echo "${DPISTACK_ROOT}/run/systemd/system"; }
 path_rules_data_dir() { echo "${DPISTACK_ROOT}/var/lib/suricata"; }
 path_ndpi_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib"; }
+DPISTACK_BUNDLE_END
+put lib/pcap.sh 644 <<'DPISTACK_BUNDLE_END'
+#!/usr/bin/env bash
+# `dpistack pcap analyze FILE`: replays a capture the owner brings through
+# Suricata offline with the live rules, the live exceptions and the real
+# HOME_NET, and says which alerts and which application protocols it
+# produced (task 60). Nothing is written to the live logs: the run has a
+# private directory that is deleted afterwards. Sourced by install.sh; it
+# defines functions only.
+
+PCAP_TIMEOUT_SEC=600
+PCAP_TEMPLATE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../templates" &>/dev/null && pwd)"
+
+# pcap_magic_ok <file> - classic pcap (both byte orders, micro and nano
+# seconds) or pcapng. Anything else is not a capture, whatever its name.
+pcap_magic_ok() {
+	local magic
+	magic=$(head -c 4 "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+	case "$magic" in
+	d4c3b2a1 | a1b2c3d4 | 4d3cb2a1 | a1b23c4d | 0a0d0d0a) return 0 ;;
+	esac
+	return 1
+}
+
+# pcap_emit <json:0|1> <doc>
+pcap_emit() {
+	if (($1)); then
+		jq -c . <<<"$2"
+		return 0
+	fi
+	jq -r '
+		if .ran | not then "not analyzed: " + .reason
+		else
+			"analyzed \(.file) (\(.bytes) bytes): \(.flows) flows, \(.packets) packets, \(.alerts | length) different alerts",
+			(if (.alerts | length) > 0 then "alerts:" else empty end),
+			(.alerts[] | "  sid \(.sid)  x\(.count)  severity \(.severity)  \(.msg)  (\(.src) -> \(.dest))" + (if .would_drop then "  [would drop]" else "" end)),
+			(if (.protocols | length) > 0 then "application protocols:" else "no application protocol was recognized" end),
+			(.protocols[] | "  \(.app_proto)  \(.flows) flows, \(.bytes) bytes")
+		end' <<<"$2"
+}
+
+# pcap_analyze <file> [--json]
+pcap_analyze() {
+	local file="" json=0
+	while (($#)); do
+		case "$1" in
+		--json)
+			json=1
+			shift
+			;;
+		-*) fail 2 "pcap analyze: unknown option: $1" ;;
+		*)
+			[[ -z "$file" ]] || fail 2 "pcap analyze: one file at a time"
+			file="$1"
+			shift
+			;;
+		esac
+	done
+	[[ -n "$file" ]] || fail 2 "pcap analyze: a capture file is needed"
+	[[ -f "$file" && -r "$file" ]] || fail 5 "pcap analyze: no such file: $file"
+	local bytes max_mb
+	bytes=$(stat -c %s "$file")
+	max_mb=$(conf_get PCAP_MAX_MB 100)
+	((bytes > 0)) || fail 5 "pcap analyze: the file is empty"
+	((bytes <= max_mb * 1048576)) || fail 5 "pcap analyze: the file is $((bytes / 1048576)) MiB, the limit is $max_mb MiB (PCAP_MAX_MB)"
+	pcap_magic_ok "$file" || fail 5 "pcap analyze: not a pcap or pcapng file"
+
+	local reason=""
+	if [[ "$(conf_get SURICATA_RUNTIME native)" == docker ]]; then
+		reason="Suricata runs in a container: the offline analysis needs a Suricata on the host"
+	elif ! command -v suricata >/dev/null 2>&1; then
+		reason="suricata is not installed"
+	elif [[ ! -f "$(path_suricata_ruleset)" ]]; then
+		reason="there is no rule set yet: run dpistack rules-update"
+	fi
+	local name
+	name=$(basename "$file")
+	if [[ -n "$reason" ]]; then
+		pcap_emit "$json" "$(jq -nc --arg r "$reason" --arg f "$name" '{ran:false, file:$f, reason:$r}')"
+		return 0
+	fi
+
+	local tmp rc=0 out plugins="" threshold="" home
+	tmp=$(mktemp -d)
+	chmod 0700 "$tmp"
+	[[ -e "$(path_suricata_ndpi_plugin)" ]] && plugins=$'plugins:\n'"  - $(path_suricata_ndpi_plugin)"
+	[[ -f "$(path_suricata_threshold)" ]] && threshold="threshold-file: $(path_suricata_threshold)"
+	home=$(conf_get HOME_NET auto)
+	[[ -z "$home" || "$home" == auto ]] && home='[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]'
+	render_template "$PCAP_TEMPLATE_DIR/suricata-analyze.yaml.tpl" \
+		"HOME_NET=$home" "RULE_DIR=$(dirname "$(path_suricata_ruleset)")" "RULE_FILE=$(path_suricata_ruleset)" \
+		"THRESHOLD=$threshold" "PLUGINS=$plugins" >"$tmp/analyze.yaml" || {
+		rm -rf "$tmp"
+		fail 1 "pcap analyze: could not prepare the offline configuration"
+	}
+	out=$(timeout "$PCAP_TIMEOUT_SEC" suricata -r "$file" -c "$tmp/analyze.yaml" -l "$tmp" -k none 2>&1) || rc=$?
+
+	local alerts='[]' protocols='[]' totals='{"flows":0,"packets":0}'
+	if [[ -f "$tmp/eve.json" ]]; then
+		alerts=$(jq -c 'select(.event_type == "alert") | {sid: .alert.signature_id, msg: .alert.signature, severity: (.alert.severity // 3), would_drop: (.alert.action == "blocked"), src: ((.src_ip // "?") + ":" + ((.src_port // 0) | tostring)), dest: ((.dest_ip // "?") + ":" + ((.dest_port // 0) | tostring))}' "$tmp/eve.json" 2>/dev/null |
+			jq -sc 'group_by(.sid) | map(.[0] + {count: length}) | sort_by(-.count, .sid)') || alerts='[]'
+		protocols=$(jq -c 'select(.event_type == "flow") | {app_proto: (.app_proto // "unknown"), bytes: (((.flow.bytes_toserver // 0) + (.flow.bytes_toclient // 0)))}' "$tmp/eve.json" 2>/dev/null |
+			jq -sc 'group_by(.app_proto) | map({app_proto: .[0].app_proto, flows: length, bytes: (map(.bytes) | add)}) | sort_by(-.flows, .app_proto)') || protocols='[]'
+		totals=$(jq -c 'select(.event_type == "flow") | {p: ((.flow.pkts_toserver // 0) + (.flow.pkts_toclient // 0))}' "$tmp/eve.json" 2>/dev/null |
+			jq -sc '{flows: length, packets: (map(.p) | add // 0)}') || totals='{"flows":0,"packets":0}'
+	fi
+	rm -rf "$tmp"
+	local doc
+	doc=$(jq -nc --arg f "$name" --argjson bytes "$bytes" --argjson rc "$rc" --argjson a "$alerts" --argjson p "$protocols" --argjson t "$totals" \
+		--arg tail "$( ((rc != 0)) && printf '%s' "$out" | tail -n 1)" \
+		'{ran: ($rc == 0), file: $f, bytes: $bytes, flows: $t.flows, packets: $t.packets, alerts: $a, protocols: $p}
+		 + (if $rc != 0 then {reason: ("suricata -r exited with code \($rc): " + $tail)} else {} end)')
+	pcap_emit "$json" "$doc"
+	return 0
+}
+
+# cmd_pcap analyze <file> [--json]
+cmd_pcap() {
+	local sub="${1:-}"
+	[[ $# -eq 0 ]] || shift
+	case "$sub" in
+	analyze) pcap_analyze "$@" ;;
+	*) fail 2 "pcap: analyze <file> [--json]" ;;
+	esac
+}
 DPISTACK_BUNDLE_END
 put lib/profiles.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
@@ -11160,6 +11321,11 @@ SCHEMA_PATTERN[EVEBOX_VERSION]='^[A-Za-z0-9][A-Za-z0-9.~+:_-]*$'
 SCHEMA_PATTERN[BIND_ADDR]='^(auto|[0-9]{1,3}(\.[0-9]{1,3}){3})$'
 SCHEMA_PATTERN[IFACES]="^${_word}(,${_word})*\$"
 SCHEMA_PATTERN[NTOPNG_IFACES]="^${_word}(,${_word})*\$"
+SCHEMA_PATTERN[CAPTURE_THREADS]='^(auto|[1-9][0-9]{0,2})$'
+SCHEMA_PATTERN[FLOW_MEMCAP]='^[1-9][0-9]{0,5}(kb|mb|gb)$'
+SCHEMA_PATTERN[STREAM_MEMCAP]='^[1-9][0-9]{0,5}(kb|mb|gb)$'
+SCHEMA_PATTERN[STREAM_REASSEMBLY_MEMCAP]='^[1-9][0-9]{0,5}(kb|mb|gb)$'
+SCHEMA_PATTERN[CAPTURE_CPUS]='^([0-9]{1,4}(-[0-9]{1,4})?(,[0-9]{1,4}(-[0-9]{1,4})?)*)?$'
 SCHEMA_PATTERN[BPF_FILTER]='^[]A-Za-z0-9 .,:/()!&|<>=+*%_[-]*$'
 SCHEMA_PATTERN[HOME_NET]="^(auto|[0-9A-Fa-f:.]+(/[0-9]{1,3})?(,[0-9A-Fa-f:.]+(/[0-9]{1,3})?)*)\$"
 SCHEMA_PATTERN[IPS_NFQ_CHAINS]='^[A-Z]+(,[A-Z]+)*$'
@@ -11228,6 +11394,16 @@ schema_init() {
 	_schema_add 'SURICATA_MODE|enum|ids|ids,ips|advanced|capture|suricata|light|no'
 	_schema_add 'IFACES|free|enp2s0||basic|capture|suricata ntopng|light|no'
 	_schema_add 'BPF_FILTER|free|||advanced|capture|suricata|light|no'
+	_schema_add 'CAPTURE_THREADS|free|auto||advanced|capture|suricata|light|no'
+	_schema_add 'CAPTURE_TPACKET|enum|auto|auto,v2,v3|advanced|capture|suricata|light|no'
+	_schema_add 'CAPTURE_RING_SIZE|int|0|0..1048576|advanced|capture|suricata|light|no'
+	_schema_add 'CAPTURE_BLOCK_SIZE|int|0|0..67108864|advanced|capture|suricata|light|no'
+	_schema_add 'CAPTURE_CPUS|free|||advanced|capture|suricata|light|no'
+	_schema_add 'NIC_OFFLOADS_OFF|enum|no|yes,no|advanced|capture|suricata|light|no'
+	_schema_add 'PCAP_MAX_MB|int|100|1..2048|advanced|capture|suricata|light|no'
+	_schema_add 'FLOW_MEMCAP|free|128mb||advanced|capture|suricata|light|no'
+	_schema_add 'STREAM_MEMCAP|free|64mb||advanced|capture|suricata|light|no'
+	_schema_add 'STREAM_REASSEMBLY_MEMCAP|free|256mb||advanced|capture|suricata|light|no'
 	_schema_add 'HOME_NET|free|auto||advanced|capture|suricata|light|no'
 	_schema_add 'IPS_METHOD|enum|nfq|nfq,afpacket|advanced|capture|suricata|light|no'
 	_schema_add 'IPS_NFQ_CHAINS|free|INPUT,OUTPUT,FORWARD||advanced|capture|suricata|light|no'
@@ -11355,7 +11531,7 @@ schema_depends_init() {
 	_schema_depend 'SURICATA_ENABLE=yes NDPI_ENABLE=yes' 'NDPI_*'
 	_schema_depend 'SURICATA_ENABLE=yes RULES_ENABLE=yes' 'RULES_*'
 	_schema_depend 'SURICATA_ENABLE=yes' SURICATA_RUNTIME SURICATA_SOURCE SURICATA_VERSION SURICATA_MODE IFACES \
-		BPF_FILTER HOME_NET EVE_SYSLOG EVE_REDIS EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
+		BPF_FILTER 'CAPTURE_*' NIC_OFFLOADS_OFF PCAP_MAX_MB FLOW_MEMCAP STREAM_MEMCAP STREAM_REASSEMBLY_MEMCAP HOME_NET EVE_SYSLOG EVE_REDIS EVE_ROTATE EVE_KEEP EVE_MAX_SIZE_MB STATS_INTERVAL_SEC 'TEST_*'
 	_schema_depend '' EVEBOX_ENABLE NTOPNG_ENABLE PANEL_ENABLE NODE_EXPORTER_ENABLE GRAFANA_ENABLE WATCH_ENABLE METRICS_BACKEND
 	_schema_depend 'EVEBOX_ENABLE=yes EVEBOX_DB=elasticsearch' EVEBOX_ES_URL
 	_schema_depend 'EVEBOX_ENABLE=yes' 'EVEBOX_*'
@@ -11616,6 +11792,12 @@ schema_validate_entry() {
 			}
 		done
 		;;
+	CAPTURE_BLOCK_SIZE)
+		if ((10#$value != 0 && (10#$value < 32768 || 10#$value % 4096 != 0))); then
+			echo "$key=$value: 0 (Suricata's default) or a multiple of 4096 from 32768"
+			return 1
+		fi
+		;;
 	DETECT_NOTIFY_CHANNELS)
 		for el in $value; do
 			[[ "$el" != panel && "$SCHEMA_ALERT_CHANNELS" == *" $el "* ]] || {
@@ -11670,6 +11852,7 @@ schema_effective() {
 	fi
 	case "$key" in
 	BPF_FILTER) echo "none: all the traffic is analysed" ;;
+	CAPTURE_CPUS) echo "none: the system decides where the threads run" ;;
 	NTOPNG_IFACES) echo "same as IFACES (${ifaces:-auto})" ;;
 	SURICATA_VERSION)
 		declare -F suricata_installed_version >/dev/null && v=$(suricata_installed_version 2>/dev/null || true)
@@ -11694,6 +11877,7 @@ schema_effective() {
 schema_empty_meaning() {
 	case "$1" in
 	BPF_FILTER) echo "no filter: Suricata analyzes all the traffic it sees" ;;
+	CAPTURE_CPUS) echo "no pinning: the system decides which CPU runs each thread" ;;
 	NTOPNG_IFACES) echo "ntopng watches the same interfaces as Suricata (IFACES)" ;;
 	SURICATA_VERSION) echo "the newest tested release of the stable series" ;;
 	NDPI_VERSION) echo "the nDPI release the Suricata plugin is built with" ;;
@@ -14803,6 +14987,10 @@ suricata_render_af_packet_block() {
 	# and every packet is forwarded to the peer unless a rule drops it.
 	local ips_pairs=0
 	[[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "afpacket" ]] && ips_pairs=1
+	local threads="${CONF[CAPTURE_THREADS]:-auto}" tpacket="${CONF[CAPTURE_TPACKET]:-auto}"
+	local ring="${CONF[CAPTURE_RING_SIZE]:-0}" block="${CONF[CAPTURE_BLOCK_SIZE]:-0}"
+	# copy-mode ips cannot use tpacket-v3 (Suricata switches it off with a warning)
+	((ips_pairs)) && tpacket=v2
 	local IFS=','
 	for iface in $ifaces; do
 		[[ -z "$iface" ]] && continue
@@ -14816,6 +15004,13 @@ suricata_render_af_packet_block() {
 		fi
 		idx=$((idx + 1))
 		[[ -n "$bpf" ]] && echo "    bpf-filter: \"${bpf}\""
+		[[ "$threads" != "auto" ]] && echo "    threads: ${threads}"
+		case "$tpacket" in
+		v2) echo "    tpacket-v3: no" ;;
+		v3) echo "    tpacket-v3: yes" ;;
+		esac
+		((ring > 0)) && echo "    ring-size: ${ring}"
+		((block > 0)) && [[ "$tpacket" != "v2" ]] && echo "    block-size: ${block}"
 		cluster_id=$((cluster_id + 1))
 	done
 	echo "  - interface: default"
@@ -14934,6 +15129,27 @@ suricata_conf_version() {
 	suricata_series "$SURICATA_STABLE_REF"
 }
 
+# suricata_cpu_affinity - yes when CAPTURE_CPUS pins the worker threads.
+suricata_cpu_affinity() {
+	[[ -n "${CONF[CAPTURE_CPUS]:-}" ]] && echo yes || echo no
+}
+
+# suricata_worker_cpu_set - the inside of the worker-cpu-set list: each part
+# of CAPTURE_CPUS (a number or a range) quoted, "all" without the key.
+suricata_worker_cpu_set() {
+	local list="${CONF[CAPTURE_CPUS]:-}" part out=""
+	local -a parts=()
+	[[ -n "$list" ]] || {
+		echo '"all"'
+		return 0
+	}
+	IFS=',' read -ra parts <<<"$list"
+	for part in "${parts[@]}"; do
+		out+="${out:+, }\"${part}\""
+	done
+	echo "$out"
+}
+
 # suricata_render_yaml -> full suricata.yaml on stdout
 suricata_render_yaml() {
 	render_template "$SCRIPT_DIR/templates/suricata.yaml.tpl" \
@@ -14943,6 +15159,11 @@ suricata_render_yaml() {
 		"EVE_LOG_BLOCK=$(suricata_render_eve_log_block)" \
 		"RULE_FILES_EXTRA=$(suricata_render_rule_files_extra)" \
 		"AF_PACKET_BLOCK=$(suricata_render_af_packet_block)" \
+		"FLOW_MEMCAP=${CONF[FLOW_MEMCAP]:-128mb}" \
+		"STREAM_MEMCAP=${CONF[STREAM_MEMCAP]:-64mb}" \
+		"STREAM_REASSEMBLY_MEMCAP=${CONF[STREAM_REASSEMBLY_MEMCAP]:-256mb}" \
+		"CPU_AFFINITY=$(suricata_cpu_affinity)" \
+		"WORKER_CPU_SET=$(suricata_worker_cpu_set)" \
 		"PLUGINS_BLOCK=$(suricata_render_plugins_block)" \
 		"COMMAND_SOCKET=$(suricata_command_socket)"
 }
@@ -15236,9 +15457,37 @@ suricata_render_fw_unit() {
 	render_template "$SCRIPT_DIR/templates/dpistack-fw.service.tpl" "CTL=$(path_ctl_bin)"
 }
 
-# suricata_mode_files_current - drop-in and fw unit are as they should be.
+# suricata_nic_dropin_wanted - NIC_OFFLOADS_OFF=yes: GRO, LRO, GSO and TSO
+# merge packets into frames larger than the wire's, which Suricata cannot
+# reassemble or match as it saw them. The drop-in switches them off on every
+# capture interface before each start of Suricata. The "-" in front of the
+# command makes a NIC that lacks a feature (or the whole command) harmless.
+suricata_nic_dropin_wanted() {
+	[[ "${CONF[NIC_OFFLOADS_OFF]:-no}" == "yes" ]]
+}
+
+suricata_render_nic_dropin() {
+	local ethtool iface
+	ethtool=$(command -v ethtool || echo /usr/sbin/ethtool)
+	echo "# Managed by dpistack: NIC_OFFLOADS_OFF=yes."
+	echo "[Service]"
+	local IFS=','
+	for iface in ${CONF[IFACES]:-}; do
+		[[ -z "$iface" ]] && continue
+		echo "ExecStartPre=-${ethtool} -K ${iface} gro off lro off gso off tso off"
+	done
+}
+
+# suricata_mode_files_current - drop-ins and fw unit are as they should be.
 suricata_mode_files_current() {
-	local dropin
+	local dropin nicdrop
+	nicdrop=$(path_suricata_nic_dropin)
+	if suricata_nic_dropin_wanted; then
+		[[ -f "$nicdrop" ]] || return 1
+		[[ "$(suricata_render_nic_dropin | state_hash_content)" == "$(state_hash_content <"$nicdrop")" ]] || return 1
+	else
+		[[ ! -e "$nicdrop" ]] || return 1
+	fi
 	dropin=$(path_suricata_mode_dropin)
 	if suricata_mode_dropin_wanted; then
 		[[ -f "$dropin" ]] || return 1
@@ -15250,9 +15499,16 @@ suricata_mode_files_current() {
 	[[ "$(suricata_render_fw_unit | state_hash_content)" == "$(state_hash_content <"$(path_fw_unit)")" ]]
 }
 
-# suricata_mode_files_apply - write or remove the drop-in, install the fw unit.
+# suricata_mode_files_apply - write or remove the drop-ins, install the fw unit.
 suricata_mode_files_apply() {
-	local dropin
+	local dropin nicdrop
+	nicdrop=$(path_suricata_nic_dropin)
+	if suricata_nic_dropin_wanted; then
+		command -v ethtool >/dev/null 2>&1 || pkg_install ethtool || return 1
+		write_rendered_file "$nicdrop" "$(suricata_render_nic_dropin)" || return 1
+	elif [[ -e "$nicdrop" ]]; then
+		run rm -f "$nicdrop" || return 1
+	fi
 	dropin=$(path_suricata_mode_dropin)
 	if suricata_mode_dropin_wanted; then
 		write_rendered_file "$dropin" "$(suricata_render_mode_dropin)" || return 1
@@ -16355,6 +16611,22 @@ server {
 @@ALLOW_BLOCK@@
     deny all;
 
+    # The capture upload of the panel (dpistack pcap analyze): nginx's
+    # defaults (1 MiB, 60 s) would stop a real capture. The panel caps it at
+    # 512 MiB itself and dpistack applies PCAP_MAX_MB.
+    location = /api/pcap/analyze {
+        client_max_body_size 512m;
+        proxy_request_buffering off;
+        proxy_read_timeout 900s;
+        proxy_send_timeout 900s;
+        proxy_pass http://127.0.0.1:@@UPSTREAM_PORT@@;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:@@UPSTREAM_PORT@@;
         proxy_http_version 1.1;
@@ -16442,6 +16714,89 @@ put templates/sudoers.tpl 644 <<'DPISTACK_BUNDLE_END'
 # Managed by dpistack. The panel user may run only dpistack;
 # dpistack checks every argument itself (section 4.5).
 @@PANEL_USER@@ ALL=(root) NOPASSWD: @@CTL_BIN@@
+DPISTACK_BUNDLE_END
+put templates/suricata-analyze.yaml.tpl 644 <<'DPISTACK_BUNDLE_END'
+%YAML 1.1
+---
+# Offline config for `dpistack pcap analyze`: the live rules, the live
+# exceptions and the real HOME_NET, replayed on a capture someone brings.
+# Events go only to the -l directory, so the live eve.json is never touched.
+vars:
+  address-groups:
+    HOME_NET: "@@HOME_NET@@"
+    EXTERNAL_NET: "!$HOME_NET"
+    HTTP_SERVERS: "$HOME_NET"
+    SMTP_SERVERS: "$HOME_NET"
+    SQL_SERVERS: "$HOME_NET"
+    DNS_SERVERS: "$HOME_NET"
+    TELNET_SERVERS: "$HOME_NET"
+    AIM_SERVERS: "$EXTERNAL_NET"
+    DC_SERVERS: "$HOME_NET"
+    DNP3_SERVER: "$HOME_NET"
+    DNP3_CLIENT: "$HOME_NET"
+    MODBUS_CLIENT: "$HOME_NET"
+    MODBUS_SERVER: "$HOME_NET"
+    ENIP_CLIENT: "$HOME_NET"
+    ENIP_SERVER: "$HOME_NET"
+  port-groups:
+    HTTP_PORTS: "80"
+    SHELLCODE_PORTS: "!80"
+    ORACLE_PORTS: 1521
+    SSH_PORTS: 22
+    DNP3_PORTS: 20000
+    MODBUS_PORTS: 502
+    FILE_DATA_PORTS: "[$HTTP_PORTS,110,143]"
+    FTP_PORTS: 21
+    GENEVE_PORTS: 6081
+    VXLAN_PORTS: 4789
+    TEREDO_PORTS: 3544
+
+default-rule-path: @@RULE_DIR@@
+rule-files:
+  - @@RULE_FILE@@
+@@THRESHOLD@@
+
+@@PLUGINS@@
+
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert
+        - flow
+
+app-layer:
+  protocols:
+    tls:
+      enabled: yes
+    http:
+      enabled: yes
+    dns:
+      enabled: yes
+    ssh:
+      enabled: yes
+    ftp:
+      enabled: yes
+    smtp:
+      enabled: yes
+    imap:
+      enabled: detection-only
+    smb:
+      enabled: yes
+    rdp:
+      enabled: yes
+    quic:
+      enabled: yes
+    mqtt:
+      enabled: yes
+    dhcp:
+      enabled: yes
+    ntp:
+      enabled: yes
+    sip:
+      enabled: yes
 DPISTACK_BUNDLE_END
 put templates/suricata-test.yaml.tpl 644 <<'DPISTACK_BUNDLE_END'
 %YAML 1.1
@@ -17609,7 +17964,7 @@ defrag:
 # (which is the default).
 
 flow:
-  memcap: 128mb
+  memcap: @@FLOW_MEMCAP@@
   #memcap-policy: ignore
   hash-size: 65536
   prealloc: 10000
@@ -17755,14 +18110,14 @@ flow-timeouts:
 #                               # is used in a rule.
 #
 stream:
-  memcap: 64mb
+  memcap: @@STREAM_MEMCAP@@
   #memcap-policy: ignore
   checksum-validation: yes      # reject incorrect csums
   #midstream: false
   #midstream-policy: ignore
   inline: auto                  # auto will use inline mode in IPS mode, yes or no set it statically
   reassembly:
-    memcap: 256mb
+    memcap: @@STREAM_REASSEMBLY_MEMCAP@@
     #memcap-policy: ignore
     depth: 1mb                  # reassemble 1mb into a stream
     toserver-chunk-size: 2560
@@ -17908,7 +18263,7 @@ spm-algo: auto
 
 # Suricata is multi-threaded. Here the threading can be influenced.
 threading:
-  set-cpu-affinity: no
+  set-cpu-affinity: @@CPU_AFFINITY@@
   # Tune cpu affinity of threads. Each family of threads can be bound
   # to specific CPUs.
   #
@@ -17926,7 +18281,7 @@ threading:
     - receive-cpu-set:
         cpu: [ 0 ]  # include only these CPUs in affinity settings
     - worker-cpu-set:
-        cpu: [ "all" ]
+        cpu: [ @@WORKER_CPU_SET@@ ]
         mode: "exclusive"
         # Use explicitly 3 threads and don't compute number by using
         # detect-thread-ratio variable:

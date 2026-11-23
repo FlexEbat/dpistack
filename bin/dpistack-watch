@@ -202,9 +202,9 @@ check_drop_rate() {
 	local crit_pct="${CONF[WATCH_DROP_CRIT_PCT]}" warn_pct="${CONF[WATCH_DROP_WARN_PCT]}"
 	((dp > 0)) && pct=$(awk -v dp="$dp" -v dd="$dd" 'BEGIN{printf "%.2f", dd * 100 / dp}')
 	if ((dp > 0)) && ge "$((dd * 100))" "$((crit_pct * dp))"; then
-		record suricata.drop_rate crit "$pct" "drops $pct%"
+		record suricata.drop_rate crit "$pct" "drops $pct%; to reduce them raise CAPTURE_THREADS, CAPTURE_RING_SIZE or the memcaps, and set NIC_OFFLOADS_OFF=yes"
 	elif ((dp > 0)) && ge "$((dd * 100))" "$((warn_pct * dp))"; then
-		record suricata.drop_rate warn "$pct" "drops $pct%"
+		record suricata.drop_rate warn "$pct" "drops $pct%; to reduce them raise CAPTURE_THREADS, CAPTURE_RING_SIZE or the memcaps, and set NIC_OFFLOADS_OFF=yes"
 	else
 		record suricata.drop_rate ok "$pct" ""
 	fi

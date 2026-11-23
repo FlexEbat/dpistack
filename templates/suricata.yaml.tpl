@@ -1102,7 +1102,7 @@ defrag:
 # (which is the default).
 
 flow:
-  memcap: 128mb
+  memcap: @@FLOW_MEMCAP@@
   #memcap-policy: ignore
   hash-size: 65536
   prealloc: 10000
@@ -1248,14 +1248,14 @@ flow-timeouts:
 #                               # is used in a rule.
 #
 stream:
-  memcap: 64mb
+  memcap: @@STREAM_MEMCAP@@
   #memcap-policy: ignore
   checksum-validation: yes      # reject incorrect csums
   #midstream: false
   #midstream-policy: ignore
   inline: auto                  # auto will use inline mode in IPS mode, yes or no set it statically
   reassembly:
-    memcap: 256mb
+    memcap: @@STREAM_REASSEMBLY_MEMCAP@@
     #memcap-policy: ignore
     depth: 1mb                  # reassemble 1mb into a stream
     toserver-chunk-size: 2560
@@ -1401,7 +1401,7 @@ spm-algo: auto
 
 # Suricata is multi-threaded. Here the threading can be influenced.
 threading:
-  set-cpu-affinity: no
+  set-cpu-affinity: @@CPU_AFFINITY@@
   # Tune cpu affinity of threads. Each family of threads can be bound
   # to specific CPUs.
   #
@@ -1419,7 +1419,7 @@ threading:
     - receive-cpu-set:
         cpu: [ 0 ]  # include only these CPUs in affinity settings
     - worker-cpu-set:
-        cpu: [ "all" ]
+        cpu: [ @@WORKER_CPU_SET@@ ]
         mode: "exclusive"
         # Use explicitly 3 threads and don't compute number by using
         # detect-thread-ratio variable:

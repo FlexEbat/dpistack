@@ -1,18 +1,20 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v98** (2026-11-22)
-**Program version: v0.53.1** (tasks 0-56 are done (18.58), 57 and 58 are done, 59 to 65 are planned (18.73); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v100** (2026-11-22)
+**Program version: v0.55.0** (tasks 0-56 are done (18.58), 57 to 60 are done, 61 to 65 are planned (18.73); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.55.0: task 60 (18.73): `dpistack pcap analyze` and an upload on the IPS screen replay a capture of your own with the live rules and exceptions and show the alerts and the application protocols.
+- v0.54.0: task 59 (18.73): the capture is tuned by keys (threads, ring and block size, tpacket, flow and stream memcaps, CPU pinning) and the NIC offloads can be switched off by a drop-in of `suricata.service`.
 - v0.53.1: CI failures are reported with their reasons (annotations, job summary, statuses) and the gate says what it saw (18.74); the Rules screen can switch a rule or a group to drop.
 - v0.53.0: task 58 (18.73): a rule or group can be switched to `drop` (`rules-sid`, `rules-group`), hosts are blocked or allowed with `ips block|allow`, and the IPS and Events screens offer it.
 - v0.52.0: task 57 (18.73): Suricata detections are sent to the delivery channels (`DETECT_NOTIFY`), with a severity threshold, de-duplication and an hourly limit; new channels `webhook` (json, Slack, Discord, ntfy) and `syslog`.
-- v0.51.11: the panel no longer creates an account with a password that cannot sign in (18.71).
-- v0.51.10: the watchdog service has a start timeout (18.70), so a run that hangs cannot silence it.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v100: v0.55.0. Task 60 done (decision D192), the verb in 4.5, the route in section 5.
+- v99: v0.54.0. Task 59 done (decision D191), keys in 4.3, the Capture bullet of the Suricata section.
 - v98: v0.53.1. 18.74 written (decision D190).
 - v97: v0.53.0. Task 58 done (D187 to D189), the API rows of 5 and the verbs of 4.5 name the lists.
 - v96: v0.52.0. Task 57 done, tasks 58 to 65 written as 18.73 (decisions D183 to D186); 4.3 and section 8 name the new keys and channels.
@@ -249,6 +251,14 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `SURICATA_MODE` | `ids` | `ids` `ips` |
 | `IFACES` | `enp2s0` | names, comma separated; if the value is still the default and there is no such interface, `install` takes the default-route interface (else the first non-`lo`) and says so; a value you typed is not replaced |
 | `BPF_FILTER` | empty | a BPF expression |
+| `CAPTURE_THREADS` | `auto` | `auto` or 1 to 999: `threads` of every `af-packet` block (task 59; `auto` writes no line, Suricata's own default) |
+| `CAPTURE_TPACKET` | `auto` | `auto` (no line), `v2` (`tpacket-v3: no`), `v3` (`tpacket-v3: yes`); IPS over af-packet is always `v2`, and `v3` there is refused |
+| `CAPTURE_RING_SIZE` | `0` | 0 to 1048576 frames, `ring-size`; 0 writes no line |
+| `CAPTURE_BLOCK_SIZE` | `0` | 0 or a multiple of 4096 from 32768 up to 67108864, `block-size` (only written when the ring is not `v2`) |
+| `CAPTURE_CPUS` | empty | CPUs as `2-5,8`: `set-cpu-affinity: yes` and the worker threads on those CPUs; empty: no pinning |
+| `NIC_OFFLOADS_OFF` | `no` | `yes` writes the drop-in `suricata.service.d/dpistack-nic.conf`: `ExecStartPre=-ethtool -K IFACE gro off lro off gso off tso off` for every interface of `IFACES` (installs `ethtool` when missing; refused with `SURICATA_RUNTIME=docker`); `no` removes it; `uninstall` removes it (D191) |
+| `PCAP_MAX_MB` | `100` | 1 to 2048: the largest file `pcap analyze` accepts (task 60) |
+| `FLOW_MEMCAP` `STREAM_MEMCAP` `STREAM_REASSEMBLY_MEMCAP` | `128mb` `64mb` `256mb` | a number with `kb`, `mb` or `gb`: `flow.memcap`, `stream.memcap`, `stream.reassembly.memcap` (the defaults are the values the template always had) |
 | `HOME_NET` | auto | a list of CIDRs; auto = the RFC 1918 private ranges |
 | `IPS_METHOD` | `nfq` | `nfq` `afpacket` |
 | `IPS_NFQ_CHAINS` | `INPUT,OUTPUT,FORWARD` | a subset of these chains |
@@ -404,6 +414,7 @@ The only place of the privileged actions of the panel and the watchdog. It works
 | `ips status [--json]` | `{mode,method,chains,backend,pending,remaining_sec,drop_rules:{enabled,disabled,local_enabled,local_disabled},counters:{time,accepted,blocked,rejected,replaced}\|null,blocked:[{time,src,dest,proto,sid,msg}],checks:[{id,state,text}],ready}`; read only; `checks` are `mode`, `suricata`, `firewall`, `queue`, `confirm` with the state `ok`, `warn`, `fail` or `na`; `ready` is true in IPS mode when no check fails (18.42) |
 | `ips test [--sid N,...] [--pcap NAME] [--json]` | replays a shipped pcap (`tests/data/NAME.pcap`, now `bittorrent`) through Suricata offline with `--simulate-ips` and the active drop rules (or up to 20 sids); `{ran,pcap,simulate_ips,loaded,matched:[{sid,msg,would_drop}],would_drop,requested:[{sid,state}],reason}`; a sid state is `would_drop`, `alert_only`, `no_match`, `disabled`, `not_found` or `needs_ndpi`; a Suricata in a container or none gives `ran:false` and a `reason`, exit 0; a bad argument gives 5; never touches the capture or the main `eve.json` |
 | `ips block\|allow list [--json]` `add <addr[/prefix]> [--days N\|--never] [--note T] [--by NAME]` `remove <addr\|sid>` `prune` | the block and allow lists of hosts (task 58, v0.53.0): each entry is two lines in `local.rules` (a comment `# dpistack-block\|allow: added= expires= by= note=` and `drop ip ADDR any <> any any (msg:"dpistack block ADDR"; sid:N; rev:1;)`, `pass ip` for `allow`), sids from 9100000 to 9199999. `add` checks the address (`exc_valid_ip`; loopback, the unspecified address, an IPv4 prefix shorter than /8 and an IPv6 one shorter than /16 are exit 5), the note and `--days` (1 to 3650; no expiry by default, D187), runs `suricata -T` on the candidate (exit 3, file unchanged), commits through `config_commit` and applies like any change of `local.rules` (`rules-update`). The same address again replaces its entry; a sid of the range already in the file is never reused. In IDS mode `add` says that a drop rule only alerts. `remove` takes an address or a sid of that list (exit 5 when there is none). `prune` drops the expired entries of that list. Every change is audited (`cli ips`), a list is read only. Lines that are not entries are kept as they are |
+| `pcap analyze <file> [--json]` | replays a capture of yours (task 60, v0.55.0): classic pcap or pcapng by its first bytes (not by the name), up to `PCAP_MAX_MB` (exit 5 for a missing, empty, too big or not-a-capture file), through `suricata -r` with the live `suricata.rules`, the live `threshold.config` (exceptions apply, so a replay checks them) and the real `HOME_NET`, in a private temp directory that is deleted at the end: the live logs and state are never touched. `{ran, file, bytes, flows, packets, alerts: [{sid, msg, severity, count, src, dest, would_drop}], protocols: [{app_proto, flows, bytes}]}`, alerts and protocols sorted by count; in a container, without Suricata or without a rule set `ran` is `false` with a `reason`, exit 0. The application protocol is the `app_proto` of the flow events (Suricata's own detection); nDPI adds no EVE field (see 6), its rules show up as alerts |
 | `alerts list [--state S] [--source S] [--severity S] [--json]` | `{ts, alerts:[{key,source,severity,title,detail,first_seen,last_seen,count,state,by,note,decided_at,until,cleared}], counts:{new,acknowledged,snoozed,resolved,new_crit}}`; `key` is `watch:<check id>` or `sid:<number>`, `source` is `watchdog` or `suricata`, `severity` is `crit`, `warn` or `info`, `state` is `new`, `acknowledged`, `snoozed` or `resolved`; `counts` are of all alerts, not of the filter; a bad filter value gives 5; read only (18.43) |
 | `alerts history [--limit N] [--json]` | `{history:[{ts,kind,key,action,by,note,detail}]}`, newest first, `kind` is `action` (a decision of a person) or `event` (a status change of the watchdog, from `events.jsonl`); `--limit` 1 to 500, 100 by default, otherwise 5; read only |
 | `alerts ack\|resolve\|reopen <key> [--note T] [--by NAME]`, `alerts snooze <key> --for 1h\|4h\|24h\|7d [--note T] [--by NAME]` | sets the state of an alert and writes one line to the history of `alerts-state.json`; `reopen` drops the decision; the key must be an alert now or one with a decision, otherwise 5; a bad key, note (80 characters of letters, digits and `. _ : / @ + , = -`), name or `--for` gives 5; changes the file under a lock, so two at once both land; audited (`cli alerts`) |
@@ -540,6 +551,7 @@ All answers are JSON, an error is `{"error":"text"}` with the code 4xx/5xx. All 
 | `GET /api/ips/{block\|allow}` | `ctl ips block\|allow list --json`; permission `view`; `{kind, entries: [{address, sid, added, expires, by, note}]}` (task 58) |
 | `POST /api/ips/{block\|allow}` | `ctl ips block\|allow add`; permission `rules.edit`; body `{address, days?, note?}`, `by` is the signed-in user; 400 for a value the verb refuses (exit 2 or 5), 422 for a file that does not pass `suricata -T` |
 | `POST /api/ips/{block\|allow}/remove` | `ctl ips block\|allow remove`; permission `rules.edit`; body `{what}`: an address or a sid of that list |
+| `POST /api/pcap/analyze` | `ctl pcap analyze FILE --json`; permission `tests.run`; the body is the capture itself (`application/octet-stream`), written to a 0600 temp file and deleted after the run; 415 for another type, 400 for an empty or interrupted upload and for the verb's refusals (exit 5), 413 over 512 MiB, 409 while another analysis runs; the read and write deadlines are widened for it (15 min, and the run's 11 min); behind nginx a `location =` for the path allows 512 MiB, no buffering and 900 s |
 | `GET /api/logs/{id}?lines=N` | the last lines |
 | `GET /api/logs/{id}/stream` | SSE, a live tail (at most 4 streams at once) |
 | `GET /api/eve?type=&q=&since=&limit=` | `{available, reason?, file_present, types, events:[{id,type,time,event}]}`, newest first; `limit` 1-500 (50 by default), `since` in RFC 3339; with `EVE_FILE=no` `available` is false with a reason |
@@ -643,7 +655,7 @@ The sections of the config screen (the "group" column is the column of `lib/sche
 
 | group | menu item | keys |
 | --- | --- | --- |
-| `capture` | Capture and mode | `IFACES`, `BPF_FILTER`, `HOME_NET`, `SURICATA_MODE`, `IPS_METHOD`, `IPS_NFQ_CHAINS`, `NTOPNG_IFACES` |
+| `capture` | Capture and mode | `IFACES`, `BPF_FILTER`, `CAPTURE_*`, `NIC_OFFLOADS_OFF`, `FLOW_MEMCAP`, `STREAM_MEMCAP`, `STREAM_REASSEMBLY_MEMCAP`, `HOME_NET`, `SURICATA_MODE`, `IPS_METHOD`, `IPS_NFQ_CHAINS`, `NTOPNG_IFACES` |
 | `components` | Components and sources | `SURICATA_RUNTIME`, `EVEBOX_RUNTIME`, `NTOPNG_RUNTIME`, `SURICATA_SOURCE`, `SURICATA_VERSION`, `NDPI_ENABLE`, `NDPI_SOURCE`, `NDPI_VERSION`, `NTOPNG_VERSION`, `EVEBOX_VERSION`, `PIN_VERSIONS`, `PANEL_SOURCE` |
 | `eve` | EVE and storage | `EVE_FILE`, `EVE_TYPES`, `EVE_SYSLOG`, `EVE_REDIS`, `EVE_REDIS_MAXLEN`, `EVE_ROTATE`, `EVE_KEEP`, `EVE_MAX_SIZE_MB`, `STATS_INTERVAL_SEC`, `EVEBOX_DB`, `EVEBOX_ES_URL`, `EVEBOX_RETENTION_DAYS` |
 | `rules` | Rules | `RULES_SOURCES`, `RULES_URLS`, `RULES_GROUPS`, `RULES_UPDATE`, `RULES_UPDATE_CALENDAR`, `EXCEPTIONS_DEFAULT_DAYS` |
@@ -806,7 +818,7 @@ The keys and the affected steps:
 
 | key group | steps | type |
 | --- | --- | --- |
-| `IFACES`, `BPF_FILTER`, `HOME_NET`, `SURICATA_MODE`, `IPS_*`, `EVE_*`, `STATS_INTERVAL_SEC` | `suricata` (rendering, restart), `ntopng` for `IFACES`, `watch` for `EVE_*` and `STATS_*` | light |
+| `IFACES`, `BPF_FILTER`, `CAPTURE_*`, `NIC_OFFLOADS_OFF`, `FLOW_MEMCAP`, `STREAM_MEMCAP`, `STREAM_REASSEMBLY_MEMCAP`, `HOME_NET`, `SURICATA_MODE`, `IPS_*`, `EVE_*`, `STATS_INTERVAL_SEC` | `suricata` (rendering, restart), `ntopng` for `IFACES`, `watch` for `EVE_*` and `STATS_*` | light |
 | `RULES_*` | `rules` | light |
 | `NTOPNG_IFACES`, `NTOPNG_PORT`, `EVEBOX_PORT`, `EVEBOX_RETENTION_DAYS`, `EVEBOX_ES_URL` | `ntopng` or `evebox`, `access` | light |
 | `ACCESS_MODE`, `BIND_ADDR`, `LAN_CIDR`, `PANEL_PORT`, `NGINX_*`, `FIREWALL_MANAGE` | `access`, `panel`; `BIND_ADDR` and `ACCESS_MODE` also `evebox`, `ntopng`, `metrics`, `nodeexp`, `grafana` | light |
@@ -854,7 +866,7 @@ Root, Bash 4.4+, a distribution and an architecture from the supported ones, `sy
 
 ## 6. Suricata and nDPI: integration rules
 
-- **Capture:** `af-packet`, a block per interface of `IFACES`, `cluster-type: cluster_flow`, `defrag: yes`, `threads: auto`, `cluster-id` is unique for an interface. `BPF_FILTER` is substituted if set.
+- **Capture:** `af-packet`, a block per interface of `IFACES`, `cluster-type: cluster_flow`, `defrag: yes`, `cluster-id` is unique for an interface. `BPF_FILTER` is substituted if set. The tuning keys of task 59 add `threads`, `tpacket-v3`, `ring-size` and `block-size` to every block when they are not at their defaults, and `FLOW_MEMCAP`, `STREAM_MEMCAP`, `STREAM_REASSEMBLY_MEMCAP` and `CAPTURE_CPUS` fill the placeholders of `flow`, `stream`, `stream.reassembly` and `threading`.
 - **nDPI:** with `NDPI_ENABLE=yes` the `ndpi.so` from the plugin directory of the installed Suricata is added to `plugins:`. Rules that use `ndpi-protocol` and `ndpi-risk` must start with `requires: keyword ndpi-protocol` (and/or `ndpi-risk`), so that a Suricata without the plugin skips them instead of failing.
 - **Building from source:** `./configure --enable-ndpi --with-ndpi=<prefix>`. The version of nDPI is set by the requirement of the chosen version of Suricata. An incompatibility is caught at `configure` and printed as it is, there are no workarounds. After the build the installer checks for `ndpi.so` and `suricata --build-info`.
 - **The unit** with `source` is rendered from `templates/`, with packages the distribution one is used and complemented with a drop-in file.
@@ -1298,8 +1310,8 @@ One row per task. **Done** means the Definition of Done of section 14 was met; a
 | 56 | small things | **done.** The selected Rules tab is kept for the session; three more templates (a file type over HTTP, a JA3 hash, many outward connections); `scripts/dev-tools.sh --check|--install` for the CI versions of shellcheck 0.9.0 and shfmt 3.8.0; Metrics keeps one day because the ring holds one day (the hint on the screen says so) | v0.51.0 | 18.60 |
 | 57 | detection alerts leave the panel | **done.** A Suricata alert of a chosen severity reaches the delivery channels: the new channels `webhook` (JSON, Slack, Discord, ntfy) and `syslog` beside `log`, `tg` and `mail`, a severity threshold, a de-duplication window and an hourly limit | v0.52.0 | 18.73 |
 | 58 | block from the program | **done.** `rules-sid` and `rules-group` `drop\|alert`, the verb `ips block\|allow` with its lists, the API routes, the lists and form on the IPS page, "Block source/destination" on Events, the Drop and Alert only buttons on Rules. The Rules screen switches a rule (search results) or a group to drop and back, and lists what drops (v0.53.1) | v0.53.0 | 18.73 |
-| 59 | capture performance | planned. Threads, ring and block size (`tpacket-v3`), flow and stream memcaps, CPU affinity and NIC offloads as keys, with a recommendation from the drop rate | v0.54.0 | 18.73 |
-| 60 | your own pcap | planned. `dpistack pcap analyze FILE` and an upload in the panel show the alerts and the application protocols of a capture you bring | v0.55.0 | 18.73 |
+| 59 | capture performance | **done.** `CAPTURE_THREADS`, `CAPTURE_TPACKET`, `CAPTURE_RING_SIZE`, `CAPTURE_BLOCK_SIZE`, `CAPTURE_CPUS`, `FLOW_MEMCAP`, `STREAM_MEMCAP`, `STREAM_REASSEMBLY_MEMCAP` and the offload switch `NIC_OFFLOADS_OFF`; the drop alert names the keys | v0.54.0 | 18.73 |
+| 60 | your own pcap | **done.** `dpistack pcap analyze FILE` and an upload on the IPS screen show the alerts and the application protocols of a capture you bring | v0.55.0 | 18.73 |
 | 61 | history and traffic intelligence | planned. Daily and weekly reports, per device history, a new device alert, GeoIP and blocklists (Suricata datasets) | v0.56.0 | 18.73 |
 | 62 | alert state that does not lose alerts | planned. A persistent alert index that does not depend on the last 8 MiB of `eve.json`, and a rotation of `events.jsonl` | v0.57.0 | 18.73 |
 | 63 | backup that looks after itself | planned. A schedule, retention, encryption, an upload in the panel, a safe place that `uninstall` keeps, a restore on another host that is tried in a test | v0.58.0 | 18.73 |
@@ -2697,7 +2709,19 @@ Open: the state of triage (acknowledged, snoozed) does not silence a delivery (d
 
 **Task 59, capture performance.** The finding: the `af-packet` block has no threads, ring size, `tpacket-v3`, block size, memcaps or CPU affinity, and nothing turns off GRO, LRO, GSO and TSO. Planned keys: `CAPTURE_THREADS` (`auto|N`), `CAPTURE_RING_SIZE`, `CAPTURE_BLOCK_SIZE`, `FLOW_MEMCAP`, `STREAM_MEMCAP`, `CAPTURE_CPUS`, `NIC_OFFLOADS_OFF` (`yes|no`); the offloads are turned off by a small unit that runs `ethtool -K` for the capture interfaces at boot and again after a reconfigure; the watchdog message for packet drops names the key to raise.
 
+**Task 59, what was done (v0.54.0).** The keys and what each writes are in 4.3. Every default writes what the template always had, so an upgrade changes nothing until a key is set. `suricata_render_af_packet_block` adds `threads` (not for `auto`), `tpacket-v3`, `ring-size` and `block-size` to every interface; `suricata_render_yaml` fills `flow.memcap`, `stream.memcap`, `stream.reassembly.memcap` and the worker CPU set through placeholders. `NIC_OFFLOADS_OFF=yes` writes `suricata.service.d/dpistack-nic.conf` with one `ExecStartPre=-ethtool -K IFACE gro off lro off gso off tso off` per interface, installs `ethtool` when it is missing, is checked and applied with the mode drop-in (`suricata_mode_files_current` and `_apply`) and is removed by `uninstall`. `config_validate` refuses `CAPTURE_TPACKET=v3` with IPS over af-packet, a backwards CPU range and `NIC_OFFLOADS_OFF=yes` with a container. The watchdog's drop message ends with the keys that reduce drops. Not done, on purpose: no automatic sizing from the host (the right ring and memcap depend on the traffic, and the message points the owner to them), and the panel only shows the keys on the Settings screen. `tests/capture_tuning.bats` has 13 tests.
+
+| id | decision |
+| --- | --- |
+| D191 | **Offloads are switched off by a drop-in, off by default.** A drop-in of `suricata.service` runs before every start, so a reboot or a NIC reset cannot leave them on; it touches only the capture interfaces named in `IFACES`. The default is `no` because on a single-NIC host `IFACES` is also the management interface, and turning offloads off there costs CPU the owner did not ask to spend. The drop alert tells the owner when it is the right switch |
+
 **Task 60, your own pcap.** The finding: offline replay takes only the shipped pcaps. Planned: `dpistack pcap analyze FILE [--json]` runs Suricata offline on a file in a private directory (`-r`, its own log directory, the live rules, nothing written to the live logs) and prints the alerts, the application protocols of the flows (nDPI) and the counts; the panel uploads a file up to a limit set by `PCAP_MAX_MB` and shows the same. The file is deleted after the run unless `--keep` is given.
+
+**Task 60, what was done (v0.55.0).** The verb and its output are in 4.5, the route in section 5, `PCAP_MAX_MB` in 4.3. `templates/suricata-analyze.yaml.tpl` is the offline configuration: the live `suricata.rules`, the live `threshold.config`, the real `HOME_NET` and the nDPI plugin when it is installed, with `eve-log` types `alert` and `flow` going to the private directory. The IPS screen has "Analyze a capture" (a file input, an Analyze button, an alerts table and an application protocols table); it is optional in `start`. Not done, on purpose: no `--keep` (the file is the owner's own, and keeping an upload is a copy of their traffic), no per-run rule changes (a rule under test is added to `local.rules` first), no streaming progress.
+
+| id | decision |
+| --- | --- |
+| D192 | **A replay honors the live exceptions and the real HOME_NET.** `ips test` replays with `HOME_NET: any` because it checks that a rule can match; this verb answers "what would my sensor have said about this traffic", so it uses what the sensor uses, and an exception that hides an alert on the host hides it here too. The panel takes the capture as the raw body and not as a multipart form: no form parser in the path, the size is bounded before any byte is stored, and the verb checks the first bytes anyway |
 
 **Task 61, history and traffic intelligence.** The finding: Metrics keeps one day, Traffic and Events work on the newest 500 events, flows appear only when they end, no reports, no per-device history, no new device detection, no GeoIP or reputation lists. Planned: a daily roll-up file per day in `/var/lib/dpistack/history/` written by the watchdog from `flow` and `alert` events (per device: bytes, flows, top applications); `dpistack report daily|weekly`; a `device.new` alert when an address appears that was not in the last 30 days; GeoIP from the free DB-IP Lite country database (no account key, unlike GeoLite2); IP and domain blocklists as Suricata datasets from a list of URLs.
 

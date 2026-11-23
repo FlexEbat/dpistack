@@ -26,6 +26,7 @@ type opState struct {
 	settingsBusy bool
 	backupBusy   bool
 	ipsTestBusy  bool
+	pcapBusy     bool
 }
 
 func (o *opState) begin(flag *bool) bool {

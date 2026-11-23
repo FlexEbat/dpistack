@@ -26,6 +26,10 @@ suricata_render_af_packet_block() {
 	# and every packet is forwarded to the peer unless a rule drops it.
 	local ips_pairs=0
 	[[ "${CONF[SURICATA_MODE]:-ids}" == "ips" && "${CONF[IPS_METHOD]:-nfq}" == "afpacket" ]] && ips_pairs=1
+	local threads="${CONF[CAPTURE_THREADS]:-auto}" tpacket="${CONF[CAPTURE_TPACKET]:-auto}"
+	local ring="${CONF[CAPTURE_RING_SIZE]:-0}" block="${CONF[CAPTURE_BLOCK_SIZE]:-0}"
+	# copy-mode ips cannot use tpacket-v3 (Suricata switches it off with a warning)
+	((ips_pairs)) && tpacket=v2
 	local IFS=','
 	for iface in $ifaces; do
 		[[ -z "$iface" ]] && continue
@@ -39,6 +43,13 @@ suricata_render_af_packet_block() {
 		fi
 		idx=$((idx + 1))
 		[[ -n "$bpf" ]] && echo "    bpf-filter: \"${bpf}\""
+		[[ "$threads" != "auto" ]] && echo "    threads: ${threads}"
+		case "$tpacket" in
+		v2) echo "    tpacket-v3: no" ;;
+		v3) echo "    tpacket-v3: yes" ;;
+		esac
+		((ring > 0)) && echo "    ring-size: ${ring}"
+		((block > 0)) && [[ "$tpacket" != "v2" ]] && echo "    block-size: ${block}"
 		cluster_id=$((cluster_id + 1))
 	done
 	echo "  - interface: default"
@@ -157,6 +168,27 @@ suricata_conf_version() {
 	suricata_series "$SURICATA_STABLE_REF"
 }
 
+# suricata_cpu_affinity - yes when CAPTURE_CPUS pins the worker threads.
+suricata_cpu_affinity() {
+	[[ -n "${CONF[CAPTURE_CPUS]:-}" ]] && echo yes || echo no
+}
+
+# suricata_worker_cpu_set - the inside of the worker-cpu-set list: each part
+# of CAPTURE_CPUS (a number or a range) quoted, "all" without the key.
+suricata_worker_cpu_set() {
+	local list="${CONF[CAPTURE_CPUS]:-}" part out=""
+	local -a parts=()
+	[[ -n "$list" ]] || {
+		echo '"all"'
+		return 0
+	}
+	IFS=',' read -ra parts <<<"$list"
+	for part in "${parts[@]}"; do
+		out+="${out:+, }\"${part}\""
+	done
+	echo "$out"
+}
+
 # suricata_render_yaml -> full suricata.yaml on stdout
 suricata_render_yaml() {
 	render_template "$SCRIPT_DIR/templates/suricata.yaml.tpl" \
@@ -166,6 +198,11 @@ suricata_render_yaml() {
 		"EVE_LOG_BLOCK=$(suricata_render_eve_log_block)" \
 		"RULE_FILES_EXTRA=$(suricata_render_rule_files_extra)" \
 		"AF_PACKET_BLOCK=$(suricata_render_af_packet_block)" \
+		"FLOW_MEMCAP=${CONF[FLOW_MEMCAP]:-128mb}" \
+		"STREAM_MEMCAP=${CONF[STREAM_MEMCAP]:-64mb}" \
+		"STREAM_REASSEMBLY_MEMCAP=${CONF[STREAM_REASSEMBLY_MEMCAP]:-256mb}" \
+		"CPU_AFFINITY=$(suricata_cpu_affinity)" \
+		"WORKER_CPU_SET=$(suricata_worker_cpu_set)" \
 		"PLUGINS_BLOCK=$(suricata_render_plugins_block)" \
 		"COMMAND_SOCKET=$(suricata_command_socket)"
 }
@@ -459,9 +496,37 @@ suricata_render_fw_unit() {
 	render_template "$SCRIPT_DIR/templates/dpistack-fw.service.tpl" "CTL=$(path_ctl_bin)"
 }
 
-# suricata_mode_files_current - drop-in and fw unit are as they should be.
+# suricata_nic_dropin_wanted - NIC_OFFLOADS_OFF=yes: GRO, LRO, GSO and TSO
+# merge packets into frames larger than the wire's, which Suricata cannot
+# reassemble or match as it saw them. The drop-in switches them off on every
+# capture interface before each start of Suricata. The "-" in front of the
+# command makes a NIC that lacks a feature (or the whole command) harmless.
+suricata_nic_dropin_wanted() {
+	[[ "${CONF[NIC_OFFLOADS_OFF]:-no}" == "yes" ]]
+}
+
+suricata_render_nic_dropin() {
+	local ethtool iface
+	ethtool=$(command -v ethtool || echo /usr/sbin/ethtool)
+	echo "# Managed by dpistack: NIC_OFFLOADS_OFF=yes."
+	echo "[Service]"
+	local IFS=','
+	for iface in ${CONF[IFACES]:-}; do
+		[[ -z "$iface" ]] && continue
+		echo "ExecStartPre=-${ethtool} -K ${iface} gro off lro off gso off tso off"
+	done
+}
+
+# suricata_mode_files_current - drop-ins and fw unit are as they should be.
 suricata_mode_files_current() {
-	local dropin
+	local dropin nicdrop
+	nicdrop=$(path_suricata_nic_dropin)
+	if suricata_nic_dropin_wanted; then
+		[[ -f "$nicdrop" ]] || return 1
+		[[ "$(suricata_render_nic_dropin | state_hash_content)" == "$(state_hash_content <"$nicdrop")" ]] || return 1
+	else
+		[[ ! -e "$nicdrop" ]] || return 1
+	fi
 	dropin=$(path_suricata_mode_dropin)
 	if suricata_mode_dropin_wanted; then
 		[[ -f "$dropin" ]] || return 1
@@ -473,9 +538,16 @@ suricata_mode_files_current() {
 	[[ "$(suricata_render_fw_unit | state_hash_content)" == "$(state_hash_content <"$(path_fw_unit)")" ]]
 }
 
-# suricata_mode_files_apply - write or remove the drop-in, install the fw unit.
+# suricata_mode_files_apply - write or remove the drop-ins, install the fw unit.
 suricata_mode_files_apply() {
-	local dropin
+	local dropin nicdrop
+	nicdrop=$(path_suricata_nic_dropin)
+	if suricata_nic_dropin_wanted; then
+		command -v ethtool >/dev/null 2>&1 || pkg_install ethtool || return 1
+		write_rendered_file "$nicdrop" "$(suricata_render_nic_dropin)" || return 1
+	elif [[ -e "$nicdrop" ]]; then
+		run rm -f "$nicdrop" || return 1
+	fi
 	dropin=$(path_suricata_mode_dropin)
 	if suricata_mode_dropin_wanted; then
 		write_rendered_file "$dropin" "$(suricata_render_mode_dropin)" || return 1

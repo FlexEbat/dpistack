@@ -352,6 +352,14 @@
     <section id="ips-rules"></section>
     <h2>Latest blocked</h2>
     <section id="ips-blocked"></section>
+    <h2>Analyze a capture</h2>
+    <p class="muted">Replay a .pcap or .pcapng of your own through Suricata with the live rules and exceptions. It shows the alerts and the application protocols; nothing is written to the live logs and the file is deleted afterwards.</p>
+    <div class="toolbar">
+      <label>Capture file <input id="ips-pcap-file" type="file" accept=".pcap,.pcapng,.cap"></label>
+      <button id="ips-pcap-run" type="button">Analyze</button>
+    </div>
+    <p id="ips-pcap-msg" class="muted" aria-live="polite"></p>
+    <section id="ips-pcap-result"></section>
     <h2>Blocked and allowed hosts</h2>
     <p class="muted">A blocked host is dropped by a Suricata rule; an allowed host is never blocked, even by a rule for its whole network. A drop rule only alerts while the mode is IDS.</p>
     <div class="toolbar">

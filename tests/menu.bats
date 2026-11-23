@@ -435,7 +435,7 @@ run_menu() {
 	run_menu "2\nq\ny\n"
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"Interfaces Suricata captures from, comma separated."* ]]
-	[[ "$output" == *"show advanced (6 more)"* ]]
+	[[ "$output" == *"show advanced (16 more)"* ]]
 }
 
 @test "a key that the other settings switch off says so in the list" {

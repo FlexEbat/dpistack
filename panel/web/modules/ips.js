@@ -3,7 +3,7 @@
 // capture offline. It never switches the mode: that is confirmed and counted
 // down on Components. Only a 401 signs the user out.
 
-import { headline, checkRows, counterRows, NO_COUNTERS, ruleLines, parseSids, requestedText, testSummary, hostRows, hostBody } from "./ips-model.js";
+import { headline, checkRows, counterRows, NO_COUNTERS, ruleLines, parseSids, requestedText, testSummary, hostRows, hostBody, pcapFileProblem, pcapSummary, pcapAlertRows, pcapProtocolRows } from "./ips-model.js";
 
 const POLL_MS = 5000;
 
@@ -216,6 +216,46 @@ export function start(api, areas, onError) {
     loadHosts();
   }
 
+  // Analyze a capture of your own. The area is optional like the lists above.
+  const pc = areas.pcap;
+  let analyzing = false;
+  async function analyze() {
+    if (analyzing) return;
+    const file = pc.file.files && pc.file.files[0];
+    const problem = pcapFileProblem(file);
+    if (problem) {
+      pc.msg.textContent = problem;
+      return;
+    }
+    analyzing = true;
+    pc.run.disabled = true;
+    pc.result.replaceChildren();
+    pc.msg.textContent = "Uploading and analyzing: this can take a few minutes for a large capture.";
+    try {
+      const res = await api("/api/pcap/analyze", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+      if (!running) return;
+      pc.msg.textContent = pcapSummary(res);
+      if (res.ran) {
+        const parts = [];
+        const alerts = pcapAlertRows(res);
+        parts.push(el("h3", "", "Alerts"));
+        parts.push(alerts.length ? table(["Rule", "Times", "Severity", "Message", "Flow"], alerts) : el("p", "muted empty", "No rule matched this capture."));
+        const protocols = pcapProtocolRows(res);
+        parts.push(el("h3", "", "Application protocols"));
+        parts.push(protocols.length ? table(["Protocol", "Flows", "Traffic"], protocols) : el("p", "muted empty", "No application protocol was recognized."));
+        pc.result.replaceChildren(...parts);
+      }
+    } catch (err) {
+      if (!running) return;
+      if (err.status === 401) return onError(err);
+      pc.msg.textContent = err.message;
+    } finally {
+      analyzing = false;
+      pc.run.disabled = false;
+    }
+  }
+  if (pc) pc.run.addEventListener("click", analyze);
+
   areas.run.addEventListener("click", run);
   once();
   timer = setInterval(once, POLL_MS);
@@ -225,6 +265,7 @@ export function start(api, areas, onError) {
       hosts.addBlock.removeEventListener("click", onBlock);
       hosts.addAllow.removeEventListener("click", onAllow);
     }
+    if (pc) pc.run.removeEventListener("click", analyze);
     areas.run.removeEventListener("click", run);
     if (timer !== null) clearInterval(timer);
   };

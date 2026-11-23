@@ -87,6 +87,39 @@ export function testSummary(res) {
   return `Replayed ${res.pcap}.pcap offline with ${res.loaded} rule${res.loaded === 1 ? "" : "s"}: ${res.would_drop} would drop, ${(res.matched || []).length} matched.`;
 }
 
+// Analyze a capture of your own (/api/pcap/analyze).
+
+// pcapFileProblem is what is wrong with a chosen file before it is sent, or "".
+// The panel takes 512 MiB at most; dpistack applies PCAP_MAX_MB, which can be lower.
+export function pcapFileProblem(file) {
+  if (!file) return "Choose a capture file (.pcap or .pcapng).";
+  if (!file.size) return "The file is empty.";
+  if (file.size > 512 * 1048576) return "The file is over 512 MiB, which the panel does not take.";
+  return "";
+}
+
+export function pcapSummary(res) {
+  if (!res) return "";
+  if (!res.ran) return `Not analyzed: ${res.reason || "unknown reason"}.`;
+  const n = (res.alerts || []).length;
+  return `Analyzed ${res.file}: ${res.flows} flow${res.flows === 1 ? "" : "s"}, ${res.packets} packet${res.packets === 1 ? "" : "s"}, ${n} different alert${n === 1 ? "" : "s"}.`;
+}
+
+// pcapAlertRows and pcapProtocolRows are the cells of the two tables.
+export function pcapAlertRows(res) {
+  return ((res && res.alerts) || []).map((a) => [String(a.sid), String(a.count), String(a.severity), a.msg || "", `${a.src} \u2192 ${a.dest}` + (a.would_drop ? " (would drop)" : "")]);
+}
+
+export function pcapProtocolRows(res) {
+  return ((res && res.protocols) || []).map((p) => [p.app_proto, String(p.flows), formatBytes(p.bytes)]);
+}
+
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1048576) return `${(n / 1024).toFixed(1)} KiB`;
+  return `${(n / 1048576).toFixed(1)} MiB`;
+}
+
 // The block and allow lists of hosts (/api/ips/block, /api/ips/allow).
 
 const HOST_ADDRESS = /^[0-9A-Fa-f.:/]{1,60}$/;
