@@ -97,6 +97,8 @@ declare -gA KEY_HINT=(
 	[ALERT_SYSLOG_TARGET]='Syslog server for the syslog channel: host, host:port or [ipv6]:port (port 514 by default).'
 	[ALERT_SYSLOG_PROTO]='Transport to the syslog server: udp or tcp.'
 	[DETECT_NOTIFY]='Send Suricata detections (alerts) to the delivery channels, not only the health of the stack.'
+	[ALERT_INDEX]='Keep one entry per Suricata rule, so an old alert nobody has looked at stays in the Alert Center even when eve.json has moved on.'
+	[ALERT_INDEX_DAYS]='How many days an entry stays after the last alert of its rule.'
 	[HISTORY_ENABLE]='Keep a daily summary of traffic, applications, devices and alerts, for dpistack report and dpistack devices.'
 	[HISTORY_DAYS]='How many days of daily summaries to keep.'
 	[DEVICE_NEW_NOTIFY]='Send a message when an address of a private range shows up that was never seen before. Needs HISTORY_ENABLE=yes.'

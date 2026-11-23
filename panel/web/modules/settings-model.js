@@ -112,6 +112,8 @@ export const HINTS = {
   DETECT_NOTIFY_CHANNELS: "Channels for detections, comma separated, from ALERT_CHANNELS. Empty: the channels of ALERT_CHANNELS except panel.",
   DETECT_NOTIFY_MAX_PER_HOUR: "Most detection messages in an hour. The rest are counted and one summary is sent.",
   DETECT_NOTIFY_DEDUP_MIN: "The same signature between the same two addresses is sent once in this many minutes (0: every alert).",
+  ALERT_INDEX: "Keep one entry per Suricata rule, so an old alert nobody has looked at stays in the Alert Center even when eve.json has moved on.",
+  ALERT_INDEX_DAYS: "How many days an entry stays after the last alert of its rule.",
   HISTORY_ENABLE: "Keep a daily summary of traffic, applications, devices and alerts, for dpistack report and dpistack devices.",
   HISTORY_DAYS: "How many days of daily summaries to keep.",
   DEVICE_NEW_NOTIFY: "Send a message when an address of a private range shows up that was never seen before. Needs HISTORY_ENABLE=yes.",

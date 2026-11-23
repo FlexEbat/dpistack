@@ -197,6 +197,8 @@ schema_init() {
 	_schema_add 'ALERT_SYSLOG_TARGET|free|||advanced|watch|watch|light|no'
 	_schema_add 'ALERT_SYSLOG_PROTO|enum|udp|udp,tcp|advanced|watch|watch|light|no'
 	_schema_add 'DETECT_NOTIFY|enum|no|yes,no|advanced|watch|watch|light|no'
+	_schema_add 'ALERT_INDEX|enum|yes|yes,no|advanced|watch|watch|light|no'
+	_schema_add 'ALERT_INDEX_DAYS|int|30|1..365|advanced|watch|watch|light|no'
 	_schema_add 'HISTORY_ENABLE|enum|no|yes,no|advanced|watch|watch|light|no'
 	_schema_add 'HISTORY_DAYS|int|90|1..3650|advanced|watch|watch|light|no'
 	_schema_add 'DEVICE_NEW_NOTIFY|enum|no|yes,no|advanced|watch|watch|light|no'
@@ -273,6 +275,8 @@ schema_depends_init() {
 	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~webhook' 'ALERT_WEBHOOK_*'
 	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~syslog' 'ALERT_SYSLOG_*'
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes' DETECT_NOTIFY
+	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes' ALERT_INDEX
+	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes ALERT_INDEX=yes' ALERT_INDEX_DAYS
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes' HISTORY_ENABLE
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes HISTORY_ENABLE=yes' HISTORY_DAYS DEVICE_NEW_NOTIFY
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes DETECT_NOTIFY=yes' 'DETECT_NOTIFY_*'

@@ -1,18 +1,19 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v101** (2026-11-23)
-**Program version: v0.56.0** (tasks 0-56 are done (18.58), 57 to 60 are done, 61 is in progress, 62 to 65 are planned (18.73); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v102** (2026-11-23)
+**Program version: v0.57.0** (tasks 0-56 are done (18.58), 57 to 60 and 62 are done, 61 is in progress, 63 to 65 are planned (18.73); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.57.0: task 62 (18.73): the Alert Center keeps an index of one entry per rule, so old alerts do not drop out with the tail of `eve.json`; `events.jsonl` is rotated at 5 MiB.
 - v0.56.0: task 61, first part (18.73): the watchdog keeps a daily roll-up (`HISTORY_ENABLE`), `dpistack report daily|weekly` and `dpistack devices` read it, and `DEVICE_NEW_NOTIFY` announces a new private address.
 - v0.55.0: task 60 (18.73): `dpistack pcap analyze` and an upload on the IPS screen replay a capture of your own with the live rules and exceptions and show the alerts and the application protocols.
 - v0.54.0: task 59 (18.73): the capture is tuned by keys (threads, ring and block size, tpacket, flow and stream memcaps, CPU pinning) and the NIC offloads can be switched off by a drop-in of `suricata.service`.
 - v0.53.1: CI failures are reported with their reasons (annotations, job summary, statuses) and the gate says what it saw (18.74); the Rules screen can switch a rule or a group to drop.
-- v0.53.0: task 58 (18.73): a rule or group can be switched to `drop` (`rules-sid`, `rules-group`), hosts are blocked or allowed with `ips block|allow`, and the IPS and Events screens offer it.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v102: v0.57.0. Task 62 done (decisions D195, D196).
 - v101: v0.56.0. Task 61 first part (decisions D193, D194).
 - v100: v0.55.0. Task 60 done (decision D192), the verb in 4.5, the route in section 5.
 - v99: v0.54.0. Task 59 done (decision D191), keys in 4.3, the Capture bullet of the Suricata section.
@@ -21,7 +22,6 @@ Changelog of this document. Only the last five entries are kept; older ones are 
 - v96: v0.52.0. Task 57 done, tasks 58 to 65 written as 18.73 (decisions D183 to D186); 4.3 and section 8 name the new keys and channels.
 - v95: v0.51.12. 18.72 written (decision D182).
 - v94: v0.51.11. 18.71 written (decision D181).
-- v90: v0.51.7. 18.67 written (decision D175).
 
 ---
 
@@ -321,6 +321,8 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `DETECT_NOTIFY` | `no` | `yes` sends Suricata alerts to the delivery channels (task 57) |
 | `DETECT_NOTIFY_SEVERITY` | `high` | `high` (severity 1), `medium` (1 and 2), `low` (1 to 3) |
 | `DETECT_NOTIFY_CHANNELS` | empty | a subset of `ALERT_CHANNELS` without `panel`; empty: all of `ALERT_CHANNELS` except `panel` |
+| `ALERT_INDEX` | `yes` | `yes` keeps `alerts-index.json`, one entry per rule (task 62) |
+| `ALERT_INDEX_DAYS` | `30` | 1 to 365 days an entry stays after the last alert of its rule |
 | `HISTORY_ENABLE` | `no` | `yes` makes the watchdog keep a roll-up per day (task 61) |
 | `HISTORY_DAYS` | `90` | 1 to 3650 days kept; older day files are removed |
 | `DEVICE_NEW_NOTIFY` | `no` | `yes` sends a message when a private address appears for the first time; needs `HISTORY_ENABLE=yes` |
@@ -1319,7 +1321,7 @@ One row per task. **Done** means the Definition of Done of section 14 was met; a
 | 59 | capture performance | **done.** `CAPTURE_THREADS`, `CAPTURE_TPACKET`, `CAPTURE_RING_SIZE`, `CAPTURE_BLOCK_SIZE`, `CAPTURE_CPUS`, `FLOW_MEMCAP`, `STREAM_MEMCAP`, `STREAM_REASSEMBLY_MEMCAP` and the offload switch `NIC_OFFLOADS_OFF`; the drop alert names the keys | v0.54.0 | 18.73 |
 | 60 | your own pcap | **done.** `dpistack pcap analyze FILE` and an upload on the IPS screen show the alerts and the application protocols of a capture you bring | v0.55.0 | 18.73 |
 | 61 | history and traffic intelligence | **in progress.** Done: the daily roll-up, `report daily\|weekly`, `devices`, the new device message. Left: GeoIP, IP and domain blocklists, the screens of the panel | v0.56.0 | 18.73 |
-| 62 | alert state that does not lose alerts | planned. A persistent alert index that does not depend on the last 8 MiB of `eve.json`, and a rotation of `events.jsonl` | v0.57.0 | 18.73 |
+| 62 | alert state that does not lose alerts | **done.** `alerts-index.json` keeps one entry per rule, the Alert Center reads it with the tail of `eve.json`, `events.jsonl` is rotated | v0.57.0 | 18.73 |
 | 63 | backup that looks after itself | planned. A schedule, retention, encryption, an upload in the panel, a safe place that `uninstall` keeps, a restore on another host that is tried in a test | v0.58.0 | 18.73 |
 | 64 | TLS of the panel, self-signed certificates | planned. The panel serves HTTPS itself with a self-signed certificate that the program makes, renews and shows the fingerprint of; the nginx certificate is made the same way | v0.59.0 | 18.73 |
 | 65 | two-factor sign-in | planned. TOTP for the accounts of the panel with recovery codes | v0.60.0 | 18.73 |
@@ -2739,6 +2741,13 @@ Open: the state of triage (acknowledged, snoozed) does not silence a delivery (d
 | D194 | **History is off by default and has its own cursor.** Reading and summing the events costs a `jq` pass on every watchdog run, which a busy sensor should choose to pay; a cursor of its own means a change in the detection setting cannot lose or repeat history. A day file is a small sum, not a copy of the events: the full detail stays in `eve.json` and EveBox |
 
 **Task 62, alert state that does not lose alerts.** The finding: the Alert Center reads the last 8 MiB of `eve.json`, so an old un-triaged alert on a busy sensor drops out; `events.jsonl` is never rotated. Planned: the same cursor as in task 57 appends every alert to `alerts-index.jsonl` (bounded by age and size, with the state of triage kept by key), the Alert Center reads the index, and `events.jsonl` is rotated by size with five old files.
+
+**Task 62, what was done (v0.57.0).** `alerts_index_update` is the last data step of a watchdog run, with its own cursor (`alerts-cursor.json`). It reads the new `alert` events and keeps, for every `signature_id`, `{sid, msg, category, severity, first_seen, last_seen, count}` in `alerts-index.json`; an entry whose last alert is older than `ALERT_INDEX_DAYS` is removed. `eve_chunk_read` and `eve_chunk_commit` are the reader that this and the history of task 61 share (whole lines, at most 4 MiB a run, rotation by inode or size). `alerts_conditions` in `lib/alerts.sh` merges the index with the tail of `eve.json`: for a rule both know the span is the wider and the count the larger; a rule only the index knows is listed too; a broken index is ignored. States (acknowledged, snoozed, resolved) are keyed by `sid:N` as before, so they apply to indexed alerts unchanged. `events_rotate` moves `events.jsonl` to `.1` past 5 MiB and shifts `.1` to `.5` (five old files); the Alert Center history reads the tail of the live file. `tests/alert_index.bats` has 8 tests, `tests/alerts.bats` 3 more.
+
+| id | decision |
+| --- | --- |
+| D195 | **The first run of the index reads the last 8 MiB, not only the end.** This is the opposite of D185 and D193 on purpose: those settings start something new, so they must not announce history; the index replaces what the Center already showed, so it must start with it, or turning it on would make alerts disappear |
+| D196 | **The index is on by default, and a count is a lower bound.** The cost is one `jq` pass over the new alert lines per run, which the tail read already paid in the panel. A count that is the larger of the index and the tail never double counts, and an alert the watchdog missed (it was down) is still in the tail while it is there |
 
 **Task 63, backup that looks after itself.** The finding: no schedule, no retention, no encryption although the archive holds `users.json`; the archives sit in the state directory that `uninstall` deletes; the panel cannot upload; a restore onto another host was never tried. Planned keys: `BACKUP_SCHEDULE` (a systemd calendar, `off` by default), `BACKUP_KEEP`, `BACKUP_DIR` (default `/var/backups/dpistack`, which `uninstall` keeps), `BACKUP_AGE_RECIPIENT` (an `age` public key: the host can encrypt and cannot decrypt, so a stolen host does not open the archives); an upload verb and screen; a test that restores an archive into an empty root.
 

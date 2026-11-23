@@ -708,6 +708,72 @@ detect_notify() {
 	detect_save "$inode" "$((offset + consumed))" "$hour" "$sent" "$held"
 }
 
+# ------------------------------------------------------- eve.json chunks
+# eve_chunk_read <cursor-file> <out-file> [bootstrap-bytes] - puts the whole
+# lines that eve.json gained since the position in <cursor-file> into
+# <out-file> (at most DETECT_READ_CAP bytes, a line still being written
+# waits). EVE_CHUNK_STATE says what happened: "none" (no eve.json, nothing
+# to do), "first" (no cursor yet: without bootstrap-bytes only the end of the
+# file is recorded; with it the last that many bytes are read, from the first
+# whole line on) or "ok". EVE_CHUNK_INODE and EVE_CHUNK_NEXT are the position
+# to commit after the lines were used (eve_chunk_commit). A different inode
+# or a smaller size is a rotation and is read from the start.
+EVE_CHUNK_STATE="none" EVE_CHUNK_INODE=0 EVE_CHUNK_NEXT=0
+eve_chunk_read() {
+	local cursor="$1" out="$2" boot="${3:-0}" eve size offset old_inode st="{}"
+	: >"$out"
+	EVE_CHUNK_STATE=none
+	eve=$(path_suricata_eve_json)
+	[[ -r "$eve" ]] || return 0
+	EVE_CHUNK_INODE=$(stat -c %i "$eve")
+	size=$(stat -c %s "$eve")
+	[[ -r "$cursor" ]] && st=$(jq -c . "$cursor" 2>/dev/null || echo "{}")
+	old_inode=$(jq -r '.inode // empty' <<<"$st")
+	offset=$(jq -r '.offset // empty' <<<"$st")
+	local skip_first=0
+	if [[ -z "$offset" ]]; then
+		EVE_CHUNK_STATE=first
+		if ((boot > 0 && size > 0)); then
+			offset=$((size > boot ? size - boot : 0))
+			((offset > 0)) && skip_first=1
+		else
+			EVE_CHUNK_NEXT="$size"
+			return 0
+		fi
+	else
+		EVE_CHUNK_STATE=ok
+		if [[ "$old_inode" != "$EVE_CHUNK_INODE" ]] || ((size < offset)); then
+			offset=0
+		fi
+	fi
+	EVE_CHUNK_NEXT="$offset"
+	((size > offset)) || return 0
+	local bytes partial consumed
+	tail -c "+$((offset + 1))" "$eve" 2>/dev/null | head -c "$DETECT_READ_CAP" >"$out"
+	bytes=$(wc -c <"$out")
+	partial=$(tail -n 1 "$out" | wc -c)
+	if [[ "$(tail -c 1 "$out" | od -An -c | tr -d ' ')" == '\n' ]]; then
+		consumed="$bytes"
+	else
+		consumed=$((bytes - partial))
+	fi
+	# a single line longer than the cap would block the reader for good
+	((consumed == 0 && bytes >= DETECT_READ_CAP)) && consumed="$bytes"
+	head -c "$consumed" "$out" >"$out.part"
+	if ((skip_first)); then
+		# the read began in the middle of a line: drop that line
+		sed -i 1d "$out.part"
+	fi
+	mv "$out.part" "$out"
+	EVE_CHUNK_NEXT=$((offset + consumed))
+	return 0
+}
+
+# eve_chunk_commit <cursor-file> - saves the position after eve_chunk_read.
+eve_chunk_commit() {
+	jq -n --argjson i "$EVE_CHUNK_INODE" --argjson o "$EVE_CHUNK_NEXT" '{inode: $i, offset: $o}' | atomic_write "$1"
+}
+
 # ----------------------------------------------------------------- history
 # history_update keeps a small roll-up per day (UTC) of what Suricata saw:
 # flows and bytes, the applications, the alerts and, for every address of a
@@ -740,47 +806,21 @@ history_delta() {
 
 history_update() {
 	[[ "${CONF[HISTORY_ENABLE]:-no}" == "yes" && "${CONF[EVE_FILE]:-yes}" == "yes" && "${CONF[SURICATA_ENABLE]:-yes}" == "yes" ]] || return 0
-	local eve cursor inode size offset old_inode
-	eve=$(path_suricata_eve_json)
-	[[ -r "$eve" ]] || return 0
+	local dir devices_file cursor tmp
 	cursor=$(path_history_cursor)
-	inode=$(stat -c %i "$eve")
-	size=$(stat -c %s "$eve")
-	local st="{}"
-	[[ -r "$cursor" ]] && st=$(jq -c . "$cursor" 2>/dev/null || echo "{}")
-	old_inode=$(jq -r '.inode // empty' <<<"$st")
-	offset=$(jq -r '.offset // empty' <<<"$st")
-	local dir devices_file
 	dir=$(path_history_dir)
 	devices_file=$(path_devices_json)
-	mkdir -p "$dir"
-	if [[ -z "$offset" ]]; then
-		# First run: learn the addresses of the history that is already in the
-		# file only from now on; start at its end (D193).
-		jq -n --argjson i "$inode" --argjson o "$size" '{inode: $i, offset: $o}' | atomic_write "$cursor"
+	tmp=$(mktemp)
+	eve_chunk_read "$cursor" "$tmp"
+	if [[ "$EVE_CHUNK_STATE" == none ]]; then
+		rm -f "$tmp"
 		return 0
 	fi
-	if [[ "$old_inode" != "$inode" ]] || ((size < offset)); then
-		offset=0
-	fi
-	local tmp consumed=0 bytes partial
-	tmp=$(mktemp)
-	if ((size > offset)); then
-		tail -c "+$((offset + 1))" "$eve" 2>/dev/null | head -c "$DETECT_READ_CAP" >"$tmp"
-		bytes=$(wc -c <"$tmp")
-		partial=$(tail -n 1 "$tmp" | wc -c)
-		if [[ "$(tail -c 1 "$tmp" | od -An -c | tr -d ' ')" == '\n' ]]; then
-			consumed="$bytes"
-		else
-			consumed=$((bytes - partial))
-		fi
-		((consumed == 0 && bytes >= DETECT_READ_CAP)) && consumed="$bytes"
-	fi
-	if ((consumed > 0)); then
+	mkdir -p "$dir"
+	# The first run only records the end of the file (D193).
+	if [[ "$EVE_CHUNK_STATE" == ok && -s "$tmp" ]]; then
 		local delta day
-		head -c "$consumed" "$tmp" >"$tmp.part"
-		delta=$(history_delta "$tmp.part")
-		rm -f "$tmp.part"
+		delta=$(history_delta "$tmp")
 		if [[ -n "$delta" && "$delta" != "{}" ]]; then
 			for day in $(jq -r 'keys[]' <<<"$delta"); do
 				local file="$dir/$day.json" cur="{}"
@@ -792,7 +832,7 @@ history_update() {
 		fi
 	fi
 	rm -f "$tmp"
-	jq -n --argjson i "$inode" --argjson o "$((offset + consumed))" '{inode: $i, offset: $o}' | atomic_write "$cursor"
+	eve_chunk_commit "$cursor"
 	history_prune "$dir"
 }
 
@@ -838,6 +878,66 @@ history_prune() {
 		[[ "$(basename "$f" .json)" < "$oldest" ]] && rm -f "$f"
 	done
 	return 0
+}
+
+# ------------------------------------------------------------ alert index
+# The Alert Center used to see only the last 8 MiB of eve.json, so on a busy
+# sensor an old alert that nobody had looked at dropped out of the list.
+# alerts_index_update keeps one entry per rule (signature id) in
+# alerts-index.json: the first and last time, the count, the message, the
+# category and the severity, from its own position in eve.json. The Alert
+# Center reads the index and the tail together (lib/alerts.sh). The first
+# run reads the last 8 MiB, so nothing the Center showed before is lost.
+# An entry whose last alert is older than ALERT_INDEX_DAYS is removed.
+ALERT_INDEX_BOOTSTRAP=8388608
+
+alerts_index_update() {
+	[[ "${CONF[ALERT_INDEX]:-yes}" == "yes" && "${CONF[EVE_FILE]:-yes}" == "yes" && "${CONF[SURICATA_ENABLE]:-yes}" == "yes" ]] || return 0
+	local cursor index tmp
+	cursor=$(path_alerts_cursor)
+	index=$(path_alerts_index)
+	tmp=$(mktemp)
+	eve_chunk_read "$cursor" "$tmp" "$ALERT_INDEX_BOOTSTRAP"
+	if [[ "$EVE_CHUNK_STATE" == none ]]; then
+		rm -f "$tmp"
+		return 0
+	fi
+	local cur="{}" days="${CONF[ALERT_INDEX_DAYS]:-30}" cutoff delta
+	[[ -r "$index" ]] && cur=$(jq -c . "$index" 2>/dev/null || echo "{}")
+	cutoff=$(date -u -d "@$(($(now) - days * 86400))" +%Y-%m-%dT%H:%M:%S 2>/dev/null) || cutoff=""
+	delta=$(jq -cR 'fromjson? | select(.event_type == "alert")' "$tmp" 2>/dev/null | jq -sc '
+		group_by(.alert.signature_id) | map({key: (.[0].alert.signature_id | tostring), value: {
+			sid: .[0].alert.signature_id, msg: (.[-1].alert.signature // ""), category: (.[-1].alert.category // ""),
+			severity: (.[-1].alert.severity // 3), first_seen: (map(.timestamp) | min), last_seen: (map(.timestamp) | max), count: length}}) | from_entries' 2>/dev/null) || delta="{}"
+	[[ -n "$delta" ]] || delta="{}"
+	jq -nc --argjson cur "$cur" --argjson add "$delta" --arg cutoff "$cutoff" '
+		reduce ($add | to_entries[]) as $e ($cur;
+			.[$e.key] = (if has($e.key) then
+				(.[$e.key] as $o | $e.value + {first_seen: ([$o.first_seen, $e.value.first_seen] | min), count: ($o.count + $e.value.count)})
+				else $e.value end))
+		| with_entries(select($cutoff == "" or (.value.last_seen[0:19] >= $cutoff)))' | atomic_write "$index"
+	rm -f "$tmp"
+	eve_chunk_commit "$cursor"
+}
+
+# events_rotate - events.jsonl was never rotated. Past 5 MiB it moves to
+# events.jsonl.1 (and .1 to .2 and so on), five old files are kept. The
+# Alert Center reads the tail of the live file, which is short again after
+# a rotation; the old files stay for whoever needs them.
+EVENTS_MAX_BYTES=5242880
+EVENTS_KEEP=5
+events_rotate() {
+	local f i size
+	f=$(path_events_jsonl)
+	[[ -f "$f" ]] || return 0
+	size=$(stat -c %s "$f")
+	((size > EVENTS_MAX_BYTES)) || return 0
+	for ((i = EVENTS_KEEP - 1; i >= 1; i--)); do
+		[[ -f "$f.$i" ]] && mv -f "$f.$i" "$f.$((i + 1))"
+	done
+	mv -f "$f" "$f.1"
+	: >"$f"
+	chmod 0644 "$f"
 }
 
 # write_health - `since` stays while a status is unchanged. Alerts go
@@ -945,6 +1045,8 @@ main() {
 	# health file above must not wait for it.
 	detect_notify
 	history_update
+	alerts_index_update
+	events_rotate
 }
 
 main "$@"

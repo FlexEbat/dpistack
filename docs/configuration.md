@@ -137,6 +137,8 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `ALERT_SYSLOG_TARGET` | string | empty | light | Syslog server for the syslog channel: host, host:port or [ipv6]:port (port 514 by default). (advanced) |
 | `ALERT_SYSLOG_PROTO` | udp \| tcp | `udp` | light | Transport to the syslog server: udp or tcp. (advanced) |
 | `DETECT_NOTIFY` | yes \| no | `no` | light | Send Suricata detections (alerts) to the delivery channels, not only the health of the stack. (advanced) |
+| `ALERT_INDEX` | yes \| no | `yes` | light | Keep one entry per Suricata rule, so an old alert nobody has looked at stays in the Alert Center even when eve.json has moved on. (advanced) |
+| `ALERT_INDEX_DAYS` | integer 1..365 | `30` | light | How many days an entry stays after the last alert of its rule. (advanced) |
 | `HISTORY_ENABLE` | yes \| no | `no` | light | Keep a daily summary of traffic, applications, devices and alerts, for dpistack report and dpistack devices. (advanced) |
 | `HISTORY_DAYS` | integer 1..3650 | `90` | light | How many days of daily summaries to keep. (advanced) |
 | `DEVICE_NEW_NOTIFY` | yes \| no | `no` | light | Send a message when an address of a private range shows up that was never seen before. Needs HISTORY_ENABLE=yes. (advanced) |

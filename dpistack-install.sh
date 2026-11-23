@@ -1767,6 +1767,72 @@ detect_notify() {
 	detect_save "$inode" "$((offset + consumed))" "$hour" "$sent" "$held"
 }
 
+# ------------------------------------------------------- eve.json chunks
+# eve_chunk_read <cursor-file> <out-file> [bootstrap-bytes] - puts the whole
+# lines that eve.json gained since the position in <cursor-file> into
+# <out-file> (at most DETECT_READ_CAP bytes, a line still being written
+# waits). EVE_CHUNK_STATE says what happened: "none" (no eve.json, nothing
+# to do), "first" (no cursor yet: without bootstrap-bytes only the end of the
+# file is recorded; with it the last that many bytes are read, from the first
+# whole line on) or "ok". EVE_CHUNK_INODE and EVE_CHUNK_NEXT are the position
+# to commit after the lines were used (eve_chunk_commit). A different inode
+# or a smaller size is a rotation and is read from the start.
+EVE_CHUNK_STATE="none" EVE_CHUNK_INODE=0 EVE_CHUNK_NEXT=0
+eve_chunk_read() {
+	local cursor="$1" out="$2" boot="${3:-0}" eve size offset old_inode st="{}"
+	: >"$out"
+	EVE_CHUNK_STATE=none
+	eve=$(path_suricata_eve_json)
+	[[ -r "$eve" ]] || return 0
+	EVE_CHUNK_INODE=$(stat -c %i "$eve")
+	size=$(stat -c %s "$eve")
+	[[ -r "$cursor" ]] && st=$(jq -c . "$cursor" 2>/dev/null || echo "{}")
+	old_inode=$(jq -r '.inode // empty' <<<"$st")
+	offset=$(jq -r '.offset // empty' <<<"$st")
+	local skip_first=0
+	if [[ -z "$offset" ]]; then
+		EVE_CHUNK_STATE=first
+		if ((boot > 0 && size > 0)); then
+			offset=$((size > boot ? size - boot : 0))
+			((offset > 0)) && skip_first=1
+		else
+			EVE_CHUNK_NEXT="$size"
+			return 0
+		fi
+	else
+		EVE_CHUNK_STATE=ok
+		if [[ "$old_inode" != "$EVE_CHUNK_INODE" ]] || ((size < offset)); then
+			offset=0
+		fi
+	fi
+	EVE_CHUNK_NEXT="$offset"
+	((size > offset)) || return 0
+	local bytes partial consumed
+	tail -c "+$((offset + 1))" "$eve" 2>/dev/null | head -c "$DETECT_READ_CAP" >"$out"
+	bytes=$(wc -c <"$out")
+	partial=$(tail -n 1 "$out" | wc -c)
+	if [[ "$(tail -c 1 "$out" | od -An -c | tr -d ' ')" == '\n' ]]; then
+		consumed="$bytes"
+	else
+		consumed=$((bytes - partial))
+	fi
+	# a single line longer than the cap would block the reader for good
+	((consumed == 0 && bytes >= DETECT_READ_CAP)) && consumed="$bytes"
+	head -c "$consumed" "$out" >"$out.part"
+	if ((skip_first)); then
+		# the read began in the middle of a line: drop that line
+		sed -i 1d "$out.part"
+	fi
+	mv "$out.part" "$out"
+	EVE_CHUNK_NEXT=$((offset + consumed))
+	return 0
+}
+
+# eve_chunk_commit <cursor-file> - saves the position after eve_chunk_read.
+eve_chunk_commit() {
+	jq -n --argjson i "$EVE_CHUNK_INODE" --argjson o "$EVE_CHUNK_NEXT" '{inode: $i, offset: $o}' | atomic_write "$1"
+}
+
 # ----------------------------------------------------------------- history
 # history_update keeps a small roll-up per day (UTC) of what Suricata saw:
 # flows and bytes, the applications, the alerts and, for every address of a
@@ -1799,47 +1865,21 @@ history_delta() {
 
 history_update() {
 	[[ "${CONF[HISTORY_ENABLE]:-no}" == "yes" && "${CONF[EVE_FILE]:-yes}" == "yes" && "${CONF[SURICATA_ENABLE]:-yes}" == "yes" ]] || return 0
-	local eve cursor inode size offset old_inode
-	eve=$(path_suricata_eve_json)
-	[[ -r "$eve" ]] || return 0
+	local dir devices_file cursor tmp
 	cursor=$(path_history_cursor)
-	inode=$(stat -c %i "$eve")
-	size=$(stat -c %s "$eve")
-	local st="{}"
-	[[ -r "$cursor" ]] && st=$(jq -c . "$cursor" 2>/dev/null || echo "{}")
-	old_inode=$(jq -r '.inode // empty' <<<"$st")
-	offset=$(jq -r '.offset // empty' <<<"$st")
-	local dir devices_file
 	dir=$(path_history_dir)
 	devices_file=$(path_devices_json)
-	mkdir -p "$dir"
-	if [[ -z "$offset" ]]; then
-		# First run: learn the addresses of the history that is already in the
-		# file only from now on; start at its end (D193).
-		jq -n --argjson i "$inode" --argjson o "$size" '{inode: $i, offset: $o}' | atomic_write "$cursor"
+	tmp=$(mktemp)
+	eve_chunk_read "$cursor" "$tmp"
+	if [[ "$EVE_CHUNK_STATE" == none ]]; then
+		rm -f "$tmp"
 		return 0
 	fi
-	if [[ "$old_inode" != "$inode" ]] || ((size < offset)); then
-		offset=0
-	fi
-	local tmp consumed=0 bytes partial
-	tmp=$(mktemp)
-	if ((size > offset)); then
-		tail -c "+$((offset + 1))" "$eve" 2>/dev/null | head -c "$DETECT_READ_CAP" >"$tmp"
-		bytes=$(wc -c <"$tmp")
-		partial=$(tail -n 1 "$tmp" | wc -c)
-		if [[ "$(tail -c 1 "$tmp" | od -An -c | tr -d ' ')" == '\n' ]]; then
-			consumed="$bytes"
-		else
-			consumed=$((bytes - partial))
-		fi
-		((consumed == 0 && bytes >= DETECT_READ_CAP)) && consumed="$bytes"
-	fi
-	if ((consumed > 0)); then
+	mkdir -p "$dir"
+	# The first run only records the end of the file (D193).
+	if [[ "$EVE_CHUNK_STATE" == ok && -s "$tmp" ]]; then
 		local delta day
-		head -c "$consumed" "$tmp" >"$tmp.part"
-		delta=$(history_delta "$tmp.part")
-		rm -f "$tmp.part"
+		delta=$(history_delta "$tmp")
 		if [[ -n "$delta" && "$delta" != "{}" ]]; then
 			for day in $(jq -r 'keys[]' <<<"$delta"); do
 				local file="$dir/$day.json" cur="{}"
@@ -1851,7 +1891,7 @@ history_update() {
 		fi
 	fi
 	rm -f "$tmp"
-	jq -n --argjson i "$inode" --argjson o "$((offset + consumed))" '{inode: $i, offset: $o}' | atomic_write "$cursor"
+	eve_chunk_commit "$cursor"
 	history_prune "$dir"
 }
 
@@ -1897,6 +1937,66 @@ history_prune() {
 		[[ "$(basename "$f" .json)" < "$oldest" ]] && rm -f "$f"
 	done
 	return 0
+}
+
+# ------------------------------------------------------------ alert index
+# The Alert Center used to see only the last 8 MiB of eve.json, so on a busy
+# sensor an old alert that nobody had looked at dropped out of the list.
+# alerts_index_update keeps one entry per rule (signature id) in
+# alerts-index.json: the first and last time, the count, the message, the
+# category and the severity, from its own position in eve.json. The Alert
+# Center reads the index and the tail together (lib/alerts.sh). The first
+# run reads the last 8 MiB, so nothing the Center showed before is lost.
+# An entry whose last alert is older than ALERT_INDEX_DAYS is removed.
+ALERT_INDEX_BOOTSTRAP=8388608
+
+alerts_index_update() {
+	[[ "${CONF[ALERT_INDEX]:-yes}" == "yes" && "${CONF[EVE_FILE]:-yes}" == "yes" && "${CONF[SURICATA_ENABLE]:-yes}" == "yes" ]] || return 0
+	local cursor index tmp
+	cursor=$(path_alerts_cursor)
+	index=$(path_alerts_index)
+	tmp=$(mktemp)
+	eve_chunk_read "$cursor" "$tmp" "$ALERT_INDEX_BOOTSTRAP"
+	if [[ "$EVE_CHUNK_STATE" == none ]]; then
+		rm -f "$tmp"
+		return 0
+	fi
+	local cur="{}" days="${CONF[ALERT_INDEX_DAYS]:-30}" cutoff delta
+	[[ -r "$index" ]] && cur=$(jq -c . "$index" 2>/dev/null || echo "{}")
+	cutoff=$(date -u -d "@$(($(now) - days * 86400))" +%Y-%m-%dT%H:%M:%S 2>/dev/null) || cutoff=""
+	delta=$(jq -cR 'fromjson? | select(.event_type == "alert")' "$tmp" 2>/dev/null | jq -sc '
+		group_by(.alert.signature_id) | map({key: (.[0].alert.signature_id | tostring), value: {
+			sid: .[0].alert.signature_id, msg: (.[-1].alert.signature // ""), category: (.[-1].alert.category // ""),
+			severity: (.[-1].alert.severity // 3), first_seen: (map(.timestamp) | min), last_seen: (map(.timestamp) | max), count: length}}) | from_entries' 2>/dev/null) || delta="{}"
+	[[ -n "$delta" ]] || delta="{}"
+	jq -nc --argjson cur "$cur" --argjson add "$delta" --arg cutoff "$cutoff" '
+		reduce ($add | to_entries[]) as $e ($cur;
+			.[$e.key] = (if has($e.key) then
+				(.[$e.key] as $o | $e.value + {first_seen: ([$o.first_seen, $e.value.first_seen] | min), count: ($o.count + $e.value.count)})
+				else $e.value end))
+		| with_entries(select($cutoff == "" or (.value.last_seen[0:19] >= $cutoff)))' | atomic_write "$index"
+	rm -f "$tmp"
+	eve_chunk_commit "$cursor"
+}
+
+# events_rotate - events.jsonl was never rotated. Past 5 MiB it moves to
+# events.jsonl.1 (and .1 to .2 and so on), five old files are kept. The
+# Alert Center reads the tail of the live file, which is short again after
+# a rotation; the old files stay for whoever needs them.
+EVENTS_MAX_BYTES=5242880
+EVENTS_KEEP=5
+events_rotate() {
+	local f i size
+	f=$(path_events_jsonl)
+	[[ -f "$f" ]] || return 0
+	size=$(stat -c %s "$f")
+	((size > EVENTS_MAX_BYTES)) || return 0
+	for ((i = EVENTS_KEEP - 1; i >= 1; i--)); do
+		[[ -f "$f.$i" ]] && mv -f "$f.$i" "$f.$((i + 1))"
+	done
+	mv -f "$f" "$f.1"
+	: >"$f"
+	chmod 0644 "$f"
 }
 
 # write_health - `since` stays while a status is unchanged. Alerts go
@@ -2004,6 +2104,8 @@ main() {
 	# health file above must not wait for it.
 	detect_notify
 	history_update
+	alerts_index_update
+	events_rotate
 }
 
 main "$@"
@@ -2064,6 +2166,19 @@ alerts_conditions() {
 		       title: .[0].alert.signature, detail: (.[0].alert.category // ""),
 		       first_seen: (map(.timestamp) | min), last_seen: (map(.timestamp) | max),
 		       count: length, activity: (map(.timestamp) | max)})' 2>/dev/null) || suri='[]'
+	# The index the watchdog keeps reaches further back than the tail does:
+	# one entry per rule, so an old alert nobody has looked at stays in the
+	# list. Where both know a rule the count is the larger, the span the wider.
+	local idx
+	idx=$(path_alerts_index)
+	if [[ -r "$idx" ]]; then
+		local merged
+		merged=$(jq -nc --argjson tail "$suri" --slurpfile index "$idx" '
+			([($index[0] // {}) | to_entries[] | .value | {key: ("sid:" + (.sid | tostring)), source: "suricata",
+				severity: (if (.severity // 3) <= 1 then "crit" elif .severity == 2 then "warn" else "info" end),
+				title: .msg, detail: (.category // ""), first_seen: .first_seen, last_seen: .last_seen, count: .count, activity: .last_seen}]) as $i
+			| ($tail + $i) | group_by(.key) | map(sort_by(.last_seen) | .[-1] + {first_seen: (map(.first_seen) | min), count: (map(.count) | max), activity: (map(.activity) | max)})' 2>/dev/null) && suri="$merged"
+	fi
 	jq -nc --argjson a "$watch" --argjson b "$suri" '$a + $b'
 }
 
@@ -2591,7 +2706,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.56.0"
+DPISTACK_VERSION="0.57.0"
 
 : "${DRY_RUN:=0}"
 
@@ -7602,6 +7717,8 @@ declare -gA KEY_HINT=(
 	[ALERT_SYSLOG_TARGET]='Syslog server for the syslog channel: host, host:port or [ipv6]:port (port 514 by default).'
 	[ALERT_SYSLOG_PROTO]='Transport to the syslog server: udp or tcp.'
 	[DETECT_NOTIFY]='Send Suricata detections (alerts) to the delivery channels, not only the health of the stack.'
+	[ALERT_INDEX]='Keep one entry per Suricata rule, so an old alert nobody has looked at stays in the Alert Center even when eve.json has moved on.'
+	[ALERT_INDEX_DAYS]='How many days an entry stays after the last alert of its rule.'
 	[HISTORY_ENABLE]='Keep a daily summary of traffic, applications, devices and alerts, for dpistack report and dpistack devices.'
 	[HISTORY_DAYS]='How many days of daily summaries to keep.'
 	[DEVICE_NEW_NOTIFY]='Send a message when an address of a private range shows up that was never seen before. Needs HISTORY_ENABLE=yes.'
@@ -8445,6 +8562,8 @@ menu_key_skipped() {
 	ALERT_MAIL_* | ALERT_SMTP_URL) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",mail,"* ]] && return 0 ;;
 	ALERT_WEBHOOK_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",webhook,"* ]] && return 0 ;;
 	ALERT_SYSLOG_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",syslog,"* ]] && return 0 ;;
+	ALERT_INDEX) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" ]] && return 0 ;;
+	ALERT_INDEX_DAYS) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" || "${CONF[ALERT_INDEX]:-yes}" != "$y" ]] && return 0 ;;
 	HISTORY_ENABLE) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" ]] && return 0 ;;
 	HISTORY_DAYS | DEVICE_NEW_NOTIFY) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" || "${CONF[HISTORY_ENABLE]:-no}" != "$y" ]] && return 0 ;;
 	DETECT_NOTIFY) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" ]] && return 0 ;;
@@ -10157,6 +10276,8 @@ path_audit_dir() { echo "$(path_state_dir)/audit"; }
 path_audit_jsonl() { echo "$(path_audit_dir)/audit.jsonl"; }
 path_events_jsonl() { echo "$(path_state_dir)/events.jsonl"; }
 path_alerts_state() { echo "$(path_state_dir)/alerts-state.json"; }
+path_alerts_index() { echo "$(path_state_dir)/alerts-index.json"; }
+path_alerts_cursor() { echo "$(path_state_dir)/alerts-cursor.json"; }
 path_history_dir() { echo "$(path_state_dir)/history"; }
 path_history_cursor() { echo "$(path_state_dir)/history-cursor.json"; }
 path_devices_json() { echo "$(path_state_dir)/devices.json"; }
@@ -11756,6 +11877,8 @@ schema_init() {
 	_schema_add 'ALERT_SYSLOG_TARGET|free|||advanced|watch|watch|light|no'
 	_schema_add 'ALERT_SYSLOG_PROTO|enum|udp|udp,tcp|advanced|watch|watch|light|no'
 	_schema_add 'DETECT_NOTIFY|enum|no|yes,no|advanced|watch|watch|light|no'
+	_schema_add 'ALERT_INDEX|enum|yes|yes,no|advanced|watch|watch|light|no'
+	_schema_add 'ALERT_INDEX_DAYS|int|30|1..365|advanced|watch|watch|light|no'
 	_schema_add 'HISTORY_ENABLE|enum|no|yes,no|advanced|watch|watch|light|no'
 	_schema_add 'HISTORY_DAYS|int|90|1..3650|advanced|watch|watch|light|no'
 	_schema_add 'DEVICE_NEW_NOTIFY|enum|no|yes,no|advanced|watch|watch|light|no'
@@ -11832,6 +11955,8 @@ schema_depends_init() {
 	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~webhook' 'ALERT_WEBHOOK_*'
 	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~syslog' 'ALERT_SYSLOG_*'
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes' DETECT_NOTIFY
+	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes' ALERT_INDEX
+	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes ALERT_INDEX=yes' ALERT_INDEX_DAYS
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes' HISTORY_ENABLE
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes HISTORY_ENABLE=yes' HISTORY_DAYS DEVICE_NEW_NOTIFY
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes DETECT_NOTIFY=yes' 'DETECT_NOTIFY_*'
