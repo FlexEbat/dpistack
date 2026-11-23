@@ -824,6 +824,8 @@ menu_key_skipped() {
 	ALERT_MAIL_* | ALERT_SMTP_URL) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",mail,"* ]] && return 0 ;;
 	ALERT_WEBHOOK_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",webhook,"* ]] && return 0 ;;
 	ALERT_SYSLOG_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",syslog,"* ]] && return 0 ;;
+	HISTORY_ENABLE) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" ]] && return 0 ;;
+	HISTORY_DAYS | DEVICE_NEW_NOTIFY) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" || "${CONF[HISTORY_ENABLE]:-no}" != "$y" ]] && return 0 ;;
 	DETECT_NOTIFY) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" ]] && return 0 ;;
 	DETECT_NOTIFY_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" || "${CONF[DETECT_NOTIFY]:-no}" != "$y" ]] && return 0 ;;
 	WATCH_* | ALERT_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" ]] && return 0 ;;

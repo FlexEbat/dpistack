@@ -98,6 +98,8 @@ source "$LIB_DIR/exceptions.sh"
 source "$LIB_DIR/blocklist.sh"
 # shellcheck source=lib/pcap.sh
 source "$LIB_DIR/pcap.sh"
+# shellcheck source=lib/history.sh
+source "$LIB_DIR/history.sh"
 # shellcheck source=lib/alerts.sh
 source "$LIB_DIR/alerts.sh"
 # shellcheck source=lib/profiles.sh
@@ -1082,6 +1084,8 @@ for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
 		source "$_lib/config.sh"
 		# shellcheck source=lib/migrate.sh
 		source "$_lib/migrate.sh"
+		# shellcheck source=lib/history.sh
+		source "$_lib/history.sh"
 		break
 	fi
 done
@@ -1763,6 +1767,138 @@ detect_notify() {
 	detect_save "$inode" "$((offset + consumed))" "$hour" "$sent" "$held"
 }
 
+# ----------------------------------------------------------------- history
+# history_update keeps a small roll-up per day (UTC) of what Suricata saw:
+# flows and bytes, the applications, the alerts and, for every address of a
+# private range, its flows, bytes and applications. It reads what eve.json
+# gained since the last run from its own position (history-cursor.json) and
+# merges it into history/YYYY-MM-DD.json. A private address that was never
+# seen before is a new device (devices.json); the first run only learns the
+# addresses that are there (D193). Days older than HISTORY_DAYS are removed.
+
+# history_delta <file> - the per-day delta of the events in <file>, one JSON
+# object {day: {flows, bytes, apps, devices, alerts}}.
+history_delta() {
+	jq -cR 'fromjson? | select(.event_type == "flow" or .event_type == "alert")' "$1" 2>/dev/null | jq -sc '
+		def private: (. // "") | test("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|169\\.254\\.|fe80:|f[cd][0-9a-f]{2}:)");
+		def day: (.timestamp // "")[0:10];
+		map(select(day | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$"))) | group_by(day) | map({
+			key: (.[0] | day),
+			value: {
+				flows: (map(select(.event_type == "flow")) | length),
+				bytes: (map(select(.event_type == "flow") | ((.flow.bytes_toserver // 0) + (.flow.bytes_toclient // 0))) | add // 0),
+				apps: (map(select(.event_type == "flow")) | group_by(.app_proto // "unknown") | map({key: (.[0].app_proto // "unknown"),
+					value: {flows: length, bytes: (map((.flow.bytes_toserver // 0) + (.flow.bytes_toclient // 0)) | add // 0)}}) | from_entries),
+				devices: (map(select(.event_type == "flow")) | map(. as $f | [$f.src_ip, $f.dest_ip] | map(select(private)) | unique[] | {ip: ., app: ($f.app_proto // "unknown"), bytes: (($f.flow.bytes_toserver // 0) + ($f.flow.bytes_toclient // 0))})
+					| group_by(.ip) | map({key: .[0].ip, value: {flows: length, bytes: (map(.bytes) | add),
+						apps: (group_by(.app) | map({key: .[0].app, value: length}) | from_entries)}}) | from_entries),
+				alerts: (map(select(.event_type == "alert")) | group_by(.alert.signature_id) | map({key: (.[0].alert.signature_id | tostring),
+					value: {count: length, msg: (.[0].alert.signature // ""), severity: (.[0].alert.severity // 3)}}) | from_entries)
+			}}) | from_entries' 2>/dev/null
+}
+
+history_update() {
+	[[ "${CONF[HISTORY_ENABLE]:-no}" == "yes" && "${CONF[EVE_FILE]:-yes}" == "yes" && "${CONF[SURICATA_ENABLE]:-yes}" == "yes" ]] || return 0
+	local eve cursor inode size offset old_inode
+	eve=$(path_suricata_eve_json)
+	[[ -r "$eve" ]] || return 0
+	cursor=$(path_history_cursor)
+	inode=$(stat -c %i "$eve")
+	size=$(stat -c %s "$eve")
+	local st="{}"
+	[[ -r "$cursor" ]] && st=$(jq -c . "$cursor" 2>/dev/null || echo "{}")
+	old_inode=$(jq -r '.inode // empty' <<<"$st")
+	offset=$(jq -r '.offset // empty' <<<"$st")
+	local dir devices_file
+	dir=$(path_history_dir)
+	devices_file=$(path_devices_json)
+	mkdir -p "$dir"
+	if [[ -z "$offset" ]]; then
+		# First run: learn the addresses of the history that is already in the
+		# file only from now on; start at its end (D193).
+		jq -n --argjson i "$inode" --argjson o "$size" '{inode: $i, offset: $o}' | atomic_write "$cursor"
+		return 0
+	fi
+	if [[ "$old_inode" != "$inode" ]] || ((size < offset)); then
+		offset=0
+	fi
+	local tmp consumed=0 bytes partial
+	tmp=$(mktemp)
+	if ((size > offset)); then
+		tail -c "+$((offset + 1))" "$eve" 2>/dev/null | head -c "$DETECT_READ_CAP" >"$tmp"
+		bytes=$(wc -c <"$tmp")
+		partial=$(tail -n 1 "$tmp" | wc -c)
+		if [[ "$(tail -c 1 "$tmp" | od -An -c | tr -d ' ')" == '\n' ]]; then
+			consumed="$bytes"
+		else
+			consumed=$((bytes - partial))
+		fi
+		((consumed == 0 && bytes >= DETECT_READ_CAP)) && consumed="$bytes"
+	fi
+	if ((consumed > 0)); then
+		local delta day
+		head -c "$consumed" "$tmp" >"$tmp.part"
+		delta=$(history_delta "$tmp.part")
+		rm -f "$tmp.part"
+		if [[ -n "$delta" && "$delta" != "{}" ]]; then
+			for day in $(jq -r 'keys[]' <<<"$delta"); do
+				local file="$dir/$day.json" cur="{}"
+				[[ -r "$file" ]] && cur=$(jq -c . "$file" 2>/dev/null || echo "{}")
+				jq -nc --argjson cur "$cur" --argjson add "$(jq -c --arg d "$day" '.[$d]' <<<"$delta")" --arg day "$day" \
+					"$HISTORY_JQ_MERGE"' {date: $day} + msum($cur; $add)' | atomic_write "$file"
+			done
+			history_devices "$delta" "$devices_file"
+		fi
+	fi
+	rm -f "$tmp"
+	jq -n --argjson i "$inode" --argjson o "$((offset + consumed))" '{inode: $i, offset: $o}' | atomic_write "$cursor"
+	history_prune "$dir"
+}
+
+# history_devices <delta> <file> - first and last day of every private
+# address; an address not in the file is a new device. When the file did not
+# exist the addresses are learned without a message.
+history_devices() {
+	local delta="$1" file="$2" known="{}" bootstrap=0
+	if [[ -r "$file" ]]; then
+		known=$(jq -c . "$file" 2>/dev/null || echo "{}")
+	else
+		bootstrap=1
+	fi
+	local ip day new=""
+	while IFS=$'\t' read -r day ip; do
+		[[ -n "$ip" ]] || continue
+		if [[ "$(jq -r --arg ip "$ip" 'has($ip)' <<<"$known")" == "false" ]]; then
+			known=$(jq -c --arg ip "$ip" --arg d "$day" '.[$ip] = {first: $d, last: $d}' <<<"$known")
+			new+="$ip "
+		else
+			known=$(jq -c --arg ip "$ip" --arg d "$day" '.[$ip].last = (if .[$ip].last < $d then $d else .[$ip].last end)' <<<"$known")
+		fi
+	done < <(jq -r 'to_entries[] | .key as $d | .value.devices // {} | keys[] | [$d, .] | @tsv' <<<"$delta")
+	printf '%s\n' "$known" | atomic_write "$file"
+	chmod 0600 "$file"
+	if [[ -n "$new" && "$bootstrap" == 0 && "${CONF[DEVICE_NEW_NOTIFY]:-no}" == "yes" ]]; then
+		mapfile -t DETECT_CHANNELS < <(detect_channels)
+		local d host
+		host=$(hostname -s 2>/dev/null || echo host)
+		for d in $new; do
+			detect_send 2 "dpistack: new device $d" "[dpistack] $host: new device on the network: $d (first seen in the traffic of Suricata)"
+		done
+	fi
+}
+
+# history_prune <dir> - removes the days older than HISTORY_DAYS.
+history_prune() {
+	local dir="$1" keep="${CONF[HISTORY_DAYS]:-90}" f oldest
+	oldest=$(date -u -d "@$(now)" +%Y-%m-%d 2>/dev/null) || return 0
+	oldest=$(date -u -d "$oldest - $keep days" +%Y-%m-%d 2>/dev/null) || return 0
+	for f in "$dir"/*.json; do
+		[[ -e "$f" ]] || continue
+		[[ "$(basename "$f" .json)" < "$oldest" ]] && rm -f "$f"
+	done
+	return 0
+}
+
 # write_health - `since` stays while a status is unchanged. Alerts go
 # out on a change and, while the status is not ok, every WATCH_REPEAT_MIN.
 write_health() {
@@ -1867,6 +2003,7 @@ main() {
 	# Last: delivery can wait on a channel that does not answer, and the
 	# health file above must not wait for it.
 	detect_notify
+	history_update
 }
 
 main "$@"
@@ -2454,7 +2591,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.55.0"
+DPISTACK_VERSION="0.56.0"
 
 : "${DRY_RUN:=0}"
 
@@ -3050,6 +3187,10 @@ config_validate() {
 		done
 		[[ "$cpus_ok" == yes ]] || errors=$((errors + 1))
 	fi
+	if [[ "${CONF[DEVICE_NEW_NOTIFY]:-no}" == "yes" && "${CONF[HISTORY_ENABLE]:-no}" != "yes" ]]; then
+		echo "DEVICE_NEW_NOTIFY=yes needs HISTORY_ENABLE=yes: new devices are found in the history"
+		errors=$((errors + 1))
+	fi
 	# Detection alerts go to the channels of DETECT_NOTIFY_CHANNELS, or to those
 	# of ALERT_CHANNELS when it is empty; the panel is not a delivery channel for
 	# them (the Alert Center lists them already), so a list with only that is empty.
@@ -3354,6 +3495,8 @@ Usage: dpistack <command> [arguments]
   ips block|allow list [--json] | add <addr[/prefix]> [--days N|--never] [--note T] | remove <addr|sid> | prune
                                      blocked and allowed hosts (rules in local.rules)
   pcap analyze <file> [--json]       replay a capture of yours with the live rules: alerts and application protocols
+  report daily|weekly [--date YYYY-MM-DD] [--json]   traffic, applications, devices and alerts of a day or of 7 days
+  devices [--json]                   the private addresses seen, first and last day
   fw apply|remove|restore            DPISTACK chain (restore: at boot)
   panel-passwd                       panel password from stdin
   test bittorrent|https|all [--json] check tests (section 10)
@@ -6317,6 +6460,8 @@ ctl_dispatch() {
 	mode-confirm) cmd_mode_confirm "$@" ;;
 	ips) cmd_ips "$@" ;;
 	pcap) cmd_pcap "$@" ;;
+	report) cmd_report "$@" ;;
+	devices) cmd_devices "$@" ;;
 	mode-rollback) cmd_mode_rollback "$@" ;;
 	fw) cmd_fw "$@" ;;
 	panel-passwd) cmd_panel_passwd "$@" ;;
@@ -6789,6 +6934,134 @@ cmd_exceptions() {
 		;;
 	*) fail 2 "exceptions: unknown subcommand: $sub" ;;
 	esac
+}
+DPISTACK_BUNDLE_END
+put lib/history.sh 644 <<'DPISTACK_BUNDLE_END'
+#!/usr/bin/env bash
+# The reading side of the history that the watchdog keeps (task 61): the
+# day files in history/YYYY-MM-DD.json, `dpistack report daily|weekly` and
+# `dpistack devices`. The watchdog and the verbs share the jq text that adds
+# two roll-ups. Sourced by install.sh and by bin/dpistack-watch; it defines
+# functions only.
+
+# jq program text: the sum of two objects of counters, level by level.
+# shellcheck disable=SC2016 # jq variables, not shell ones
+HISTORY_JQ_MERGE='def msum(a; b): reduce (b | to_entries[]) as $e (a;
+	.[$e.key] = (if ((.[$e.key] | type) == "object") and ($e.value | type) == "object" then msum(.[$e.key]; $e.value)
+		elif ((.[$e.key] | type) == "number") and ($e.value | type) == "number" then .[$e.key] + $e.value
+		else $e.value end));'
+
+HISTORY_TOP=10
+
+history_today() { date -u -d "@$(now_epoch)" +%Y-%m-%d; }
+now_epoch() { echo "${DPISTACK_NOW:-$(date +%s)}"; }
+
+# history_collect <from> <to> - the days of the range that have a file,
+# added up, as one JSON object with the list of those days.
+history_collect() {
+	local from="$1" to="$2" dir f day
+	dir=$(path_history_dir)
+	local -a files=()
+	for f in "$dir"/*.json; do
+		[[ -e "$f" ]] || continue
+		day=$(basename "$f" .json)
+		[[ ! "$day" < "$from" && ! "$day" > "$to" ]] && files+=("$f")
+	done
+	if ((${#files[@]} == 0)); then
+		echo '{"days":[]}'
+		return 0
+	fi
+	jq -sc "$HISTORY_JQ_MERGE"' {days: map(.date)} + (reduce .[] as $d ({}; msum(.; ($d | del(.date)))))' "${files[@]}"
+}
+
+# history_report <from> <to> <label> <json:0|1>
+history_report() {
+	local from="$1" to="$2" label="$3" json="$4" sum devices
+	sum=$(history_collect "$from" "$to")
+	devices=$(path_devices_json)
+	local known="{}"
+	[[ -r "$devices" ]] && known=$(jq -c . "$devices" 2>/dev/null || echo "{}")
+	local doc
+	doc=$(jq -nc --argjson s "$sum" --argjson k "$known" --arg from "$from" --arg to "$to" --arg label "$label" --argjson top "$HISTORY_TOP" '
+		{label: $label, from: $from, to: $to, days: ($s.days // []), flows: ($s.flows // 0), bytes: ($s.bytes // 0),
+		 apps: (($s.apps // {}) | to_entries | map({app: .key, flows: .value.flows, bytes: .value.bytes}) | sort_by(-.bytes, .app) | .[0:$top]),
+		 devices: (($s.devices // {}) | to_entries | map({ip: .key, flows: .value.flows, bytes: .value.bytes,
+			top_app: ((.value.apps // {}) | to_entries | sort_by(-.value, .key) | (.[0].key // ""))}) | sort_by(-.bytes, .ip) | .[0:$top]),
+		 alerts: (($s.alerts // {}) | to_entries | map({sid: (.key | tonumber), count: .value.count, msg: .value.msg, severity: .value.severity}) | sort_by(-.count, .sid) | .[0:$top]),
+		 new_devices: ($k | to_entries | map(select(.value.first >= $from and .value.first <= $to)) | map(.key) | sort)}')
+	if ((json)); then
+		jq -c . <<<"$doc"
+		return 0
+	fi
+	jq -r '
+		def size: if . < 1024 then "\(.) B" elif . < 1048576 then "\((. / 1024 * 10 | floor) / 10) KiB" elif . < 1073741824 then "\((. / 1048576 * 10 | floor) / 10) MiB" else "\((. / 1073741824 * 10 | floor) / 10) GiB" end;
+		"\(.label) report \(.from) to \(.to)",
+		(if (.days | length) == 0 then "no history for these days: is HISTORY_ENABLE=yes and has the watchdog run since?"
+		else
+			"days with data: \(.days | length) (\(.days | join(", ")))",
+			"flows: \(.flows), traffic: \(.bytes | size)",
+			"",
+			"applications (by traffic):",
+			(.apps[] | "  \(.app)  \(.flows) flows  \(.bytes | size)"),
+			"",
+			"devices (by traffic):",
+			(.devices[] | "  \(.ip)  \(.flows) flows  \(.bytes | size)" + (if .top_app != "" then "  mostly \(.top_app)" else "" end)),
+			"",
+			(if (.alerts | length) == 0 then "alerts: none" else "alerts (by count):" end),
+			(.alerts[] | "  sid \(.sid)  x\(.count)  severity \(.severity)  \(.msg)"),
+			"",
+			(if (.new_devices | length) == 0 then "new devices: none" else "new devices: \(.new_devices | join(", "))" end)
+		end)' <<<"$doc"
+}
+
+# cmd_report daily|weekly [--date YYYY-MM-DD] [--json]
+cmd_report() {
+	local kind="${1:-}" date="" json=0
+	[[ $# -eq 0 ]] || shift
+	case "$kind" in daily | weekly) ;; *) fail 2 "report: daily|weekly [--date YYYY-MM-DD] [--json]" ;; esac
+	while (($#)); do
+		case "$1" in
+		--json)
+			json=1
+			shift
+			;;
+		--date)
+			(($# >= 2)) || fail 2 "report: --date needs a day"
+			date="$2"
+			shift 2
+			;;
+		*) fail 2 "report: unknown option: $1" ;;
+		esac
+	done
+	[[ -n "$date" ]] || date=$(history_today)
+	if [[ ! "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || ! date -u -d "$date" +%Y-%m-%d >/dev/null 2>&1; then
+		fail 5 "report: --date is a day like 2026-11-20"
+	fi
+	if [[ "$kind" == daily ]]; then
+		history_report "$date" "$date" daily "$json"
+	else
+		history_report "$(date -u -d "$date - 6 days" +%Y-%m-%d)" "$date" weekly "$json"
+	fi
+}
+
+# cmd_devices [--json] - the private addresses seen, newest first.
+cmd_devices() {
+	local json=0 file
+	case "${1:-}" in
+	"") ;;
+	--json) json=1 ;;
+	*) fail 2 "devices: [--json]" ;;
+	esac
+	file=$(path_devices_json)
+	local doc="[]"
+	[[ -r "$file" ]] && doc=$(jq -c 'to_entries | map({ip: .key, first: .value.first, last: .value.last}) | sort_by(.last, .ip) | reverse' "$file" 2>/dev/null || echo "[]")
+	if ((json)); then
+		echo "$doc"
+	elif [[ "$doc" == "[]" ]]; then
+		echo "no device recorded yet: it needs HISTORY_ENABLE=yes and a watchdog run with traffic"
+	else
+		jq -r '.[] | "\(.ip)  first seen \(.first)  last seen \(.last)"' <<<"$doc"
+	fi
 }
 DPISTACK_BUNDLE_END
 put lib/ips.sh 644 <<'DPISTACK_BUNDLE_END'
@@ -7329,6 +7602,9 @@ declare -gA KEY_HINT=(
 	[ALERT_SYSLOG_TARGET]='Syslog server for the syslog channel: host, host:port or [ipv6]:port (port 514 by default).'
 	[ALERT_SYSLOG_PROTO]='Transport to the syslog server: udp or tcp.'
 	[DETECT_NOTIFY]='Send Suricata detections (alerts) to the delivery channels, not only the health of the stack.'
+	[HISTORY_ENABLE]='Keep a daily summary of traffic, applications, devices and alerts, for dpistack report and dpistack devices.'
+	[HISTORY_DAYS]='How many days of daily summaries to keep.'
+	[DEVICE_NEW_NOTIFY]='Send a message when an address of a private range shows up that was never seen before. Needs HISTORY_ENABLE=yes.'
 	[DETECT_NOTIFY_SEVERITY]='Weakest severity to send: high, medium (also high) or low (all).'
 	[DETECT_NOTIFY_CHANNELS]='Channels for detections, comma separated, from ALERT_CHANNELS. Empty: the channels of ALERT_CHANNELS except panel.'
 	[DETECT_NOTIFY_MAX_PER_HOUR]='Most detection messages in an hour. The rest are counted and one summary is sent.'
@@ -8169,6 +8445,8 @@ menu_key_skipped() {
 	ALERT_MAIL_* | ALERT_SMTP_URL) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",mail,"* ]] && return 0 ;;
 	ALERT_WEBHOOK_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",webhook,"* ]] && return 0 ;;
 	ALERT_SYSLOG_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || ",${CONF[ALERT_CHANNELS]:-}," != *",syslog,"* ]] && return 0 ;;
+	HISTORY_ENABLE) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" ]] && return 0 ;;
+	HISTORY_DAYS | DEVICE_NEW_NOTIFY) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" || "${CONF[HISTORY_ENABLE]:-no}" != "$y" ]] && return 0 ;;
 	DETECT_NOTIFY) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" ]] && return 0 ;;
 	DETECT_NOTIFY_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" || "${CONF[DETECT_NOTIFY]:-no}" != "$y" ]] && return 0 ;;
 	WATCH_* | ALERT_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
@@ -9879,6 +10157,9 @@ path_audit_dir() { echo "$(path_state_dir)/audit"; }
 path_audit_jsonl() { echo "$(path_audit_dir)/audit.jsonl"; }
 path_events_jsonl() { echo "$(path_state_dir)/events.jsonl"; }
 path_alerts_state() { echo "$(path_state_dir)/alerts-state.json"; }
+path_history_dir() { echo "$(path_state_dir)/history"; }
+path_history_cursor() { echo "$(path_state_dir)/history-cursor.json"; }
+path_devices_json() { echo "$(path_state_dir)/devices.json"; }
 path_detect_notify_json() { echo "$(path_state_dir)/detect-notify.json"; }
 path_profiles_json() { echo "$(path_state_dir)/profiles.json"; }
 path_tests_last_json() { echo "$(path_state_dir)/tests-last.json"; }
@@ -11475,6 +11756,9 @@ schema_init() {
 	_schema_add 'ALERT_SYSLOG_TARGET|free|||advanced|watch|watch|light|no'
 	_schema_add 'ALERT_SYSLOG_PROTO|enum|udp|udp,tcp|advanced|watch|watch|light|no'
 	_schema_add 'DETECT_NOTIFY|enum|no|yes,no|advanced|watch|watch|light|no'
+	_schema_add 'HISTORY_ENABLE|enum|no|yes,no|advanced|watch|watch|light|no'
+	_schema_add 'HISTORY_DAYS|int|90|1..3650|advanced|watch|watch|light|no'
+	_schema_add 'DEVICE_NEW_NOTIFY|enum|no|yes,no|advanced|watch|watch|light|no'
 	_schema_add 'DETECT_NOTIFY_SEVERITY|enum|high|high,medium,low|advanced|watch|watch|light|no'
 	_schema_add 'DETECT_NOTIFY_CHANNELS|free|||advanced|watch|watch|light|no'
 	_schema_add 'DETECT_NOTIFY_MAX_PER_HOUR|int|20|1..1000|advanced|watch|watch|light|no'
@@ -11548,6 +11832,8 @@ schema_depends_init() {
 	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~webhook' 'ALERT_WEBHOOK_*'
 	_schema_depend 'WATCH_ENABLE=yes ALERT_CHANNELS~syslog' 'ALERT_SYSLOG_*'
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes' DETECT_NOTIFY
+	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes' HISTORY_ENABLE
+	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes HISTORY_ENABLE=yes' HISTORY_DAYS DEVICE_NEW_NOTIFY
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes DETECT_NOTIFY=yes' 'DETECT_NOTIFY_*'
 	_schema_depend 'WATCH_ENABLE=yes' 'WATCH_*' 'ALERT_*'
 }

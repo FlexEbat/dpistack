@@ -25,6 +25,8 @@ for _lib in "$SCRIPT_DIR/../lib" "$SCRIPT_DIR/../lib/dpistack/installer/lib"; do
 		source "$_lib/config.sh"
 		# shellcheck source=lib/migrate.sh
 		source "$_lib/migrate.sh"
+		# shellcheck source=lib/history.sh
+		source "$_lib/history.sh"
 		break
 	fi
 done
@@ -706,6 +708,138 @@ detect_notify() {
 	detect_save "$inode" "$((offset + consumed))" "$hour" "$sent" "$held"
 }
 
+# ----------------------------------------------------------------- history
+# history_update keeps a small roll-up per day (UTC) of what Suricata saw:
+# flows and bytes, the applications, the alerts and, for every address of a
+# private range, its flows, bytes and applications. It reads what eve.json
+# gained since the last run from its own position (history-cursor.json) and
+# merges it into history/YYYY-MM-DD.json. A private address that was never
+# seen before is a new device (devices.json); the first run only learns the
+# addresses that are there (D193). Days older than HISTORY_DAYS are removed.
+
+# history_delta <file> - the per-day delta of the events in <file>, one JSON
+# object {day: {flows, bytes, apps, devices, alerts}}.
+history_delta() {
+	jq -cR 'fromjson? | select(.event_type == "flow" or .event_type == "alert")' "$1" 2>/dev/null | jq -sc '
+		def private: (. // "") | test("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|169\\.254\\.|fe80:|f[cd][0-9a-f]{2}:)");
+		def day: (.timestamp // "")[0:10];
+		map(select(day | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$"))) | group_by(day) | map({
+			key: (.[0] | day),
+			value: {
+				flows: (map(select(.event_type == "flow")) | length),
+				bytes: (map(select(.event_type == "flow") | ((.flow.bytes_toserver // 0) + (.flow.bytes_toclient // 0))) | add // 0),
+				apps: (map(select(.event_type == "flow")) | group_by(.app_proto // "unknown") | map({key: (.[0].app_proto // "unknown"),
+					value: {flows: length, bytes: (map((.flow.bytes_toserver // 0) + (.flow.bytes_toclient // 0)) | add // 0)}}) | from_entries),
+				devices: (map(select(.event_type == "flow")) | map(. as $f | [$f.src_ip, $f.dest_ip] | map(select(private)) | unique[] | {ip: ., app: ($f.app_proto // "unknown"), bytes: (($f.flow.bytes_toserver // 0) + ($f.flow.bytes_toclient // 0))})
+					| group_by(.ip) | map({key: .[0].ip, value: {flows: length, bytes: (map(.bytes) | add),
+						apps: (group_by(.app) | map({key: .[0].app, value: length}) | from_entries)}}) | from_entries),
+				alerts: (map(select(.event_type == "alert")) | group_by(.alert.signature_id) | map({key: (.[0].alert.signature_id | tostring),
+					value: {count: length, msg: (.[0].alert.signature // ""), severity: (.[0].alert.severity // 3)}}) | from_entries)
+			}}) | from_entries' 2>/dev/null
+}
+
+history_update() {
+	[[ "${CONF[HISTORY_ENABLE]:-no}" == "yes" && "${CONF[EVE_FILE]:-yes}" == "yes" && "${CONF[SURICATA_ENABLE]:-yes}" == "yes" ]] || return 0
+	local eve cursor inode size offset old_inode
+	eve=$(path_suricata_eve_json)
+	[[ -r "$eve" ]] || return 0
+	cursor=$(path_history_cursor)
+	inode=$(stat -c %i "$eve")
+	size=$(stat -c %s "$eve")
+	local st="{}"
+	[[ -r "$cursor" ]] && st=$(jq -c . "$cursor" 2>/dev/null || echo "{}")
+	old_inode=$(jq -r '.inode // empty' <<<"$st")
+	offset=$(jq -r '.offset // empty' <<<"$st")
+	local dir devices_file
+	dir=$(path_history_dir)
+	devices_file=$(path_devices_json)
+	mkdir -p "$dir"
+	if [[ -z "$offset" ]]; then
+		# First run: learn the addresses of the history that is already in the
+		# file only from now on; start at its end (D193).
+		jq -n --argjson i "$inode" --argjson o "$size" '{inode: $i, offset: $o}' | atomic_write "$cursor"
+		return 0
+	fi
+	if [[ "$old_inode" != "$inode" ]] || ((size < offset)); then
+		offset=0
+	fi
+	local tmp consumed=0 bytes partial
+	tmp=$(mktemp)
+	if ((size > offset)); then
+		tail -c "+$((offset + 1))" "$eve" 2>/dev/null | head -c "$DETECT_READ_CAP" >"$tmp"
+		bytes=$(wc -c <"$tmp")
+		partial=$(tail -n 1 "$tmp" | wc -c)
+		if [[ "$(tail -c 1 "$tmp" | od -An -c | tr -d ' ')" == '\n' ]]; then
+			consumed="$bytes"
+		else
+			consumed=$((bytes - partial))
+		fi
+		((consumed == 0 && bytes >= DETECT_READ_CAP)) && consumed="$bytes"
+	fi
+	if ((consumed > 0)); then
+		local delta day
+		head -c "$consumed" "$tmp" >"$tmp.part"
+		delta=$(history_delta "$tmp.part")
+		rm -f "$tmp.part"
+		if [[ -n "$delta" && "$delta" != "{}" ]]; then
+			for day in $(jq -r 'keys[]' <<<"$delta"); do
+				local file="$dir/$day.json" cur="{}"
+				[[ -r "$file" ]] && cur=$(jq -c . "$file" 2>/dev/null || echo "{}")
+				jq -nc --argjson cur "$cur" --argjson add "$(jq -c --arg d "$day" '.[$d]' <<<"$delta")" --arg day "$day" \
+					"$HISTORY_JQ_MERGE"' {date: $day} + msum($cur; $add)' | atomic_write "$file"
+			done
+			history_devices "$delta" "$devices_file"
+		fi
+	fi
+	rm -f "$tmp"
+	jq -n --argjson i "$inode" --argjson o "$((offset + consumed))" '{inode: $i, offset: $o}' | atomic_write "$cursor"
+	history_prune "$dir"
+}
+
+# history_devices <delta> <file> - first and last day of every private
+# address; an address not in the file is a new device. When the file did not
+# exist the addresses are learned without a message.
+history_devices() {
+	local delta="$1" file="$2" known="{}" bootstrap=0
+	if [[ -r "$file" ]]; then
+		known=$(jq -c . "$file" 2>/dev/null || echo "{}")
+	else
+		bootstrap=1
+	fi
+	local ip day new=""
+	while IFS=$'\t' read -r day ip; do
+		[[ -n "$ip" ]] || continue
+		if [[ "$(jq -r --arg ip "$ip" 'has($ip)' <<<"$known")" == "false" ]]; then
+			known=$(jq -c --arg ip "$ip" --arg d "$day" '.[$ip] = {first: $d, last: $d}' <<<"$known")
+			new+="$ip "
+		else
+			known=$(jq -c --arg ip "$ip" --arg d "$day" '.[$ip].last = (if .[$ip].last < $d then $d else .[$ip].last end)' <<<"$known")
+		fi
+	done < <(jq -r 'to_entries[] | .key as $d | .value.devices // {} | keys[] | [$d, .] | @tsv' <<<"$delta")
+	printf '%s\n' "$known" | atomic_write "$file"
+	chmod 0600 "$file"
+	if [[ -n "$new" && "$bootstrap" == 0 && "${CONF[DEVICE_NEW_NOTIFY]:-no}" == "yes" ]]; then
+		mapfile -t DETECT_CHANNELS < <(detect_channels)
+		local d host
+		host=$(hostname -s 2>/dev/null || echo host)
+		for d in $new; do
+			detect_send 2 "dpistack: new device $d" "[dpistack] $host: new device on the network: $d (first seen in the traffic of Suricata)"
+		done
+	fi
+}
+
+# history_prune <dir> - removes the days older than HISTORY_DAYS.
+history_prune() {
+	local dir="$1" keep="${CONF[HISTORY_DAYS]:-90}" f oldest
+	oldest=$(date -u -d "@$(now)" +%Y-%m-%d 2>/dev/null) || return 0
+	oldest=$(date -u -d "$oldest - $keep days" +%Y-%m-%d 2>/dev/null) || return 0
+	for f in "$dir"/*.json; do
+		[[ -e "$f" ]] || continue
+		[[ "$(basename "$f" .json)" < "$oldest" ]] && rm -f "$f"
+	done
+	return 0
+}
+
 # write_health - `since` stays while a status is unchanged. Alerts go
 # out on a change and, while the status is not ok, every WATCH_REPEAT_MIN.
 write_health() {
@@ -810,6 +944,7 @@ main() {
 	# Last: delivery can wait on a channel that does not answer, and the
 	# health file above must not wait for it.
 	detect_notify
+	history_update
 }
 
 main "$@"

@@ -137,6 +137,9 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `ALERT_SYSLOG_TARGET` | string | empty | light | Syslog server for the syslog channel: host, host:port or [ipv6]:port (port 514 by default). (advanced) |
 | `ALERT_SYSLOG_PROTO` | udp \| tcp | `udp` | light | Transport to the syslog server: udp or tcp. (advanced) |
 | `DETECT_NOTIFY` | yes \| no | `no` | light | Send Suricata detections (alerts) to the delivery channels, not only the health of the stack. (advanced) |
+| `HISTORY_ENABLE` | yes \| no | `no` | light | Keep a daily summary of traffic, applications, devices and alerts, for dpistack report and dpistack devices. (advanced) |
+| `HISTORY_DAYS` | integer 1..3650 | `90` | light | How many days of daily summaries to keep. (advanced) |
+| `DEVICE_NEW_NOTIFY` | yes \| no | `no` | light | Send a message when an address of a private range shows up that was never seen before. Needs HISTORY_ENABLE=yes. (advanced) |
 | `DETECT_NOTIFY_SEVERITY` | high \| medium \| low | `high` | light | Weakest severity to send: high, medium (also high) or low (all). (advanced) |
 | `DETECT_NOTIFY_CHANNELS` | string | empty | light | Channels for detections, comma separated, from ALERT_CHANNELS. Empty: the channels of ALERT_CHANNELS except panel. (advanced) |
 | `DETECT_NOTIFY_MAX_PER_HOUR` | integer 1..1000 | `20` | light | Most detection messages in an hour. The rest are counted and one summary is sent. (advanced) |
