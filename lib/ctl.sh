@@ -75,6 +75,8 @@ Usage: dpistack <command> [arguments]
   ips block|allow list [--json] | add <addr[/prefix]> [--days N|--never] [--note T] | remove <addr|sid> | prune
                                      blocked and allowed hosts (rules in local.rules)
   pcap analyze <file> [--json]       replay a capture of yours with the live rules: alerts and application protocols
+  report daily|weekly [--date YYYY-MM-DD] [--json]   traffic, applications, devices and alerts of a day or of 7 days
+  devices [--json]                   the private addresses seen, first and last day
   fw apply|remove|restore            DPISTACK chain (restore: at boot)
   panel-passwd                       panel password from stdin
   test bittorrent|https|all [--json] check tests (section 10)
@@ -3038,6 +3040,8 @@ ctl_dispatch() {
 	mode-confirm) cmd_mode_confirm "$@" ;;
 	ips) cmd_ips "$@" ;;
 	pcap) cmd_pcap "$@" ;;
+	report) cmd_report "$@" ;;
+	devices) cmd_devices "$@" ;;
 	mode-rollback) cmd_mode_rollback "$@" ;;
 	fw) cmd_fw "$@" ;;
 	panel-passwd) cmd_panel_passwd "$@" ;;

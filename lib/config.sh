@@ -258,6 +258,10 @@ config_validate() {
 		done
 		[[ "$cpus_ok" == yes ]] || errors=$((errors + 1))
 	fi
+	if [[ "${CONF[DEVICE_NEW_NOTIFY]:-no}" == "yes" && "${CONF[HISTORY_ENABLE]:-no}" != "yes" ]]; then
+		echo "DEVICE_NEW_NOTIFY=yes needs HISTORY_ENABLE=yes: new devices are found in the history"
+		errors=$((errors + 1))
+	fi
 	# Detection alerts go to the channels of DETECT_NOTIFY_CHANNELS, or to those
 	# of ALERT_CHANNELS when it is empty; the panel is not a delivery channel for
 	# them (the Alert Center lists them already), so a list with only that is empty.

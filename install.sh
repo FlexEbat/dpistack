@@ -63,6 +63,8 @@ source "$LIB_DIR/exceptions.sh"
 source "$LIB_DIR/blocklist.sh"
 # shellcheck source=lib/pcap.sh
 source "$LIB_DIR/pcap.sh"
+# shellcheck source=lib/history.sh
+source "$LIB_DIR/history.sh"
 # shellcheck source=lib/alerts.sh
 source "$LIB_DIR/alerts.sh"
 # shellcheck source=lib/profiles.sh
