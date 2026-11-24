@@ -76,6 +76,7 @@
       </div>
       <div class="nav-group" role="group" aria-label="System">
         <p class="nav-label">System</p>
+        <button type="button" data-view="history"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><rect x="48" y="128" width="32" height="72" rx="4"/><rect x="112" y="80" width="32" height="120" rx="4"/><rect x="176" y="40" width="32" height="160" rx="4"/></svg><span>History</span></button>
         <button type="button" data-view="components"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M230.91,172A8,8,0,0,1,228,182.91l-96,56a8,8,0,0,1-8.06,0l-96-56A8,8,0,0,1,36,169.09l92,53.65,92-53.65A8,8,0,0,1,230.91,172ZM220,121.09l-92,53.65L36,121.09A8,8,0,0,0,28,134.91l96,56a8,8,0,0,0,8.06,0l96-56A8,8,0,1,0,220,121.09ZM24,80a8,8,0,0,1,4-6.91l96-56a8,8,0,0,1,8.06,0l96,56a8,8,0,0,1,0,13.82l-96,56a8,8,0,0,1-8.06,0l-96-56A8,8,0,0,1,24,80Zm23.88,0L128,126.74,208.12,80,128,33.26Z"/></svg><span>Components</span></button>
         <button type="button" data-view="logs"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M128,128a8,8,0,0,1-3,6.25l-40,32a8,8,0,1,1-10-12.5L107.19,128,75,102.25a8,8,0,1,1,10-12.5l40,32A8,8,0,0,1,128,128Zm48,24H136a8,8,0,0,0,0,16h40a8,8,0,0,0,0-16Zm56-96V200a16,16,0,0,1-16,16H40a16,16,0,0,1-16-16V56A16,16,0,0,1,40,40H216A16,16,0,0,1,232,56ZM216,200V56H40V200H216Z"/></svg><span>Logs</span></button>
         <button type="button" data-view="tests"><svg class="ico" viewBox="0 0 256 256" aria-hidden="true"><path d="M173.66,98.34a8,8,0,0,1,0,11.32l-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35A8,8,0,0,1,173.66,98.34ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z"/></svg><span>Tests</span></button>
@@ -398,6 +399,17 @@
     </div>
     <section id="traffic-detail" hidden></section>
     <section id="traffic-body" hidden></section>
+  </div>
+  <div id="view-history" hidden>
+    <p class="muted">A daily or weekly summary of the traffic, the applications, the devices and the alerts. It is kept by the watchdog when HISTORY_ENABLE is on (Settings).</p>
+    <div class="toolbar">
+      <label>Period <select id="history-kind"><option value="daily">Day</option><option value="weekly">Week (7 days)</option></select></label>
+      <label>Ending on <input id="history-date" type="text" placeholder="today, or 2026-11-20" autocomplete="off"></label>
+      <button id="history-load" type="button">Show</button>
+    </div>
+    <p id="history-message" class="muted" aria-live="polite"></p>
+    <section id="history-report"></section>
+    <section id="history-known"></section>
   </div>
   <div id="view-exceptions" hidden>
     <p id="exc-error" class="error" role="alert"></p>

@@ -95,3 +95,21 @@ const PcapTimeout = 11 * time.Minute
 func (r *Runner) PcapAnalyze(ctx context.Context, path string) ([]byte, error) {
 	return r.runWith(ctx, maxOutput, PcapTimeout, nil, "pcap", "analyze", path, "--json")
 }
+
+// Report runs `report daily|weekly [--date D] --json` and returns its JSON.
+func (r *Runner) Report(ctx context.Context, kind, date string) ([]byte, error) {
+	if kind != "daily" && kind != "weekly" {
+		return nil, fmt.Errorf("ctl: report %q is not allowed", kind)
+	}
+	args := []string{"report", kind}
+	if date != "" {
+		args = append(args, "--date", date)
+	}
+	args = append(args, "--json")
+	return r.runWith(ctx, maxOutput, rulesTimeout, nil, args...)
+}
+
+// Devices runs `devices --json`: the private addresses seen, newest first.
+func (r *Runner) Devices(ctx context.Context) ([]byte, error) {
+	return r.runWith(ctx, maxOutput, rulesTimeout, nil, "devices", "--json")
+}

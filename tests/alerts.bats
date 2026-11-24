@@ -275,3 +275,35 @@ list() { "$CTL" alerts list --json "$@"; }
 	[ "$(jq -r .action "$AUDIT")" = "cli alerts" ]
 	[ "$(jq -r .target "$AUDIT")" = ack ]
 }
+
+@test "task 62: an alert only the index remembers is listed, and where both know a rule the span is the wider and the count the larger" {
+	local idx="$STATE_DIR/alerts-index.json"
+	# eve.json has lost sid 500 and only holds the end of sid 100
+	eve 100 1 "2026-01-01T00:00:30.000000+0000" "ET one"
+	cat >"$idx" <<'J'
+{"100":{"sid":100,"msg":"ET one","category":"Policy","severity":1,"first_seen":"2025-12-20T08:00:00.000000+0000","last_seen":"2026-01-01T00:00:10.000000+0000","count":40},
+ "500":{"sid":500,"msg":"old and untriaged","category":"Trojan","severity":2,"first_seen":"2025-12-15T08:00:00.000000+0000","last_seen":"2025-12-15T09:00:00.000000+0000","count":3}}
+J
+	run list
+	[ "$status" -eq 0 ]
+	[ "$(jq -r '.alerts | length' <<<"$output")" = 2 ]
+	[ "$(jq -r '.alerts[] | select(.key=="sid:500") | [.severity, .count, .first_seen, .title, .detail] | join("|")' <<<"$output")" = "warn|3|2025-12-15T08:00:00.000000+0000|old and untriaged|Trojan" ]
+	[ "$(jq -r '.alerts[] | select(.key=="sid:100") | [.count, .first_seen, .last_seen] | join("|")' <<<"$output")" = "40|2025-12-20T08:00:00.000000+0000|2026-01-01T00:00:30.000000+0000" ]
+	[ "$(jq -r .counts.new <<<"$output")" = 2 ]
+}
+
+@test "task 62: an alert from the index can be acknowledged like any other, and stays acknowledged" {
+	echo '{"500":{"sid":500,"msg":"old","category":"x","severity":2,"first_seen":"2025-12-15T08:00:00.000000+0000","last_seen":"2025-12-15T09:00:00.000000+0000","count":3}}' >"$STATE_DIR/alerts-index.json"
+	run "$CTL" alerts ack sid:500 --note triaged --by admin
+	[ "$status" -eq 0 ]
+	run list
+	[ "$(jq -r '.alerts[0] | [.state, .by] | join("|")' <<<"$output")" = "acknowledged|admin" ]
+}
+
+@test "task 62: a broken index is ignored and the tail still lists its alerts" {
+	echo 'not json' >"$STATE_DIR/alerts-index.json"
+	eve 100 1 "2026-01-01T00:00:10.000000+0000" "ET one"
+	run list
+	[ "$status" -eq 0 ]
+	[ "$(jq -r '.alerts | length' <<<"$output")" = 1 ]
+}

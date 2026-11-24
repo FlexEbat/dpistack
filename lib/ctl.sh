@@ -755,8 +755,10 @@ settings_secret_set() {
 }
 
 settings_list() {
-	local json=0 key first=1 type opts min max value secret set pattern effective
+	local json=0 key first=1 type opts min max value secret set pattern effective pending_keys pending
 	[[ "${1:-}" == "--json" ]] && json=1
+	# settings an update brought or that are empty (lib/pending.sh): ,KEY:kind,
+	pending_keys=",$(state_read_value pending.keys),"
 	if ((json)); then printf '{"keys":['; fi
 	for key in "${SCHEMA_KEYS[@]}"; do
 		type="${SCHEMA_TYPE[$key]}"
@@ -792,13 +794,15 @@ settings_list() {
 		if [[ -z "$value" ]]; then
 			effective=$(schema_effective "$key")
 		fi
-		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s","effective":"%s","steps":%s,"touches":%s,"depends":%s}' \
+		pending=""
+		[[ "$pending_keys" =~ ,$key:([a-z]+), ]] && pending="${BASH_REMATCH[1]}"
+		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s","effective":"%s","steps":%s,"touches":%s,"depends":%s,"pending":"%s"}' \
 			"$key" "$type" "$opts" "$min" "$max" "$(json_escape "${SCHEMA_DEFAULT[$key]}")" \
 			"${SCHEMA_LEVEL[$key]}" "${SCHEMA_GROUP[$key]}" "${SCHEMA_WEIGHT[$key]}" \
 			"$([[ $secret == yes ]] && echo true || echo false)" "$set" \
 			"$(json_escape "$value")" "$(json_escape "$pattern")" \
 			"$(json_escape "$effective")" \
-			"$(settings_json_array "${SCHEMA_STEPS[$key]// /,}")" "$(settings_touches_json "$key")" "$(settings_depends_json "$key")"
+			"$(settings_json_array "${SCHEMA_STEPS[$key]// /,}")" "$(settings_touches_json "$key")" "$(settings_depends_json "$key")" "$pending"
 	done
 	if ((json)); then printf ']}\n'; fi
 }
@@ -1394,6 +1398,14 @@ cmd_update() {
 	elif ((!yes)); then
 		fail 3 "update: no terminal to ask on, use --yes"
 	fi
+	# What this version adds or leaves empty in the saved settings is asked
+	# here, by the new version's own installer, while there is a terminal; the
+	# update itself runs without one. With --yes the defaults are listed.
+	if ((yes)) || [[ ! -t 0 ]]; then
+		(cd "$tmp/src" && bash ./install.sh update-keys --list) || true
+	else
+		(cd "$tmp/src" && DPISTACK_NO_APPLY=1 bash ./install.sh update-keys) || fail 1 "update: the questions about the new settings failed, nothing was changed"
+	fi
 	case "$(systemctl is-active "$SELFUPDATE_UNIT.service" 2>/dev/null)" in
 	active | activating) fail 3 "an update is already running" ;;
 	esac
@@ -1404,6 +1416,32 @@ cmd_update() {
 	else
 		selfupdate_apply
 	fi
+}
+
+# cmd_update_keys_verb [--list|--json|--yes] - the settings that are new in
+# this version or empty (lib/pending.sh). The panel only reads (--json).
+cmd_update_keys_verb() {
+	local arg readonly=0 before after
+	if restricted_caller; then
+		[[ $# -eq 1 && "$1" == "--json" ]] || fail 2 "update-keys: the panel may only read: --json"
+	fi
+	for arg in "$@"; do
+		[[ "$arg" == "--list" || "$arg" == "--json" ]] && readonly=1
+	done
+	if ((readonly)); then
+		cmd_update_keys "$@"
+		return 0
+	fi
+	[[ $EUID -eq 0 || -n "${DPISTACK_ROOT:-}" ]] || fail 3 "update-keys: run it as root: sudo dpistack update-keys"
+	before=$(sha256sum "$(path_conf)" 2>/dev/null | cut -d' ' -f1)
+	cmd_update_keys "$@"
+	after=$(sha256sum "$(path_conf)" 2>/dev/null | cut -d' ' -f1)
+	# The answers are applied like any change of dpistack.conf. The update asks
+	# before it installs and applies everything itself (DPISTACK_NO_APPLY).
+	if [[ "$before" != "$after" && -z "${DPISTACK_NO_APPLY:-}" ]]; then
+		ctl_cmd_reconfigure
+	fi
+	return 0
 }
 
 # cmd_migrate [--plan] [--yes] - the work an upgrade left on this host. It is
@@ -2903,6 +2941,7 @@ People and access
 Keep it safe
   backup create|list|verify|restore
   update [--check|--dry-run|--yes] look for a newer release, show its plan, install it
+  update-keys [--list|--json|--yes]  settings that are new in this version or empty: asks for them (update asks too)
   migrate [--plan|--yes]          the work an upgrade left on this host (done by update and install by themselves)
   self-update ...                 the same update as separate steps (check, run, job)
 
@@ -3017,6 +3056,7 @@ ctl_dispatch() {
 	settings) cmd_settings "$@" ;;
 	self-update) cmd_self_update "$@" ;;
 	update) cmd_update "$@" ;;
+	update-keys) cmd_update_keys_verb "$@" ;;
 	migrate) cmd_migrate "$@" ;;
 	reconfigure) ctl_cmd_reconfigure "$@" ;;
 	rules-update) cmd_rules_update "$@" ;;

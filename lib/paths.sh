@@ -24,6 +24,8 @@ path_audit_dir() { echo "$(path_state_dir)/audit"; }
 path_audit_jsonl() { echo "$(path_audit_dir)/audit.jsonl"; }
 path_events_jsonl() { echo "$(path_state_dir)/events.jsonl"; }
 path_alerts_state() { echo "$(path_state_dir)/alerts-state.json"; }
+path_alerts_index() { echo "$(path_state_dir)/alerts-index.json"; }
+path_alerts_cursor() { echo "$(path_state_dir)/alerts-cursor.json"; }
 path_history_dir() { echo "$(path_state_dir)/history"; }
 path_history_cursor() { echo "$(path_state_dir)/history-cursor.json"; }
 path_devices_json() { echo "$(path_state_dir)/devices.json"; }

@@ -18,6 +18,8 @@ import {
   applies,
   dependencyText,
   shown,
+  pendingKeys,
+  pendingLabel,
   diffRows,
   stageSummary,
   stageText,
@@ -147,6 +149,11 @@ export function start(api, els, onError) {
     const label = el("label", "setting-name");
     label.htmlFor = "set-" + k.key;
     label.append(el("span", "", k.key));
+    if (k.pending) {
+      const b = el("span", "badge", pendingLabel(k.pending));
+      b.title = k.pending === "new" ? "New in this version: it uses its default until you choose" : "Empty, and the program needs a value: it uses the default until you choose";
+      label.append(" ", b);
+    }
     if (k.weight === "heavy") {
       const b = el("span", "badge warn", "reinstall");
       b.title = "This change starts an install or rebuild of the component";
@@ -185,6 +192,27 @@ export function start(api, els, onError) {
     const { items, hiddenAdvanced } = visibleKeys();
     const card = el("section", "card settings-group");
     const searching = query.trim() !== "";
+    const news = pendingKeys(keys);
+    let box = null;
+    if (news.length && !searching) {
+      box = el("section", "card settings-group pending-box");
+      box.append(el("h2", "", "New or empty settings"));
+      box.append(el("p", "muted", "These settings are new in this version or empty. Each uses its default until you choose a value. Pick one to see it, and apply your choice like any other change."));
+      const list = el("div", "actions");
+      for (const k of news) {
+        const b = el("button", "", k.key + " (" + pendingLabel(k.pending).toLowerCase() + ")");
+        b.type = "button";
+        b.addEventListener("click", () => {
+          category = k.group;
+          if (k.level !== "basic") showAdvanced = true;
+          if (els.advanced) els.advanced.checked = showAdvanced;
+          select(k.key);
+          render();
+        });
+        list.append(b);
+      }
+      box.append(list);
+    }
     card.append(el("h2", "", searching ? "Search results" : (GROUPS.find((g) => g[0] === category) || ["", ""])[1]));
     if (!items.length) {
       card.append(el("p", "muted empty", searching ? "No setting matches." : "Nothing in this category at this level."));
@@ -193,7 +221,7 @@ export function start(api, els, onError) {
     if (hiddenAdvanced > 0) {
       card.append(el("p", "muted", hiddenAdvanced + " more " + (hiddenAdvanced === 1 ? "match" : "matches") + " among the advanced settings. Turn on Show advanced settings to see " + (hiddenAdvanced === 1 ? "it" : "them") + "."));
     }
-    els.groups.replaceChildren(card);
+    els.groups.replaceChildren(...(box ? [box, card] : [card]));
   }
 
   function renderCats() {

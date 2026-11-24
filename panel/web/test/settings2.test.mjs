@@ -403,3 +403,28 @@ test("the page has the three columns, the search, the details, the diff and the 
   assert.match(here("app.css"), /\.setting\.inactive/);
   assert.match(here("app.css"), /\.setting\.inactive/);
 });
+
+import { pendingKeys, pendingLabel } from "../modules/settings-model.js";
+
+test("the settings an update brought or left empty are listed, new first", () => {
+  const keys = [
+    { key: "B_KEY", pending: "empty" },
+    { key: "Z_KEY", pending: "new" },
+    { key: "A_KEY", pending: "new" },
+    { key: "OK_KEY", pending: "" },
+    { key: "NONE" },
+  ];
+  assert.deepEqual(pendingKeys(keys).map((k) => k.key), ["A_KEY", "Z_KEY", "B_KEY"]);
+  assert.deepEqual(pendingKeys(null), []);
+  assert.equal(pendingLabel("new"), "New");
+  assert.equal(pendingLabel("empty"), "Empty");
+  assert.equal(pendingLabel(""), "");
+});
+
+test("the Settings screen shows the pending box and marks the rows", () => {
+  const src = here("modules/settings.js");
+  assert.match(src, /pendingKeys\(keys\)/);
+  assert.match(src, /New or empty settings/);
+  assert.match(src, /pendingLabel\(k\.pending\)/);
+  assert.match(src, /els\.groups\.replaceChildren\(\.\.\.\(box \? \[box, card\] : \[card\]\)\)/);
+});

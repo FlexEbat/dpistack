@@ -112,6 +112,8 @@ export const HINTS = {
   DETECT_NOTIFY_CHANNELS: "Channels for detections, comma separated, from ALERT_CHANNELS. Empty: the channels of ALERT_CHANNELS except panel.",
   DETECT_NOTIFY_MAX_PER_HOUR: "Most detection messages in an hour. The rest are counted and one summary is sent.",
   DETECT_NOTIFY_DEDUP_MIN: "The same signature between the same two addresses is sent once in this many minutes (0: every alert).",
+  ALERT_INDEX: "Keep one entry per Suricata rule, so an old alert nobody has looked at stays in the Alert Center even when eve.json has moved on.",
+  ALERT_INDEX_DAYS: "How many days an entry stays after the last alert of its rule.",
   HISTORY_ENABLE: "Keep a daily summary of traffic, applications, devices and alerts, for dpistack report and dpistack devices.",
   HISTORY_DAYS: "How many days of daily summaries to keep.",
   DEVICE_NEW_NOTIFY: "Send a message when an address of a private range shows up that was never seen before. Needs HISTORY_ENABLE=yes.",
@@ -225,6 +227,17 @@ export function dependencyText(k) {
 // shown is a value for people: an empty one is the value in effect when the
 // key has one ("none: all the traffic is analysed", "same as IFACES (eth0)"),
 // and "not set" otherwise, never "(empty)".
+// pendingKeys are the settings that an update brought or that were left
+// empty (the "pending" field of the settings list): new first, then empty.
+export function pendingKeys(keys) {
+  const rank = { new: 0, empty: 1 };
+  return (keys || []).filter((k) => k.pending === "new" || k.pending === "empty").sort((a, b) => rank[a.pending] - rank[b.pending] || a.key.localeCompare(b.key));
+}
+
+export function pendingLabel(kind) {
+  return kind === "new" ? "New" : kind === "empty" ? "Empty" : "";
+}
+
 export const shown = (v, effective = "") => (v === "" ? effective || "not set" : v);
 
 // diffRows is the staged change: every edited non secret key as old to new,

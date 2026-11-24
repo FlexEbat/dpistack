@@ -53,6 +53,19 @@ alerts_conditions() {
 		       title: .[0].alert.signature, detail: (.[0].alert.category // ""),
 		       first_seen: (map(.timestamp) | min), last_seen: (map(.timestamp) | max),
 		       count: length, activity: (map(.timestamp) | max)})' 2>/dev/null) || suri='[]'
+	# The index the watchdog keeps reaches further back than the tail does:
+	# one entry per rule, so an old alert nobody has looked at stays in the
+	# list. Where both know a rule the count is the larger, the span the wider.
+	local idx
+	idx=$(path_alerts_index)
+	if [[ -r "$idx" ]]; then
+		local merged
+		merged=$(jq -nc --argjson tail "$suri" --slurpfile index "$idx" '
+			([($index[0] // {}) | to_entries[] | .value | {key: ("sid:" + (.sid | tostring)), source: "suricata",
+				severity: (if (.severity // 3) <= 1 then "crit" elif .severity == 2 then "warn" else "info" end),
+				title: .msg, detail: (.category // ""), first_seen: .first_seen, last_seen: .last_seen, count: .count, activity: .last_seen}]) as $i
+			| ($tail + $i) | group_by(.key) | map(sort_by(.last_seen) | .[-1] + {first_seen: (map(.first_seen) | min), count: (map(.count) | max), activity: (map(.activity) | max)})' 2>/dev/null) && suri="$merged"
+	fi
 	jq -nc --argjson a "$watch" --argjson b "$suri" '$a + $b'
 }
 
