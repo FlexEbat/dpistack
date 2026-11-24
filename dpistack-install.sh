@@ -10587,11 +10587,16 @@ pending_scan() {
 # it writes the config.
 pending_record() {
 	local scan old merged
+	# a dry run changes nothing, and a host without a saved config has nothing to compare
+	[[ "${DRY_RUN:-0}" != "1" && -f "$(path_conf)" ]] || return 0
 	scan=$(pending_scan | tr '\n' ',')
 	scan="${scan%,}"
 	old=$(state_read_value pending.keys)
 	merged=$(printf '%s,%s' "$old" "$scan" | tr ',' '\n' | awk -F: 'NF && !seen[$1]++' | tr '\n' ',')
-	state_write_value pending.keys "${merged%,}"
+	merged="${merged%,}"
+	# nothing new and nothing recorded: the state file is not touched
+	[[ -n "$merged" || -n "$old" ]] || return 0
+	state_write_value pending.keys "$merged"
 	return 0
 }
 
