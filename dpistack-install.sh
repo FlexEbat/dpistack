@@ -100,6 +100,8 @@ source "$LIB_DIR/blocklist.sh"
 source "$LIB_DIR/pcap.sh"
 # shellcheck source=lib/history.sh
 source "$LIB_DIR/history.sh"
+# shellcheck source=lib/pending.sh
+source "$LIB_DIR/pending.sh"
 # shellcheck source=lib/alerts.sh
 source "$LIB_DIR/alerts.sh"
 # shellcheck source=lib/profiles.sh
@@ -483,6 +485,8 @@ cmd_install() {
 	os_detect
 
 	layer_config_common
+	# before anything writes the config: what is new or empty in it
+	pending_record
 	migrate_run
 	maybe_run_install_menu
 	panel_password_apply
@@ -535,6 +539,7 @@ cmd_install() {
 	state_write_value install.finished yes
 	migrate_record
 	echo "installation finished"
+	pending_notice
 	return 0
 }
 
@@ -950,7 +955,7 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update update migrate help rules config info)
+	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update update update-keys migrate help rules config info)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen
@@ -2706,7 +2711,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.57.0"
+DPISTACK_VERSION="0.58.0"
 
 : "${DRY_RUN:=0}"
 
@@ -4290,8 +4295,10 @@ settings_secret_set() {
 }
 
 settings_list() {
-	local json=0 key first=1 type opts min max value secret set pattern effective
+	local json=0 key first=1 type opts min max value secret set pattern effective pending_keys pending
 	[[ "${1:-}" == "--json" ]] && json=1
+	# settings an update brought or that are empty (lib/pending.sh): ,KEY:kind,
+	pending_keys=",$(state_read_value pending.keys),"
 	if ((json)); then printf '{"keys":['; fi
 	for key in "${SCHEMA_KEYS[@]}"; do
 		type="${SCHEMA_TYPE[$key]}"
@@ -4327,13 +4334,15 @@ settings_list() {
 		if [[ -z "$value" ]]; then
 			effective=$(schema_effective "$key")
 		fi
-		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s","effective":"%s","steps":%s,"touches":%s,"depends":%s}' \
+		pending=""
+		[[ "$pending_keys" =~ ,$key:([a-z]+), ]] && pending="${BASH_REMATCH[1]}"
+		printf '{"key":"%s","type":"%s","options":%s,"min":%s,"max":%s,"default":"%s","level":"%s","group":"%s","weight":"%s","secret":%s,"set":%s,"value":"%s","pattern":"%s","effective":"%s","steps":%s,"touches":%s,"depends":%s,"pending":"%s"}' \
 			"$key" "$type" "$opts" "$min" "$max" "$(json_escape "${SCHEMA_DEFAULT[$key]}")" \
 			"${SCHEMA_LEVEL[$key]}" "${SCHEMA_GROUP[$key]}" "${SCHEMA_WEIGHT[$key]}" \
 			"$([[ $secret == yes ]] && echo true || echo false)" "$set" \
 			"$(json_escape "$value")" "$(json_escape "$pattern")" \
 			"$(json_escape "$effective")" \
-			"$(settings_json_array "${SCHEMA_STEPS[$key]// /,}")" "$(settings_touches_json "$key")" "$(settings_depends_json "$key")"
+			"$(settings_json_array "${SCHEMA_STEPS[$key]// /,}")" "$(settings_touches_json "$key")" "$(settings_depends_json "$key")" "$pending"
 	done
 	if ((json)); then printf ']}\n'; fi
 }
@@ -4929,6 +4938,14 @@ cmd_update() {
 	elif ((!yes)); then
 		fail 3 "update: no terminal to ask on, use --yes"
 	fi
+	# What this version adds or leaves empty in the saved settings is asked
+	# here, by the new version's own installer, while there is a terminal; the
+	# update itself runs without one. With --yes the defaults are listed.
+	if ((yes)) || [[ ! -t 0 ]]; then
+		(cd "$tmp/src" && bash ./install.sh update-keys --list) || true
+	else
+		(cd "$tmp/src" && DPISTACK_NO_APPLY=1 bash ./install.sh update-keys) || fail 1 "update: the questions about the new settings failed, nothing was changed"
+	fi
 	case "$(systemctl is-active "$SELFUPDATE_UNIT.service" 2>/dev/null)" in
 	active | activating) fail 3 "an update is already running" ;;
 	esac
@@ -4939,6 +4956,32 @@ cmd_update() {
 	else
 		selfupdate_apply
 	fi
+}
+
+# cmd_update_keys_verb [--list|--json|--yes] - the settings that are new in
+# this version or empty (lib/pending.sh). The panel only reads (--json).
+cmd_update_keys_verb() {
+	local arg readonly=0 before after
+	if restricted_caller; then
+		[[ $# -eq 1 && "$1" == "--json" ]] || fail 2 "update-keys: the panel may only read: --json"
+	fi
+	for arg in "$@"; do
+		[[ "$arg" == "--list" || "$arg" == "--json" ]] && readonly=1
+	done
+	if ((readonly)); then
+		cmd_update_keys "$@"
+		return 0
+	fi
+	[[ $EUID -eq 0 || -n "${DPISTACK_ROOT:-}" ]] || fail 3 "update-keys: run it as root: sudo dpistack update-keys"
+	before=$(sha256sum "$(path_conf)" 2>/dev/null | cut -d' ' -f1)
+	cmd_update_keys "$@"
+	after=$(sha256sum "$(path_conf)" 2>/dev/null | cut -d' ' -f1)
+	# The answers are applied like any change of dpistack.conf. The update asks
+	# before it installs and applies everything itself (DPISTACK_NO_APPLY).
+	if [[ "$before" != "$after" && -z "${DPISTACK_NO_APPLY:-}" ]]; then
+		ctl_cmd_reconfigure
+	fi
+	return 0
 }
 
 # cmd_migrate [--plan] [--yes] - the work an upgrade left on this host. It is
@@ -6438,6 +6481,7 @@ People and access
 Keep it safe
   backup create|list|verify|restore
   update [--check|--dry-run|--yes] look for a newer release, show its plan, install it
+  update-keys [--list|--json|--yes]  settings that are new in this version or empty: asks for them (update asks too)
   migrate [--plan|--yes]          the work an upgrade left on this host (done by update and install by themselves)
   self-update ...                 the same update as separate steps (check, run, job)
 
@@ -6552,6 +6596,7 @@ ctl_dispatch() {
 	settings) cmd_settings "$@" ;;
 	self-update) cmd_self_update "$@" ;;
 	update) cmd_update "$@" ;;
+	update-keys) cmd_update_keys_verb "$@" ;;
 	migrate) cmd_migrate "$@" ;;
 	reconfigure) ctl_cmd_reconfigure "$@" ;;
 	rules-update) cmd_rules_update "$@" ;;
@@ -10495,6 +10540,204 @@ cmd_pcap() {
 	analyze) pcap_analyze "$@" ;;
 	*) fail 2 "pcap: analyze <file> [--json]" ;;
 	esac
+}
+DPISTACK_BUNDLE_END
+put lib/pending.sh 644 <<'DPISTACK_BUNDLE_END'
+#!/usr/bin/env bash
+# Settings that an update brought or that were left empty. A new version can
+# add keys, and a saved config can hold a key with no value where the program
+# needs one. `install` never asked about them: it fills in the default, and
+# the next write of dpistack.conf made them look chosen. This file finds them
+# before that write and keeps the list in the state file (pending.keys), so
+# `dpistack update-keys`, `dpistack update` and the panel can ask about them.
+#
+#   new    the key is not in the saved dpistack.conf at all
+#   empty  the key is there with no value, its default is not empty, and an
+#          empty value has no meaning of its own (schema_empty_meaning): the
+#          program would silently use the default
+#
+# A key that does not apply to the config as it is (its component is off, its
+# channel is not used) is never listed. Sourced by install.sh; it defines
+# functions only.
+
+# pending_scan - the pending keys of the saved config, "KEY:kind" one per
+# line. Needs the layers loaded (layer_config_common) so that the skip
+# rules see the config as it will be.
+pending_scan() {
+	local conf key value
+	conf=$(path_conf)
+	[[ -f "$conf" ]] || return 0
+	for key in "${SCHEMA_KEYS[@]}"; do
+		schema_is_secret "$key" && continue
+		menu_key_skipped "$key" && continue
+		if ! grep -q "^${key}=" "$conf"; then
+			echo "$key:new"
+			continue
+		fi
+		value=$(sed -n "s/^${key}=//p" "$conf" | tail -n 1)
+		if [[ -z "$value" && -n "${SCHEMA_DEFAULT[$key]:-}" && -z "$(schema_empty_meaning "$key")" ]]; then
+			echo "$key:empty"
+		fi
+	done
+	return 0
+}
+
+# pending_record - keeps the scan in the state file, joined with what an
+# earlier upgrade left that nobody answered yet. Called by `install` before
+# it writes the config.
+pending_record() {
+	local scan old merged
+	scan=$(pending_scan | tr '\n' ',')
+	scan="${scan%,}"
+	old=$(state_read_value pending.keys)
+	merged=$(printf '%s,%s' "$old" "$scan" | tr ',' '\n' | awk -F: 'NF && !seen[$1]++' | tr '\n' ',')
+	state_write_value pending.keys "${merged%,}"
+	return 0
+}
+
+# pending_list - the pending keys now, "KEY:kind" one per line: the state
+# list and the empty ones of the config as it is, without the keys that
+# since got a value or stopped applying.
+pending_list() {
+	local item key kind
+	{
+		state_read_value pending.keys | tr ',' '\n'
+		pending_scan
+	} | awk -F: 'NF && !seen[$1]++' | while IFS=: read -r key kind; do
+		[[ -n "${SCHEMA_TYPE[$key]:-}" ]] || continue
+		menu_key_skipped "$key" && continue
+		item="$key:${kind:-new}"
+		# an empty key that has a value now is answered
+		if [[ "$kind" == empty && -n "${CONF[$key]:-}" ]]; then
+			continue
+		fi
+		echo "$item"
+	done
+}
+
+pending_clear() { state_write_value pending.keys ""; }
+
+# pending_print <json:0|1> - the list with default and hint.
+pending_print() {
+	local json="$1" item key kind first=1 n=0
+	local -a items=()
+	mapfile -t items < <(pending_list)
+	if ((json)); then
+		printf '{"pending":['
+		for item in "${items[@]}"; do
+			key="${item%%:*}"
+			kind="${item##*:}"
+			((first)) || printf ','
+			first=0
+			printf '{"key":"%s","kind":"%s","default":"%s","hint":"%s"}' "$key" "$kind" \
+				"$(json_escape "${SCHEMA_DEFAULT[$key]:-}")" "$(json_escape "${KEY_HINT[$key]:-}")"
+		done
+		printf ']}\n'
+		return 0
+	fi
+	if ((${#items[@]} == 0)); then
+		echo "no new or empty settings"
+		return 0
+	fi
+	echo "${#items[@]} setting(s) are new in this version or empty; their default is used until you answer:"
+	for item in "${items[@]}"; do
+		key="${item%%:*}"
+		kind="${item##*:}"
+		n=$((n + 1))
+		printf '  %s (%s, default: %s)\n' "$key" "$kind" "${SCHEMA_DEFAULT[$key]:-none}"
+		[[ -n "${KEY_HINT[$key]:-}" ]] && printf '      %s\n' "${KEY_HINT[$key]}"
+	done
+	return 0
+}
+
+# pending_ask - asks every pending key, one by one: Enter keeps the default
+# that is shown, a value is checked like in the menu. s keeps the defaults
+# of the rest, x stops and leaves the rest pending. Returns 0 when it asked
+# at least one and the config changed, 1 when nothing changed.
+pending_ask() {
+	local item key kind rc changed=0
+	local -a items=()
+	mapfile -t items < <(pending_list)
+	((${#items[@]} > 0)) || {
+		echo "no new or empty settings" >&2
+		return 1
+	}
+	echo >&2
+	menu_bold "${#items[@]} setting(s) are new in this version or empty" >&2
+	echo >&2
+	echo "  Enter keeps the default shown, - sets the default, s keeps the defaults of the rest, x stops here." >&2
+	for item in "${items[@]}"; do
+		key="${item%%:*}"
+		kind="${item##*:}"
+		# an empty key is offered its default, so Enter fixes it
+		[[ "$kind" == empty && -z "${CONF[$key]:-}" ]] && config_set_kv "$key" "${SCHEMA_DEFAULT[$key]}"
+		echo >&2
+		echo "[$kind]" >&2
+		menu_wizard_ask "$key"
+		rc=$?
+		changed=1
+		((rc == 10)) && break
+		((rc == 11)) && return 2
+	done
+	return $((changed ? 0 : 1))
+}
+
+# cmd_update_keys [--list|--json|--yes] - the update step.
+cmd_update_keys() {
+	local mode=ask arg
+	for arg in "$@"; do
+		case "$arg" in
+		--list) mode=list ;;
+		--json) mode=json ;;
+		--yes | -y) mode=yes ;;
+		*) die 2 "update-keys: [--list|--json|--yes]" ;;
+		esac
+	done
+	# its log lines would sit in front of the JSON
+	os_detect >/dev/null 2>&1
+	layer_config_common
+	case "$mode" in
+	list)
+		pending_print 0
+		return 0
+		;;
+	json)
+		pending_print 1
+		return 0
+		;;
+	yes)
+		# the defaults are the answer: write them down and stop asking
+		validate_or_die
+		config_write_conf "$(path_conf)"
+		pending_clear
+		echo "the defaults of the new or empty settings are kept"
+		return 0
+		;;
+	esac
+	have_input_source || die 2 "update-keys: no terminal to ask on, use --list, --json or --yes"
+	menu_open_input
+	local rc=0
+	pending_ask || rc=$?
+	menu_close_input
+	if ((rc == 1)); then
+		return 0
+	fi
+	validate_or_die
+	config_write_conf "$(path_conf)"
+	if ((rc == 0)); then
+		pending_clear
+	fi
+	echo "saved"
+	return 0
+}
+
+# pending_notice - the end of an install: what is still pending, in two lines.
+pending_notice() {
+	local n
+	n=$(pending_list | wc -l)
+	((n > 0)) || return 0
+	echo "$n setting(s) are new in this version or empty and use their defaults: sudo dpistack update-keys"
+	return 0
 }
 DPISTACK_BUNDLE_END
 put lib/profiles.sh 644 <<'DPISTACK_BUNDLE_END'

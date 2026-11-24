@@ -17,6 +17,7 @@ import { start as startRules2 } from "./modules/rules2.js";
 import { start as startTabs } from "./modules/tabs.js";
 import { start as startRuleTemplates } from "./modules/rule-templates.js";
 import { start as startExceptions } from "./modules/exceptions.js";
+import { start as startHistory } from "./modules/history.js";
 import * as topbar from "./modules/topbar.js";
 import { start as startSettings } from "./modules/settings.js";
 import * as account from "./modules/account.js";
@@ -57,7 +58,7 @@ function show(id) {
   $("overview").hidden = id !== "overview";
 }
 
-const VIEWS = ["overview", "network", "traffic", "components", "ips", "settings", "configs", "rules", "exceptions", "logs", "events", "metrics", "tests", "alerts", "audit", "security", "backups", "account"];
+const VIEWS = ["overview", "network", "traffic", "components", "ips", "settings", "configs", "rules", "exceptions", "logs", "events", "metrics", "history", "tests", "alerts", "audit", "security", "backups", "account"];
 let me = { name: "", role: "", perms: ["view"] };
 let stopView = null;
 
@@ -221,6 +222,19 @@ const SCREENS = {
     ),
   network: () =>
     startNetwork(api, { error: $("network-error"), topology: $("network-topology"), others: $("network-others"), ifaces: $("network-ifaces") }, showLogin),
+  history: () =>
+    startHistory(
+      api,
+      {
+        kind: $("history-kind"),
+        date: $("history-date"),
+        load: $("history-load"),
+        message: $("history-message"),
+        report: $("history-report"),
+        known: $("history-known"),
+      },
+      showLogin,
+    ),
   exceptions: () =>
     startExceptions(
       api,

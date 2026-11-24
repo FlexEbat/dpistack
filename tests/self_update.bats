@@ -314,3 +314,19 @@ base() {
 	run bash "$REPO_DIR/install.sh" self-update apply
 	[[ "$output" == *"nothing to do"* ]]
 }
+
+@test "update --yes lists the settings the new version adds, and they use their defaults" {
+	run base
+	[ "$status" -eq 0 ]
+	sed -i '/^CAPTURE_THREADS=/d' "$CONF_FILE"
+	latest v99.0.0
+	release 99.0.0
+	run bash "$REPO_DIR/install.sh" update --yes
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"CAPTURE_THREADS (new, default: auto)"* ]]
+	[[ "$output" == *"setting(s) are new in this version or empty"* ]]
+	grep -qx 'CAPTURE_THREADS=auto' "$CONF_FILE"
+	# and the host is told what is still unanswered
+	run bash "$REPO_DIR/install.sh" update-keys --list
+	[[ "$output" == *"CAPTURE_THREADS"* ]]
+}

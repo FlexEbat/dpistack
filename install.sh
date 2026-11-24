@@ -65,6 +65,8 @@ source "$LIB_DIR/blocklist.sh"
 source "$LIB_DIR/pcap.sh"
 # shellcheck source=lib/history.sh
 source "$LIB_DIR/history.sh"
+# shellcheck source=lib/pending.sh
+source "$LIB_DIR/pending.sh"
 # shellcheck source=lib/alerts.sh
 source "$LIB_DIR/alerts.sh"
 # shellcheck source=lib/profiles.sh
@@ -448,6 +450,8 @@ cmd_install() {
 	os_detect
 
 	layer_config_common
+	# before anything writes the config: what is new or empty in it
+	pending_record
 	migrate_run
 	maybe_run_install_menu
 	panel_password_apply
@@ -500,6 +504,7 @@ cmd_install() {
 	state_write_value install.finished yes
 	migrate_record
 	echo "installation finished"
+	pending_notice
 	return 0
 }
 
@@ -915,7 +920,7 @@ require_root() {
 # `reconfigure` also exist as installer commands: see dispatch_ctl.
 CTL_VERBS=(status start stop restart reload logs config-read config-write config-revert settings
 	reconfigure rules-update rules-sources rules-group rules-sid rules-search iface mode
-	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update update migrate help rules config info)
+	mode-confirm mode-rollback fw panel-passwd test health runtime users backup diagnose version self-update update update-keys migrate help rules config info)
 
 # restricted_caller - the panel (and nothing else) comes through sudo as
 # the panel user. It gets the verbs above and no installer command: a stolen

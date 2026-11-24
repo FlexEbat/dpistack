@@ -227,6 +227,17 @@ export function dependencyText(k) {
 // shown is a value for people: an empty one is the value in effect when the
 // key has one ("none: all the traffic is analysed", "same as IFACES (eth0)"),
 // and "not set" otherwise, never "(empty)".
+// pendingKeys are the settings that an update brought or that were left
+// empty (the "pending" field of the settings list): new first, then empty.
+export function pendingKeys(keys) {
+  const rank = { new: 0, empty: 1 };
+  return (keys || []).filter((k) => k.pending === "new" || k.pending === "empty").sort((a, b) => rank[a.pending] - rank[b.pending] || a.key.localeCompare(b.key));
+}
+
+export function pendingLabel(kind) {
+  return kind === "new" ? "New" : kind === "empty" ? "Empty" : "";
+}
+
 export const shown = (v, effective = "") => (v === "" ? effective || "not set" : v);
 
 // diffRows is the staged change: every edited non secret key as old to new,
