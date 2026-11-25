@@ -157,3 +157,84 @@ pending_in_state() { grep -a '^pending.keys=' "$STATE" | tail -n 1 | cut -d= -f2
 	DPISTACK_CALLER=panel run bash "$REPO_DIR/install.sh" update-keys
 	[ "$status" -eq 2 ]
 }
+
+# ---- keys a release added, and values that are not valid
+
+@test "a fresh install has been through the settings: the keys of this release are not offered" {
+	[ "$(grep -a '^settings.reviewed=' "$STATE" | tail -n 1 | cut -d= -f2-)" = "$(sed -n 's/^DPISTACK_VERSION="\(.*\)"/\1/p' "$REPO_DIR/lib/common.sh")" ]
+	run bash "$REPO_DIR/install.sh" update-keys --list
+	[[ "$output" == *"no new or empty settings"* ]]
+}
+
+@test "a host that never reviewed the settings is offered the features of the releases since, still at their default" {
+	# a host whose config was written by builds that did not ask: every key is there, with its default
+	sed -i '/^settings.reviewed=/d' "$STATE"
+	run bash "$REPO_DIR/install.sh" update-keys --list
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"HISTORY_ENABLE (review, default: no)"* ]]
+	[[ "$output" == *"added in 0.56.0, still at its default"* ]]
+	[[ "$output" == *"DETECT_NOTIFY (review"* ]]
+	[[ "$output" == *"CAPTURE_THREADS (review"* ]]
+	[[ "$output" == *"ALERT_INDEX (review"* ]]
+	# a key from before the table is not a feature to review
+	[[ "$output" != *"WATCH_ENABLE"* ]]
+}
+
+@test "a value the owner chose is not offered again, and a key that does not apply is not either" {
+	sed -i '/^settings.reviewed=/d' "$STATE"
+	sed -i 's/^HISTORY_ENABLE=.*/HISTORY_ENABLE=yes/' "$CONF"
+	run bash "$REPO_DIR/install.sh" update-keys --list
+	[[ "$output" != *"HISTORY_ENABLE ("* ]]
+	# HISTORY_DAYS applies now (history is on) and is still at its default
+	[[ "$output" == *"HISTORY_DAYS (review"* ]]
+	# DETECT_NOTIFY is off, so its settings do not apply
+	[[ "$output" != *"DETECT_NOTIFY_SEVERITY"* ]]
+}
+
+@test "answering marks the settings as reviewed, so the same list does not come back" {
+	sed -i '/^settings.reviewed=/d' "$STATE"
+	DPISTACK_NO_APPLY=1 run bash "$REPO_DIR/install.sh" update-keys --yes
+	[ "$status" -eq 0 ]
+	run bash "$REPO_DIR/install.sh" update-keys --list
+	[[ "$output" == *"no new or empty settings"* ]]
+	# the next release's keys are offered again: pretend it added one
+	sed -i 's/^settings.reviewed=.*/settings.reviewed=0.55.0/' "$STATE"
+	run bash "$REPO_DIR/install.sh" update-keys --list
+	[[ "$output" == *"HISTORY_ENABLE (review"* ]]
+	[[ "$output" != *"PCAP_MAX_MB"* ]]
+}
+
+@test "every saved value is checked again on an update: an invalid one is listed with the reason" {
+	sed -i 's/^PCAP_MAX_MB=.*/PCAP_MAX_MB=banana/' "$CONF"
+	run bash "$REPO_DIR/install.sh" update-keys --list
+	[[ "$output" == *"PCAP_MAX_MB (invalid, default: 100)"* ]]
+	[[ "$output" == *"the saved value is not valid"* ]]
+	local f
+	f="$(mktemp)"
+	printf '\n' >"$f"
+	DPISTACK_INPUT="$f" DPISTACK_NO_APPLY=1 run bash "$REPO_DIR/install.sh" update-keys
+	rm -f "$f"
+	grep -qx 'PCAP_MAX_MB=100' "$CONF"
+}
+
+@test "update --yes lists a feature the host never reviewed" {
+	sed -i '/^settings.reviewed=/d' "$STATE"
+	run bash "$REPO_DIR/install.sh" install -y --set SURICATA_SOURCE=oisf --set NDPI_ENABLE=no
+	[[ "$output" == *"setting(s) are new in this version or empty"* ]]
+	[[ "$output" == *"sudo dpistack update-keys"* ]]
+}
+
+@test "the table names real keys, with a release number, and every one is in the schema" {
+	local line key
+	while IFS= read -r line; do
+		[[ -n "$line" ]] || continue
+		[[ "${line%%:*}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+		for key in ${line#*:}; do
+			run bash -c "source '$REPO_DIR/lib/schema.sh'; schema_init 2>/dev/null; [[ -n \"\${SCHEMA_TYPE[$key]:-}\" ]]"
+			[ "$status" -eq 0 ] || {
+				echo "$key is not a schema key"
+				false
+			}
+		done
+	done < <(bash -c "source '$REPO_DIR/lib/schema.sh'; printf '%s\n' \"\$SCHEMA_SINCE_TABLE\"")
+}

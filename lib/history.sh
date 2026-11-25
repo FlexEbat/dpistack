@@ -42,9 +42,10 @@ history_report() {
 	devices=$(path_devices_json)
 	local known="{}"
 	[[ -r "$devices" ]] && known=$(jq -c . "$devices" 2>/dev/null || echo "{}")
-	local doc
-	doc=$(jq -nc --argjson s "$sum" --argjson k "$known" --arg from "$from" --arg to "$to" --arg label "$label" --argjson top "$HISTORY_TOP" '
-		{label: $label, from: $from, to: $to, days: ($s.days // []), flows: ($s.flows // 0), bytes: ($s.bytes // 0),
+	local doc enabled=false
+	[[ "$(conf_get HISTORY_ENABLE no)" == "yes" ]] && enabled=true
+	doc=$(jq -nc --argjson s "$sum" --argjson k "$known" --arg from "$from" --arg to "$to" --arg label "$label" --argjson top "$HISTORY_TOP" --argjson enabled "$enabled" '
+		{label: $label, enabled: $enabled, from: $from, to: $to, days: ($s.days // []), flows: ($s.flows // 0), bytes: ($s.bytes // 0),
 		 apps: (($s.apps // {}) | to_entries | map({app: .key, flows: .value.flows, bytes: .value.bytes}) | sort_by(-.bytes, .app) | .[0:$top]),
 		 devices: (($s.devices // {}) | to_entries | map({ip: .key, flows: .value.flows, bytes: .value.bytes,
 			top_app: ((.value.apps // {}) | to_entries | sort_by(-.value, .key) | (.[0].key // ""))}) | sort_by(-.bytes, .ip) | .[0:$top]),
@@ -57,7 +58,7 @@ history_report() {
 	jq -r '
 		def size: if . < 1024 then "\(.) B" elif . < 1048576 then "\((. / 1024 * 10 | floor) / 10) KiB" elif . < 1073741824 then "\((. / 1048576 * 10 | floor) / 10) MiB" else "\((. / 1073741824 * 10 | floor) / 10) GiB" end;
 		"\(.label) report \(.from) to \(.to)",
-		(if (.days | length) == 0 then "no history for these days: is HISTORY_ENABLE=yes and has the watchdog run since?"
+		(if (.days | length) == 0 then (if .enabled then "no history for these days: the watchdog has not seen traffic yet, or HISTORY_DAYS has removed them" else "history is off: set HISTORY_ENABLE=yes (dpistack settings set HISTORY_ENABLE yes)" end)
 		else
 			"days with data: \(.days | length) (\(.days | join(", ")))",
 			"flows: \(.flows), traffic: \(.bytes | size)",

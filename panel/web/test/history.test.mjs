@@ -31,7 +31,7 @@ test("sizes are in the unit that fits", () => {
 
 test("the summary says the period, the totals and the days with data, or why there is nothing", () => {
   assert.equal(reportSummary(RES), "Week 2026-11-14 to 2026-11-20: 5 flows, 11.7 KiB, 2 days with data.");
-  assert.match(reportSummary({ label: "daily", from: "2026-01-01", to: "2026-01-01", days: [] }), /No history for 2026-01-01 to 2026-01-01.*HISTORY_ENABLE/);
+  assert.match(reportSummary({ label: "daily", from: "2026-01-01", to: "2026-01-01", days: [] }), /No history for 2026-01-01 to 2026-01-01 yet/);
   assert.equal(reportSummary(null), "");
 });
 
@@ -56,4 +56,16 @@ test("the History view is in the menu, the view list and app.js, with its contro
   assert.match(here("app.js"), /"metrics", "history"/);
   assert.match(here("modules/history.js"), /"\/api\/history\/report\?"/);
   assert.match(here("modules/history.js"), /"\/api\/history\/devices"/);
+});
+
+import { historyOff } from "../modules/history-model.js";
+
+test("when history is off the screen says so and does not claim it is waiting for traffic", () => {
+  const off = { label: "daily", enabled: false, from: "2026-11-20", to: "2026-11-20", days: [] };
+  assert.match(reportSummary(off), /History is off\. Turn on HISTORY_ENABLE/);
+  assert.equal(historyOff(off), true);
+  const on = { ...off, enabled: true };
+  assert.match(reportSummary(on), /History is on/);
+  assert.equal(historyOff(on), false);
+  assert.equal(historyOff(null), false);
 });

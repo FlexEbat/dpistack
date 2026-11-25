@@ -2,7 +2,7 @@
 // keeps (HISTORY_ENABLE) and the devices that were seen. Only a 401 signs the
 // user out.
 
-import { dateProblem, reportSummary, appRows, deviceRows, alertRows, newDeviceText, knownRows } from "./history-model.js";
+import { dateProblem, reportSummary, appRows, deviceRows, alertRows, newDeviceText, knownRows, historyOff } from "./history-model.js";
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -60,7 +60,17 @@ export function start(api, areas, onError) {
       areas.message.textContent = "";
       renderReport(res, areas.report);
       const rows = knownRows(devices);
-      areas.known.replaceChildren(section("Devices ever seen", rows, ["Address", "First seen", "Last seen"], "No device recorded yet. It needs HISTORY_ENABLE and traffic."));
+      const none = historyOff(res) ? "No device recorded: history is off." : "No device recorded yet. A device appears when Suricata sees its traffic.";
+      areas.known.replaceChildren(section("Devices ever seen", rows, ["Address", "First seen", "Last seen"], none));
+      if (historyOff(res)) {
+        const go = el("button", "", "Open Settings");
+        go.type = "button";
+        go.addEventListener("click", () => {
+          const nav = document.querySelector('[data-view="settings"]');
+          if (nav) nav.click();
+        });
+        areas.report.append(go);
+      }
     } catch (err) {
       if (!running) return;
       if (err.status === 401) return onError(err);

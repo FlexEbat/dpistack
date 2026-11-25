@@ -230,12 +230,24 @@ export function dependencyText(k) {
 // pendingKeys are the settings that an update brought or that were left
 // empty (the "pending" field of the settings list): new first, then empty.
 export function pendingKeys(keys) {
-  const rank = { new: 0, empty: 1 };
-  return (keys || []).filter((k) => k.pending === "new" || k.pending === "empty").sort((a, b) => rank[a.pending] - rank[b.pending] || a.key.localeCompare(b.key));
+  const rank = { new: 0, invalid: 1, empty: 2, review: 3 };
+  return (keys || []).filter((k) => k.pending in rank).sort((a, b) => rank[a.pending] - rank[b.pending] || a.key.localeCompare(b.key));
 }
 
 export function pendingLabel(kind) {
-  return kind === "new" ? "New" : kind === "empty" ? "Empty" : "";
+  return { new: "New", empty: "Empty", invalid: "Invalid", review: "Review" }[kind] || "";
+}
+
+// pendingHelp is the sentence for the tooltip of a mark.
+export function pendingHelp(kind) {
+  return (
+    {
+      new: "New in this version: it uses its default until you choose",
+      empty: "Empty, and the program needs a value: it uses the default until you choose",
+      invalid: "The saved value is not valid: choose a valid one",
+      review: "A feature added since you last reviewed the settings, still at its default",
+    }[kind] || ""
+  );
 }
 
 export const shown = (v, effective = "") => (v === "" ? effective || "not set" : v);
