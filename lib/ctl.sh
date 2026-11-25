@@ -82,7 +82,9 @@ Usage: dpistack <command> [arguments]
   test bittorrent|https|all [--json] check tests (section 10)
   health [--json]                    one watchdog run
   users list|add|passwd|role|disable|enable|remove  users of the panel (passwords on stdin)
-  backup create [--out FILE]|list [--json]|verify FILE|restore FILE [--dry-run]  configs in one tar.gz
+  backup create [--out FILE]|list [--json]|run|verify FILE|restore FILE [--dry-run]  configs in one tar.gz
+                                      run: the scheduled archive (BACKUP_DIR, age, BACKUP_KEEP); an encrypted
+                                      archive needs --identity KEY (the age key file) for verify and restore
   diagnose [<part>]                  the parts that do not run: state, exit status, last log lines
   runtime [--json]                   what can run in docker, the runtime of every part, the links between them
   info [--json]                      where to open the panel, EveBox and ntopng (the addresses for the current access mode)
@@ -2429,6 +2431,59 @@ backup_live_path() {
 	esac
 }
 
+# backup_conf <key> - a backup key from the saved dpistack.conf (the verbs
+# do not load the whole configuration), or its default.
+backup_conf() {
+	local key="$1" line val=""
+	if [[ -r "$(path_conf)" ]]; then
+		line=$(grep -E "^${key}=" "$(path_conf)" | tail -n 1)
+		val="${line#*=}"
+	fi
+	if [[ -z "$val" ]]; then
+		case "$key" in
+		BACKUP_SCHEDULE) val=off ;;
+		BACKUP_KEEP) val=7 ;;
+		BACKUP_DIR) val=/var/backups/dpistack ;;
+		esac
+	fi
+	printf '%s\n' "$val"
+}
+
+# backup_scheduled_dir - where the scheduled backups go (BACKUP_DIR, under
+# DPISTACK_ROOT like every other path, outside the state directory).
+backup_scheduled_dir() {
+	printf '%s\n' "${DPISTACK_ROOT}$(backup_conf BACKUP_DIR)"
+}
+
+# backup_plain <archive> <identity-or-empty> <tmpdir> - prints the path of a
+# readable tar.gz: the archive itself, or for a .age archive a decrypted copy
+# in <tmpdir>. Returns 3 with the reason when an encrypted archive cannot be
+# opened.
+backup_plain() {
+	local arc="$1" identity="$2" tmp="$3"
+	if [[ "$arc" != *.age ]]; then
+		printf '%s\n' "$arc"
+		return 0
+	fi
+	[[ -n "$identity" ]] || {
+		echo "the archive is encrypted: name the age key file with --identity FILE"
+		return 3
+	}
+	[[ -r "$identity" ]] || {
+		echo "the age key file cannot be read: $identity"
+		return 3
+	}
+	command -v age >/dev/null 2>&1 || {
+		echo "age is not installed here, so the archive cannot be opened"
+		return 3
+	}
+	age -d -i "$identity" -o "$tmp/plain.tar.gz" "$arc" 2>/dev/null || {
+		echo "age could not open the archive with that key"
+		return 3
+	}
+	printf '%s\n' "$tmp/plain.tar.gz"
+}
+
 # backup_resolve <archive> - prints the path of an existing archive. A bare
 # name is a file of the archives directory. The panel may only name such a
 # file: it must not make root read or write a path of its choosing.
@@ -2440,6 +2495,7 @@ backup_resolve() {
 		path="$(path_backup_archives_dir)/$arg"
 	elif [[ "$arg" != */* ]]; then
 		path="$(path_backup_archives_dir)/$arg"
+		[[ -f "$path" ]] || path="$(backup_scheduled_dir)/$arg"
 	fi
 	[[ -f "$path" ]] || fail 4 "backup: no such archive: $arg"
 	printf '%s\n' "$path"
@@ -2587,40 +2643,70 @@ backup_create() {
 }
 
 backup_list() {
-	local json=0 dir f tmp first=1 info
+	local json=0 dir sdir f first=1 info
 	case "${1:-}" in
 	"") ;;
 	--json) json=1 ;;
 	*) fail 2 "backup list: unknown argument: $1" ;;
 	esac
 	dir=$(path_backup_archives_dir)
+	sdir=$(backup_scheduled_dir)
 	((json)) && printf '['
-	if [[ -d "$dir" ]]; then
-		while IFS= read -r f; do
-			[[ -n "$f" ]] || continue
+	while IFS= read -r f; do
+		[[ -n "$f" ]] || continue
+		if [[ "$f" == *.age ]]; then
+			# An encrypted archive cannot be read here: only its name and size.
+			info=$(jq -cn '{encrypted: true}')
+		else
 			info=$(tar -xzOf "$f" manifest.json 2>/dev/null | jq -c '{program, created, files: (.files | length)}' 2>/dev/null) || info=""
 			[[ -n "$info" ]] || info='{}'
-			info=$(jq -c --arg name "${f##*/}" --argjson size "$(stat -c %s "$f")" '. + {name: $name, size: $size}' <<<"$info")
-			if ((json)); then
-				((first)) || printf ','
-				printf '%s' "$info"
-			else
-				jq -r '"\(.name)  \(.created // "?")  v\(.program // "?")  \(.files // 0) files  \(.size) bytes"' <<<"$info"
-			fi
-			first=0
-		done < <(ls -1t "$dir"/*.tar.gz 2>/dev/null)
-	fi
+		fi
+		info=$(jq -c --arg name "${f##*/}" --argjson size "$(stat -c %s "$f")" '. + {name: $name, size: $size}' <<<"$info")
+		if ((json)); then
+			((first)) || printf ','
+			printf '%s' "$info"
+		else
+			jq -r '"\(.name)  \(.created // (if .encrypted then "encrypted" else "?" end))  v\(.program // "?")  \(.files // 0) files  \(.size) bytes"' <<<"$info"
+		fi
+		first=0
+	done < <(
+		ls -1t "$dir"/*.tar.gz 2>/dev/null
+		restricted_caller || { [[ "$sdir" == "$dir" ]] || ls -1t "$sdir"/dpistack-backup-*.tar.gz "$sdir"/dpistack-backup-*.tar.gz.age 2>/dev/null; }
+	)
 	((json)) && printf ']\n'
 	return 0
 }
 
 backup_verify() {
-	[[ $# -eq 1 ]] || fail 2 "backup verify: an archive is needed"
-	local arc tmp out rc
-	arc=$(backup_resolve "$1") || exit $?
+	local arg arc="" identity="" tmp out rc plain
+	while (($#)); do
+		arg="$1"
+		shift
+		case "$arg" in
+		--identity)
+			[[ $# -ge 1 ]] || fail 2 "backup verify: --identity needs a file"
+			restricted_caller && fail 5 "backup verify: --identity is not available to the panel"
+			identity="$1"
+			shift
+			;;
+		-*) fail 2 "backup verify: unknown argument: $arg" ;;
+		*)
+			[[ -z "$arc" ]] || fail 2 "backup verify: one archive only"
+			arc="$arg"
+			;;
+		esac
+	done
+	[[ -n "$arc" ]] || fail 2 "backup verify: an archive is needed"
+	arc=$(backup_resolve "$arc") || exit $?
 	tmp=$(mktemp -d)
-	out=$(backup_unpack "$arc" "$tmp")
+	plain=$(backup_plain "$arc" "$identity" "$tmp")
 	rc=$?
+	if ((rc == 0)); then
+		out=$(backup_unpack "$plain" "$tmp")
+		rc=$?
+	else
+		out="$plain"
+	fi
 	if ((rc != 0)); then
 		rm -rf "$tmp"
 		echo "$out"
@@ -2675,22 +2761,38 @@ backup_check_restored() {
 }
 
 backup_restore() {
-	local dry=0 arg arc="" tmp out rc name live mode
+	local dry=0 arg arc="" tmp out rc name live mode identity="" want_identity=0 plain
 	for arg in "$@"; do
 		case "$arg" in
 		--dry-run) dry=1 ;;
+		--identity)
+			want_identity=1
+			;;
 		-*) fail 2 "backup restore: unknown argument: $arg" ;;
 		*)
+			if ((want_identity)); then
+				restricted_caller && fail 5 "backup restore: --identity is not available to the panel"
+				identity="$arg"
+				want_identity=0
+				continue
+			fi
 			[[ -z "$arc" ]] || fail 2 "backup restore: one archive only"
 			arc="$arg"
 			;;
 		esac
 	done
+	((want_identity)) && fail 2 "backup restore: --identity needs a file"
 	[[ -n "$arc" ]] || fail 2 "backup restore: an archive is needed"
 	arc=$(backup_resolve "$arc") || exit $?
 	tmp=$(mktemp -d)
-	out=$(backup_unpack "$arc" "$tmp")
+	plain=$(backup_plain "$arc" "$identity" "$tmp")
 	rc=$?
+	if ((rc == 0)); then
+		out=$(backup_unpack "$plain" "$tmp")
+		rc=$?
+	else
+		out="$plain"
+	fi
 	if ((rc != 0)); then
 		rm -rf "$tmp"
 		echo "$out"
@@ -2759,6 +2861,60 @@ backup_restore() {
 	echo "next: dpistack reconfigure, then check the parts with dpistack status"
 }
 
+# backup_run - what dpistack-backup.service starts. One archive into
+# BACKUP_DIR; with BACKUP_AGE_RECIPIENT set it is encrypted to that public
+# key and no plain copy is left (the host can write the archive and cannot
+# read it back). Then the oldest are deleted down to BACKUP_KEEP. A name
+# outside dpistack-backup-*.tar.gz[.age] is never deleted.
+backup_run() {
+	restricted_caller && fail 5 "backup run: not for the panel"
+	local dir recipient keep tmp plain name dest f n=0
+	dir=$(backup_scheduled_dir)
+	recipient=$(backup_conf BACKUP_AGE_RECIPIENT)
+	keep=$(backup_conf BACKUP_KEEP)
+	[[ "$keep" =~ ^[0-9]+$ && "$keep" -ge 1 ]] || keep=7
+	if [[ -n "$recipient" ]] && ! command -v age >/dev/null 2>&1; then
+		fail 1 "backup run: BACKUP_AGE_RECIPIENT is set but age is not installed"
+	fi
+	tmp=$(mktemp -d) || fail 1 "backup run: no temporary directory"
+	plain="$tmp/backup.tar.gz"
+	backup_create --out "$plain" >/dev/null || {
+		rm -rf "$tmp"
+		fail 1 "backup run: the archive could not be made"
+	}
+	name="dpistack-backup-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+	[[ -n "$recipient" ]] && name="$name.age"
+	if ! mkdir -p "$dir" || ! chmod 0700 "$dir"; then
+		rm -rf "$tmp"
+		fail 1 "backup run: $dir cannot be made"
+	fi
+	dest="$dir/$name"
+	if [[ -n "$recipient" ]]; then
+		(umask 077 && age -r "$recipient" -o "$dest.part" "$plain") || {
+			rm -rf "$tmp" "$dest.part"
+			fail 1 "backup run: age could not encrypt the archive"
+		}
+	else
+		(umask 077 && cp "$plain" "$dest.part") || {
+			rm -rf "$tmp" "$dest.part"
+			fail 1 "backup run: the archive could not be written to $dir"
+		}
+	fi
+	mv "$dest.part" "$dest" || {
+		rm -rf "$tmp" "$dest.part"
+		fail 1 "backup run: the archive could not be written to $dir"
+	}
+	rm -rf "$tmp"
+	# Retention: newest first, everything past BACKUP_KEEP goes.
+	while IFS= read -r f; do
+		[[ -n "$f" ]] || continue
+		n=$((n + 1))
+		((n > keep)) && rm -f -- "$f"
+	done < <(ls -1t "$dir"/dpistack-backup-*.tar.gz "$dir"/dpistack-backup-*.tar.gz.age 2>/dev/null)
+	echo "$dest"
+	echo "backup run: kept the newest $keep of $dir"
+}
+
 cmd_backup() {
 	local sub="${1:-}"
 	[[ $# -ge 1 ]] && shift
@@ -2767,7 +2923,8 @@ cmd_backup() {
 	list) backup_list "$@" ;;
 	verify) backup_verify "$@" ;;
 	restore) backup_restore "$@" ;;
-	*) fail 2 "backup: create [--out FILE] | list [--json] | verify FILE | restore FILE [--dry-run]" ;;
+	run) backup_run "$@" ;;
+	*) fail 2 "backup: create [--out FILE] | list [--json] | run | verify FILE [--identity KEY] | restore FILE [--dry-run] [--identity KEY]" ;;
 	esac
 }
 

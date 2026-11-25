@@ -775,7 +775,8 @@ cmd_uninstall() {
 	uninstall_rm_tree "$(path_grafana_prov_dir)"
 
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
-	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_sudoers)"
+	run systemctl disable --now "$BACKUP_TIMER" 2>/dev/null || true
+	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_backup_timer_unit)" "$(path_backup_service_unit)" "$(path_sudoers)"
 	run systemctl disable --now "$PANEL_SERVICE" 2>/dev/null || true
 	# every container of the docker runtime, not only the panel
 	uninstall_docker_stack "$PURGE"
