@@ -283,6 +283,19 @@ config_validate() {
 		fi
 	fi
 
+	# A scheduled backup needs a calendar expression systemd accepts: a timer
+	# with one it refuses would fail to start long after the install.
+	if [[ "${CONF[BACKUP_SCHEDULE]:-off}" != "off" ]] && command -v systemd-analyze >/dev/null 2>&1; then
+		if ! systemd-analyze calendar "${CONF[BACKUP_SCHEDULE]}" >/dev/null 2>&1; then
+			echo "BACKUP_SCHEDULE: systemd does not accept \"${CONF[BACKUP_SCHEDULE]}\" as a calendar expression (try daily, weekly or Mon *-*-* 03:00:00)"
+			errors=$((errors + 1))
+		fi
+	fi
+	if [[ "${CONF[BACKUP_SCHEDULE]:-off}" == "off" && -n "${CONF[BACKUP_AGE_RECIPIENT]:-}" ]]; then
+		echo "BACKUP_AGE_RECIPIENT is set but BACKUP_SCHEDULE=off: nothing makes encrypted backups; set a schedule or clear the key"
+		errors=$((errors + 1))
+	fi
+
 	return "$errors"
 }
 

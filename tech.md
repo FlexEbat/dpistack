@@ -1,23 +1,23 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
 **Document version: v104** (2026-11-24)
-**Program version: v0.58.1** (tasks 0-56 are done (18.58), 57 to 62 are done, 63 to 65 are planned (18.73); settings that an update brings are asked for (18.75); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Program version: v0.59.0** (tasks 0-56 are done (18.58), 57 to 63 are done, 64 and 65 are planned (18.73); scheduled, retained and encrypted backups (18.76); settings that an update brings are asked for (18.75); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.59.0: task 63 (18.76): scheduled backups (`BACKUP_SCHEDULE`, `BACKUP_KEEP`, `BACKUP_DIR`, `BACKUP_AGE_RECIPIENT`), `dpistack backup run`, encryption with age and `--identity` for verify and restore, a backup timer that `uninstall` removes and whose archives it keeps.
 - v0.58.1: the check for settings finds two more kinds (a saved value that is not valid, a feature added since the settings were last reviewed and still at its default), and the History screen says when history is off (18.75).
 - v0.58.0: task 61 is done (the History screen, `/api/history/*`) and an update asks for the settings it adds or finds empty: `dpistack update-keys`, the questions in `dpistack update`, a box and marks in the panel (18.75).
 - v0.57.0: task 62 (18.73): the Alert Center keeps an index of one entry per rule, so old alerts do not drop out with the tail of `eve.json`; `events.jsonl` is rotated at 5 MiB.
 - v0.56.0: task 61, first part (18.73): the watchdog keeps a daily roll-up (`HISTORY_ENABLE`), `dpistack report daily|weekly` and `dpistack devices` read it, and `DEVICE_NEW_NOTIFY` announces a new private address.
-- v0.53.1: CI failures are reported with their reasons (annotations, job summary, statuses) and the gate says what it saw (18.74); the Rules screen can switch a rule or a group to drop.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v105: v0.59.0. Task 63 done, 18.76 written (decisions D200 to D202), `backup run` and `--identity` in 4.5, four keys in 4.3.
 - v104: v0.58.1. 18.75 extended (decision D199).
 - v103: v0.58.0. Task 61 done, 18.75 written (decisions D197, D198), the verb `update-keys` in 4.5, the History routes in section 5.
 - v102: v0.57.0. Task 62 done (decisions D195, D196).
 - v101: v0.56.0. Task 61 first part (decisions D193, D194).
-- v100: v0.55.0. Task 60 done (decision D192), the verb in 4.5, the route in section 5.
 - v99: v0.54.0. Task 59 done (decision D191), keys in 4.3, the Capture bullet of the Suricata section.
 - v98: v0.53.1. 18.74 written (decision D190).
 - v97: v0.53.0. Task 58 done (D187 to D189), the API rows of 5 and the verbs of 4.5 name the lists.
@@ -327,6 +327,10 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `ALERT_INDEX_DAYS` | `30` | 1 to 365 days an entry stays after the last alert of its rule |
 | `HISTORY_ENABLE` | `no` | `yes` makes the watchdog keep a roll-up per day (task 61) |
 | `HISTORY_DAYS` | `90` | 1 to 3650 days kept; older day files are removed |
+| `BACKUP_SCHEDULE` | `off` | `off` or a systemd calendar expression (`daily`, `weekly`, `Mon *-*-* 03:00:00`); anything else but `off` installs `dpistack-backup.timer` |
+| `BACKUP_KEEP` | `7` | 1 to 365 scheduled backups kept in `BACKUP_DIR`; older ones are deleted |
+| `BACKUP_DIR` | `/var/backups/dpistack` | absolute path of the scheduled backups; outside the state directory, so `uninstall` leaves it |
+| `BACKUP_AGE_RECIPIENT` | empty | an `age` public key (`age1...`); when set, scheduled backups are written as `.tar.gz.age` and the host cannot open them |
 | `DEVICE_NEW_NOTIFY` | `no` | `yes` sends a message when a private address appears for the first time; needs `HISTORY_ENABLE=yes` |
 | `DETECT_NOTIFY_MAX_PER_HOUR` `DETECT_NOTIFY_DEDUP_MIN` | `20` `60` | 1 to 1000 messages an hour; the same signature, source and destination once in 0 to 1440 minutes (0: no de-duplication) |
 | `TEST_HTTPS_URL` | `https://example.com` | the URL of the live HTTPS test |
@@ -442,6 +446,7 @@ The only place of the privileged actions of the panel and the watchdog. It works
 | `panel-passwd` | reads the password from stdin, writes an argon2id hash into `panel.auth` and into the user `admin` of `users.json` |
 | `users list [--json]`, `users add <name> <role> [--perms a,b]`, `users passwd <name>`, `users role <name> <role> [--perms a,b]`, `users disable\|enable\|remove <name>` | users of the panel in `/etc/dpistack/users.json` (task 34); passwords on stdin, 8 characters at least; exit 3 when the change would leave nobody able to manage users, 4 for an unknown user; open to the panel |
 | `backup create [--out FILE]`, `backup list [--json]`, `backup verify FILE`, `backup restore FILE [--dry-run]` | archives of the configs in `/var/lib/dpistack/archives/` (task 36, 18.36); `create` and `restore` are audited; the panel may name an archive by its file name only (`--out` and paths give 5 for it); exit 3 for an archive or a configuration that failed its checks, 4 for a missing archive |
+| `backup run`, `backup verify FILE --identity KEY`, `backup restore FILE --identity KEY` | task 63 (18.76): `run` is what `dpistack-backup.service` starts (an archive into `BACKUP_DIR`, encrypted to `BACKUP_AGE_RECIPIENT` when set, then retention by `BACKUP_KEEP`); `--identity` names the age key file that opens an encrypted archive; root only, the panel gets 5 |
 | `version` | the version of the bundle |
 
 Arguments: letters, digits and `. _ : = / @ + , -` and a space are allowed (`rules-search` takes a phrase); everything else, including `; | & $ ( ) < > \` quotes and a line break, gives code `5` before any action. A URL with `?`, `&`, `%` therefore does not pass `rules-sources add-url`.
@@ -1327,7 +1332,7 @@ One row per task. **Done** means the Definition of Done of section 14 was met; a
 | 60 | your own pcap | **done.** `dpistack pcap analyze FILE` and an upload on the IPS screen show the alerts and the application protocols of a capture you bring | v0.55.0 | 18.73 |
 | 61 | history and traffic intelligence | **done.** The daily roll-up, `report daily\|weekly`, `devices`, the new device message and the History screen; IP and domain blocklists are the `suricata-update` sources that `rules-sources` already enables; GeoIP is left out on purpose (D197) | v0.58.0 | 18.73 |
 | 62 | alert state that does not lose alerts | **done.** `alerts-index.json` keeps one entry per rule, the Alert Center reads it with the tail of `eve.json`, `events.jsonl` is rotated | v0.57.0 | 18.73 |
-| 63 | backup that looks after itself | planned. A schedule, retention, encryption, an upload in the panel, a safe place that `uninstall` keeps, a restore on another host that is tried in a test | v0.58.0 | 18.73 |
+| 63 | backup that looks after itself | **done** (v0.59.0). A schedule, retention, age encryption, a directory outside the state that `uninstall` keeps, a restore onto an empty root in a test; the upload in the panel is not done (18.76) | v0.59.0 | 18.73, 18.76 |
 | 64 | TLS of the panel, self-signed certificates | planned. The panel serves HTTPS itself with a self-signed certificate that the program makes, renews and shows the fingerprint of; the nginx certificate is made the same way | v0.59.0 | 18.73 |
 | 65 | two-factor sign-in | planned. TOTP for the accounts of the panel with recovery codes | v0.60.0 | 18.73 |
 
@@ -2798,3 +2803,15 @@ Open: the state of triage (acknowledged, snoozed) does not silence a delivery (d
 | id | decision |
 | --- | --- |
 | D199 | **A key still at its default is offered once per release, until the settings were reviewed.** A feature that is off by default is invisible: the owner who updated three versions ago was never told that detection alerts or history exist. A value that differs from the default was chosen and is left alone; answering (or keeping the defaults) once ends the offers up to this release, so the list does not nag |
+
+### 18.76 Task 63: backup that looks after itself (v0.59.0)
+
+**What changed.** Four keys (4.3): `BACKUP_SCHEDULE` (`off` by default, or a systemd calendar expression), `BACKUP_KEEP` (7), `BACKUP_DIR` (`/var/backups/dpistack`), `BACKUP_AGE_RECIPIENT` (an `age` public key). The `watch` step now also writes `dpistack-backup.service` and `dpistack-backup.timer` (`OnCalendar=`, `Persistent=true`, a 5 minute random delay) when the schedule is not `off`, and removes them when it is; they do not depend on `WATCH_ENABLE`. The service runs `dpistack backup run`: one archive of the usual files (the same set as D46) into `BACKUP_DIR` (directory 0700, file 0600), encrypted to the recipient when one is set (`.tar.gz.age`, and no plain copy is left), then everything past the newest `BACKUP_KEEP` is deleted. Only names of the form `dpistack-backup-*.tar.gz[.age]` are ever deleted. `backup verify` and `backup restore` take `--identity KEYFILE` for an encrypted archive; `backup list` shows the scheduled archives too (an encrypted one by name and size only). `config_validate` refuses a schedule that `systemd-analyze calendar` rejects and a recipient with `BACKUP_SCHEDULE=off`. `uninstall` removes the two units and never `BACKUP_DIR`, with or without `--purge`. CI installs `age` so the encryption tests run. `tests/backup_schedule.bats` has 14 tests, among them a restore of an encrypted archive onto an empty root.
+
+**Not done, on purpose.** The panel cannot upload an archive, and it does not see or download scheduled archives: the panel reads only the archives directory, and `backup run`, `--identity` and `BACKUP_DIR` are closed to it (exit 5), so a stolen session cannot make root read a key file or open the encrypted archives. A restore still ends with `dpistack reconfigure` by hand, and it still replaces files one after another under one lock (18.36).
+
+| id | decision |
+| --- | --- |
+| D200 | **Scheduled archives live outside the state directory.** `uninstall` removes the state directory; a backup that disappears with the thing it protects is of no use after a failed install. `BACKUP_DIR` is also kept with `--purge`: it is the way back |
+| D201 | **With a key set, no plain copy is made on the host.** The plain archive exists only in a private temporary directory during the run. The host can write the archive and cannot read it, so a stolen host or a stolen backup disk does not open `users.json`. The cost: restoring needs the private key, which the owner keeps elsewhere, and this is said at the verb |
+| D202 | **`age` and not a home-made cipher or GPG.** It is a ready-made, small tool with public-key encryption and no key management on the host (the owner's preference for ready-made solutions); it is installed by the `watch` step when a key is set and its package exists |

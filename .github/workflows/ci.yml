@@ -33,7 +33,7 @@ jobs:
         run: |
           echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80retries >/dev/null
           sudo apt-get update
-          sudo apt-get install -y bats shellcheck shfmt jq util-linux
+          sudo apt-get install -y bats shellcheck shfmt jq age util-linux
       - name: Bats shard
         # The installer refuses to run without root (preflight), so the suite
         # that exercises it must run as root too; the runner user is not.
@@ -67,7 +67,7 @@ jobs:
         run: |
           echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80retries >/dev/null
           sudo apt-get update
-          sudo apt-get install -y bats shellcheck shfmt jq util-linux
+          sudo apt-get install -y bats shellcheck shfmt jq age util-linux
       - name: Checks (shfmt, shellcheck, security, bundle, docs, Go, panel JS)
         run: |
           sudo git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -127,7 +127,7 @@ jobs:
         run: |
           echo 'Acquire::Retries "3";' | sudo tee /etc/apt/apt.conf.d/80retries >/dev/null
           sudo apt-get update
-          sudo apt-get install -y bats jq util-linux
+          sudo apt-get install -y bats jq age util-linux
       - name: Install the last release, then upgrade it with this tree
         env:
           GH_TOKEN: ${{ github.token }}

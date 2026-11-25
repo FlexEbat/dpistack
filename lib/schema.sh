@@ -70,6 +70,9 @@ SCHEMA_PATTERN[ALERT_MAIL_FROM]='^[A-Za-z0-9._%+@-]+$'
 SCHEMA_PATTERN[ALERT_TG_TOKEN]='^[0-9A-Za-z:_-]+$'
 SCHEMA_PATTERN[ALERT_SMTP_URL]="^smtps?://${_url}\$"
 SCHEMA_PATTERN[ALERT_WEBHOOK_URL]="^https?://${_url}\$"
+SCHEMA_PATTERN[BACKUP_SCHEDULE]='^(off|[A-Za-z0-9*][A-Za-z0-9*:,./ -]*)$'
+SCHEMA_PATTERN[BACKUP_DIR]='^/[A-Za-z0-9._/-]*$'
+SCHEMA_PATTERN[BACKUP_AGE_RECIPIENT]='^age1[a-z0-9]{50,70}$'
 SCHEMA_PATTERN[ALERT_SYSLOG_TARGET]='^[A-Za-z0-9._-]+(:[0-9]{1,5})?$|^\[[0-9A-Fa-f:.]+\](:[0-9]{1,5})?$'
 SCHEMA_PATTERN[DETECT_NOTIFY_CHANNELS]='^([a-z]+(,[a-z]+)*)?$'
 SCHEMA_PATTERN[METRICS_TOKEN]='^[A-Za-z0-9._~-]+$'
@@ -206,6 +209,10 @@ schema_init() {
 	_schema_add 'DETECT_NOTIFY_CHANNELS|free|||advanced|watch|watch|light|no'
 	_schema_add 'DETECT_NOTIFY_MAX_PER_HOUR|int|20|1..1000|advanced|watch|watch|light|no'
 	_schema_add 'DETECT_NOTIFY_DEDUP_MIN|int|60|0..1440|advanced|watch|watch|light|no'
+	_schema_add 'BACKUP_SCHEDULE|free|off||advanced|watch|watch|light|no'
+	_schema_add 'BACKUP_KEEP|int|7|1..365|advanced|watch|watch|light|no'
+	_schema_add 'BACKUP_DIR|free|/var/backups/dpistack||advanced|watch|watch|light|no'
+	_schema_add 'BACKUP_AGE_RECIPIENT|free|||advanced|watch|watch|light|no'
 
 	_schema_add 'TEST_HTTPS_URL|free|https://example.com||advanced|tests|verify|light|no'
 	_schema_add 'TEST_BT_LIVE|enum|no|yes,no|advanced|tests|suricata|light|no'
@@ -281,6 +288,8 @@ schema_depends_init() {
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes HISTORY_ENABLE=yes' HISTORY_DAYS DEVICE_NEW_NOTIFY
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes DETECT_NOTIFY=yes' 'DETECT_NOTIFY_*'
 	_schema_depend 'WATCH_ENABLE=yes' 'WATCH_*' 'ALERT_*'
+	_schema_depend '' BACKUP_SCHEDULE
+	_schema_depend 'BACKUP_SCHEDULE!=off' BACKUP_KEEP BACKUP_DIR BACKUP_AGE_RECIPIENT
 }
 
 schema_depends_init
@@ -618,6 +627,7 @@ SCHEMA_SINCE_TABLE="
 0.55.0: PCAP_MAX_MB
 0.56.0: HISTORY_ENABLE HISTORY_DAYS DEVICE_NEW_NOTIFY
 0.57.0: ALERT_INDEX ALERT_INDEX_DAYS
+0.59.0: BACKUP_SCHEDULE BACKUP_KEEP BACKUP_DIR BACKUP_AGE_RECIPIENT
 "
 
 # schema_since <key> - the release that brought the key, or nothing.

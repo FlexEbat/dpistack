@@ -810,7 +810,8 @@ cmd_uninstall() {
 	uninstall_rm_tree "$(path_grafana_prov_dir)"
 
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
-	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_sudoers)"
+	run systemctl disable --now "$BACKUP_TIMER" 2>/dev/null || true
+	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_backup_timer_unit)" "$(path_backup_service_unit)" "$(path_sudoers)"
 	run systemctl disable --now "$PANEL_SERVICE" 2>/dev/null || true
 	# every container of the docker runtime, not only the panel
 	uninstall_docker_stack "$PURGE"
@@ -2712,7 +2713,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.58.1"
+DPISTACK_VERSION="0.59.0"
 
 : "${DRY_RUN:=0}"
 
@@ -3333,6 +3334,19 @@ config_validate() {
 		fi
 	fi
 
+	# A scheduled backup needs a calendar expression systemd accepts: a timer
+	# with one it refuses would fail to start long after the install.
+	if [[ "${CONF[BACKUP_SCHEDULE]:-off}" != "off" ]] && command -v systemd-analyze >/dev/null 2>&1; then
+		if ! systemd-analyze calendar "${CONF[BACKUP_SCHEDULE]}" >/dev/null 2>&1; then
+			echo "BACKUP_SCHEDULE: systemd does not accept \"${CONF[BACKUP_SCHEDULE]}\" as a calendar expression (try daily, weekly or Mon *-*-* 03:00:00)"
+			errors=$((errors + 1))
+		fi
+	fi
+	if [[ "${CONF[BACKUP_SCHEDULE]:-off}" == "off" && -n "${CONF[BACKUP_AGE_RECIPIENT]:-}" ]]; then
+		echo "BACKUP_AGE_RECIPIENT is set but BACKUP_SCHEDULE=off: nothing makes encrypted backups; set a schedule or clear the key"
+		errors=$((errors + 1))
+	fi
+
 	return "$errors"
 }
 
@@ -3623,7 +3637,9 @@ Usage: dpistack <command> [arguments]
   test bittorrent|https|all [--json] check tests (section 10)
   health [--json]                    one watchdog run
   users list|add|passwd|role|disable|enable|remove  users of the panel (passwords on stdin)
-  backup create [--out FILE]|list [--json]|verify FILE|restore FILE [--dry-run]  configs in one tar.gz
+  backup create [--out FILE]|list [--json]|run|verify FILE|restore FILE [--dry-run]  configs in one tar.gz
+                                      run: the scheduled archive (BACKUP_DIR, age, BACKUP_KEEP); an encrypted
+                                      archive needs --identity KEY (the age key file) for verify and restore
   diagnose [<part>]                  the parts that do not run: state, exit status, last log lines
   runtime [--json]                   what can run in docker, the runtime of every part, the links between them
   info [--json]                      where to open the panel, EveBox and ntopng (the addresses for the current access mode)
@@ -5970,6 +5986,59 @@ backup_live_path() {
 	esac
 }
 
+# backup_conf <key> - a backup key from the saved dpistack.conf (the verbs
+# do not load the whole configuration), or its default.
+backup_conf() {
+	local key="$1" line val=""
+	if [[ -r "$(path_conf)" ]]; then
+		line=$(grep -E "^${key}=" "$(path_conf)" | tail -n 1)
+		val="${line#*=}"
+	fi
+	if [[ -z "$val" ]]; then
+		case "$key" in
+		BACKUP_SCHEDULE) val=off ;;
+		BACKUP_KEEP) val=7 ;;
+		BACKUP_DIR) val=/var/backups/dpistack ;;
+		esac
+	fi
+	printf '%s\n' "$val"
+}
+
+# backup_scheduled_dir - where the scheduled backups go (BACKUP_DIR, under
+# DPISTACK_ROOT like every other path, outside the state directory).
+backup_scheduled_dir() {
+	printf '%s\n' "${DPISTACK_ROOT}$(backup_conf BACKUP_DIR)"
+}
+
+# backup_plain <archive> <identity-or-empty> <tmpdir> - prints the path of a
+# readable tar.gz: the archive itself, or for a .age archive a decrypted copy
+# in <tmpdir>. Returns 3 with the reason when an encrypted archive cannot be
+# opened.
+backup_plain() {
+	local arc="$1" identity="$2" tmp="$3"
+	if [[ "$arc" != *.age ]]; then
+		printf '%s\n' "$arc"
+		return 0
+	fi
+	[[ -n "$identity" ]] || {
+		echo "the archive is encrypted: name the age key file with --identity FILE"
+		return 3
+	}
+	[[ -r "$identity" ]] || {
+		echo "the age key file cannot be read: $identity"
+		return 3
+	}
+	command -v age >/dev/null 2>&1 || {
+		echo "age is not installed here, so the archive cannot be opened"
+		return 3
+	}
+	age -d -i "$identity" -o "$tmp/plain.tar.gz" "$arc" 2>/dev/null || {
+		echo "age could not open the archive with that key"
+		return 3
+	}
+	printf '%s\n' "$tmp/plain.tar.gz"
+}
+
 # backup_resolve <archive> - prints the path of an existing archive. A bare
 # name is a file of the archives directory. The panel may only name such a
 # file: it must not make root read or write a path of its choosing.
@@ -5981,6 +6050,7 @@ backup_resolve() {
 		path="$(path_backup_archives_dir)/$arg"
 	elif [[ "$arg" != */* ]]; then
 		path="$(path_backup_archives_dir)/$arg"
+		[[ -f "$path" ]] || path="$(backup_scheduled_dir)/$arg"
 	fi
 	[[ -f "$path" ]] || fail 4 "backup: no such archive: $arg"
 	printf '%s\n' "$path"
@@ -6128,40 +6198,70 @@ backup_create() {
 }
 
 backup_list() {
-	local json=0 dir f tmp first=1 info
+	local json=0 dir sdir f first=1 info
 	case "${1:-}" in
 	"") ;;
 	--json) json=1 ;;
 	*) fail 2 "backup list: unknown argument: $1" ;;
 	esac
 	dir=$(path_backup_archives_dir)
+	sdir=$(backup_scheduled_dir)
 	((json)) && printf '['
-	if [[ -d "$dir" ]]; then
-		while IFS= read -r f; do
-			[[ -n "$f" ]] || continue
+	while IFS= read -r f; do
+		[[ -n "$f" ]] || continue
+		if [[ "$f" == *.age ]]; then
+			# An encrypted archive cannot be read here: only its name and size.
+			info=$(jq -cn '{encrypted: true}')
+		else
 			info=$(tar -xzOf "$f" manifest.json 2>/dev/null | jq -c '{program, created, files: (.files | length)}' 2>/dev/null) || info=""
 			[[ -n "$info" ]] || info='{}'
-			info=$(jq -c --arg name "${f##*/}" --argjson size "$(stat -c %s "$f")" '. + {name: $name, size: $size}' <<<"$info")
-			if ((json)); then
-				((first)) || printf ','
-				printf '%s' "$info"
-			else
-				jq -r '"\(.name)  \(.created // "?")  v\(.program // "?")  \(.files // 0) files  \(.size) bytes"' <<<"$info"
-			fi
-			first=0
-		done < <(ls -1t "$dir"/*.tar.gz 2>/dev/null)
-	fi
+		fi
+		info=$(jq -c --arg name "${f##*/}" --argjson size "$(stat -c %s "$f")" '. + {name: $name, size: $size}' <<<"$info")
+		if ((json)); then
+			((first)) || printf ','
+			printf '%s' "$info"
+		else
+			jq -r '"\(.name)  \(.created // (if .encrypted then "encrypted" else "?" end))  v\(.program // "?")  \(.files // 0) files  \(.size) bytes"' <<<"$info"
+		fi
+		first=0
+	done < <(
+		ls -1t "$dir"/*.tar.gz 2>/dev/null
+		restricted_caller || { [[ "$sdir" == "$dir" ]] || ls -1t "$sdir"/dpistack-backup-*.tar.gz "$sdir"/dpistack-backup-*.tar.gz.age 2>/dev/null; }
+	)
 	((json)) && printf ']\n'
 	return 0
 }
 
 backup_verify() {
-	[[ $# -eq 1 ]] || fail 2 "backup verify: an archive is needed"
-	local arc tmp out rc
-	arc=$(backup_resolve "$1") || exit $?
+	local arg arc="" identity="" tmp out rc plain
+	while (($#)); do
+		arg="$1"
+		shift
+		case "$arg" in
+		--identity)
+			[[ $# -ge 1 ]] || fail 2 "backup verify: --identity needs a file"
+			restricted_caller && fail 5 "backup verify: --identity is not available to the panel"
+			identity="$1"
+			shift
+			;;
+		-*) fail 2 "backup verify: unknown argument: $arg" ;;
+		*)
+			[[ -z "$arc" ]] || fail 2 "backup verify: one archive only"
+			arc="$arg"
+			;;
+		esac
+	done
+	[[ -n "$arc" ]] || fail 2 "backup verify: an archive is needed"
+	arc=$(backup_resolve "$arc") || exit $?
 	tmp=$(mktemp -d)
-	out=$(backup_unpack "$arc" "$tmp")
+	plain=$(backup_plain "$arc" "$identity" "$tmp")
 	rc=$?
+	if ((rc == 0)); then
+		out=$(backup_unpack "$plain" "$tmp")
+		rc=$?
+	else
+		out="$plain"
+	fi
 	if ((rc != 0)); then
 		rm -rf "$tmp"
 		echo "$out"
@@ -6216,22 +6316,38 @@ backup_check_restored() {
 }
 
 backup_restore() {
-	local dry=0 arg arc="" tmp out rc name live mode
+	local dry=0 arg arc="" tmp out rc name live mode identity="" want_identity=0 plain
 	for arg in "$@"; do
 		case "$arg" in
 		--dry-run) dry=1 ;;
+		--identity)
+			want_identity=1
+			;;
 		-*) fail 2 "backup restore: unknown argument: $arg" ;;
 		*)
+			if ((want_identity)); then
+				restricted_caller && fail 5 "backup restore: --identity is not available to the panel"
+				identity="$arg"
+				want_identity=0
+				continue
+			fi
 			[[ -z "$arc" ]] || fail 2 "backup restore: one archive only"
 			arc="$arg"
 			;;
 		esac
 	done
+	((want_identity)) && fail 2 "backup restore: --identity needs a file"
 	[[ -n "$arc" ]] || fail 2 "backup restore: an archive is needed"
 	arc=$(backup_resolve "$arc") || exit $?
 	tmp=$(mktemp -d)
-	out=$(backup_unpack "$arc" "$tmp")
+	plain=$(backup_plain "$arc" "$identity" "$tmp")
 	rc=$?
+	if ((rc == 0)); then
+		out=$(backup_unpack "$plain" "$tmp")
+		rc=$?
+	else
+		out="$plain"
+	fi
 	if ((rc != 0)); then
 		rm -rf "$tmp"
 		echo "$out"
@@ -6300,6 +6416,60 @@ backup_restore() {
 	echo "next: dpistack reconfigure, then check the parts with dpistack status"
 }
 
+# backup_run - what dpistack-backup.service starts. One archive into
+# BACKUP_DIR; with BACKUP_AGE_RECIPIENT set it is encrypted to that public
+# key and no plain copy is left (the host can write the archive and cannot
+# read it back). Then the oldest are deleted down to BACKUP_KEEP. A name
+# outside dpistack-backup-*.tar.gz[.age] is never deleted.
+backup_run() {
+	restricted_caller && fail 5 "backup run: not for the panel"
+	local dir recipient keep tmp plain name dest f n=0
+	dir=$(backup_scheduled_dir)
+	recipient=$(backup_conf BACKUP_AGE_RECIPIENT)
+	keep=$(backup_conf BACKUP_KEEP)
+	[[ "$keep" =~ ^[0-9]+$ && "$keep" -ge 1 ]] || keep=7
+	if [[ -n "$recipient" ]] && ! command -v age >/dev/null 2>&1; then
+		fail 1 "backup run: BACKUP_AGE_RECIPIENT is set but age is not installed"
+	fi
+	tmp=$(mktemp -d) || fail 1 "backup run: no temporary directory"
+	plain="$tmp/backup.tar.gz"
+	backup_create --out "$plain" >/dev/null || {
+		rm -rf "$tmp"
+		fail 1 "backup run: the archive could not be made"
+	}
+	name="dpistack-backup-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+	[[ -n "$recipient" ]] && name="$name.age"
+	if ! mkdir -p "$dir" || ! chmod 0700 "$dir"; then
+		rm -rf "$tmp"
+		fail 1 "backup run: $dir cannot be made"
+	fi
+	dest="$dir/$name"
+	if [[ -n "$recipient" ]]; then
+		(umask 077 && age -r "$recipient" -o "$dest.part" "$plain") || {
+			rm -rf "$tmp" "$dest.part"
+			fail 1 "backup run: age could not encrypt the archive"
+		}
+	else
+		(umask 077 && cp "$plain" "$dest.part") || {
+			rm -rf "$tmp" "$dest.part"
+			fail 1 "backup run: the archive could not be written to $dir"
+		}
+	fi
+	mv "$dest.part" "$dest" || {
+		rm -rf "$tmp" "$dest.part"
+		fail 1 "backup run: the archive could not be written to $dir"
+	}
+	rm -rf "$tmp"
+	# Retention: newest first, everything past BACKUP_KEEP goes.
+	while IFS= read -r f; do
+		[[ -n "$f" ]] || continue
+		n=$((n + 1))
+		((n > keep)) && rm -f -- "$f"
+	done < <(ls -1t "$dir"/dpistack-backup-*.tar.gz "$dir"/dpistack-backup-*.tar.gz.age 2>/dev/null)
+	echo "$dest"
+	echo "backup run: kept the newest $keep of $dir"
+}
+
 cmd_backup() {
 	local sub="${1:-}"
 	[[ $# -ge 1 ]] && shift
@@ -6308,7 +6478,8 @@ cmd_backup() {
 	list) backup_list "$@" ;;
 	verify) backup_verify "$@" ;;
 	restore) backup_restore "$@" ;;
-	*) fail 2 "backup: create [--out FILE] | list [--json] | verify FILE | restore FILE [--dry-run]" ;;
+	run) backup_run "$@" ;;
+	*) fail 2 "backup: create [--out FILE] | list [--json] | run | verify FILE [--identity KEY] | restore FILE [--dry-run] [--identity KEY]" ;;
 	esac
 }
 
@@ -7773,6 +7944,10 @@ declare -gA KEY_HINT=(
 	[DETECT_NOTIFY_CHANNELS]='Channels for detections, comma separated, from ALERT_CHANNELS. Empty: the channels of ALERT_CHANNELS except panel.'
 	[DETECT_NOTIFY_MAX_PER_HOUR]='Most detection messages in an hour. The rest are counted and one summary is sent.'
 	[DETECT_NOTIFY_DEDUP_MIN]='The same signature between the same two addresses is sent once in this many minutes (0: every alert).'
+	[BACKUP_SCHEDULE]='When to make a backup of the configuration: off, or a systemd calendar such as daily, weekly or Mon *-*-* 03:00:00.'
+	[BACKUP_KEEP]='How many scheduled backups to keep; older ones are deleted.'
+	[BACKUP_DIR]='Where scheduled backups go. It is outside the state directory, so uninstall leaves it.'
+	[BACKUP_AGE_RECIPIENT]='Public key of an age identity (age1...). When set, scheduled backups are encrypted to it and this host cannot read them back.'
 	[TEST_HTTPS_URL]='Address for the HTTPS check on the Tests screen.'
 	[TEST_BT_LIVE]='Also replay the BitTorrent file out of the capture interface and look for an alert in the live log. Adds one small test rule (sid 9000100) to Suricata.'
 	[TEST_ON_INSTALL]='Run the checks after installation.'
@@ -8615,6 +8790,7 @@ menu_key_skipped() {
 	HISTORY_DAYS | DEVICE_NEW_NOTIFY) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" || "${CONF[HISTORY_ENABLE]:-no}" != "$y" ]] && return 0 ;;
 	DETECT_NOTIFY) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" ]] && return 0 ;;
 	DETECT_NOTIFY_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" || "${CONF[DETECT_NOTIFY]:-no}" != "$y" ]] && return 0 ;;
+	BACKUP_KEEP | BACKUP_DIR | BACKUP_AGE_RECIPIENT) [[ "${CONF[BACKUP_SCHEDULE]:-off}" == "off" ]] && return 0 ;;
 	WATCH_* | ALERT_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
 	esac
 	: "$y"
@@ -10373,6 +10549,8 @@ path_completion_file() { echo "${DPISTACK_ROOT}/etc/bash_completion.d/dpistack";
 path_watch_bin() { echo "$(path_sbin_dir)/dpistack-watch"; }
 path_watch_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.service"; }
 path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.timer"; }
+path_backup_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-backup.service"; }
+path_backup_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-backup.timer"; }
 path_evebox_data_dir() { echo "${DPISTACK_ROOT}/var/lib/evebox"; }
 
 path_lib_dir() { echo "${DPISTACK_ROOT}/usr/local/lib/dpistack"; }
@@ -12045,6 +12223,9 @@ SCHEMA_PATTERN[ALERT_MAIL_FROM]='^[A-Za-z0-9._%+@-]+$'
 SCHEMA_PATTERN[ALERT_TG_TOKEN]='^[0-9A-Za-z:_-]+$'
 SCHEMA_PATTERN[ALERT_SMTP_URL]="^smtps?://${_url}\$"
 SCHEMA_PATTERN[ALERT_WEBHOOK_URL]="^https?://${_url}\$"
+SCHEMA_PATTERN[BACKUP_SCHEDULE]='^(off|[A-Za-z0-9*][A-Za-z0-9*:,./ -]*)$'
+SCHEMA_PATTERN[BACKUP_DIR]='^/[A-Za-z0-9._/-]*$'
+SCHEMA_PATTERN[BACKUP_AGE_RECIPIENT]='^age1[a-z0-9]{50,70}$'
 SCHEMA_PATTERN[ALERT_SYSLOG_TARGET]='^[A-Za-z0-9._-]+(:[0-9]{1,5})?$|^\[[0-9A-Fa-f:.]+\](:[0-9]{1,5})?$'
 SCHEMA_PATTERN[DETECT_NOTIFY_CHANNELS]='^([a-z]+(,[a-z]+)*)?$'
 SCHEMA_PATTERN[METRICS_TOKEN]='^[A-Za-z0-9._~-]+$'
@@ -12181,6 +12362,10 @@ schema_init() {
 	_schema_add 'DETECT_NOTIFY_CHANNELS|free|||advanced|watch|watch|light|no'
 	_schema_add 'DETECT_NOTIFY_MAX_PER_HOUR|int|20|1..1000|advanced|watch|watch|light|no'
 	_schema_add 'DETECT_NOTIFY_DEDUP_MIN|int|60|0..1440|advanced|watch|watch|light|no'
+	_schema_add 'BACKUP_SCHEDULE|free|off||advanced|watch|watch|light|no'
+	_schema_add 'BACKUP_KEEP|int|7|1..365|advanced|watch|watch|light|no'
+	_schema_add 'BACKUP_DIR|free|/var/backups/dpistack||advanced|watch|watch|light|no'
+	_schema_add 'BACKUP_AGE_RECIPIENT|free|||advanced|watch|watch|light|no'
 
 	_schema_add 'TEST_HTTPS_URL|free|https://example.com||advanced|tests|verify|light|no'
 	_schema_add 'TEST_BT_LIVE|enum|no|yes,no|advanced|tests|suricata|light|no'
@@ -12256,6 +12441,8 @@ schema_depends_init() {
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes HISTORY_ENABLE=yes' HISTORY_DAYS DEVICE_NEW_NOTIFY
 	_schema_depend 'WATCH_ENABLE=yes SURICATA_ENABLE=yes DETECT_NOTIFY=yes' 'DETECT_NOTIFY_*'
 	_schema_depend 'WATCH_ENABLE=yes' 'WATCH_*' 'ALERT_*'
+	_schema_depend '' BACKUP_SCHEDULE
+	_schema_depend 'BACKUP_SCHEDULE!=off' BACKUP_KEEP BACKUP_DIR BACKUP_AGE_RECIPIENT
 }
 
 schema_depends_init
@@ -12593,6 +12780,7 @@ SCHEMA_SINCE_TABLE="
 0.55.0: PCAP_MAX_MB
 0.56.0: HISTORY_ENABLE HISTORY_DAYS DEVICE_NEW_NOTIFY
 0.57.0: ALERT_INDEX ALERT_INDEX_DAYS
+0.59.0: BACKUP_SCHEDULE BACKUP_KEEP BACKUP_DIR BACKUP_AGE_RECIPIENT
 "
 
 # schema_since <key> - the release that brought the key, or nothing.
@@ -16823,6 +17011,7 @@ put lib/step_watch.sh 644 <<'DPISTACK_BUNDLE_END'
 # missing, see the ConditionPathExists lines in the template.
 
 WATCH_TIMER="dpistack-watch.timer"
+BACKUP_TIMER="dpistack-backup.timer"
 
 watch_enabled() {
 	[[ "${CONF[WATCH_ENABLE]:-yes}" == "yes" ]]
@@ -16840,6 +17029,60 @@ watch_render_timer() {
 		"INTERVAL=${CONF[WATCH_INTERVAL_SEC]:-60}"
 }
 
+backup_enabled() {
+	[[ "${CONF[BACKUP_SCHEDULE]:-off}" != "off" ]]
+}
+
+backup_render_service() {
+	render_template "$SCRIPT_DIR/templates/dpistack-backup.service.tpl" \
+		"LIB_DIR=$(path_installer_copy_dir)/lib" \
+		"CTL_BIN=$(path_ctl_bin)"
+}
+
+backup_render_timer() {
+	render_template "$SCRIPT_DIR/templates/dpistack-backup.timer.tpl" \
+		"SCHEDULE=${CONF[BACKUP_SCHEDULE]:-off}"
+}
+
+# backup_units_check - 0 when the scheduled backup units are what the config
+# asks for (present and current, or absent when BACKUP_SCHEDULE=off).
+backup_units_check() {
+	if ! backup_enabled; then
+		[[ ! -f "$(path_backup_timer_unit)" && ! -f "$(path_backup_service_unit)" ]]
+		return
+	fi
+	if [[ -n "${CONF[BACKUP_AGE_RECIPIENT]:-}" ]]; then
+		command -v age >/dev/null 2>&1 || return 1
+	fi
+	watch_file_matches "$(path_backup_service_unit)" "$(backup_render_service)" || return 1
+	watch_file_matches "$(path_backup_timer_unit)" "$(backup_render_timer)" || return 1
+}
+
+# backup_units_apply - writes or removes the units of the scheduled backup.
+# The archives already in BACKUP_DIR are never touched here.
+backup_units_apply() {
+	if ! backup_enabled; then
+		if [[ "${DRY_RUN:-0}" != "1" && (-f "$(path_backup_timer_unit)" || -f "$(path_backup_service_unit)") ]]; then
+			run systemctl disable --now "$BACKUP_TIMER"
+			rm -f "$(path_backup_timer_unit)" "$(path_backup_service_unit)"
+			run systemctl daemon-reload
+		fi
+		return 0
+	fi
+	if [[ -n "${CONF[BACKUP_AGE_RECIPIENT]:-}" ]]; then
+		command -v age >/dev/null 2>&1 || pkg_install age || {
+			echo "backup: BACKUP_AGE_RECIPIENT is set and age cannot be installed; install age or clear the key" >&2
+			return 1
+		}
+	fi
+	mkdir -p "${DPISTACK_ROOT}${CONF[BACKUP_DIR]:-/var/backups/dpistack}" && chmod 0700 "${DPISTACK_ROOT}${CONF[BACKUP_DIR]:-/var/backups/dpistack}"
+	write_rendered_file "$(path_backup_service_unit)" "$(backup_render_service)"
+	write_rendered_file "$(path_backup_timer_unit)" "$(backup_render_timer)"
+	run systemctl daemon-reload || return 1
+	run systemctl enable --now "$BACKUP_TIMER" || return 1
+	run systemctl restart "$BACKUP_TIMER" || return 1
+}
+
 watch_file_matches() {
 	# watch_file_matches <path> <expected-content>
 	[[ -f "$1" ]] || return 1
@@ -16847,6 +17090,7 @@ watch_file_matches() {
 }
 
 step_watch_check() {
+	backup_units_check || return 1
 	if ! watch_enabled; then
 		[[ ! -f "$(path_watch_timer_unit)" && ! -f "$(path_watch_service_unit)" ]]
 		return
@@ -16859,6 +17103,7 @@ step_watch_check() {
 }
 
 step_watch_apply() {
+	backup_units_apply || return 1
 	if ! watch_enabled; then
 		if [[ "${DRY_RUN:-0}" != "1" && (-f "$(path_watch_timer_unit)" || -f "$(path_watch_service_unit)") ]]; then
 			run systemctl disable --now "$WATCH_TIMER"
@@ -16879,6 +17124,11 @@ step_watch_apply() {
 }
 
 step_watch_plan() {
+	if backup_enabled; then
+		echo "backup: ${CONF[BACKUP_SCHEDULE]}, keep ${CONF[BACKUP_KEEP]:-7} in ${CONF[BACKUP_DIR]:-/var/backups/dpistack}${CONF[BACKUP_AGE_RECIPIENT]:+, encrypted with age}"
+	else
+		echo "backup: BACKUP_SCHEDULE=off, no timer is needed"
+	fi
 	if watch_enabled; then
 		echo "watch: $(path_watch_bin), timer every ${CONF[WATCH_INTERVAL_SEC]:-60} s"
 	else
@@ -17104,6 +17354,30 @@ put templates/compose.yaml.tpl 644 <<'DPISTACK_BUNDLE_END'
 name: dpistack
 services:
 @@COMPOSE_SERVICES@@
+DPISTACK_BUNDLE_END
+put templates/dpistack-backup.service.tpl 644 <<'DPISTACK_BUNDLE_END'
+[Unit]
+Description=dpistack scheduled backup of the configuration
+# Skipped, not failed, until the installer copy exists.
+ConditionPathExists=@@LIB_DIR@@/paths.sh
+ConditionPathExists=@@CTL_BIN@@
+
+[Service]
+Type=oneshot
+ExecStart=@@CTL_BIN@@ backup run
+TimeoutStartSec=300
+DPISTACK_BUNDLE_END
+put templates/dpistack-backup.timer.tpl 644 <<'DPISTACK_BUNDLE_END'
+[Unit]
+Description=dpistack scheduled backup timer
+
+[Timer]
+OnCalendar=@@SCHEDULE@@
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
 DPISTACK_BUNDLE_END
 put templates/dpistack-fw.service.tpl 644 <<'DPISTACK_BUNDLE_END'
 # Managed by dpistack. Puts the NFQUEUE rules (the DPISTACK iptables chain or

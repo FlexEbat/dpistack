@@ -146,6 +146,10 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `DETECT_NOTIFY_CHANNELS` | string | empty | light | Channels for detections, comma separated, from ALERT_CHANNELS. Empty: the channels of ALERT_CHANNELS except panel. (advanced) |
 | `DETECT_NOTIFY_MAX_PER_HOUR` | integer 1..1000 | `20` | light | Most detection messages in an hour. The rest are counted and one summary is sent. (advanced) |
 | `DETECT_NOTIFY_DEDUP_MIN` | integer 0..1440 | `60` | light | The same signature between the same two addresses is sent once in this many minutes (0: every alert). (advanced) |
+| `BACKUP_SCHEDULE` | string | `off` | light | When to make a backup of the configuration: off, or a systemd calendar such as daily, weekly or Mon *-*-* 03:00:00. (advanced) |
+| `BACKUP_KEEP` | integer 1..365 | `7` | light | How many scheduled backups to keep; older ones are deleted. (advanced) |
+| `BACKUP_DIR` | string | `/var/backups/dpistack` | light | Where scheduled backups go. It is outside the state directory, so uninstall leaves it. (advanced) |
+| `BACKUP_AGE_RECIPIENT` | string | empty | light | Public key of an age identity (age1...). When set, scheduled backups are encrypted to it and this host cannot read them back. (advanced) |
 | `ALERT_TG_TOKEN` | secret | empty | light | Telegram bot token. Stored apart from the main configuration. (advanced) |
 | `ALERT_SMTP_URL` | secret | empty | light | SMTP address, for example smtps://user:pass@host:465. Stored apart. (advanced) |
 | `ALERT_WEBHOOK_URL` | secret | empty | light | Address of the webhook (Slack, Discord, ntfy topic or your own). It is the credential, so it is stored apart. (advanced) |
