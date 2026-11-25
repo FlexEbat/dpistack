@@ -404,7 +404,7 @@ test("the page has the three columns, the search, the details, the diff and the 
   assert.match(here("app.css"), /\.setting\.inactive/);
 });
 
-import { pendingKeys, pendingLabel } from "../modules/settings-model.js";
+import { pendingKeys, pendingLabel, pendingHelp } from "../modules/settings-model.js";
 
 test("the settings an update brought or left empty are listed, new first", () => {
   const keys = [
@@ -415,6 +415,13 @@ test("the settings an update brought or left empty are listed, new first", () =>
     { key: "NONE" },
   ];
   assert.deepEqual(pendingKeys(keys).map((k) => k.key), ["A_KEY", "Z_KEY", "B_KEY"]);
+  const more = [{ key: "R", pending: "review" }, { key: "I", pending: "invalid" }, { key: "N", pending: "new" }, { key: "E", pending: "empty" }];
+  assert.deepEqual(pendingKeys(more).map((k) => k.key), ["N", "I", "E", "R"]);
+  assert.equal(pendingLabel("review"), "Review");
+  assert.equal(pendingLabel("invalid"), "Invalid");
+  assert.match(pendingHelp("review"), /since you last reviewed/);
+  assert.match(pendingHelp("invalid"), /not valid/);
+  assert.equal(pendingHelp("x"), "");
   assert.deepEqual(pendingKeys(null), []);
   assert.equal(pendingLabel("new"), "New");
   assert.equal(pendingLabel("empty"), "Empty");

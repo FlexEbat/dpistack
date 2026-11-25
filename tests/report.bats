@@ -67,7 +67,12 @@ teardown() { rm -rf "$DPISTACK_ROOT"; }
 @test "a range with no history says why instead of printing zeros" {
 	run "$CTL" report daily --date 2026-01-01
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"no history for these days: is HISTORY_ENABLE=yes"* ]]
+	[[ "$output" == *"history is off: set HISTORY_ENABLE=yes"* ]]
+	[ "$(jq -r .enabled < <("$CTL" report daily --date 2026-01-01 --json))" = "false" ]
+	printf 'HISTORY_ENABLE=yes\n' >"$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
+	run "$CTL" report daily --date 2026-01-01
+	[[ "$output" == *"the watchdog has not seen traffic yet"* ]]
+	[ "$(jq -r .enabled < <("$CTL" report daily --date 2026-01-01 --json))" = "true" ]
 	rm -rf "$H"
 	run "$CTL" report weekly --json
 	[ "$(jq -r '.days | length' <<<"$output")" -eq 0 ]

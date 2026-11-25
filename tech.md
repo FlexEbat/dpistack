@@ -1,18 +1,19 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
-**Document version: v103** (2026-11-24)
-**Program version: v0.58.0** (tasks 0-56 are done (18.58), 57 to 62 are done, 63 to 65 are planned (18.73); settings that an update brings are asked for (18.75); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Document version: v104** (2026-11-24)
+**Program version: v0.58.1** (tasks 0-56 are done (18.58), 57 to 62 are done, 63 to 65 are planned (18.73); settings that an update brings are asked for (18.75); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.58.1: the check for settings finds two more kinds (a saved value that is not valid, a feature added since the settings were last reviewed and still at its default), and the History screen says when history is off (18.75).
 - v0.58.0: task 61 is done (the History screen, `/api/history/*`) and an update asks for the settings it adds or finds empty: `dpistack update-keys`, the questions in `dpistack update`, a box and marks in the panel (18.75).
 - v0.57.0: task 62 (18.73): the Alert Center keeps an index of one entry per rule, so old alerts do not drop out with the tail of `eve.json`; `events.jsonl` is rotated at 5 MiB.
 - v0.56.0: task 61, first part (18.73): the watchdog keeps a daily roll-up (`HISTORY_ENABLE`), `dpistack report daily|weekly` and `dpistack devices` read it, and `DEVICE_NEW_NOTIFY` announces a new private address.
-- v0.55.0: task 60 (18.73): `dpistack pcap analyze` and an upload on the IPS screen replay a capture of your own with the live rules and exceptions and show the alerts and the application protocols.
 - v0.53.1: CI failures are reported with their reasons (annotations, job summary, statuses) and the gate says what it saw (18.74); the Rules screen can switch a rule or a group to drop.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v104: v0.58.1. 18.75 extended (decision D199).
 - v103: v0.58.0. Task 61 done, 18.75 written (decisions D197, D198), the verb `update-keys` in 4.5, the History routes in section 5.
 - v102: v0.57.0. Task 62 done (decisions D195, D196).
 - v101: v0.56.0. Task 61 first part (decisions D193, D194).
@@ -2791,3 +2792,9 @@ Open: the state of triage (acknowledged, snoozed) does not silence a delivery (d
 | --- | --- |
 | D197 | **Blocklists are rule sources, GeoIP is not built.** The IP and domain lists that the task named (abuse.ch Feodo and SSLBL, ET compromised hosts, and similar) are in the `suricata-update` source index, which `rules-sources list`, `enable`, `add-url` and the Rules screen already drive; a second system of Suricata datasets would duplicate that, and the `load` path rules of datasets cannot be checked here. GeoIP needs a Suricata built with libmaxminddb, a database with a licence (MaxMind) or a monthly download (DB-IP) and a `geoip-database` setting; none of that can be proven without a real sensor, so it is not shipped half-way. The owner asked for ready-made solutions over new code, and this follows it |
 | D198 | **The new version asks, and the answer needs no restart of the update.** The update runs the new installer's `update-keys` before it starts and with `DPISTACK_NO_APPLY=1`, so the answers are only written; the update then applies everything once. Run alone, `update-keys` applies its answers with `reconfigure`. The first update from an older version cannot ask (the old code has no such step), which is why the install records the list and the verb can ask afterwards |
+
+**18.75, second pass (v0.58.1).** `pending_scan` finds two more kinds. `invalid`: a saved value that `schema_validate_one` refuses, whatever wrote it; `update-keys` offers the default for it. `review`: a key listed in `SCHEMA_SINCE_TABLE` (`lib/schema.sh`, one line per release with the keys it added after 0.51, to be extended when a release is cut) whose saved value still equals its default and whose release is newer than `settings.reviewed` in the state file (a version number; missing means 0.0.0). `update-keys` (asking or `--yes`) writes `settings.reviewed`, so the keys of this release and the earlier ones are no longer offered; a fresh install writes it at once (`pending_baseline`: the wizard or the defaults were the choice), a dry run writes nothing. This reaches the hosts that updated before 18.75 existed: their config already holds the new keys at their defaults, so "missing" finds nothing. `dpistack report --json` has an `enabled` field (`HISTORY_ENABLE`), and the History screen says "History is off" with a button to Settings instead of waiting for traffic; the Settings box and marks show the four kinds with a sentence each (`pendingHelp`).
+
+| id | decision |
+| --- | --- |
+| D199 | **A key still at its default is offered once per release, until the settings were reviewed.** A feature that is off by default is invisible: the owner who updated three versions ago was never told that detection alerts or history exist. A value that differs from the default was chosen and is left alone; answering (or keeping the defaults) once ends the offers up to this release, so the list does not nag |

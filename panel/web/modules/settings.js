@@ -20,6 +20,7 @@ import {
   shown,
   pendingKeys,
   pendingLabel,
+  pendingHelp,
   diffRows,
   stageSummary,
   stageText,
@@ -151,7 +152,7 @@ export function start(api, els, onError) {
     label.append(el("span", "", k.key));
     if (k.pending) {
       const b = el("span", "badge", pendingLabel(k.pending));
-      b.title = k.pending === "new" ? "New in this version: it uses its default until you choose" : "Empty, and the program needs a value: it uses the default until you choose";
+      b.title = pendingHelp(k.pending);
       label.append(" ", b);
     }
     if (k.weight === "heavy") {
@@ -197,7 +198,7 @@ export function start(api, els, onError) {
     if (news.length && !searching) {
       box = el("section", "card settings-group pending-box");
       box.append(el("h2", "", "New or empty settings"));
-      box.append(el("p", "muted", "These settings are new in this version or empty. Each uses its default until you choose a value. Pick one to see it, and apply your choice like any other change."));
+      box.append(el("p", "muted", "These settings are new in this version, empty, not valid, or features added since you last reviewed the settings. Each uses its default until you choose a value. Pick one to see it, and apply your choice like any other change. dpistack update-keys goes through them one by one."));
       const list = el("div", "actions");
       for (const k of news) {
         const b = el("button", "", k.key + " (" + pendingLabel(k.pending).toLowerCase() + ")");

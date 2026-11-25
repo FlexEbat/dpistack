@@ -539,6 +539,7 @@ cmd_install() {
 	state_write_value install.finished yes
 	migrate_record
 	echo "installation finished"
+	pending_baseline
 	pending_notice
 	return 0
 }
@@ -2711,7 +2712,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.58.0"
+DPISTACK_VERSION="0.58.1"
 
 : "${DRY_RUN:=0}"
 
@@ -7141,9 +7142,10 @@ history_report() {
 	devices=$(path_devices_json)
 	local known="{}"
 	[[ -r "$devices" ]] && known=$(jq -c . "$devices" 2>/dev/null || echo "{}")
-	local doc
-	doc=$(jq -nc --argjson s "$sum" --argjson k "$known" --arg from "$from" --arg to "$to" --arg label "$label" --argjson top "$HISTORY_TOP" '
-		{label: $label, from: $from, to: $to, days: ($s.days // []), flows: ($s.flows // 0), bytes: ($s.bytes // 0),
+	local doc enabled=false
+	[[ "$(conf_get HISTORY_ENABLE no)" == "yes" ]] && enabled=true
+	doc=$(jq -nc --argjson s "$sum" --argjson k "$known" --arg from "$from" --arg to "$to" --arg label "$label" --argjson top "$HISTORY_TOP" --argjson enabled "$enabled" '
+		{label: $label, enabled: $enabled, from: $from, to: $to, days: ($s.days // []), flows: ($s.flows // 0), bytes: ($s.bytes // 0),
 		 apps: (($s.apps // {}) | to_entries | map({app: .key, flows: .value.flows, bytes: .value.bytes}) | sort_by(-.bytes, .app) | .[0:$top]),
 		 devices: (($s.devices // {}) | to_entries | map({ip: .key, flows: .value.flows, bytes: .value.bytes,
 			top_app: ((.value.apps // {}) | to_entries | sort_by(-.value, .key) | (.[0].key // ""))}) | sort_by(-.bytes, .ip) | .[0:$top]),
@@ -7156,7 +7158,7 @@ history_report() {
 	jq -r '
 		def size: if . < 1024 then "\(.) B" elif . < 1048576 then "\((. / 1024 * 10 | floor) / 10) KiB" elif . < 1073741824 then "\((. / 1048576 * 10 | floor) / 10) MiB" else "\((. / 1073741824 * 10 | floor) / 10) GiB" end;
 		"\(.label) report \(.from) to \(.to)",
-		(if (.days | length) == 0 then "no history for these days: is HISTORY_ENABLE=yes and has the watchdog run since?"
+		(if (.days | length) == 0 then (if .enabled then "no history for these days: the watchdog has not seen traffic yet, or HISTORY_DAYS has removed them" else "history is off: set HISTORY_ENABLE=yes (dpistack settings set HISTORY_ENABLE yes)" end)
 		else
 			"days with data: \(.days | length) (\(.days | join(", ")))",
 			"flows: \(.flows), traffic: \(.bytes | size)",
@@ -10555,6 +10557,11 @@ put lib/pending.sh 644 <<'DPISTACK_BUNDLE_END'
 #   empty  the key is there with no value, its default is not empty, and an
 #          empty value has no meaning of its own (schema_empty_meaning): the
 #          program would silently use the default
+#   invalid the saved value does not pass the schema (every saved value is
+#          checked on every update, whatever wrote it)
+#   review a key that a release added (SCHEMA_SINCE_TABLE) after the owner
+#          last reviewed the settings (state settings.reviewed), still at its
+#          default: a feature that is off until someone turns it on
 #
 # A key that does not apply to the config as it is (its component is off, its
 # channel is not used) is never listed. Sourced by install.sh; it defines
@@ -10564,9 +10571,11 @@ put lib/pending.sh 644 <<'DPISTACK_BUNDLE_END'
 # line. Needs the layers loaded (layer_config_common) so that the skip
 # rules see the config as it will be.
 pending_scan() {
-	local conf key value
+	local conf key value reviewed since
 	conf=$(path_conf)
 	[[ -f "$conf" ]] || return 0
+	reviewed=$(state_read_value settings.reviewed)
+	[[ -n "$reviewed" ]] || reviewed=0.0.0
 	for key in "${SCHEMA_KEYS[@]}"; do
 		schema_is_secret "$key" && continue
 		menu_key_skipped "$key" && continue
@@ -10575,8 +10584,22 @@ pending_scan() {
 			continue
 		fi
 		value=$(sed -n "s/^${key}=//p" "$conf" | tail -n 1)
-		if [[ -z "$value" && -n "${SCHEMA_DEFAULT[$key]:-}" && -z "$(schema_empty_meaning "$key")" ]]; then
-			echo "$key:empty"
+		if [[ -z "$value" ]]; then
+			if [[ -n "${SCHEMA_DEFAULT[$key]:-}" && -z "$(schema_empty_meaning "$key")" ]]; then
+				echo "$key:empty"
+			fi
+			continue
+		fi
+		# every saved value is checked again, whatever wrote it
+		if ! schema_validate_one "$key" "$value" >/dev/null 2>&1; then
+			echo "$key:invalid"
+			continue
+		fi
+		# a key a release added since the owner last reviewed the settings,
+		# still at its default: the owner never chose it
+		since=$(schema_since "$key")
+		if [[ -n "$since" && "$value" == "${SCHEMA_DEFAULT[$key]:-}" ]] && schema_version_lt "$reviewed" "$since"; then
+			echo "$key:review"
 		fi
 	done
 	return 0
@@ -10588,7 +10611,11 @@ pending_scan() {
 pending_record() {
 	local scan old merged
 	# a dry run changes nothing, and a host without a saved config has nothing to compare
-	[[ "${DRY_RUN:-0}" != "1" && -f "$(path_conf)" ]] || return 0
+	[[ "${DRY_RUN:-0}" != "1" ]] || return 0
+	if [[ ! -f "$(path_conf)" ]]; then
+		PENDING_FRESH=1
+		return 0
+	fi
 	scan=$(pending_scan | tr '\n' ',')
 	scan="${scan%,}"
 	old=$(state_read_value pending.keys)
@@ -10616,11 +10643,26 @@ pending_list() {
 		if [[ "$kind" == empty && -n "${CONF[$key]:-}" ]]; then
 			continue
 		fi
+		# a key a release added is answered once the settings were reviewed
+		if [[ "$kind" == review ]] && ! schema_version_lt "$(state_read_value settings.reviewed)" "$(schema_since "$key")"; then
+			continue
+		fi
 		echo "$item"
 	done
 }
 
 pending_clear() { state_write_value pending.keys ""; }
+
+# pending_reviewed - the owner has been through the new and unchecked
+# settings: the keys of this release and the ones before are no longer offered.
+pending_reviewed() { state_write_value settings.reviewed "$DPISTACK_VERSION"; }
+
+# pending_baseline - a fresh install chose its settings in the wizard or took
+# the defaults on purpose: nothing of this release needs a second look.
+pending_baseline() {
+	[[ "${DRY_RUN:-0}" != "1" && "${PENDING_FRESH:-0}" == "1" ]] || return 0
+	pending_reviewed
+}
 
 # pending_print <json:0|1> - the list with default and hint.
 pending_print() {
@@ -10650,6 +10692,8 @@ pending_print() {
 		kind="${item##*:}"
 		n=$((n + 1))
 		printf '  %s (%s, default: %s)\n' "$key" "$kind" "${SCHEMA_DEFAULT[$key]:-none}"
+		[[ "$kind" == review ]] && printf '      added in %s, still at its default\n' "$(schema_since "$key")"
+		[[ "$kind" == invalid ]] && printf '      the saved value is not valid: %s\n' "$(schema_validate_one "$key" "$(sed -n "s/^${key}=//p" "$(path_conf)" | tail -n 1)" 2>&1)"
 		[[ -n "${KEY_HINT[$key]:-}" ]] && printf '      %s\n' "${KEY_HINT[$key]}"
 	done
 	return 0
@@ -10676,6 +10720,7 @@ pending_ask() {
 		kind="${item##*:}"
 		# an empty key is offered its default, so Enter fixes it
 		[[ "$kind" == empty && -z "${CONF[$key]:-}" ]] && config_set_kv "$key" "${SCHEMA_DEFAULT[$key]}"
+		[[ "$kind" == invalid ]] && config_set_kv "$key" "${SCHEMA_DEFAULT[$key]}"
 		echo >&2
 		echo "[$kind]" >&2
 		menu_wizard_ask "$key"
@@ -10715,6 +10760,7 @@ cmd_update_keys() {
 		validate_or_die
 		config_write_conf "$(path_conf)"
 		pending_clear
+		pending_reviewed
 		echo "the defaults of the new or empty settings are kept"
 		return 0
 		;;
@@ -10731,6 +10777,7 @@ cmd_update_keys() {
 	config_write_conf "$(path_conf)"
 	if ((rc == 0)); then
 		pending_clear
+		pending_reviewed
 	fi
 	echo "saved"
 	return 0
@@ -12533,6 +12580,39 @@ schema_effective() {
 # schema_empty_meaning <key> - what an empty value of an optional key does, for
 # the prompts of the menu (R193: they showed <empty> and nothing else).
 # Prints nothing for a key whose empty value needs no explanation.
+# SCHEMA_SINCE_TABLE - the release that brought each key added after 0.51.
+# `dpistack update-keys` offers a key again to an owner who has not reviewed
+# the settings since before that release (state settings.reviewed), unless the
+# saved value is one the owner chose (it differs from the default). Keys of
+# earlier releases are not here: they are found by being missing or empty.
+# One line per release: "version: KEY KEY ...". Add the keys of a release when
+# it is cut.
+SCHEMA_SINCE_TABLE="
+0.52.0: ALERT_WEBHOOK_FORMAT ALERT_SYSLOG_TARGET ALERT_SYSLOG_PROTO DETECT_NOTIFY DETECT_NOTIFY_SEVERITY DETECT_NOTIFY_CHANNELS DETECT_NOTIFY_MAX_PER_HOUR DETECT_NOTIFY_DEDUP_MIN
+0.54.0: CAPTURE_THREADS CAPTURE_TPACKET CAPTURE_RING_SIZE CAPTURE_BLOCK_SIZE CAPTURE_CPUS NIC_OFFLOADS_OFF FLOW_MEMCAP STREAM_MEMCAP STREAM_REASSEMBLY_MEMCAP
+0.55.0: PCAP_MAX_MB
+0.56.0: HISTORY_ENABLE HISTORY_DAYS DEVICE_NEW_NOTIFY
+0.57.0: ALERT_INDEX ALERT_INDEX_DAYS
+"
+
+# schema_since <key> - the release that brought the key, or nothing.
+schema_since() {
+	local line
+	while IFS= read -r line; do
+		[[ -n "$line" ]] || continue
+		[[ " ${line#*:} " == *" $1 "* ]] && {
+			echo "${line%%:*}"
+			return 0
+		}
+	done <<<"$SCHEMA_SINCE_TABLE"
+	return 0
+}
+
+# schema_version_lt <a> <b> - a is an older release than b.
+schema_version_lt() {
+	[[ "$1" != "$2" && "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" == "$1" ]]
+}
+
 schema_empty_meaning() {
 	case "$1" in
 	BPF_FILTER) echo "no filter: Suricata analyzes all the traffic it sees" ;;

@@ -605,6 +605,39 @@ schema_effective() {
 # schema_empty_meaning <key> - what an empty value of an optional key does, for
 # the prompts of the menu (R193: they showed <empty> and nothing else).
 # Prints nothing for a key whose empty value needs no explanation.
+# SCHEMA_SINCE_TABLE - the release that brought each key added after 0.51.
+# `dpistack update-keys` offers a key again to an owner who has not reviewed
+# the settings since before that release (state settings.reviewed), unless the
+# saved value is one the owner chose (it differs from the default). Keys of
+# earlier releases are not here: they are found by being missing or empty.
+# One line per release: "version: KEY KEY ...". Add the keys of a release when
+# it is cut.
+SCHEMA_SINCE_TABLE="
+0.52.0: ALERT_WEBHOOK_FORMAT ALERT_SYSLOG_TARGET ALERT_SYSLOG_PROTO DETECT_NOTIFY DETECT_NOTIFY_SEVERITY DETECT_NOTIFY_CHANNELS DETECT_NOTIFY_MAX_PER_HOUR DETECT_NOTIFY_DEDUP_MIN
+0.54.0: CAPTURE_THREADS CAPTURE_TPACKET CAPTURE_RING_SIZE CAPTURE_BLOCK_SIZE CAPTURE_CPUS NIC_OFFLOADS_OFF FLOW_MEMCAP STREAM_MEMCAP STREAM_REASSEMBLY_MEMCAP
+0.55.0: PCAP_MAX_MB
+0.56.0: HISTORY_ENABLE HISTORY_DAYS DEVICE_NEW_NOTIFY
+0.57.0: ALERT_INDEX ALERT_INDEX_DAYS
+"
+
+# schema_since <key> - the release that brought the key, or nothing.
+schema_since() {
+	local line
+	while IFS= read -r line; do
+		[[ -n "$line" ]] || continue
+		[[ " ${line#*:} " == *" $1 "* ]] && {
+			echo "${line%%:*}"
+			return 0
+		}
+	done <<<"$SCHEMA_SINCE_TABLE"
+	return 0
+}
+
+# schema_version_lt <a> <b> - a is an older release than b.
+schema_version_lt() {
+	[[ "$1" != "$2" && "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" == "$1" ]]
+}
+
 schema_empty_meaning() {
 	case "$1" in
 	BPF_FILTER) echo "no filter: Suricata analyzes all the traffic it sees" ;;

@@ -504,6 +504,7 @@ cmd_install() {
 	state_write_value install.finished yes
 	migrate_record
 	echo "installation finished"
+	pending_baseline
 	pending_notice
 	return 0
 }

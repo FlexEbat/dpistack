@@ -21,7 +21,11 @@ export function formatBytes(n) {
 export function reportSummary(res) {
   if (!res) return "";
   const days = res.days || [];
-  if (days.length === 0) return `No history for ${res.from} to ${res.to}. Turn on HISTORY_ENABLE in Settings and wait for traffic.`;
+  if (days.length === 0) {
+    return res.enabled === false
+      ? "History is off. Turn on HISTORY_ENABLE in Settings (Watchdog), then wait for traffic: the watchdog starts a summary from the moment it is on."
+      : `No history for ${res.from} to ${res.to} yet. History is on; the watchdog adds a day as soon as Suricata sees traffic.`;
+  }
   return `${res.label === "weekly" ? "Week" : "Day"} ${res.from} to ${res.to}: ${res.flows} flow${res.flows === 1 ? "" : "s"}, ${formatBytes(res.bytes)}, ${days.length} day${days.length === 1 ? "" : "s"} with data.`;
 }
 
@@ -40,6 +44,12 @@ export function alertRows(res) {
 export function newDeviceText(res) {
   const n = (res && res.new_devices) || [];
   return n.length ? `New devices in this period: ${n.join(", ")}` : "No new device in this period.";
+}
+
+// historyOff says whether the History screen has to tell the owner that the
+// setting is off (the report names it).
+export function historyOff(res) {
+  return !!res && res.enabled === false;
 }
 
 // knownRows is the list of every device ever seen, newest first.

@@ -10,6 +10,11 @@
 #   empty  the key is there with no value, its default is not empty, and an
 #          empty value has no meaning of its own (schema_empty_meaning): the
 #          program would silently use the default
+#   invalid the saved value does not pass the schema (every saved value is
+#          checked on every update, whatever wrote it)
+#   review a key that a release added (SCHEMA_SINCE_TABLE) after the owner
+#          last reviewed the settings (state settings.reviewed), still at its
+#          default: a feature that is off until someone turns it on
 #
 # A key that does not apply to the config as it is (its component is off, its
 # channel is not used) is never listed. Sourced by install.sh; it defines
@@ -19,9 +24,11 @@
 # line. Needs the layers loaded (layer_config_common) so that the skip
 # rules see the config as it will be.
 pending_scan() {
-	local conf key value
+	local conf key value reviewed since
 	conf=$(path_conf)
 	[[ -f "$conf" ]] || return 0
+	reviewed=$(state_read_value settings.reviewed)
+	[[ -n "$reviewed" ]] || reviewed=0.0.0
 	for key in "${SCHEMA_KEYS[@]}"; do
 		schema_is_secret "$key" && continue
 		menu_key_skipped "$key" && continue
@@ -30,8 +37,22 @@ pending_scan() {
 			continue
 		fi
 		value=$(sed -n "s/^${key}=//p" "$conf" | tail -n 1)
-		if [[ -z "$value" && -n "${SCHEMA_DEFAULT[$key]:-}" && -z "$(schema_empty_meaning "$key")" ]]; then
-			echo "$key:empty"
+		if [[ -z "$value" ]]; then
+			if [[ -n "${SCHEMA_DEFAULT[$key]:-}" && -z "$(schema_empty_meaning "$key")" ]]; then
+				echo "$key:empty"
+			fi
+			continue
+		fi
+		# every saved value is checked again, whatever wrote it
+		if ! schema_validate_one "$key" "$value" >/dev/null 2>&1; then
+			echo "$key:invalid"
+			continue
+		fi
+		# a key a release added since the owner last reviewed the settings,
+		# still at its default: the owner never chose it
+		since=$(schema_since "$key")
+		if [[ -n "$since" && "$value" == "${SCHEMA_DEFAULT[$key]:-}" ]] && schema_version_lt "$reviewed" "$since"; then
+			echo "$key:review"
 		fi
 	done
 	return 0
@@ -43,7 +64,11 @@ pending_scan() {
 pending_record() {
 	local scan old merged
 	# a dry run changes nothing, and a host without a saved config has nothing to compare
-	[[ "${DRY_RUN:-0}" != "1" && -f "$(path_conf)" ]] || return 0
+	[[ "${DRY_RUN:-0}" != "1" ]] || return 0
+	if [[ ! -f "$(path_conf)" ]]; then
+		PENDING_FRESH=1
+		return 0
+	fi
 	scan=$(pending_scan | tr '\n' ',')
 	scan="${scan%,}"
 	old=$(state_read_value pending.keys)
@@ -71,11 +96,26 @@ pending_list() {
 		if [[ "$kind" == empty && -n "${CONF[$key]:-}" ]]; then
 			continue
 		fi
+		# a key a release added is answered once the settings were reviewed
+		if [[ "$kind" == review ]] && ! schema_version_lt "$(state_read_value settings.reviewed)" "$(schema_since "$key")"; then
+			continue
+		fi
 		echo "$item"
 	done
 }
 
 pending_clear() { state_write_value pending.keys ""; }
+
+# pending_reviewed - the owner has been through the new and unchecked
+# settings: the keys of this release and the ones before are no longer offered.
+pending_reviewed() { state_write_value settings.reviewed "$DPISTACK_VERSION"; }
+
+# pending_baseline - a fresh install chose its settings in the wizard or took
+# the defaults on purpose: nothing of this release needs a second look.
+pending_baseline() {
+	[[ "${DRY_RUN:-0}" != "1" && "${PENDING_FRESH:-0}" == "1" ]] || return 0
+	pending_reviewed
+}
 
 # pending_print <json:0|1> - the list with default and hint.
 pending_print() {
@@ -105,6 +145,8 @@ pending_print() {
 		kind="${item##*:}"
 		n=$((n + 1))
 		printf '  %s (%s, default: %s)\n' "$key" "$kind" "${SCHEMA_DEFAULT[$key]:-none}"
+		[[ "$kind" == review ]] && printf '      added in %s, still at its default\n' "$(schema_since "$key")"
+		[[ "$kind" == invalid ]] && printf '      the saved value is not valid: %s\n' "$(schema_validate_one "$key" "$(sed -n "s/^${key}=//p" "$(path_conf)" | tail -n 1)" 2>&1)"
 		[[ -n "${KEY_HINT[$key]:-}" ]] && printf '      %s\n' "${KEY_HINT[$key]}"
 	done
 	return 0
@@ -131,6 +173,7 @@ pending_ask() {
 		kind="${item##*:}"
 		# an empty key is offered its default, so Enter fixes it
 		[[ "$kind" == empty && -z "${CONF[$key]:-}" ]] && config_set_kv "$key" "${SCHEMA_DEFAULT[$key]}"
+		[[ "$kind" == invalid ]] && config_set_kv "$key" "${SCHEMA_DEFAULT[$key]}"
 		echo >&2
 		echo "[$kind]" >&2
 		menu_wizard_ask "$key"
@@ -170,6 +213,7 @@ cmd_update_keys() {
 		validate_or_die
 		config_write_conf "$(path_conf)"
 		pending_clear
+		pending_reviewed
 		echo "the defaults of the new or empty settings are kept"
 		return 0
 		;;
@@ -186,6 +230,7 @@ cmd_update_keys() {
 	config_write_conf "$(path_conf)"
 	if ((rc == 0)); then
 		pending_clear
+		pending_reviewed
 	fi
 	echo "saved"
 	return 0
