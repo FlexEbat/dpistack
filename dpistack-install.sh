@@ -8790,6 +8790,7 @@ menu_key_skipped() {
 	HISTORY_DAYS | DEVICE_NEW_NOTIFY) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" || "${CONF[HISTORY_ENABLE]:-no}" != "$y" ]] && return 0 ;;
 	DETECT_NOTIFY) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" ]] && return 0 ;;
 	DETECT_NOTIFY_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" || "$suri" == "$n" || "${CONF[DETECT_NOTIFY]:-no}" != "$y" ]] && return 0 ;;
+	BACKUP_KEEP | BACKUP_DIR | BACKUP_AGE_RECIPIENT) [[ "${CONF[BACKUP_SCHEDULE]:-off}" == "off" ]] && return 0 ;;
 	WATCH_* | ALERT_*) [[ "${CONF[WATCH_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
 	esac
 	: "$y"
