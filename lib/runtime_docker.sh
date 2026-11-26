@@ -221,8 +221,14 @@ BLOCK
 		# and the host's dpistack through nsenter into pid 1's namespaces
 		# (pid: host and privileged are what that needs; the panel is a
 		# privileged client on the native path too, through sudo).
-		local pargs
+		local pargs tlsvol=""
 		pargs=$(panel_args) || return 1
+		# A certificate that was named is mounted from its own directory;
+		# the managed one is under etc/dpistack, which is mounted anyway.
+		if panel_tls_wanted && [[ "${CONF[PANEL_TLS]:-selfsigned}" == "existing" ]]; then
+			tlsvol="      - $(dirname "${CONF[PANEL_CERT]}"):$(dirname "${CONF[PANEL_CERT]}"):ro"
+			[[ "$(dirname "${CONF[PANEL_KEY]}")" == "$(dirname "${CONF[PANEL_CERT]}")" ]] || tlsvol+=$'\n'"      - $(dirname "${CONF[PANEL_KEY]}"):$(dirname "${CONF[PANEL_KEY]}"):ro"
+		fi
 		# shellcheck disable=SC2086
 		cat <<BLOCK
 ${common}
@@ -236,6 +242,7 @@ ${common}
       - ${root}/var/lib/suricata:${root}/var/lib/suricata:ro
       - ${root}/var/lib/evebox:${root}/var/lib/evebox:ro
 BLOCK
+		[[ -z "$tlsvol" ]] || printf '%s\n' "$tlsvol"
 		;;
 	victoriametrics | prometheus)
 		local data scrape token

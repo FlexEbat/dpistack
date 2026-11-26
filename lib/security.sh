@@ -29,21 +29,17 @@ security_check_access() {
 	esac
 }
 
+# A certificate is mandatory (task 66), so there is no plain HTTP row left to
+# warn about: the panel is HTTPS, or nginx is.
 security_check_tls() {
 	local mode tls ptls
 	mode=$(security_val ACCESS_MODE)
 	tls=$(security_val NGINX_TLS)
 	ptls=$(security_val PANEL_TLS)
-	if [[ "$mode" == lan && -n "$ptls" && "$ptls" != none ]]; then
-		security_row tls ok "Encryption of the panel connection" "The panel serves HTTPS itself ($ptls); the fingerprint of its certificate: dpistack tls show." ""
-	elif [[ "$mode" == localhost ]]; then
-		security_row tls ok "Encryption of the panel connection" "Nothing crosses a network, so there is nothing to encrypt." ""
-	elif [[ "$mode" == nginx && "$tls" != none ]]; then
-		security_row tls ok "Encryption of the panel connection" "nginx serves the panel over TLS ($tls)." ""
-	elif [[ "$mode" == nginx ]]; then
-		security_row tls warn "Encryption of the panel connection" "nginx serves plain HTTP: passwords and sessions cross the network in clear." "dpistack settings set NGINX_TLS=selfsigned (or existing, with NGINX_CERT and NGINX_KEY)"
+	if [[ "$mode" == nginx ]]; then
+		security_row tls ok "Encryption of the panel connection" "nginx serves the panel over TLS (${tls:-selfsigned}); the certificate: dpistack tls show." ""
 	else
-		security_row tls warn "Encryption of the panel connection" "The panel speaks plain HTTP to the local network: passwords and sessions cross it in clear." "dpistack settings set PANEL_TLS=selfsigned (or ACCESS_MODE=nginx NGINX_TLS=selfsigned)"
+		security_row tls ok "Encryption of the panel connection" "The panel serves HTTPS itself (${ptls:-selfsigned}); the certificate: dpistack tls show." ""
 	fi
 }
 

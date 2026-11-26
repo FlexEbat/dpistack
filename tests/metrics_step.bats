@@ -113,8 +113,8 @@ token_value() { sed -n 's/^METRICS_TOKEN=//p' "$DPISTACK_ROOT/etc/dpistack/secre
 	grep -q "targets: \\['127.0.0.1:9800'\\]" "$SCRAPE"
 }
 
-@test "task 64: a plain panel is scraped over http with no tls_config" {
-	run with_vm
+@test "task 64: behind nginx the panel is plain on loopback and is scraped over http with no tls_config" {
+	run with_vm --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes
 	[ "$status" -eq 0 ]
 	grep -q 'scheme: http$' "$SCRAPE"
 	! grep -q 'tls_config' "$SCRAPE"

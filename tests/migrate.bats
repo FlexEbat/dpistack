@@ -49,15 +49,18 @@ lib() {
 	[[ "$output" == *"0.0.0"* ]]
 	[[ "$output" == *"0.50.0"* ]]
 	[[ "$output" == *"0.51.0"* ]]
+	[[ "$output" == *"0.61.0"* ]]
 }
 
 @test "a recorded version at or above a migration skips it, a lower one runs it" {
-	run lib 'state_write_value install.finished yes; state_write_value install.version 0.51.0' 'migrate_pending'
+	run lib 'state_write_value install.finished yes; state_write_value install.version 0.61.0' 'migrate_pending'
 	[ -z "$output" ]
+	run lib 'state_write_value install.finished yes; state_write_value install.version 0.51.0' 'migrate_pending'
+	[ "$output" = "0.61.0" ]
 	run lib 'state_write_value install.finished yes; state_write_value install.version 0.50.0' 'migrate_pending'
-	[ "$output" = "0.51.0" ]
+	[ "$output" = "$(printf '0.51.0\n0.61.0')" ]
 	run lib 'state_write_value install.finished yes; state_write_value install.version 0.49.0' 'migrate_pending'
-	[ "$output" = "$(printf '0.50.0\n0.51.0')" ]
+	[ "$output" = "$(printf '0.50.0\n0.51.0\n0.61.0')" ]
 	# a migration of a version above this one is not run by an older program
 	run lib 'state_write_value install.finished yes; state_write_value install.version 0.1.0; DPISTACK_VERSION=0.49.0' 'migrate_pending'
 	[ -z "$output" ]

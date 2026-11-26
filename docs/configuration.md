@@ -90,12 +90,12 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `BIND_ADDR` | string | `auto` | light | Address the web services listen on: auto (127.0.0.1, or every address in lan mode) or one IPv4 address of this host, for example 192.168.1.156. An address that is not loopback opens the panels to LAN_CIDR. |
 | `LAN_CIDR` | string | `auto` | light | The network allowed in lan mode, or auto; several networks may be given separated by commas (auto stands for the network of the default route), for example auto,172.18.0.0/16. (advanced) |
 | `PANEL_PORT` | integer 1..65535 | `9800` | light | Port of this panel. (advanced) |
-| `PANEL_TLS` | none \| selfsigned \| existing | `none` | light | HTTPS served by the panel itself: none, selfsigned (made and renewed here, fingerprint in dpistack tls show) or existing (your own PANEL_CERT and PANEL_KEY). Not with ACCESS_MODE=nginx, which has NGINX_TLS. (advanced) |
+| `PANEL_TLS` | selfsigned \| existing | `selfsigned` | light | The certificate of the panel, which always serves HTTPS: selfsigned (made and renewed here, fingerprint in dpistack tls show) or existing (a certificate from Cloudflare, Certbot or another authority: PANEL_CERT and PANEL_KEY, or dpistack tls import). Behind nginx the certificate is NGINX_TLS. (advanced) |
 | `PANEL_CERT` | string | empty | light | Path of the PEM certificate the panel serves when PANEL_TLS=existing. The user dpistack must be able to read it; it is read again when the file changes. (advanced) |
 | `PANEL_KEY` | string | empty | light | Path of the PEM private key of PANEL_CERT. (advanced) |
 | `NTOPNG_PORT` | integer 1..65535 | `3000` | light | ntopng port. (advanced) |
 | `NGINX_MANAGE` | yes \| snippet | `snippet` | light | How to manage nginx: replace the configuration or only drop in a fragment. (advanced) |
-| `NGINX_TLS` | none \| selfsigned \| existing | `none` | light | TLS on nginx: none, self signed or your own certificate. (advanced) |
+| `NGINX_TLS` | selfsigned \| existing | `selfsigned` | light | The certificate nginx serves, which is always TLS: selfsigned (made and renewed here) or existing (NGINX_CERT and NGINX_KEY, from Cloudflare, Certbot or another authority; dpistack tls import). (advanced) |
 | `NGINX_CERT` | string | empty | light | Path to the certificate for the existing mode. (advanced) |
 | `NGINX_KEY` | string | empty | light | Path to the key for the existing mode. (advanced) |
 | `FIREWALL_MANAGE` | no \| auto | `no` | light | Open the needed ports in the firewall by itself. (advanced) |
