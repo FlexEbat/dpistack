@@ -110,7 +110,7 @@ check_process() {
 # on <public>+10000 behind nginx (section 7, same rule as access_backend_port
 # in the installer); the check must look at the service, not at nginx.
 backend_port() {
-	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+	if [[ "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]]; then
 		echo $(($1 + 10000))
 	else
 		echo "$1"

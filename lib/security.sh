@@ -25,6 +25,7 @@ security_check_access() {
 	localhost) security_row access-mode ok "Who can reach the panel" "Only this machine: the panel and the components listen on 127.0.0.1." "" ;;
 	lan) security_row access-mode warn "Who can reach the panel" "The panel is open to the local network ($(security_val LAN_CIDR))." "dpistack settings set ACCESS_MODE=localhost, or ACCESS_MODE=nginx with NGINX_TLS set" ;;
 	nginx) security_row access-mode ok "Who can reach the panel" "Through nginx, which is where the access rules and the TLS are." "" ;;
+	caddy) security_row access-mode ok "Who can reach the panel" "Through Caddy, which is where the access rules and the certificate are." "" ;;
 	*) security_row access-mode warn "Who can reach the panel" "ACCESS_MODE is $mode, which this check does not know." "dpistack settings set ACCESS_MODE=localhost" ;;
 	esac
 }
@@ -36,7 +37,9 @@ security_check_tls() {
 	mode=$(security_val ACCESS_MODE)
 	tls=$(security_val NGINX_TLS)
 	ptls=$(security_val PANEL_TLS)
-	if [[ "$mode" == nginx ]]; then
+	if [[ "$mode" == caddy ]]; then
+		security_row tls ok "Encryption of the panel connection" "Caddy serves the panel over TLS and looks after its certificate; the certificate: dpistack tls show." ""
+	elif [[ "$mode" == nginx ]]; then
 		security_row tls ok "Encryption of the panel connection" "nginx serves the panel over TLS (${tls:-selfsigned}); the certificate: dpistack tls show." ""
 	else
 		security_row tls ok "Encryption of the panel connection" "The panel serves HTTPS itself (${ptls:-selfsigned}); the certificate: dpistack tls show." ""

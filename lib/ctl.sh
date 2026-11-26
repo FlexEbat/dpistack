@@ -1979,6 +1979,7 @@ RUNTIME_MATRIX=(
 	"panel|yes|an image built on the host from the panel binary; it runs privileged with pid host and reaches dpistack through nsenter"
 	"watch|no|a systemd timer that calls the dpistack of the host"
 	"nginx|no|a package of the host, used only with ACCESS_MODE=nginx"
+	"caddy|no|a package of the host, run by dpistack as its own service (dpistack-caddy), used only with ACCESS_MODE=caddy"
 	"firewall|no|rules of the host kernel (iptables, nft, ufw, firewalld), they also guard the containers that use the host network"
 	"installer|no|install.sh and the dpistack command are scripts of the host"
 )
@@ -2920,9 +2921,18 @@ backup_run() {
 # name|cert|key|kind. kind is selfsigned (renewed here) or existing (renewed
 # by whoever issued it; the panel and nginx read the new file).
 tls_known() {
-	local mode name kind
+	local mode name kind domain found
 	mode=$(conf_get ACCESS_MODE localhost)
-	if [[ "$mode" != "nginx" ]]; then
+	if [[ "$mode" == "caddy" ]]; then
+		# Caddy looks after its certificates: only shown, never renewed here.
+		domain=$(conf_get CADDY_DOMAIN "")
+		if [[ -n "$domain" ]]; then
+			found=$(find "$(path_caddy_data_dir)/caddy/certificates" -name "${domain}.crt" 2>/dev/null | head -n 1)
+			echo "caddy-${domain}|${found:-$(path_caddy_data_dir)/caddy/certificates/${domain}.crt}||caddy-public"
+		else
+			echo "caddy-local-ca|$(path_caddy_data_dir)/caddy/pki/authorities/local/root.crt||caddy-local-ca"
+		fi
+	elif [[ "$mode" != "nginx" ]]; then
 		case "$(conf_get PANEL_TLS selfsigned)" in
 		selfsigned) echo "panel|$(path_panel_tls_cert)|$(path_panel_tls_key)|selfsigned" ;;
 		existing) echo "panel|$(conf_get PANEL_CERT "")|$(conf_get PANEL_KEY "")|existing" ;;
@@ -2968,6 +2978,7 @@ tls_show() {
 		fi
 		echo "  expires $end (${days} days)"
 		echo "  SHA-256 $fp"
+		[[ "$kind" == "caddy-local-ca" ]] && echo "  this is the root of the CA of Caddy: trust it once in the browser (the certificates it signs are renewed by Caddy by itself)"
 	done
 }
 
@@ -3012,6 +3023,7 @@ tls_renew() {
 tls_import() {
 	local cert="${1:-}" key="${2:-}" dir c k pub1 pub2 days mode
 	[[ -n "$cert" && -n "$key" && $# -eq 2 ]] || fail 2 "tls import CERT KEY"
+	[[ "$(conf_get ACCESS_MODE localhost)" != "caddy" ]] || fail 3 "tls import: ACCESS_MODE=caddy: Caddy looks after the certificate by itself (CADDY_DOMAIN for a public one)"
 	[[ -r "$cert" ]] || fail 4 "tls import: $cert cannot be read"
 	[[ -r "$key" ]] || fail 4 "tls import: $key cannot be read"
 	openssl x509 -in "$cert" -noout >/dev/null 2>&1 || fail 3 "tls import: $cert is not a PEM certificate"
@@ -3181,7 +3193,7 @@ cmd_info() {
 	esac
 	mode=$(conf_get ACCESS_MODE localhost)
 	host=$(ctl_info_host)
-	[[ "$mode" == "nginx" ]] && scheme=https
+	[[ "$mode" =~ ^(nginx|caddy)$ ]] && scheme=https
 	[[ "$mode" == "localhost" ]] && note="this machine only; from another one use an SSH tunnel: ssh -L <port>:127.0.0.1:<port> <this-host>"
 	for name in panel evebox ntopng; do
 		case "$name" in
@@ -3190,7 +3202,7 @@ cmd_info() {
 		ntopng) port=$(conf_get NTOPNG_PORT 3000) enabled=$(conf_get NTOPNG_ENABLE yes) ;;
 		esac
 		[[ "$enabled" == "yes" ]] || continue
-		if [[ "$name" == panel && "$mode" != "nginx" ]]; then
+		if [[ "$name" == panel && ! "$mode" =~ ^(nginx|caddy)$ ]]; then
 			rows+=("$name|https://${host}:${port}")
 		else
 			rows+=("$name|${scheme}://${host}:${port}")

@@ -77,6 +77,9 @@ path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-wat
 path_panel_tls_dir() { echo "$(path_etc)/tls"; }
 path_panel_tls_cert() { echo "$(path_panel_tls_dir)/panel.crt"; }
 path_panel_tls_key() { echo "$(path_panel_tls_dir)/panel.key"; }
+path_caddyfile() { echo "$(path_etc)/Caddyfile"; }
+path_caddy_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-caddy.service"; }
+path_caddy_data_dir() { echo "${DPISTACK_ROOT}/var/lib/dpistack-caddy"; }
 path_backup_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-backup.service"; }
 path_backup_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-backup.timer"; }
 path_evebox_data_dir() { echo "${DPISTACK_ROOT}/var/lib/evebox"; }

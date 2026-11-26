@@ -102,11 +102,11 @@ config_validate() {
 	done
 
 	# nginx takes the public port, the service moves to <public>+10000.
-	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+	if [[ "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]]; then
 		local port_key
 		for port_key in NTOPNG_PORT EVEBOX_PORT PANEL_PORT; do
 			if [[ "${CONF[$port_key]:-0}" =~ ^[0-9]+$ ]] && ((${CONF[$port_key]:-0} > 55535)); then
-				echo "ACCESS_MODE=nginx needs $port_key not above 55535 (the service listens on the port plus 10000)"
+				echo "ACCESS_MODE=${CONF[ACCESS_MODE]} needs $port_key not above 55535 (the service listens on the port plus 10000)"
 				errors=$((errors + 1))
 			fi
 		done
@@ -168,7 +168,7 @@ config_validate() {
 			bind_open=1
 		fi
 	fi
-	if [[ "${CONF[ACCESS_MODE]:-}" == "nginx" ]]; then
+	if access_proxied; then
 		bind_open=0
 	fi
 	if { [[ "${CONF[ACCESS_MODE]:-}" != "localhost" ]] || ((bind_open)); } && [[ "${ACCESS_CONFIRM:-}" != "yes" && "${NON_INTERACTIVE:-0}" == "1" ]]; then

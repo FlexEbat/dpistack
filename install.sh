@@ -756,6 +756,8 @@ cmd_uninstall() {
 		rm -f "$(path_ntopng_conf)" "$(path_evebox_yaml)"
 		rm -rf "$(access_tls_dir)" 2>/dev/null || true
 		rm -rf "$(path_panel_tls_dir)" 2>/dev/null || true
+		rm -f "$(path_caddyfile)"
+		rm -rf "$(path_caddy_data_dir)" 2>/dev/null || true
 		rm -rf "$(path_metrics_data_dir)"
 		if id "$METRICS_USER" >/dev/null 2>&1; then
 			run userdel "$METRICS_USER" || true
@@ -777,6 +779,11 @@ cmd_uninstall() {
 
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
 	run systemctl disable --now "$BACKUP_TIMER" 2>/dev/null || true
+	if [[ -f "$(path_caddy_unit)" ]]; then
+		run systemctl disable --now dpistack-caddy.service 2>/dev/null || true
+		rm -f "$(path_caddy_unit)"
+		run systemctl daemon-reload
+	fi
 	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_backup_timer_unit)" "$(path_backup_service_unit)" "$(path_sudoers)"
 	run systemctl disable --now "$PANEL_SERVICE" 2>/dev/null || true
 	# every container of the docker runtime, not only the panel
