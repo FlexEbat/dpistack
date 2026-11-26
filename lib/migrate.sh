@@ -118,6 +118,7 @@ migrate_0_61_0() {
 	local key
 	for key in PANEL_TLS NGINX_TLS; do
 		if [[ "${CONF[$key]:-}" == "none" ]]; then
+			# shellcheck disable=SC2004 # CONF is an associative array
 			CONF[$key]="selfsigned"
 			echo "migrate 0.61.0: $key=none is not allowed any more, it is selfsigned now; the panel is served over https, with a certificate the browser does not know until you trust it or set $key=existing (dpistack tls import CERT KEY)"
 		fi

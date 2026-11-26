@@ -3019,7 +3019,9 @@ tls_import() {
 	pub2=$(openssl pkey -in "$key" -pubout -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)
 	[[ -n "$pub1" && "$pub1" == "$pub2" ]] || fail 3 "tls import: $key is not the private key of $cert (or it is encrypted with a passphrase, which the panel cannot enter)"
 	days=$(tls_days_left "$cert") || days=""
-	[[ -n "$days" ]] && ((days >= 0)) || fail 3 "tls import: $cert has expired"
+	if [[ -z "$days" ]] || ((days < 0)); then
+		fail 3 "tls import: $cert has expired"
+	fi
 	dir=$(path_panel_tls_dir)
 	c="$dir/imported.crt"
 	k="$dir/imported.key"
@@ -3029,8 +3031,12 @@ tls_import() {
 	(umask 077 && cp "$key" "$k.new") || fail 1 "tls import: the key could not be copied"
 	run chgrp dpistack "$k.new" 2>/dev/null || true
 	run chmod 0640 "$k.new" || fail 1 "tls import: chmod"
-	cp "$cert" "$c.new" && run chmod 0644 "$c.new" || fail 1 "tls import: the certificate could not be copied"
-	run mv "$k.new" "$k" && run mv "$c.new" "$c" || fail 1 "tls import: the files could not be put in place"
+	if ! cp "$cert" "$c.new" || ! run chmod 0644 "$c.new"; then
+		fail 1 "tls import: the certificate could not be copied"
+	fi
+	if ! run mv "$k.new" "$k" || ! run mv "$c.new" "$c"; then
+		fail 1 "tls import: the files could not be put in place"
+	fi
 	echo "imported: $(tls_fingerprint "$c") (${days} days left)"
 	mode=$(conf_get ACCESS_MODE localhost)
 	if [[ "$mode" == "nginx" ]]; then
