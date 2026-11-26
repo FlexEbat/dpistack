@@ -755,6 +755,7 @@ cmd_uninstall() {
 		rm -rf "$(dirname "$(path_suricata_ruleset)")"
 		rm -f "$(path_ntopng_conf)" "$(path_evebox_yaml)"
 		rm -rf "$(access_tls_dir)" 2>/dev/null || true
+		rm -rf "$(path_panel_tls_dir)" 2>/dev/null || true
 		rm -rf "$(path_metrics_data_dir)"
 		if id "$METRICS_USER" >/dev/null 2>&1; then
 			run userdel "$METRICS_USER" || true
