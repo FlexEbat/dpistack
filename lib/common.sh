@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.59.0"
+DPISTACK_VERSION="0.60.0"
 
 : "${DRY_RUN:=0}"
 
@@ -338,4 +338,69 @@ step_component_enabled() {
 	panel) [[ "${CONF[PANEL_ENABLE]:-$yes}" == "$yes" ]] ;;
 	*) return 0 ;;
 	esac
+}
+
+# ---- self-signed certificates (task 64) ----------------------------------
+# One way of making them for the panel and for nginx: an EC P-256 key, 825
+# days, the names the host answers to in subjectAltName (a browser ignores a
+# certificate that has only a CN). The files are replaced key first, then
+# the certificate; a reader that loads them in between sees a mismatch and
+# keeps the old pair (the panel does, see panel/internal/tlsutil).
+TLS_DAYS=825
+TLS_RENEW_BEFORE_DAYS=30
+
+tls_san() {
+	local san="DNS:localhost,IP:127.0.0.1,IP:::1" h ip
+	h=$(hostname 2>/dev/null) || h=""
+	[[ "$h" =~ ^[A-Za-z0-9.-]+$ ]] && san+=",DNS:$h"
+	for ip in $(hostname -I 2>/dev/null); do
+		[[ "$ip" =~ ^[0-9a-fA-F.:]+$ ]] && san+=",IP:$ip"
+	done
+	echo "$san"
+}
+
+# tls_make_selfsigned <cert> <key> <cn> [group] - the key is 0640 for the
+# group (the panel user) or 0600 for root alone.
+tls_make_selfsigned() {
+	local cert="$1" key="$2" cn="$3" group="${4:-}" dir
+	dir=$(dirname "$cert")
+	run mkdir -p "$dir" || return 1
+	run openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+		-days "$TLS_DAYS" -keyout "$key.new" -out "$cert.new" -subj "/CN=${cn}" \
+		-addext "subjectAltName=$(tls_san)" || return 1
+	if [[ -n "$group" ]]; then
+		run chgrp "$group" "$key.new" || return 1
+		run chmod 0640 "$key.new" || return 1
+	else
+		run chmod 0600 "$key.new" || return 1
+	fi
+	run chmod 0644 "$cert.new" || return 1
+	run mv "$key.new" "$key" || return 1
+	run mv "$cert.new" "$cert" || return 1
+}
+
+# tls_days_left <cert> - whole days until the certificate expires (negative
+# when it already has); empty when the file cannot be read.
+tls_days_left() {
+	local end now
+	end=$(openssl x509 -in "$1" -noout -enddate 2>/dev/null) || return 1
+	end=$(date -u -d "${end#notAfter=}" +%s 2>/dev/null) || return 1
+	now=$(date -u +%s)
+	echo $(((end - now) / 86400))
+}
+
+# tls_fingerprint <cert> - SHA-256 as AA:BB:..., as browsers show it.
+tls_fingerprint() {
+	local out
+	out=$(openssl x509 -in "$1" -noout -fingerprint -sha256 2>/dev/null) || return 1
+	echo "${out#*=}"
+}
+
+# tls_due <cert> - 0 when the certificate is missing, unreadable or has
+# fewer than TLS_RENEW_BEFORE_DAYS days left.
+tls_due() {
+	local days
+	[[ -f "$1" ]] || return 0
+	days=$(tls_days_left "$1") || return 0
+	((days < TLS_RENEW_BEFORE_DAYS))
 }

@@ -72,6 +72,67 @@ panel_token_matches() {
 	fi
 }
 
+# PANEL_TLS (task 64): the panel serves HTTPS itself. Not behind nginx and
+# not in a container; config_validate says so.
+panel_tls_wanted() {
+	[[ "${CONF[PANEL_TLS]:-none}" != "none" && "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]]
+}
+
+panel_tls_cert() {
+	if [[ "${CONF[PANEL_TLS]:-none}" == "existing" ]]; then
+		echo "${CONF[PANEL_CERT]}"
+	else
+		path_panel_tls_cert
+	fi
+}
+
+panel_tls_key() {
+	if [[ "${CONF[PANEL_TLS]:-none}" == "existing" ]]; then
+		echo "${CONF[PANEL_KEY]}"
+	else
+		path_panel_tls_key
+	fi
+}
+
+# panel_tls_check - 0 when the certificate the panel is told to serve is
+# there. A certificate that is about to expire is the watchdog's to renew.
+panel_tls_check() {
+	panel_tls_wanted || return 0
+	[[ -f "$(panel_tls_cert)" && -f "$(panel_tls_key)" ]] || return 1
+	if [[ "${CONF[PANEL_TLS]}" == "selfsigned" ]]; then
+		openssl x509 -in "$(panel_tls_cert)" -noout -checkend 0 >/dev/null 2>&1 || return 1
+	fi
+}
+
+# panel_tls_apply - makes the self-signed pair, or checks that the panel user
+# can read the pair that was named. The panel stops at start on a pair it
+# cannot read, so this says why before the unit is started.
+panel_tls_apply() {
+	panel_tls_wanted || return 0
+	local cert key
+	cert=$(panel_tls_cert)
+	key=$(panel_tls_key)
+	if [[ "${CONF[PANEL_TLS]}" == "selfsigned" ]]; then
+		if [[ ! -f "$cert" || ! -f "$key" ]] || tls_due "$cert"; then
+			tls_make_selfsigned "$cert" "$key" "dpistack-panel" "$PANEL_USER" || return 1
+		fi
+		return 0
+	fi
+	if [[ "${DRY_RUN:-0}" != "1" ]]; then
+		local f
+		for f in "$cert" "$key"; do
+			if [[ ! -s "$f" ]]; then
+				echo "panel: PANEL_TLS=existing: $f does not exist or is empty" >&2
+				return 1
+			fi
+			if id "$PANEL_USER" >/dev/null 2>&1 && command -v runuser >/dev/null 2>&1 && ! runuser -u "$PANEL_USER" -- test -r "$f" 2>/dev/null; then
+				echo "panel: PANEL_TLS=existing: the user $PANEL_USER cannot read $f (give the group $PANEL_USER read access to it and to its directory)" >&2
+				return 1
+			fi
+		done
+	fi
+}
+
 # panel_args - the flags of the panel (section 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
@@ -93,6 +154,9 @@ panel_args() {
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
 	args+=" -auth-file $(path_panel_auth) -users-file $(path_users) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json) -audit-file $(path_audit_jsonl) -backups-dir $(path_backup_archives_dir)"
 	args+=" -version ${DPISTACK_VERSION}"
+	if panel_tls_wanted; then
+		args+=" -tls-cert $(panel_tls_cert) -tls-key $(panel_tls_key)"
+	fi
 	# Without the flag the panel shows that viewing events is off.
 	[[ "${CONF[EVE_FILE]:-yes}" == "yes" ]] && args+=" -eve-file $(path_suricata_eve_json)"
 	# The Tests and Alerts screens read these two files whatever /metrics does.
@@ -261,6 +325,7 @@ panel_render_sudoers() {
 
 step_panel_check() {
 	getent passwd "$PANEL_USER" >/dev/null 2>&1 || return 1
+	panel_tls_check || return 1
 
 	local path
 	path=$(path_sudoers)
@@ -338,6 +403,9 @@ step_panel_apply() {
 		run install -D -m 0640 /dev/null "$mfile" || return 1
 	fi
 	run chown "$PANEL_USER:$PANEL_USER" "$mfile" || return 1
+
+	# Before the unit, which names these files.
+	panel_tls_apply || return 1
 
 	# The audit log (the audit log) has a directory of its own, because the panel
 	# rotates it (it renames files) and the state directory stays root's.
@@ -417,6 +485,8 @@ step_panel_plan() {
 		return 0
 	fi
 	echo "panel: user $PANEL_USER, sudoers $(path_sudoers) (dpistack only), binary $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), unit $PANEL_SERVICE"
+	panel_tls_wanted && echo "panel: HTTPS by the panel itself (PANEL_TLS=${CONF[PANEL_TLS]}), certificate $(panel_tls_cert)"
+	return 0
 }
 
 # panel_report_metrics - the token of /metrics and a scrape_config entry
@@ -431,6 +501,7 @@ panel_report_metrics() {
 		host="<server-address>"
 	fi
 	[[ "$mode" == "nginx" && "${CONF[NGINX_TLS]:-none}" != "none" ]] && scheme="https"
+	panel_tls_wanted && scheme="https"
 	echo "METRICS_TOKEN created for GET /metrics (save it: it is shown nowhere else): ${SECRETS[METRICS_TOKEN]}"
 	echo "Line for scrape_configs (Prometheus and VictoriaMetrics):"
 	cat <<EOF

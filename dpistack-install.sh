@@ -1219,6 +1219,20 @@ check_port() {
 	fi
 }
 
+# check_tls_renew - a self-signed certificate of the panel or of nginx that
+# has less than 30 days left is made again (dpistack tls renew; the panel
+# reads the new files by itself, nginx is reloaded). Certificates that were
+# issued elsewhere are not touched.
+check_tls_renew() {
+	local out ctl
+	[[ "${CONF[PANEL_TLS]:-none}" == "selfsigned" || "${CONF[NGINX_TLS]:-none}" == "selfsigned" ]] || return 0
+	ctl=$(path_ctl_bin)
+	[[ -x "$ctl" ]] || return 0
+	if ! out=$("$ctl" tls renew 2>&1); then
+		record tls.renew warn "" "renewing the self-signed certificate failed: ${out##*$'\n'}"
+	fi
+}
+
 check_eve_fresh() {
 	if ! eve_checks_apply; then
 		record suricata.eve_fresh na "" "EVE_FILE=no or no stats in EVE_TYPES"
@@ -2103,6 +2117,7 @@ main() {
 	check_redis_stream
 	check_migrate_pending
 	check_rules_age
+	check_tls_renew
 	prune_exceptions
 
 	write_health
@@ -2713,7 +2728,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.59.0"
+DPISTACK_VERSION="0.60.0"
 
 : "${DRY_RUN:=0}"
 
@@ -3047,6 +3062,71 @@ step_component_enabled() {
 	*) return 0 ;;
 	esac
 }
+
+# ---- self-signed certificates (task 64) ----------------------------------
+# One way of making them for the panel and for nginx: an EC P-256 key, 825
+# days, the names the host answers to in subjectAltName (a browser ignores a
+# certificate that has only a CN). The files are replaced key first, then
+# the certificate; a reader that loads them in between sees a mismatch and
+# keeps the old pair (the panel does, see panel/internal/tlsutil).
+TLS_DAYS=825
+TLS_RENEW_BEFORE_DAYS=30
+
+tls_san() {
+	local san="DNS:localhost,IP:127.0.0.1,IP:::1" h ip
+	h=$(hostname 2>/dev/null) || h=""
+	[[ "$h" =~ ^[A-Za-z0-9.-]+$ ]] && san+=",DNS:$h"
+	for ip in $(hostname -I 2>/dev/null); do
+		[[ "$ip" =~ ^[0-9a-fA-F.:]+$ ]] && san+=",IP:$ip"
+	done
+	echo "$san"
+}
+
+# tls_make_selfsigned <cert> <key> <cn> [group] - the key is 0640 for the
+# group (the panel user) or 0600 for root alone.
+tls_make_selfsigned() {
+	local cert="$1" key="$2" cn="$3" group="${4:-}" dir
+	dir=$(dirname "$cert")
+	run mkdir -p "$dir" || return 1
+	run openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+		-days "$TLS_DAYS" -keyout "$key.new" -out "$cert.new" -subj "/CN=${cn}" \
+		-addext "subjectAltName=$(tls_san)" || return 1
+	if [[ -n "$group" ]]; then
+		run chgrp "$group" "$key.new" || return 1
+		run chmod 0640 "$key.new" || return 1
+	else
+		run chmod 0600 "$key.new" || return 1
+	fi
+	run chmod 0644 "$cert.new" || return 1
+	run mv "$key.new" "$key" || return 1
+	run mv "$cert.new" "$cert" || return 1
+}
+
+# tls_days_left <cert> - whole days until the certificate expires (negative
+# when it already has); empty when the file cannot be read.
+tls_days_left() {
+	local end now
+	end=$(openssl x509 -in "$1" -noout -enddate 2>/dev/null) || return 1
+	end=$(date -u -d "${end#notAfter=}" +%s 2>/dev/null) || return 1
+	now=$(date -u +%s)
+	echo $(((end - now) / 86400))
+}
+
+# tls_fingerprint <cert> - SHA-256 as AA:BB:..., as browsers show it.
+tls_fingerprint() {
+	local out
+	out=$(openssl x509 -in "$1" -noout -fingerprint -sha256 2>/dev/null) || return 1
+	echo "${out#*=}"
+}
+
+# tls_due <cert> - 0 when the certificate is missing, unreadable or has
+# fewer than TLS_RENEW_BEFORE_DAYS days left.
+tls_due() {
+	local days
+	[[ -f "$1" ]] || return 0
+	days=$(tls_days_left "$1") || return 0
+	((days < TLS_RENEW_BEFORE_DAYS))
+}
 DPISTACK_BUNDLE_END
 put lib/config.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
@@ -3245,6 +3325,24 @@ config_validate() {
 				errors=$((errors + 1))
 			fi
 		done
+	fi
+
+	# The panel's own HTTPS (task 64). Behind nginx the certificate is
+	# nginx's (NGINX_TLS), so two layers of TLS are refused, and the panel in
+	# a container cannot read the certificate files of the host.
+	if [[ "${CONF[PANEL_TLS]:-none}" != "none" ]]; then
+		if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+			echo "PANEL_TLS=${CONF[PANEL_TLS]} with ACCESS_MODE=nginx: nginx terminates TLS, set NGINX_TLS instead"
+			errors=$((errors + 1))
+		fi
+		if [[ "${CONF[PANEL_RUNTIME]:-native}" == "docker" ]]; then
+			echo "PANEL_TLS=${CONF[PANEL_TLS]} needs PANEL_RUNTIME=native: the container does not see the certificate files"
+			errors=$((errors + 1))
+		fi
+	fi
+	if [[ "${CONF[PANEL_TLS]:-none}" == "existing" && (-z "${CONF[PANEL_CERT]:-}" || -z "${CONF[PANEL_KEY]:-}") ]]; then
+		echo "PANEL_TLS=existing needs PANEL_CERT and PANEL_KEY"
+		errors=$((errors + 1))
 	fi
 
 	if [[ "${CONF[NGINX_TLS]:-none}" == "existing" && (-z "${CONF[NGINX_CERT]:-}" || -z "${CONF[NGINX_KEY]:-}") ]]; then
@@ -3637,6 +3735,7 @@ Usage: dpistack <command> [arguments]
   test bittorrent|https|all [--json] check tests (section 10)
   health [--json]                    one watchdog run
   users list|add|passwd|role|disable|enable|remove  users of the panel (passwords on stdin)
+  tls show [--json]|renew [--force]   the self-signed certificates of the panel and nginx: expiry, SHA-256, new one
   backup create [--out FILE]|list [--json]|run|verify FILE|restore FILE [--dry-run]  configs in one tar.gz
                                       run: the scheduled archive (BACKUP_DIR, age, BACKUP_KEEP); an encrypted
                                       archive needs --identity KEY (the age key file) for verify and restore
@@ -6470,6 +6569,99 @@ backup_run() {
 	echo "backup run: kept the newest $keep of $dir"
 }
 
+# tls_known - the certificates dpistack makes or points at, one per line:
+# name|cert|key|kind. kind is selfsigned (renewed here) or existing (renewed
+# by whoever issued it; the panel and nginx read the new file).
+tls_known() {
+	local mode name
+	mode=$(conf_get ACCESS_MODE localhost)
+	if [[ "$mode" != "nginx" ]]; then
+		case "$(conf_get PANEL_TLS none)" in
+		selfsigned) echo "panel|$(path_panel_tls_cert)|$(path_panel_tls_key)|selfsigned" ;;
+		existing) echo "panel|$(conf_get PANEL_CERT "")|$(conf_get PANEL_KEY "")|existing" ;;
+		esac
+	elif [[ "$(conf_get NGINX_TLS none)" == "selfsigned" ]]; then
+		for name in ntopng evebox panel; do
+			[[ "$(conf_get "${name^^}_ENABLE" yes)" == "yes" ]] || continue
+			echo "nginx-$name|$(access_tls_cert_path "$name")|$(access_tls_key_path "$name")|selfsigned"
+		done
+	fi
+}
+
+tls_show() {
+	local json=0 row name cert key kind days fp end rows=()
+	[[ "${1:-}" == "--json" ]] && json=1
+	while IFS='|' read -r name cert key kind; do
+		[[ -n "$name" ]] || continue
+		if [[ -f "$cert" ]]; then
+			days=$(tls_days_left "$cert") || days=""
+			fp=$(tls_fingerprint "$cert") || fp=""
+			end=$(openssl x509 -in "$cert" -noout -enddate 2>/dev/null | sed 's/^notAfter=//')
+		else
+			days="" fp="" end=""
+		fi
+		rows+=("$name|$kind|$cert|${end}|${days}|${fp}")
+	done < <(tls_known)
+	if ((json)); then
+		printf '%s\n' "${rows[@]}" | jq -R 'select(length > 0) | split("|") | {name: .[0], kind: .[1], cert: .[2], expires: .[3], days_left: (.[4] | tonumber? // null), sha256: .[5]}' | jq -sc '.'
+		return 0
+	fi
+	if ((${#rows[@]} == 0)); then
+		echo "No certificate of dpistack's own: PANEL_TLS=none and NGINX_TLS is not selfsigned."
+		return 0
+	fi
+	for row in "${rows[@]}"; do
+		IFS='|' read -r name kind cert end days fp <<<"$row"
+		echo "$name ($kind): $cert"
+		if [[ -z "$fp" ]]; then
+			echo "  not found or not readable"
+			continue
+		fi
+		echo "  expires $end (${days} days)"
+		echo "  SHA-256 $fp"
+	done
+}
+
+# tls_renew - makes a new self-signed pair for each certificate that is due,
+# or for all of them with --force (a new address of the host is in the new
+# certificate). Certificates that were issued elsewhere are left alone.
+tls_renew() {
+	local force=0 name cert key kind group renewed=0 nginx_done=0
+	case "${1:-}" in
+	"") ;;
+	--force) force=1 ;;
+	*) fail 2 "tls renew [--force]" ;;
+	esac
+	while IFS='|' read -r name cert key kind; do
+		[[ -n "$name" && "$kind" == "selfsigned" ]] || continue
+		if ((!force)) && ! tls_due "$cert"; then
+			continue
+		fi
+		group=""
+		[[ "$name" == "panel" ]] && group="dpistack"
+		tls_make_selfsigned "$cert" "$key" "dpistack-${name#nginx-}" "$group" || fail 1 "tls: $name: the certificate could not be made"
+		echo "renewed $name: $(tls_fingerprint "$cert")"
+		renewed=$((renewed + 1))
+		[[ "$name" == nginx-* ]] && nginx_done=1
+	done < <(tls_known)
+	if ((nginx_done)) && [[ "$(systemctl is-active nginx 2>/dev/null)" == "active" ]]; then
+		run systemctl reload nginx
+	fi
+	((renewed > 0)) || echo "nothing to renew"
+	return 0
+}
+
+cmd_tls() {
+	restricted_caller && fail 5 "tls: not for the panel"
+	local sub="${1:-show}"
+	shift || true
+	case "$sub" in
+	show) tls_show "$@" ;;
+	renew) tls_renew "$@" ;;
+	*) fail 2 "tls: show [--json] | renew [--force]" ;;
+	esac
+}
+
 cmd_backup() {
 	local sub="${1:-}"
 	[[ $# -ge 1 ]] && shift
@@ -6593,7 +6785,11 @@ cmd_info() {
 		ntopng) port=$(conf_get NTOPNG_PORT 3000) enabled=$(conf_get NTOPNG_ENABLE yes) ;;
 		esac
 		[[ "$enabled" == "yes" ]] || continue
-		rows+=("$name|${scheme}://${host}:${port}")
+		if [[ "$name" == panel && "$mode" != "nginx" && "$(conf_get PANEL_TLS none)" != "none" ]]; then
+			rows+=("$name|https://${host}:${port}")
+		else
+			rows+=("$name|${scheme}://${host}:${port}")
+		fi
 	done
 	if ((json)); then
 		printf '%s\n' "${rows[@]}" | jq -R 'split("|") | {id: .[0], url: .[1]}' | jq -sc --arg mode "$mode" --arg note "$note" '{access: $mode, note: $note, screens: .}'
@@ -6803,6 +6999,7 @@ ctl_dispatch() {
 	runtime) cmd_runtime "$@" ;;
 	users) cmd_users "$@" ;;
 	backup) cmd_backup "$@" ;;
+	tls) cmd_tls "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
 	help) ctl_cmd_help "$@" ;;
 	info) cmd_info "$@" ;;
@@ -7897,6 +8094,9 @@ declare -gA KEY_HINT=(
 	[BIND_ADDR]='Address the web services listen on: auto (127.0.0.1, or every address in lan mode) or one IPv4 address of this host, for example 192.168.1.156. An address that is not loopback opens the panels to LAN_CIDR.'
 	[LAN_CIDR]='The network allowed in lan mode, or auto; several networks may be given separated by commas (auto stands for the network of the default route), for example auto,172.18.0.0/16.'
 	[PANEL_PORT]='Port of this panel.'
+	[PANEL_TLS]='HTTPS served by the panel itself: none, selfsigned (made and renewed here, fingerprint in dpistack tls show) or existing (your own PANEL_CERT and PANEL_KEY). Not with ACCESS_MODE=nginx, which has NGINX_TLS.'
+	[PANEL_CERT]='Path of the PEM certificate the panel serves when PANEL_TLS=existing. The user dpistack must be able to read it; it is read again when the file changes.'
+	[PANEL_KEY]='Path of the PEM private key of PANEL_CERT.'
 	[NTOPNG_PORT]='ntopng port.'
 	[PANEL_SOURCE]='How to get the panel program: build it, take a ready one or choose automatically.'
 	[PANEL_RUNTIME]='Where the panel runs: as a service on the host or as a Docker container (host commands go through nsenter).'
@@ -8772,6 +8972,8 @@ menu_key_skipped() {
 	NTOPNG_ENABLE) ;;
 	NTOPNG_*) [[ "${CONF[NTOPNG_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
 	PANEL_ENABLE) ;;
+	PANEL_TLS) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] && return 0 ;;
+	PANEL_CERT | PANEL_KEY) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" || "${CONF[PANEL_TLS]:-none}" != "existing" ]] && return 0 ;;
 	PANEL_* | METRICS_EXPORT) [[ "${CONF[PANEL_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
 	LAN_CIDR) [[ "${CONF[ACCESS_MODE]:-localhost}" != "lan" ]] && return 0 ;;
 	NGINX_MANAGE | NGINX_TLS) [[ "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]] && return 0 ;;
@@ -10549,6 +10751,9 @@ path_completion_file() { echo "${DPISTACK_ROOT}/etc/bash_completion.d/dpistack";
 path_watch_bin() { echo "$(path_sbin_dir)/dpistack-watch"; }
 path_watch_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.service"; }
 path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.timer"; }
+path_panel_tls_dir() { echo "$(path_etc)/tls"; }
+path_panel_tls_cert() { echo "$(path_panel_tls_dir)/panel.crt"; }
+path_panel_tls_key() { echo "$(path_panel_tls_dir)/panel.key"; }
 path_backup_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-backup.service"; }
 path_backup_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-backup.timer"; }
 path_evebox_data_dir() { echo "${DPISTACK_ROOT}/var/lib/evebox"; }
@@ -12213,6 +12418,8 @@ SCHEMA_PATTERN[RULES_UPDATE_CALENDAR]='^[A-Za-z0-9*:/,. -]+$'
 SCHEMA_PATTERN[EVEBOX_ES_URL]="^https?://${_url}\$"
 SCHEMA_PATTERN[TEST_HTTPS_URL]="^https?://${_url}\$"
 SCHEMA_PATTERN[LAN_CIDR]="^(auto|${_cidr})(,(auto|${_cidr}))*\$"
+SCHEMA_PATTERN[PANEL_CERT]='^/[A-Za-z0-9._/@+-]+$'
+SCHEMA_PATTERN[PANEL_KEY]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[NGINX_CERT]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[NGINX_KEY]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[METRICS_RETENTION]='^[0-9]+[dhwmy]?$'
@@ -12313,6 +12520,9 @@ schema_init() {
 	_schema_add 'BIND_ADDR|free|auto||basic|access|access panel evebox ntopng metrics nodeexp grafana|light|no'
 	_schema_add 'LAN_CIDR|free|auto||advanced|access|access panel|light|no'
 	_schema_add 'PANEL_PORT|int|9800|1..65535|advanced|access|access panel|light|no'
+	_schema_add 'PANEL_TLS|enum|none|none,selfsigned,existing|advanced|access|access panel|light|no'
+	_schema_add 'PANEL_CERT|free|||advanced|access|access panel|light|no'
+	_schema_add 'PANEL_KEY|free|||advanced|access|access panel|light|no'
 	_schema_add 'NTOPNG_PORT|int|3000|1..65535|advanced|access|ntopng access|light|no'
 	_schema_add 'PANEL_SOURCE|enum|auto|auto,build,prebuilt|advanced|components|panel|heavy|no'
 	_schema_add 'PANEL_RUNTIME|enum|native|native,docker|basic|components|panel|heavy|no'
@@ -12423,6 +12633,8 @@ schema_depends_init() {
 	_schema_depend 'EVEBOX_ENABLE=yes EVEBOX_DB=elasticsearch' EVEBOX_ES_URL
 	_schema_depend 'EVEBOX_ENABLE=yes' 'EVEBOX_*'
 	_schema_depend 'NTOPNG_ENABLE=yes' 'NTOPNG_*'
+	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx' PANEL_TLS
+	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx PANEL_TLS=existing' PANEL_CERT PANEL_KEY
 	_schema_depend 'PANEL_ENABLE=yes' 'PANEL_*' METRICS_EXPORT
 	_schema_depend 'ACCESS_MODE=lan' LAN_CIDR
 	_schema_depend 'ACCESS_MODE=nginx' NGINX_MANAGE NGINX_TLS
@@ -12781,6 +12993,7 @@ SCHEMA_SINCE_TABLE="
 0.56.0: HISTORY_ENABLE HISTORY_DAYS DEVICE_NEW_NOTIFY
 0.57.0: ALERT_INDEX ALERT_INDEX_DAYS
 0.59.0: BACKUP_SCHEDULE BACKUP_KEEP BACKUP_DIR BACKUP_AGE_RECIPIENT
+0.60.0: PANEL_TLS PANEL_CERT PANEL_KEY
 "
 
 # schema_since <key> - the release that brought the key, or nothing.
@@ -12849,17 +13062,20 @@ security_check_access() {
 }
 
 security_check_tls() {
-	local mode tls
+	local mode tls ptls
 	mode=$(security_val ACCESS_MODE)
 	tls=$(security_val NGINX_TLS)
-	if [[ "$mode" == localhost ]]; then
+	ptls=$(security_val PANEL_TLS)
+	if [[ "$mode" == lan && -n "$ptls" && "$ptls" != none ]]; then
+		security_row tls ok "Encryption of the panel connection" "The panel serves HTTPS itself ($ptls); the fingerprint of its certificate: dpistack tls show." ""
+	elif [[ "$mode" == localhost ]]; then
 		security_row tls ok "Encryption of the panel connection" "Nothing crosses a network, so there is nothing to encrypt." ""
 	elif [[ "$mode" == nginx && "$tls" != none ]]; then
 		security_row tls ok "Encryption of the panel connection" "nginx serves the panel over TLS ($tls)." ""
 	elif [[ "$mode" == nginx ]]; then
 		security_row tls warn "Encryption of the panel connection" "nginx serves plain HTTP: passwords and sessions cross the network in clear." "dpistack settings set NGINX_TLS=selfsigned (or existing, with NGINX_CERT and NGINX_KEY)"
 	else
-		security_row tls warn "Encryption of the panel connection" "The panel speaks plain HTTP to the local network: passwords and sessions cross it in clear." "dpistack settings set ACCESS_MODE=nginx NGINX_TLS=selfsigned"
+		security_row tls warn "Encryption of the panel connection" "The panel speaks plain HTTP to the local network: passwords and sessions cross it in clear." "dpistack settings set PANEL_TLS=selfsigned (or ACCESS_MODE=nginx NGINX_TLS=selfsigned)"
 	fi
 }
 
@@ -13232,9 +13448,7 @@ access_ensure_selfsigned_cert() {
 	cert=$(access_tls_cert_path "$name")
 	key=$(access_tls_key_path "$name")
 	[[ -f "$cert" && -f "$key" ]] && return 0
-	run mkdir -p "$(access_tls_dir)" || return 1
-	run openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
-		-keyout "$key" -out "$cert" -subj "/CN=dpistack-${name}" || return 1
+	tls_make_selfsigned "$cert" "$key" "dpistack-${name}" || return 1
 }
 
 # access_services - the web services that are switched on, one per line
@@ -14012,7 +14226,16 @@ metrics_scrape_target() {
 }
 
 metrics_render_scrape() {
+	# A panel that serves HTTPS itself is scraped over loopback: the name in
+	# its certificate is not the address of the scrape, so it is not checked.
+	local scheme=http tls=""
+	if panel_tls_wanted; then
+		scheme=https
+		tls=$'    tls_config:\n      insecure_skip_verify: true'
+	fi
 	render_template "$SCRIPT_DIR/templates/scrape.yaml.tpl" \
+		"SCHEME=$scheme" \
+		"TLS_CONFIG=$tls" \
 		"TOKEN_FILE=$(path_metrics_token)" \
 		"TARGET=$(metrics_scrape_target)"
 	# node_exporter is scraped by the same backend when it is installed.
@@ -14772,6 +14995,67 @@ panel_token_matches() {
 	fi
 }
 
+# PANEL_TLS (task 64): the panel serves HTTPS itself. Not behind nginx and
+# not in a container; config_validate says so.
+panel_tls_wanted() {
+	[[ "${CONF[PANEL_TLS]:-none}" != "none" && "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]]
+}
+
+panel_tls_cert() {
+	if [[ "${CONF[PANEL_TLS]:-none}" == "existing" ]]; then
+		echo "${CONF[PANEL_CERT]}"
+	else
+		path_panel_tls_cert
+	fi
+}
+
+panel_tls_key() {
+	if [[ "${CONF[PANEL_TLS]:-none}" == "existing" ]]; then
+		echo "${CONF[PANEL_KEY]}"
+	else
+		path_panel_tls_key
+	fi
+}
+
+# panel_tls_check - 0 when the certificate the panel is told to serve is
+# there. A certificate that is about to expire is the watchdog's to renew.
+panel_tls_check() {
+	panel_tls_wanted || return 0
+	[[ -f "$(panel_tls_cert)" && -f "$(panel_tls_key)" ]] || return 1
+	if [[ "${CONF[PANEL_TLS]}" == "selfsigned" ]]; then
+		openssl x509 -in "$(panel_tls_cert)" -noout -checkend 0 >/dev/null 2>&1 || return 1
+	fi
+}
+
+# panel_tls_apply - makes the self-signed pair, or checks that the panel user
+# can read the pair that was named. The panel stops at start on a pair it
+# cannot read, so this says why before the unit is started.
+panel_tls_apply() {
+	panel_tls_wanted || return 0
+	local cert key
+	cert=$(panel_tls_cert)
+	key=$(panel_tls_key)
+	if [[ "${CONF[PANEL_TLS]}" == "selfsigned" ]]; then
+		if [[ ! -f "$cert" || ! -f "$key" ]] || tls_due "$cert"; then
+			tls_make_selfsigned "$cert" "$key" "dpistack-panel" "$PANEL_USER" || return 1
+		fi
+		return 0
+	fi
+	if [[ "${DRY_RUN:-0}" != "1" ]]; then
+		local f
+		for f in "$cert" "$key"; do
+			if [[ ! -s "$f" ]]; then
+				echo "panel: PANEL_TLS=existing: $f does not exist or is empty" >&2
+				return 1
+			fi
+			if id "$PANEL_USER" >/dev/null 2>&1 && command -v runuser >/dev/null 2>&1 && ! runuser -u "$PANEL_USER" -- test -r "$f" 2>/dev/null; then
+				echo "panel: PANEL_TLS=existing: the user $PANEL_USER cannot read $f (give the group $PANEL_USER read access to it and to its directory)" >&2
+				return 1
+			fi
+		done
+	fi
+}
+
 # panel_args - the flags of the panel (section 9). The panel does not read
 # dpistack.conf, so LAN_CIDR=auto is resolved here.
 panel_args() {
@@ -14793,6 +15077,9 @@ panel_args() {
 	[[ -n "$cidr" ]] && args+=" -lan-cidr ${cidr}"
 	args+=" -auth-file $(path_panel_auth) -users-file $(path_users) -health-file $(path_health_json) -ctl $(path_ctl_bin) -metrics-file $(path_metrics_json) -audit-file $(path_audit_jsonl) -backups-dir $(path_backup_archives_dir)"
 	args+=" -version ${DPISTACK_VERSION}"
+	if panel_tls_wanted; then
+		args+=" -tls-cert $(panel_tls_cert) -tls-key $(panel_tls_key)"
+	fi
 	# Without the flag the panel shows that viewing events is off.
 	[[ "${CONF[EVE_FILE]:-yes}" == "yes" ]] && args+=" -eve-file $(path_suricata_eve_json)"
 	# The Tests and Alerts screens read these two files whatever /metrics does.
@@ -14961,6 +15248,7 @@ panel_render_sudoers() {
 
 step_panel_check() {
 	getent passwd "$PANEL_USER" >/dev/null 2>&1 || return 1
+	panel_tls_check || return 1
 
 	local path
 	path=$(path_sudoers)
@@ -15038,6 +15326,9 @@ step_panel_apply() {
 		run install -D -m 0640 /dev/null "$mfile" || return 1
 	fi
 	run chown "$PANEL_USER:$PANEL_USER" "$mfile" || return 1
+
+	# Before the unit, which names these files.
+	panel_tls_apply || return 1
 
 	# The audit log (the audit log) has a directory of its own, because the panel
 	# rotates it (it renames files) and the state directory stays root's.
@@ -15117,6 +15408,8 @@ step_panel_plan() {
 		return 0
 	fi
 	echo "panel: user $PANEL_USER, sudoers $(path_sudoers) (dpistack only), binary $(path_panel_bin) (PANEL_SOURCE=$(panel_source_mode)), unit $PANEL_SERVICE"
+	panel_tls_wanted && echo "panel: HTTPS by the panel itself (PANEL_TLS=${CONF[PANEL_TLS]}), certificate $(panel_tls_cert)"
+	return 0
 }
 
 # panel_report_metrics - the token of /metrics and a scrape_config entry
@@ -15131,6 +15424,7 @@ panel_report_metrics() {
 		host="<server-address>"
 	fi
 	[[ "$mode" == "nginx" && "${CONF[NGINX_TLS]:-none}" != "none" ]] && scheme="https"
+	panel_tls_wanted && scheme="https"
 	echo "METRICS_TOKEN created for GET /metrics (save it: it is shown nowhere else): ${SECRETS[METRICS_TOKEN]}"
 	echo "Line for scrape_configs (Prometheus and VictoriaMetrics):"
 	cat <<EOF
@@ -17716,10 +18010,11 @@ global:
 scrape_configs:
   - job_name: dpistack
     metrics_path: /metrics
-    scheme: http
+    scheme: @@SCHEME@@
     authorization:
       type: Bearer
       credentials_file: @@TOKEN_FILE@@
+@@TLS_CONFIG@@
     static_configs:
       - targets: ['@@TARGET@@']
 DPISTACK_BUNDLE_END

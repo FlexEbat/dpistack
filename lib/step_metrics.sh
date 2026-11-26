@@ -79,7 +79,16 @@ metrics_scrape_target() {
 }
 
 metrics_render_scrape() {
+	# A panel that serves HTTPS itself is scraped over loopback: the name in
+	# its certificate is not the address of the scrape, so it is not checked.
+	local scheme=http tls=""
+	if panel_tls_wanted; then
+		scheme=https
+		tls=$'    tls_config:\n      insecure_skip_verify: true'
+	fi
 	render_template "$SCRIPT_DIR/templates/scrape.yaml.tpl" \
+		"SCHEME=$scheme" \
+		"TLS_CONFIG=$tls" \
 		"TOKEN_FILE=$(path_metrics_token)" \
 		"TARGET=$(metrics_scrape_target)"
 	# node_exporter is scraped by the same backend when it is installed.

@@ -26,6 +26,7 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/export"
 	"github.com/FlexEbat/dpistack/panel/internal/metrics"
 	"github.com/FlexEbat/dpistack/panel/internal/system"
+	"github.com/FlexEbat/dpistack/panel/internal/tlsutil"
 	"github.com/FlexEbat/dpistack/panel/internal/update"
 	"github.com/FlexEbat/dpistack/panel/web"
 )
@@ -65,6 +66,8 @@ func run(args []string) error {
 	rulesFile := fs.String("rules-file", "", "suricata.rules, for its age")
 	diskPaths := fs.String("disk-paths", "", "comma-separated directories whose free space /metrics reports")
 	ctlPrefix := fs.String("ctl-prefix", "", "comma-separated command that runs dpistack on the host from a container, e.g. nsenter,-t,1,-m,-u,-i,-n,-p,--; replaces sudo")
+	tlsCert := fs.String("tls-cert", "", "PEM certificate: with -tls-key the panel serves HTTPS itself (PANEL_TLS); read again when the file changes")
+	tlsKey := fs.String("tls-key", "", "PEM private key of -tls-cert")
 	useSudo := fs.Bool("sudo", true, "run dpistack through sudo -n")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -82,6 +85,15 @@ func run(args []string) error {
 	// elsewhere would expose the panel without the address policy's intent.
 	if *access != "lan" && !ap.Addr().IsLoopback() {
 		return fmt.Errorf("access mode %s requires a loopback addr, got %s", *access, ap.Addr())
+	}
+
+	// One of the two files alone is a mistake, not a request for plain HTTP.
+	var reloader *tlsutil.Reloader
+	if *tlsCert != "" || *tlsKey != "" {
+		reloader, err = tlsutil.NewReloader(*tlsCert, *tlsKey)
+		if err != nil {
+			return err
+		}
 	}
 
 	var events *eve.Reader
@@ -162,7 +174,12 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("panel listening on %s, access %s", ln.Addr(), *access)
+	if reloader != nil {
+		srv.TLSConfig = reloader.Config()
+		log.Printf("panel listening on %s over HTTPS, access %s, certificate SHA-256 %s", ln.Addr(), *access, tlsutil.Fingerprint(reloader.Current()))
+	} else {
+		log.Printf("panel listening on %s, access %s", ln.Addr(), *access)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -173,7 +190,14 @@ func run(args []string) error {
 		close(sampled)
 	}()
 	done := make(chan error, 1)
-	go func() { done <- srv.Serve(ln) }()
+	go func() {
+		if reloader != nil {
+			// Empty file names: the certificate comes from TLSConfig.
+			done <- srv.ServeTLS(ln, "", "")
+			return
+		}
+		done <- srv.Serve(ln)
+	}()
 
 	select {
 	case err := <-done:

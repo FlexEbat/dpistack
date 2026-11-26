@@ -74,6 +74,9 @@ path_completion_file() { echo "${DPISTACK_ROOT}/etc/bash_completion.d/dpistack";
 path_watch_bin() { echo "$(path_sbin_dir)/dpistack-watch"; }
 path_watch_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.service"; }
 path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-watch.timer"; }
+path_panel_tls_dir() { echo "$(path_etc)/tls"; }
+path_panel_tls_cert() { echo "$(path_panel_tls_dir)/panel.crt"; }
+path_panel_tls_key() { echo "$(path_panel_tls_dir)/panel.key"; }
 path_backup_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-backup.service"; }
 path_backup_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-backup.timer"; }
 path_evebox_data_dir() { echo "${DPISTACK_ROOT}/var/lib/evebox"; }

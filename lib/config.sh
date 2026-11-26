@@ -196,6 +196,24 @@ config_validate() {
 		done
 	fi
 
+	# The panel's own HTTPS (task 64). Behind nginx the certificate is
+	# nginx's (NGINX_TLS), so two layers of TLS are refused, and the panel in
+	# a container cannot read the certificate files of the host.
+	if [[ "${CONF[PANEL_TLS]:-none}" != "none" ]]; then
+		if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+			echo "PANEL_TLS=${CONF[PANEL_TLS]} with ACCESS_MODE=nginx: nginx terminates TLS, set NGINX_TLS instead"
+			errors=$((errors + 1))
+		fi
+		if [[ "${CONF[PANEL_RUNTIME]:-native}" == "docker" ]]; then
+			echo "PANEL_TLS=${CONF[PANEL_TLS]} needs PANEL_RUNTIME=native: the container does not see the certificate files"
+			errors=$((errors + 1))
+		fi
+	fi
+	if [[ "${CONF[PANEL_TLS]:-none}" == "existing" && (-z "${CONF[PANEL_CERT]:-}" || -z "${CONF[PANEL_KEY]:-}") ]]; then
+		echo "PANEL_TLS=existing needs PANEL_CERT and PANEL_KEY"
+		errors=$((errors + 1))
+	fi
+
 	if [[ "${CONF[NGINX_TLS]:-none}" == "existing" && (-z "${CONF[NGINX_CERT]:-}" || -z "${CONF[NGINX_KEY]:-}") ]]; then
 		echo "NGINX_TLS=existing needs NGINX_CERT and NGINX_KEY"
 		errors=$((errors + 1))
