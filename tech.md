@@ -1,23 +1,23 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
 **Document version: v104** (2026-11-24)
-**Program version: v0.60.0** (tasks 0-56 are done (18.58), 57 to 64 are done, 65 is planned (18.73); the panel serves HTTPS itself (18.77); scheduled, retained and encrypted backups (18.76); settings that an update brings are asked for (18.75); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Program version: v0.61.0** (tasks 0-56 are done (18.58), 57 to 64 and 66 are done, 65 is planned (18.73); a certificate is mandatory (18.78); the panel serves HTTPS itself (18.77); scheduled, retained and encrypted backups (18.76); settings that an update brings are asked for (18.75); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.61.0: task 66 (18.78): a certificate is mandatory. `PANEL_TLS` and `NGINX_TLS` have no `none` any more and default to `selfsigned`; a saved `none` is migrated; `existing` works for nginx too (it ignored `NGINX_CERT`); `dpistack tls import CERT KEY` for a certificate from Cloudflare, Certbot or another authority; the panel in a container serves TLS.
 - v0.60.0: task 64 (18.77): `PANEL_TLS`, `PANEL_CERT`, `PANEL_KEY`, the panel serves HTTPS itself and reads a renewed certificate without a restart, `dpistack tls show|renew`, the watchdog renews a self-signed certificate 30 days before the end, one way of making self-signed certificates for the panel and for nginx (EC P-256, 825 days, subjectAltName).
 - v0.59.0: task 63 (18.76): scheduled backups (`BACKUP_SCHEDULE`, `BACKUP_KEEP`, `BACKUP_DIR`, `BACKUP_AGE_RECIPIENT`), `dpistack backup run`, encryption with age and `--identity` for verify and restore, a backup timer that `uninstall` removes and whose archives it keeps.
 - v0.58.1: the check for settings finds two more kinds (a saved value that is not valid, a feature added since the settings were last reviewed and still at its default), and the History screen says when history is off (18.75).
 - v0.58.0: task 61 is done (the History screen, `/api/history/*`) and an update asks for the settings it adds or finds empty: `dpistack update-keys`, the questions in `dpistack update`, a box and marks in the panel (18.75).
-- v0.57.0: task 62 (18.73): the Alert Center keeps an index of one entry per rule, so old alerts do not drop out with the tail of `eve.json`; `events.jsonl` is rotated at 5 MiB.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v107: v0.61.0. The owner asked for a mandatory certificate (task 66), 18.78 written (decisions D208 to D212), `tls import` in 4.5.
 - v106: v0.60.0. Task 64 done, 18.77 written (decisions D203 to D207), `tls` verb in 4.5, three keys in 4.3.
 - v105: v0.59.0. Task 63 done, 18.76 written (decisions D200 to D202), `backup run` and `--identity` in 4.5, four keys in 4.3.
 - v104: v0.58.1. 18.75 extended (decision D199).
 - v103: v0.58.0. Task 61 done, 18.75 written (decisions D197, D198), the verb `update-keys` in 4.5, the History routes in section 5.
-- v102: v0.57.0. Task 62 done (decisions D195, D196).
 - v99: v0.54.0. Task 59 done (decision D191), keys in 4.3, the Capture bullet of the Suricata section.
 - v98: v0.53.1. 18.74 written (decision D190).
 - v97: v0.53.0. Task 58 done (D187 to D189), the API rows of 5 and the verbs of 4.5 name the lists.
@@ -290,13 +290,13 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `BIND_ADDR` | `auto` | `auto` or one IPv4 address of this host (checked by `preflight`). `auto` = `127.0.0.1` in `localhost` mode and `0.0.0.0` in `lan` mode; an address makes ntopng, EveBox, the panel, the metrics backend, Grafana and node_exporter listen there. A non-loopback address with `ACCESS_MODE=localhost` opens the panels to `LAN_CIDR`: the panel runs with `-access lan` and the access confirmation is needed. Ignored with `nginx` (the services stay on `127.0.0.1`) |
 | `LAN_CIDR` | auto | the CIDR of the network of the default-route interface, or a comma-separated list of CIDRs (v0.31.0); `auto` inside a list stands for that network, for example `auto,172.18.0.0/16` |
 | `PANEL_PORT` | `9800` | 1..65535 |
-| `PANEL_TLS` | `none` | `none`, `selfsigned` or `existing`: the panel itself serves HTTPS (not with `ACCESS_MODE=nginx`, which has `NGINX_TLS`, and not with `PANEL_RUNTIME=docker`) |
+| `PANEL_TLS` | `selfsigned` | `selfsigned` or `existing`: the certificate the panel serves; the panel always serves HTTPS (behind `ACCESS_MODE=nginx` the certificate is `NGINX_TLS`'s and this key is not used). There is no `none` since v0.61.0 (18.78) |
 | `PANEL_CERT` | empty | absolute path of the PEM certificate for `PANEL_TLS=existing`; the user `dpistack` must be able to read it |
 | `PANEL_KEY` | empty | absolute path of its PEM private key |
 | `PANEL_RUNTIME` | `native` | `native` (the unit `dpistack-panel.service`) or `docker` (the service `panel` of the same compose project: the image `dpistack-panel:<hash of the binary>` built on the host from `alpine`, `network_mode: host`, `pid: host`, `privileged`; commands to the host go through `nsenter -t 1 -m -u -i -n -p -- env DPISTACK_CALLER=panel dpistack ...`); heavy, affects the `panel` step |
 | `PANEL_SOURCE` | `auto` | `auto` (a ready binary next to the installer, else a build), `build` (needs Go) or `prebuilt` (a ready binary only) |
 | `NGINX_MANAGE` | `snippet` | `yes` (edits and reloads the system nginx) or `snippet` (only writes a file and prints the command) |
-| `NGINX_TLS` | `none` | `none` `selfsigned` `existing` |
+| `NGINX_TLS` | `selfsigned` | `selfsigned` `existing`: nginx always serves TLS; `existing` uses `NGINX_CERT` and `NGINX_KEY` for all three names. No `none` since v0.61.0 (18.78) |
 | `NGINX_CERT` `NGINX_KEY` | empty | paths, needed with `existing` |
 | `FIREWALL_MANAGE` | `no` | `no` `auto` (ufw or firewalld, only allow `LAN_CIDR`) |
 | `METRICS_EXPORT` | `yes` | `yes` `no`; turns on `GET /metrics` of the panel |
@@ -450,7 +450,7 @@ The only place of the privileged actions of the panel and the watchdog. It works
 | `users list [--json]`, `users add <name> <role> [--perms a,b]`, `users passwd <name>`, `users role <name> <role> [--perms a,b]`, `users disable\|enable\|remove <name>` | users of the panel in `/etc/dpistack/users.json` (task 34); passwords on stdin, 8 characters at least; exit 3 when the change would leave nobody able to manage users, 4 for an unknown user; open to the panel |
 | `backup create [--out FILE]`, `backup list [--json]`, `backup verify FILE`, `backup restore FILE [--dry-run]` | archives of the configs in `/var/lib/dpistack/archives/` (task 36, 18.36); `create` and `restore` are audited; the panel may name an archive by its file name only (`--out` and paths give 5 for it); exit 3 for an archive or a configuration that failed its checks, 4 for a missing archive |
 | `backup run`, `backup verify FILE --identity KEY`, `backup restore FILE --identity KEY` | task 63 (18.76): `run` is what `dpistack-backup.service` starts (an archive into `BACKUP_DIR`, encrypted to `BACKUP_AGE_RECIPIENT` when set, then retention by `BACKUP_KEEP`); `--identity` names the age key file that opens an encrypted archive; root only, the panel gets 5 |
-| `tls show [--json]`, `tls renew [--force]` | task 64 (18.77): `show` lists each certificate dpistack makes or points at (`PANEL_TLS`, or the nginx ones with `NGINX_TLS=selfsigned`) with its expiry and SHA-256 fingerprint; `renew` makes a new self-signed pair for the ones with fewer than 30 days left, or for all with `--force`; certificates issued elsewhere are left alone; root only, the panel gets 5 |
+| `tls show [--json]`, `tls renew [--force]`, `tls import CERT KEY` | task 64 (18.77), `import` task 66 (18.78): `import` checks a certificate issued elsewhere (PEM, the key belongs to it, not expired) and copies it to `etc/dpistack/tls/imported.crt` and `.key`, which the panel and nginx read, and is what a Certbot `--deploy-hook` runs; `show` lists each certificate dpistack makes or points at (`PANEL_TLS`, or the nginx ones with `NGINX_TLS=selfsigned`) with its expiry and SHA-256 fingerprint; `renew` makes a new self-signed pair for the ones with fewer than 30 days left, or for all with `--force`; certificates issued elsewhere are left alone; root only, the panel gets 5 |
 | `version` | the version of the bundle |
 
 Arguments: letters, digits and `. _ : = / @ + , -` and a space are allowed (`rules-search` takes a phrase); everything else, including `; | & $ ( ) < > \` quotes and a line break, gives code `5` before any action. A URL with `?`, `&`, `%` therefore does not pass `rules-sources add-url`.
@@ -2833,3 +2833,19 @@ Open: the state of triage (acknowledged, snoozed) does not silence a delivery (d
 | D205 | **The key is replaced first, then the certificate.** Both are written as `.new` files and moved; a reader that loads between the two moves sees a pair that does not match and keeps what it had |
 | D206 | **The panel reloads by file time, not by a signal.** No restart of the panel (and no dropped sessions) at a renewal; the check costs two `stat` calls per handshake |
 | D207 | **The scrape does not check the name.** The collector reaches the panel at `127.0.0.1`, which a certificate for the host name never carries as the name asked for; the traffic does not leave the host. The token is still required |
+
+### 18.78 Task 66: a certificate is mandatory (v0.61.0)
+
+**Asked for on 2026-11-26:** "make a certificate mandatory during installation from now on, whether it is self-signed, from Cloudflare, Certbot or something else."
+
+**What changed.** `PANEL_TLS` and `NGINX_TLS` lost `none`; both default to `selfsigned`, so a fresh install always serves HTTPS: the panel itself, or nginx with `ACCESS_MODE=nginx`. Which certificate is the owner's choice: `selfsigned` (made and renewed by dpistack, 18.77) or `existing` (`PANEL_CERT`/`PANEL_KEY`, `NGINX_CERT`/`NGINX_KEY`). A certificate from Cloudflare (an Origin CA certificate), Certbot or any other authority is `existing`; `dpistack tls import CERT KEY` is the safe way to bring it in: it checks that both files are PEM, that the key belongs to the certificate and that it has not ended, copies them to `etc/dpistack/tls/imported.crt` and `.key` (key 0640 for the group `dpistack`, key replaced first), prints the one `settings set` line that points the configuration at them, and, when it already does, reloads nginx (the panel reads a changed file by itself). For Certbot the renewal hook is `certbot renew --deploy-hook "dpistack tls import /etc/letsencrypt/live/NAME/fullchain.pem /etc/letsencrypt/live/NAME/privkey.pem"`; the live directory of Certbot is readable by root only, which is why the panel does not read it directly. Fixes found on the way: `NGINX_TLS=existing` ignored `NGINX_CERT` and `NGINX_KEY` and served the self-signed pair (it uses them now, one certificate for the three names); the panel in a container (`PANEL_RUNTIME=docker`) serves TLS, with the directory of a named certificate mounted read-only. The security screen has no plain-HTTP warning left, and `dpistack info`, the metrics scrape and the report of the metrics token say `https` for the panel (and for all three behind nginx).
+
+**Upgrade.** A saved `none` becomes `selfsigned` (migration 0.61.0, in memory, with a notice), so the next apply starts the panel on HTTPS and the browser asks to trust the certificate once; the notice says how to bring a trusted one. ntopng and EveBox still answer plain HTTP on their own ports when they are not behind nginx: only the panel and nginx are covered by this task (their own TLS is a different, larger change).
+
+| id | decision |
+| --- | --- |
+| D208 | **Mandatory means `none` is removed, not discouraged.** No switch to turn it off: the value does not exist, validation refuses it and a saved one is migrated. A flag would have become the default of every guide |
+| D209 | **The default is `selfsigned`.** The installer cannot know a domain or an authority, and an install that stops to ask for a certificate cannot run unattended; the owner changes it with one setting or `tls import` |
+| D210 | **One import verb for every authority.** Cloudflare, Certbot and a company CA all produce a PEM certificate and a key; checking them and copying them to a place the panel can read is the same work for each, and a deploy hook can call it |
+| D211 | **Imported files are copies in the managed directory, not the originals.** The Certbot live directory is 0700 for root and the container mounts only `etc/dpistack`; a copy that the panel reads works in both, at the price of running the import again after each renewal (the hook does) |
+| D212 | **Nothing else is made mandatory here.** ntopng and EveBox keep their own ports and protocols outside nginx; stating that in the notice is better than a half-done TLS for products dpistack does not build |

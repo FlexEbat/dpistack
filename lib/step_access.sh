@@ -116,14 +116,9 @@ access_cidr_each() {
 access_render_nginx_service() {
 	local name="$1" port="$2" upstream="$3" cidr="$4"
 	local listen tls_block allow_block="" net
-	if [[ "${CONF[NGINX_TLS]:-none}" == "none" ]]; then
-		listen="${port}"
-		tls_block=""
-	else
-		listen="${port} ssl"
-		tls_block="    ssl_certificate $(access_tls_cert_path "$name");
+	listen="${port} ssl"
+	tls_block="    ssl_certificate $(access_tls_cert_path "$name");
     ssl_certificate_key $(access_tls_key_path "$name");"
-	fi
 	while IFS= read -r net; do
 		allow_block+="${allow_block:+$'\n'}    allow ${net};"
 	done < <(access_cidr_each "$cidr")
@@ -136,8 +131,22 @@ access_render_nginx_service() {
 }
 
 access_tls_dir() { path_nginx_tls_dir; }
-access_tls_cert_path() { echo "$(access_tls_dir)/${1}.crt"; }
-access_tls_key_path() { echo "$(access_tls_dir)/${1}.key"; }
+# NGINX_TLS=existing: one certificate for the three names, the files that
+# were named. Self-signed: one pair for each service.
+access_tls_cert_path() {
+	if [[ "${CONF[NGINX_TLS]:-selfsigned}" == "existing" ]]; then
+		echo "${CONF[NGINX_CERT]}"
+	else
+		echo "$(access_tls_dir)/${1}.crt"
+	fi
+}
+access_tls_key_path() {
+	if [[ "${CONF[NGINX_TLS]:-selfsigned}" == "existing" ]]; then
+		echo "${CONF[NGINX_KEY]}"
+	else
+		echo "$(access_tls_dir)/${1}.key"
+	fi
+}
 
 access_ensure_selfsigned_cert() {
 	local name="$1"
@@ -407,12 +416,12 @@ step_access_apply() {
 	if [[ "$policy" != "localhost" ]]; then
 		echo "access: ACCESS_MODE=$mode with bind address $(access_effective_bind_host) opens the web interfaces beyond localhost." >&2
 		if [[ "$policy" == "lan" ]]; then
-			echo "access: ntopng/EveBox/the panel will listen on $(access_effective_bind_host) and be visible to the whole LAN_CIDR network; passwords go over plain HTTP unless NGINX_TLS is on." >&2
+			echo "access: ntopng/EveBox/the panel will listen on $(access_effective_bind_host) and be visible to the whole LAN_CIDR network; ntopng and EveBox speak plain HTTP on their own ports (the panel is HTTPS; for all three behind one certificate use ACCESS_MODE=nginx)." >&2
 		fi
 	fi
 
 	if [[ "$mode" == "nginx" ]]; then
-		if [[ "${CONF[NGINX_TLS]:-none}" == "selfsigned" ]]; then
+		if [[ "${CONF[NGINX_TLS]:-selfsigned}" == "selfsigned" ]]; then
 			local name
 			for name in $(access_services); do
 				access_ensure_selfsigned_cert "$name" || return 1
@@ -450,7 +459,7 @@ step_access_plan() {
 	local mode="${CONF[ACCESS_MODE]:-localhost}"
 	echo "access: ACCESS_MODE=$mode, bind $(access_effective_bind_host)"
 	if [[ "$mode" == "nginx" ]]; then
-		echo "access: nginx (NGINX_MANAGE=${CONF[NGINX_MANAGE]:-snippet}, TLS=${CONF[NGINX_TLS]:-none})"
+		echo "access: nginx (NGINX_MANAGE=${CONF[NGINX_MANAGE]:-snippet}, TLS=${CONF[NGINX_TLS]:-selfsigned})"
 	fi
 	if [[ "${CONF[FIREWALL_MANAGE]:-no}" == "auto" ]]; then
 		echo "access: ufw allow from $(access_effective_lan_cidr 2>/dev/null || echo "?")"

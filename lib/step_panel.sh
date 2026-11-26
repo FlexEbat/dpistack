@@ -72,14 +72,14 @@ panel_token_matches() {
 	fi
 }
 
-# PANEL_TLS (task 64): the panel serves HTTPS itself. Not behind nginx and
-# not in a container; config_validate says so.
+# The panel serves HTTPS itself (tasks 64 and 66): always, except behind
+# nginx, which holds the certificate then (NGINX_TLS).
 panel_tls_wanted() {
-	[[ "${CONF[PANEL_TLS]:-none}" != "none" && "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]]
+	[[ "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]]
 }
 
 panel_tls_cert() {
-	if [[ "${CONF[PANEL_TLS]:-none}" == "existing" ]]; then
+	if [[ "${CONF[PANEL_TLS]:-selfsigned}" == "existing" ]]; then
 		echo "${CONF[PANEL_CERT]}"
 	else
 		path_panel_tls_cert
@@ -87,7 +87,7 @@ panel_tls_cert() {
 }
 
 panel_tls_key() {
-	if [[ "${CONF[PANEL_TLS]:-none}" == "existing" ]]; then
+	if [[ "${CONF[PANEL_TLS]:-selfsigned}" == "existing" ]]; then
 		echo "${CONF[PANEL_KEY]}"
 	else
 		path_panel_tls_key
@@ -500,8 +500,7 @@ panel_report_metrics() {
 	if [[ "$mode" == "lan" && "$host" == "0.0.0.0" ]] || [[ "$mode" == "nginx" ]]; then
 		host="<server-address>"
 	fi
-	[[ "$mode" == "nginx" && "${CONF[NGINX_TLS]:-none}" != "none" ]] && scheme="https"
-	panel_tls_wanted && scheme="https"
+	scheme="https"
 	echo "METRICS_TOKEN created for GET /metrics (save it: it is shown nowhere else): ${SECRETS[METRICS_TOKEN]}"
 	echo "Line for scrape_configs (Prometheus and VictoriaMetrics):"
 	cat <<EOF

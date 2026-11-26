@@ -82,7 +82,7 @@ NDPI_VERSION=
 NGINX_CERT=
 NGINX_KEY=
 NGINX_MANAGE=snippet
-NGINX_TLS=none
+NGINX_TLS=selfsigned
 NTOPNG_ENABLE=yes
 NTOPNG_IFACES=
 NTOPNG_PORT=3000
@@ -92,7 +92,7 @@ PCAP_MAX_MB=100
 PANEL_ENABLE=yes
 PANEL_CERT=
 PANEL_KEY=
-PANEL_TLS=none
+PANEL_TLS=selfsigned
 PANEL_PORT=9800
 PANEL_SOURCE=auto
 # native: a systemd unit; docker: a container (network host), the commands reach the host through nsenter

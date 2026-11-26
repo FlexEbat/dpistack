@@ -18,9 +18,10 @@
 # The recipe numbers and build_recipe_have are in lib/state.sh: the build steps
 # read them and some of them are loaded without this file.
 
-MIGRATION_VERSIONS=(0.50.0 0.51.0)
+MIGRATION_VERSIONS=(0.50.0 0.51.0 0.61.0)
 declare -A MIGRATION_TEXT=(
 	["0.50.0"]="EVE_MAX_SIZE_MB gets its default of 100 when it was saved empty; a saved EVE_REDIS value is a live Redis output from now on; a Suricata built from source is rebuilt with Redis support"
+	["0.61.0"]="a certificate is mandatory: PANEL_TLS=none and NGINX_TLS=none are gone, a saved none becomes selfsigned (a certificate made here; use PANEL_TLS=existing or dpistack tls import for one from Cloudflare, Certbot or another authority), and the panel is reached over https from then on"
 	["0.51.0"]="the Redis output is a bounded stream (EVE_REDIS_MAXLEN) instead of a list: the old list of events that nobody read is deleted, because a stream cannot be added to a key that holds a list"
 )
 
@@ -110,6 +111,17 @@ migrate_0_51_0() {
 	else
 		echo "migrate 0.51.0: could not delete the list $key on $host:$port; delete it by hand: redis-cli -h $host -p $port del $key"
 	fi
+	return 0
+}
+
+migrate_0_61_0() {
+	local key
+	for key in PANEL_TLS NGINX_TLS; do
+		if [[ "${CONF[$key]:-}" == "none" ]]; then
+			CONF[$key]="selfsigned"
+			echo "migrate 0.61.0: $key=none is not allowed any more, it is selfsigned now; the panel is served over https, with a certificate the browser does not know until you trust it or set $key=existing (dpistack tls import CERT KEY)"
+		fi
+	done
 	return 0
 }
 

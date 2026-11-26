@@ -159,7 +159,7 @@ check_port() {
 # issued elsewhere are not touched.
 check_tls_renew() {
 	local out ctl
-	[[ "${CONF[PANEL_TLS]:-none}" == "selfsigned" || "${CONF[NGINX_TLS]:-none}" == "selfsigned" ]] || return 0
+	[[ "${CONF[PANEL_TLS]:-selfsigned}" == "selfsigned" || "${CONF[NGINX_TLS]:-selfsigned}" == "selfsigned" ]] || return 0
 	ctl=$(path_ctl_bin)
 	[[ -x "$ctl" ]] || return 0
 	if ! out=$("$ctl" tls renew 2>&1); then

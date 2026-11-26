@@ -47,12 +47,34 @@ unit() { cat "$E/systemd/system/dpistack-panel.service"; }
 	[ "$output" -ge 1 ]
 }
 
-@test "the default is plain HTTP: no flag, no certificate" {
+@test "the default is HTTPS: a certificate is made without being asked for" {
 	run install_base
 	[ "$status" -eq 0 ]
 	run unit
-	[[ "$output" != *"-tls-cert"* ]]
-	[ ! -e "$TLS/panel.crt" ]
+	[[ "$output" == *"-tls-cert $TLS/panel.crt"* ]]
+	[ -f "$TLS/panel.crt" ]
+}
+
+@test "none is not a value any more, for the panel or for nginx" {
+	run install_base --dry-run --set PANEL_TLS=none
+	[ "$status" -ne 0 ]
+	run install_base --dry-run --set NGINX_TLS=none
+	[ "$status" -ne 0 ]
+}
+
+@test "an upgrade turns a saved none into selfsigned and says so" {
+	install_base
+	# the host was installed by 0.60.0, which allowed none
+	sed -i 's/^install.version=.*/install.version=0.60.0/' "$DPISTACK_ROOT/var/lib/dpistack/state"
+	printf 'PANEL_TLS=none\nNGINX_TLS=none\n' >>"$E/dpistack/dpistack.conf"
+	run install_base
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"migrate 0.61.0: PANEL_TLS=none is not allowed any more"* ]]
+	[[ "$output" == *"migrate 0.61.0: NGINX_TLS=none is not allowed any more"* ]]
+	run grep '^PANEL_TLS=' "$E/dpistack/dpistack.conf"
+	[ "$output" = "PANEL_TLS=selfsigned" ]
+	run grep '^NGINX_TLS=' "$E/dpistack/dpistack.conf"
+	[ "$output" = "NGINX_TLS=selfsigned" ]
 }
 
 @test "a second apply keeps the certificate" {
@@ -78,15 +100,6 @@ unit() { cat "$E/systemd/system/dpistack-panel.service"; }
 	[ "$(jq -r '.[0].sha256' <<<"$output")" = "$want" ]
 	[ "$(jq -r '.[0].kind' <<<"$output")" = "selfsigned" ]
 	[ "$(jq '.[0].days_left > 800' <<<"$output")" = "true" ]
-}
-
-@test "tls show with nothing of dpistack's own says so" {
-	install_base
-	run "$CTL" tls show
-	[ "$status" -eq 0 ]
-	[[ "$output" == *"No certificate of dpistack's own"* ]]
-	run "$CTL" tls show --json
-	[ "$output" = "[]" ]
 }
 
 @test "renew leaves a fresh certificate and --force makes a new one" {
@@ -147,16 +160,10 @@ unit() { cat "$E/systemd/system/dpistack-panel.service"; }
 	[[ "$output" == *"no.crt"* ]]
 }
 
-@test "validation: existing needs both files, nginx and a container are refused" {
+@test "validation: existing needs both files, and the values are checked" {
 	run install_base --dry-run --set PANEL_TLS=existing
 	[ "$status" -ne 0 ]
 	[[ "$output" == *"PANEL_TLS=existing needs PANEL_CERT and PANEL_KEY"* ]]
-	run install_base --dry-run --set PANEL_TLS=selfsigned --set ACCESS_MODE=nginx
-	[ "$status" -ne 0 ]
-	[[ "$output" == *"set NGINX_TLS instead"* ]]
-	run install_base --dry-run --set PANEL_TLS=selfsigned --set PANEL_RUNTIME=docker
-	[ "$status" -ne 0 ]
-	[[ "$output" == *"PANEL_RUNTIME=native"* ]]
 	run install_base --dry-run --set PANEL_TLS=bogus
 	[ "$status" -ne 0 ]
 	run install_base --dry-run --set PANEL_TLS=existing --set PANEL_CERT=relative.crt --set PANEL_KEY=/k
@@ -196,4 +203,85 @@ unit() { cat "$E/systemd/system/dpistack-panel.service"; }
 	[ "$status" -eq 2 ]
 	run "$CTL" tls renew --bogus
 	[ "$status" -eq 2 ]
+}
+
+@test "behind nginx the panel is not given a certificate of its own" {
+	run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes
+	[ "$status" -eq 0 ]
+	run unit
+	[[ "$output" != *"-tls-cert"* ]]
+}
+
+@test "nginx with existing serves the files that were named, for all three names" {
+	mkdir -p "$DPISTACK_ROOT/srv"
+	openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -days 90 \
+		-keyout "$DPISTACK_ROOT/srv/n.key" -out "$DPISTACK_ROOT/srv/n.crt" -subj "/CN=n" 2>/dev/null
+	run install_base --set ACCESS_MODE=nginx --set NGINX_MANAGE=snippet --set ACCESS_CONFIRM=yes \
+		--set NGINX_TLS=existing --set "NGINX_CERT=$DPISTACK_ROOT/srv/n.crt" --set "NGINX_KEY=$DPISTACK_ROOT/srv/n.key"
+	[ "$status" -eq 0 ]
+	[ "$(grep -rh "ssl_certificate $DPISTACK_ROOT/srv/n.crt;" "$DPISTACK_ROOT" | wc -l)" -ge 3 ]
+	[ ! -e "$DPISTACK_ROOT/var/lib/dpistack/nginx/tls/panel.crt" ]
+}
+
+mk_cert() {
+	# mk_cert <name> <days>
+	mkdir -p "$DPISTACK_ROOT/src"
+	openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -days "$2" \
+		-keyout "$DPISTACK_ROOT/src/$1.key" -out "$DPISTACK_ROOT/src/$1.crt" -subj "/CN=$1" 2>/dev/null
+}
+
+@test "tls import copies a good pair, prints the settings to use it, and the key is 0640" {
+	install_base
+	mk_cert good 90
+	run "$CTL" tls import "$DPISTACK_ROOT/src/good.crt" "$DPISTACK_ROOT/src/good.key"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"imported: "* ]]
+	[[ "$output" == *"dpistack settings set PANEL_TLS=existing PANEL_CERT=$TLS/imported.crt PANEL_KEY=$TLS/imported.key"* ]]
+	[ "$(stat -c %a "$TLS/imported.key")" = "640" ]
+	cmp "$DPISTACK_ROOT/src/good.crt" "$TLS/imported.crt"
+}
+
+@test "tls import into a configuration that already points at the files needs nothing more" {
+	mk_cert good 90
+	run install_base --set PANEL_TLS=existing --set "PANEL_CERT=$TLS/imported.crt" --set "PANEL_KEY=$TLS/imported.key"
+	[ "$status" -ne 0 ]
+	"$CTL" tls import "$DPISTACK_ROOT/src/good.crt" "$DPISTACK_ROOT/src/good.key" >/dev/null
+	run install_base --set PANEL_TLS=existing --set "PANEL_CERT=$TLS/imported.crt" --set "PANEL_KEY=$TLS/imported.key"
+	[ "$status" -eq 0 ]
+	mk_cert renewed 90
+	run "$CTL" tls import "$DPISTACK_ROOT/src/renewed.crt" "$DPISTACK_ROOT/src/renewed.key"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"the panel reads the new files by itself"* ]]
+	cmp "$DPISTACK_ROOT/src/renewed.crt" "$TLS/imported.crt"
+}
+
+@test "tls import refuses a key that is not the certificate's, an expired certificate and a non-PEM file" {
+	mk_cert a 90
+	mk_cert b 90
+	run "$CTL" tls import "$DPISTACK_ROOT/src/a.crt" "$DPISTACK_ROOT/src/b.key"
+	[ "$status" -eq 3 ]
+	[[ "$output" == *"not the private key"* ]]
+	printf 'junk\n' >"$DPISTACK_ROOT/src/junk.crt"
+	run "$CTL" tls import "$DPISTACK_ROOT/src/junk.crt" "$DPISTACK_ROOT/src/a.key"
+	[ "$status" -eq 3 ]
+	run "$CTL" tls import "$DPISTACK_ROOT/src/nothing.crt" "$DPISTACK_ROOT/src/a.key"
+	[ "$status" -eq 4 ]
+	run "$CTL" tls import onlyone
+	[ "$status" -eq 2 ]
+	[ ! -e "$TLS/imported.crt" ]
+}
+
+@test "the panel cannot import a certificate" {
+	run env DPISTACK_CALLER=panel "$CTL" tls import a b
+	[ "$status" -eq 5 ]
+}
+
+@test "the panel in a container serves TLS and the directory of a named certificate is mounted" {
+	mkdir -p "$DPISTACK_ROOT/srv"
+	mk_cert srv 90
+	cp "$DPISTACK_ROOT/src/srv.crt" "$DPISTACK_ROOT/srv/s.crt"
+	cp "$DPISTACK_ROOT/src/srv.key" "$DPISTACK_ROOT/srv/s.key"
+	run install_base --dry-run --set PANEL_RUNTIME=docker --set PANEL_TLS=existing \
+		--set "PANEL_CERT=$DPISTACK_ROOT/srv/s.crt" --set "PANEL_KEY=$DPISTACK_ROOT/srv/s.key"
+	[ "$status" -eq 0 ]
 }

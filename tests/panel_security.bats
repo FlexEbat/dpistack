@@ -235,18 +235,17 @@ level() { jq -r --arg id "$1" '.checks[] | select(.id == $id) | .level' <<<"$CHE
 	[ "$(level default-ports)" = ok ]
 }
 
-@test "security check: lan mode and nginx without TLS are warnings, nginx with TLS is fine" {
+@test "security check: a certificate is mandatory, so the connection row is fine in every mode and names who serves it" {
 	setconf ACCESS_MODE lan
 	CHECK=$(check)
 	[ "$(level access-mode)" = warn ]
-	[ "$(level tls)" = warn ]
+	[ "$(level tls)" = ok ]
+	[[ "$(jq -r '.checks[] | select(.id=="tls") | .detail' <<<"$CHECK")" == *"The panel serves HTTPS itself"* ]]
 	setconf ACCESS_MODE nginx
 	CHECK=$(check)
 	[ "$(level access-mode)" = ok ]
-	[ "$(level tls)" = warn ]
-	setconf NGINX_TLS selfsigned
-	CHECK=$(check)
 	[ "$(level tls)" = ok ]
+	[[ "$(jq -r '.checks[] | select(.id=="tls") | .detail' <<<"$CHECK")" == *"nginx serves the panel over TLS"* ]]
 }
 
 @test "security check: default ports are named when the network can reach them, and only for components that are on" {

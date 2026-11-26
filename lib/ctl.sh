@@ -82,7 +82,7 @@ Usage: dpistack <command> [arguments]
   test bittorrent|https|all [--json] check tests (section 10)
   health [--json]                    one watchdog run
   users list|add|passwd|role|disable|enable|remove  users of the panel (passwords on stdin)
-  tls show [--json]|renew [--force]   the self-signed certificates of the panel and nginx: expiry, SHA-256, new one
+  tls show [--json]|renew [--force]|import CERT KEY   the certificates of the panel and nginx: expiry, SHA-256, a new self-signed one, one from Certbot or Cloudflare
   backup create [--out FILE]|list [--json]|run|verify FILE|restore FILE [--dry-run]  configs in one tar.gz
                                       run: the scheduled archive (BACKUP_DIR, age, BACKUP_KEEP); an encrypted
                                       archive needs --identity KEY (the age key file) for verify and restore
@@ -2920,17 +2920,19 @@ backup_run() {
 # name|cert|key|kind. kind is selfsigned (renewed here) or existing (renewed
 # by whoever issued it; the panel and nginx read the new file).
 tls_known() {
-	local mode name
+	local mode name kind
 	mode=$(conf_get ACCESS_MODE localhost)
 	if [[ "$mode" != "nginx" ]]; then
-		case "$(conf_get PANEL_TLS none)" in
+		case "$(conf_get PANEL_TLS selfsigned)" in
 		selfsigned) echo "panel|$(path_panel_tls_cert)|$(path_panel_tls_key)|selfsigned" ;;
 		existing) echo "panel|$(conf_get PANEL_CERT "")|$(conf_get PANEL_KEY "")|existing" ;;
 		esac
-	elif [[ "$(conf_get NGINX_TLS none)" == "selfsigned" ]]; then
+	else
+		kind=$(conf_get NGINX_TLS selfsigned)
 		for name in ntopng evebox panel; do
 			[[ "$(conf_get "${name^^}_ENABLE" yes)" == "yes" ]] || continue
-			echo "nginx-$name|$(access_tls_cert_path "$name")|$(access_tls_key_path "$name")|selfsigned"
+			echo "nginx-$name|$(access_tls_cert_path "$name")|$(access_tls_key_path "$name")|$kind"
+			[[ "$kind" == "existing" ]] && break
 		done
 	fi
 }
@@ -2954,7 +2956,7 @@ tls_show() {
 		return 0
 	fi
 	if ((${#rows[@]} == 0)); then
-		echo "No certificate of dpistack's own: PANEL_TLS=none and NGINX_TLS is not selfsigned."
+		echo "No certificate is configured for this host yet."
 		return 0
 	fi
 	for row in "${rows[@]}"; do
@@ -2998,6 +3000,55 @@ tls_renew() {
 	return 0
 }
 
+# tls_import <cert> <key> - puts a certificate that was issued elsewhere
+# (Cloudflare origin certificate, Certbot, a company CA) where the panel and
+# nginx read it, after checking it: both files are PEM, the key belongs to
+# the certificate, it has not ended. The copies are
+# etc/dpistack/tls/imported.crt and .key (key 0640 for the group dpistack).
+# When the configuration already points at them, nothing else is needed: the
+# panel reads a changed file by itself and nginx is reloaded here. When it
+# does not, the settings to apply are printed (one command). This is what a
+# Certbot --deploy-hook runs after each renewal.
+tls_import() {
+	local cert="${1:-}" key="${2:-}" dir c k pub1 pub2 days mode
+	[[ -n "$cert" && -n "$key" && $# -eq 2 ]] || fail 2 "tls import CERT KEY"
+	[[ -r "$cert" ]] || fail 4 "tls import: $cert cannot be read"
+	[[ -r "$key" ]] || fail 4 "tls import: $key cannot be read"
+	openssl x509 -in "$cert" -noout >/dev/null 2>&1 || fail 3 "tls import: $cert is not a PEM certificate"
+	pub1=$(openssl x509 -in "$cert" -noout -pubkey 2>/dev/null | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)
+	pub2=$(openssl pkey -in "$key" -pubout -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)
+	[[ -n "$pub1" && "$pub1" == "$pub2" ]] || fail 3 "tls import: $key is not the private key of $cert (or it is encrypted with a passphrase, which the panel cannot enter)"
+	days=$(tls_days_left "$cert") || days=""
+	[[ -n "$days" ]] && ((days >= 0)) || fail 3 "tls import: $cert has expired"
+	dir=$(path_panel_tls_dir)
+	c="$dir/imported.crt"
+	k="$dir/imported.key"
+	run mkdir -p "$dir" || fail 1 "tls import: $dir cannot be made"
+	# key first, then the certificate: the panel keeps the old pair while
+	# the two do not match
+	(umask 077 && cp "$key" "$k.new") || fail 1 "tls import: the key could not be copied"
+	run chgrp dpistack "$k.new" 2>/dev/null || true
+	run chmod 0640 "$k.new" || fail 1 "tls import: chmod"
+	cp "$cert" "$c.new" && run chmod 0644 "$c.new" || fail 1 "tls import: the certificate could not be copied"
+	run mv "$k.new" "$k" && run mv "$c.new" "$c" || fail 1 "tls import: the files could not be put in place"
+	echo "imported: $(tls_fingerprint "$c") (${days} days left)"
+	mode=$(conf_get ACCESS_MODE localhost)
+	if [[ "$mode" == "nginx" ]]; then
+		if [[ "$(conf_get NGINX_TLS selfsigned)" == "existing" && "$(conf_get NGINX_CERT "")" == "$c" && "$(conf_get NGINX_KEY "")" == "$k" ]]; then
+			[[ "$(systemctl is-active nginx 2>/dev/null)" == "active" ]] && run systemctl reload nginx
+			return 0
+		fi
+		echo "to use it: dpistack settings set NGINX_TLS=existing NGINX_CERT=$c NGINX_KEY=$k"
+	else
+		if [[ "$(conf_get PANEL_TLS selfsigned)" == "existing" && "$(conf_get PANEL_CERT "")" == "$c" && "$(conf_get PANEL_KEY "")" == "$k" ]]; then
+			echo "the panel reads the new files by itself"
+			return 0
+		fi
+		echo "to use it: dpistack settings set PANEL_TLS=existing PANEL_CERT=$c PANEL_KEY=$k"
+	fi
+	return 0
+}
+
 cmd_tls() {
 	restricted_caller && fail 5 "tls: not for the panel"
 	local sub="${1:-show}"
@@ -3005,7 +3056,8 @@ cmd_tls() {
 	case "$sub" in
 	show) tls_show "$@" ;;
 	renew) tls_renew "$@" ;;
-	*) fail 2 "tls: show [--json] | renew [--force]" ;;
+	import) tls_import "$@" ;;
+	*) fail 2 "tls: show [--json] | renew [--force] | import CERT KEY" ;;
 	esac
 }
 
@@ -3123,7 +3175,7 @@ cmd_info() {
 	esac
 	mode=$(conf_get ACCESS_MODE localhost)
 	host=$(ctl_info_host)
-	[[ "$mode" == "nginx" && "$(conf_get NGINX_TLS none)" != "none" ]] && scheme=https
+	[[ "$mode" == "nginx" ]] && scheme=https
 	[[ "$mode" == "localhost" ]] && note="this machine only; from another one use an SSH tunnel: ssh -L <port>:127.0.0.1:<port> <this-host>"
 	for name in panel evebox ntopng; do
 		case "$name" in
@@ -3132,7 +3184,7 @@ cmd_info() {
 		ntopng) port=$(conf_get NTOPNG_PORT 3000) enabled=$(conf_get NTOPNG_ENABLE yes) ;;
 		esac
 		[[ "$enabled" == "yes" ]] || continue
-		if [[ "$name" == panel && "$mode" != "nginx" && "$(conf_get PANEL_TLS none)" != "none" ]]; then
+		if [[ "$name" == panel && "$mode" != "nginx" ]]; then
 			rows+=("$name|https://${host}:${port}")
 		else
 			rows+=("$name|${scheme}://${host}:${port}")

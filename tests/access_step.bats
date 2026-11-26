@@ -117,7 +117,7 @@ install_base() {
 	[ "$status" -eq 0 ]
 	for pair in "3000 13000" "5636 15636" "9800 19800"; do
 		set -- $pair
-		grep -q "^    listen $1;" "$NGINX_SNIPPET"
+		grep -q "^    listen $1 ssl;" "$NGINX_SNIPPET"
 		grep -q "proxy_pass http://127.0.0.1:$2;" "$NGINX_SNIPPET"
 	done
 	# The services themselves: never on the port nginx listens on.

@@ -162,7 +162,7 @@ teardown() {
 	printf 'ACCESS_MODE=lan\nBIND_ADDR=192.168.1.5\nEVEBOX_ENABLE=no\n' >"$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
 	run "$CTL" info
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"panel    http://192.168.1.5:9800"* ]]
+	[[ "$output" == *"panel    https://192.168.1.5:9800"* ]]
 	[[ "$output" == *"ntopng   http://192.168.1.5:3000"* ]]
 	[[ "$output" != *"evebox"* ]]
 	run "$CTL" info --json
@@ -177,7 +177,7 @@ teardown() {
 	printf 'ACCESS_MODE=localhost\n' >"$DPISTACK_ROOT/etc/dpistack/dpistack.conf"
 	run "$CTL" info
 	[ "$status" -eq 0 ]
-	[[ "$output" == *"http://127.0.0.1:9800"* && "$output" == *"this machine only"* && "$output" == *"ssh -L"* ]]
+	[[ "$output" == *"https://127.0.0.1:9800"* && "$output" == *"this machine only"* && "$output" == *"ssh -L"* ]]
 	run "$CTL" info extra
 	[ "$status" -eq 2 ]
 }
