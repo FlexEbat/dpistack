@@ -812,6 +812,8 @@ menu_key_skipped() {
 	NTOPNG_ENABLE) ;;
 	NTOPNG_*) [[ "${CONF[NTOPNG_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
 	PANEL_ENABLE) ;;
+	PANEL_TLS) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] && return 0 ;;
+	PANEL_CERT | PANEL_KEY) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" || "${CONF[PANEL_TLS]:-none}" != "existing" ]] && return 0 ;;
 	PANEL_* | METRICS_EXPORT) [[ "${CONF[PANEL_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
 	LAN_CIDR) [[ "${CONF[ACCESS_MODE]:-localhost}" != "lan" ]] && return 0 ;;
 	NGINX_MANAGE | NGINX_TLS) [[ "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]] && return 0 ;;

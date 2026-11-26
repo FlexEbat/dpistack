@@ -1,23 +1,23 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
 **Document version: v104** (2026-11-24)
-**Program version: v0.59.0** (tasks 0-56 are done (18.58), 57 to 63 are done, 64 and 65 are planned (18.73); scheduled, retained and encrypted backups (18.76); settings that an update brings are asked for (18.75); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Program version: v0.60.0** (tasks 0-56 are done (18.58), 57 to 64 are done, 65 is planned (18.73); the panel serves HTTPS itself (18.77); scheduled, retained and encrypted backups (18.76); settings that an update brings are asked for (18.75); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.60.0: task 64 (18.77): `PANEL_TLS`, `PANEL_CERT`, `PANEL_KEY`, the panel serves HTTPS itself and reads a renewed certificate without a restart, `dpistack tls show|renew`, the watchdog renews a self-signed certificate 30 days before the end, one way of making self-signed certificates for the panel and for nginx (EC P-256, 825 days, subjectAltName).
 - v0.59.0: task 63 (18.76): scheduled backups (`BACKUP_SCHEDULE`, `BACKUP_KEEP`, `BACKUP_DIR`, `BACKUP_AGE_RECIPIENT`), `dpistack backup run`, encryption with age and `--identity` for verify and restore, a backup timer that `uninstall` removes and whose archives it keeps.
 - v0.58.1: the check for settings finds two more kinds (a saved value that is not valid, a feature added since the settings were last reviewed and still at its default), and the History screen says when history is off (18.75).
 - v0.58.0: task 61 is done (the History screen, `/api/history/*`) and an update asks for the settings it adds or finds empty: `dpistack update-keys`, the questions in `dpistack update`, a box and marks in the panel (18.75).
 - v0.57.0: task 62 (18.73): the Alert Center keeps an index of one entry per rule, so old alerts do not drop out with the tail of `eve.json`; `events.jsonl` is rotated at 5 MiB.
-- v0.56.0: task 61, first part (18.73): the watchdog keeps a daily roll-up (`HISTORY_ENABLE`), `dpistack report daily|weekly` and `dpistack devices` read it, and `DEVICE_NEW_NOTIFY` announces a new private address.
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v106: v0.60.0. Task 64 done, 18.77 written (decisions D203 to D207), `tls` verb in 4.5, three keys in 4.3.
 - v105: v0.59.0. Task 63 done, 18.76 written (decisions D200 to D202), `backup run` and `--identity` in 4.5, four keys in 4.3.
 - v104: v0.58.1. 18.75 extended (decision D199).
 - v103: v0.58.0. Task 61 done, 18.75 written (decisions D197, D198), the verb `update-keys` in 4.5, the History routes in section 5.
 - v102: v0.57.0. Task 62 done (decisions D195, D196).
-- v101: v0.56.0. Task 61 first part (decisions D193, D194).
 - v99: v0.54.0. Task 59 done (decision D191), keys in 4.3, the Capture bullet of the Suricata section.
 - v98: v0.53.1. 18.74 written (decision D190).
 - v97: v0.53.0. Task 58 done (D187 to D189), the API rows of 5 and the verbs of 4.5 name the lists.
@@ -290,6 +290,9 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `BIND_ADDR` | `auto` | `auto` or one IPv4 address of this host (checked by `preflight`). `auto` = `127.0.0.1` in `localhost` mode and `0.0.0.0` in `lan` mode; an address makes ntopng, EveBox, the panel, the metrics backend, Grafana and node_exporter listen there. A non-loopback address with `ACCESS_MODE=localhost` opens the panels to `LAN_CIDR`: the panel runs with `-access lan` and the access confirmation is needed. Ignored with `nginx` (the services stay on `127.0.0.1`) |
 | `LAN_CIDR` | auto | the CIDR of the network of the default-route interface, or a comma-separated list of CIDRs (v0.31.0); `auto` inside a list stands for that network, for example `auto,172.18.0.0/16` |
 | `PANEL_PORT` | `9800` | 1..65535 |
+| `PANEL_TLS` | `none` | `none`, `selfsigned` or `existing`: the panel itself serves HTTPS (not with `ACCESS_MODE=nginx`, which has `NGINX_TLS`, and not with `PANEL_RUNTIME=docker`) |
+| `PANEL_CERT` | empty | absolute path of the PEM certificate for `PANEL_TLS=existing`; the user `dpistack` must be able to read it |
+| `PANEL_KEY` | empty | absolute path of its PEM private key |
 | `PANEL_RUNTIME` | `native` | `native` (the unit `dpistack-panel.service`) or `docker` (the service `panel` of the same compose project: the image `dpistack-panel:<hash of the binary>` built on the host from `alpine`, `network_mode: host`, `pid: host`, `privileged`; commands to the host go through `nsenter -t 1 -m -u -i -n -p -- env DPISTACK_CALLER=panel dpistack ...`); heavy, affects the `panel` step |
 | `PANEL_SOURCE` | `auto` | `auto` (a ready binary next to the installer, else a build), `build` (needs Go) or `prebuilt` (a ready binary only) |
 | `NGINX_MANAGE` | `snippet` | `yes` (edits and reloads the system nginx) or `snippet` (only writes a file and prints the command) |
@@ -447,6 +450,7 @@ The only place of the privileged actions of the panel and the watchdog. It works
 | `users list [--json]`, `users add <name> <role> [--perms a,b]`, `users passwd <name>`, `users role <name> <role> [--perms a,b]`, `users disable\|enable\|remove <name>` | users of the panel in `/etc/dpistack/users.json` (task 34); passwords on stdin, 8 characters at least; exit 3 when the change would leave nobody able to manage users, 4 for an unknown user; open to the panel |
 | `backup create [--out FILE]`, `backup list [--json]`, `backup verify FILE`, `backup restore FILE [--dry-run]` | archives of the configs in `/var/lib/dpistack/archives/` (task 36, 18.36); `create` and `restore` are audited; the panel may name an archive by its file name only (`--out` and paths give 5 for it); exit 3 for an archive or a configuration that failed its checks, 4 for a missing archive |
 | `backup run`, `backup verify FILE --identity KEY`, `backup restore FILE --identity KEY` | task 63 (18.76): `run` is what `dpistack-backup.service` starts (an archive into `BACKUP_DIR`, encrypted to `BACKUP_AGE_RECIPIENT` when set, then retention by `BACKUP_KEEP`); `--identity` names the age key file that opens an encrypted archive; root only, the panel gets 5 |
+| `tls show [--json]`, `tls renew [--force]` | task 64 (18.77): `show` lists each certificate dpistack makes or points at (`PANEL_TLS`, or the nginx ones with `NGINX_TLS=selfsigned`) with its expiry and SHA-256 fingerprint; `renew` makes a new self-signed pair for the ones with fewer than 30 days left, or for all with `--force`; certificates issued elsewhere are left alone; root only, the panel gets 5 |
 | `version` | the version of the bundle |
 
 Arguments: letters, digits and `. _ : = / @ + , -` and a space are allowed (`rules-search` takes a phrase); everything else, including `; | & $ ( ) < > \` quotes and a line break, gives code `5` before any action. A URL with `?`, `&`, `%` therefore does not pass `rules-sources add-url`.
@@ -1333,7 +1337,7 @@ One row per task. **Done** means the Definition of Done of section 14 was met; a
 | 61 | history and traffic intelligence | **done.** The daily roll-up, `report daily\|weekly`, `devices`, the new device message and the History screen; IP and domain blocklists are the `suricata-update` sources that `rules-sources` already enables; GeoIP is left out on purpose (D197) | v0.58.0 | 18.73 |
 | 62 | alert state that does not lose alerts | **done.** `alerts-index.json` keeps one entry per rule, the Alert Center reads it with the tail of `eve.json`, `events.jsonl` is rotated | v0.57.0 | 18.73 |
 | 63 | backup that looks after itself | **done** (v0.59.0). A schedule, retention, age encryption, a directory outside the state that `uninstall` keeps, a restore onto an empty root in a test; the upload in the panel is not done (18.76) | v0.59.0 | 18.73, 18.76 |
-| 64 | TLS of the panel, self-signed certificates | planned. The panel serves HTTPS itself with a self-signed certificate that the program makes, renews and shows the fingerprint of; the nginx certificate is made the same way | v0.59.0 | 18.73 |
+| 64 | TLS of the panel, self-signed certificates | **done** (v0.60.0). The panel serves HTTPS itself (`PANEL_TLS`) with a self-signed certificate that the program makes, renews and shows the fingerprint of; the nginx certificate is made the same way | v0.60.0 | 18.73, 18.77 |
 | 65 | two-factor sign-in | planned. TOTP for the accounts of the panel with recovery codes | v0.60.0 | 18.73 |
 
 **Rules for the tasks not yet done.** Decided on the request of 2026-10-31 (`todo.md`), "choose yourself". General rules for all of them: (1) Nothing is shown that the program cannot really do: the IPS page does not say "dry run" unless a drop is really tested (task 42 calls what it does a "rule test"). (2) Every change of the system goes through a verb of section 4.5; the panel never writes outside `/var/lib/dpistack`. (3) Every action that changes something is written to the audit log (task 35) with the user, the time, the address and the result. (4) The permission of the user is checked in the panel for every route (task 34), the verbs trust the panel. (5) There are no resource budgets for the panel. (6) New screens follow the design of 9.1 and work in both themes.
@@ -2815,3 +2819,17 @@ Open: the state of triage (acknowledged, snoozed) does not silence a delivery (d
 | D200 | **Scheduled archives live outside the state directory.** `uninstall` removes the state directory; a backup that disappears with the thing it protects is of no use after a failed install. `BACKUP_DIR` is also kept with `--purge`: it is the way back |
 | D201 | **With a key set, no plain copy is made on the host.** The plain archive exists only in a private temporary directory during the run. The host can write the archive and cannot read it, so a stolen host or a stolen backup disk does not open `users.json`. The cost: restoring needs the private key, which the owner keeps elsewhere, and this is said at the verb |
 | D202 | **`age` and not a home-made cipher or GPG.** It is a ready-made, small tool with public-key encryption and no key management on the host (the owner's preference for ready-made solutions); it is installed by the `watch` step when a key is set and its package exists |
+
+### 18.77 Task 64: the panel serves HTTPS itself (v0.60.0)
+
+**What changed.** `PANEL_TLS=selfsigned` makes the panel listen with TLS (`-tls-cert`, `-tls-key`; TLS 1.2 or later, `Secure` on the session cookies because the request is TLS). The certificate is made by `tls_make_selfsigned` in `lib/common.sh`: an EC P-256 key, 825 days, `subjectAltName` with `localhost`, `127.0.0.1`, `::1`, the host name and the addresses of the host, key 0640 for the group `dpistack`. `PANEL_TLS=existing` takes `PANEL_CERT` and `PANEL_KEY`; the apply refuses files that are empty or that the user `dpistack` cannot read, and says which. The panel reads the pair again when either file changes (`panel/internal/tlsutil`), so a renewal, by the watchdog or by certbot, needs no restart; a half-written pair keeps the old certificate and the next handshake tries again. `dpistack tls show` prints the expiry and the SHA-256 fingerprint of each certificate, `tls renew [--force]` makes new self-signed ones, and the watchdog calls `tls renew` every run: a self-signed certificate with fewer than 30 days left is made again (a failure is a `tls.renew` warning in the health report). The nginx self-signed certificates are made by the same function (they were RSA 2048 for 3650 days with a CN only) and nginx is reloaded after a renewal. The metrics scrape of a panel with TLS uses `scheme: https` with `insecure_skip_verify` (loopback; the name in the certificate is not the address of the scrape). `dpistack info`, the security screen and the metrics report print `https` for the panel.
+
+**Refused on purpose.** `PANEL_TLS` with `ACCESS_MODE=nginx` (nginx terminates TLS, set `NGINX_TLS`; two layers would only hide which one a browser sees) and with `PANEL_RUNTIME=docker` (the container does not see the certificate files).
+
+| id | decision |
+| --- | --- |
+| D203 | **The certificate helpers live in `lib/common.sh`.** The installer, `dpistack` and the watchdog all need them, and `common.sh` is the one library all three load; a new library would be one more file in every list of files (bundle, self-install, watchdog, tests) for about eighty lines |
+| D204 | **EC P-256 and 825 days.** Small, fast and accepted by every browser; 825 days is the longest lifetime that Apple platforms accept for a certificate, so a self-signed certificate that is trusted by hand does not fail on a rule meant for public CAs. Renewal is at 30 days before the end |
+| D205 | **The key is replaced first, then the certificate.** Both are written as `.new` files and moved; a reader that loads between the two moves sees a pair that does not match and keeps what it had |
+| D206 | **The panel reloads by file time, not by a signal.** No restart of the panel (and no dropped sessions) at a renewal; the check costs two `stat` calls per handshake |
+| D207 | **The scrape does not check the name.** The collector reaches the panel at `127.0.0.1`, which a certificate for the host name never carries as the name asked for; the traffic does not leave the host. The token is still required |

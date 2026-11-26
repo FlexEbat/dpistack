@@ -153,6 +153,20 @@ check_port() {
 	fi
 }
 
+# check_tls_renew - a self-signed certificate of the panel or of nginx that
+# has less than 30 days left is made again (dpistack tls renew; the panel
+# reads the new files by itself, nginx is reloaded). Certificates that were
+# issued elsewhere are not touched.
+check_tls_renew() {
+	local out ctl
+	[[ "${CONF[PANEL_TLS]:-none}" == "selfsigned" || "${CONF[NGINX_TLS]:-none}" == "selfsigned" ]] || return 0
+	ctl=$(path_ctl_bin)
+	[[ -x "$ctl" ]] || return 0
+	if ! out=$("$ctl" tls renew 2>&1); then
+		record tls.renew warn "" "renewing the self-signed certificate failed: ${out##*$'\n'}"
+	fi
+}
+
 check_eve_fresh() {
 	if ! eve_checks_apply; then
 		record suricata.eve_fresh na "" "EVE_FILE=no or no stats in EVE_TYPES"
@@ -1037,6 +1051,7 @@ main() {
 	check_redis_stream
 	check_migrate_pending
 	check_rules_age
+	check_tls_renew
 	prune_exceptions
 
 	write_health

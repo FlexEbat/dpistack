@@ -111,6 +111,9 @@ ALERT_INDEX_DAYS| Сколько дней запись хранится посл
 HISTORY_ENABLE| Хранить суточную сводку трафика, приложений, устройств и срабатываний для dpistack report и dpistack devices.
 HISTORY_DAYS| Сколько дней суточных сводок хранить.
 DEVICE_NEW_NOTIFY| Сообщать, когда появляется адрес из частного диапазона, которого раньше не было. Нужен HISTORY_ENABLE=yes.
+PANEL_TLS| HTTPS самой панелью: none, selfsigned (делается и обновляется здесь, отпечаток в dpistack tls show) или existing (ваши PANEL_CERT и PANEL_KEY). Не с ACCESS_MODE=nginx: там NGINX_TLS.
+PANEL_CERT| Путь к сертификату PEM, который отдаёт панель при PANEL_TLS=existing. Пользователь dpistack должен его читать; при смене файла он читается заново.
+PANEL_KEY| Путь к закрытому ключу PEM для PANEL_CERT.
 BACKUP_SCHEDULE| Когда делать резервную копию настроек: off или календарь systemd, например daily, weekly или Mon *-*-* 03:00:00.
 BACKUP_KEEP| Сколько плановых копий хранить; старые удаляются.
 BACKUP_DIR| Куда складываются плановые копии. Каталог вне каталога состояния, поэтому uninstall его не трогает.

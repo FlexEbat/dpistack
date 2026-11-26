@@ -60,6 +60,8 @@ SCHEMA_PATTERN[RULES_UPDATE_CALENDAR]='^[A-Za-z0-9*:/,. -]+$'
 SCHEMA_PATTERN[EVEBOX_ES_URL]="^https?://${_url}\$"
 SCHEMA_PATTERN[TEST_HTTPS_URL]="^https?://${_url}\$"
 SCHEMA_PATTERN[LAN_CIDR]="^(auto|${_cidr})(,(auto|${_cidr}))*\$"
+SCHEMA_PATTERN[PANEL_CERT]='^/[A-Za-z0-9._/@+-]+$'
+SCHEMA_PATTERN[PANEL_KEY]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[NGINX_CERT]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[NGINX_KEY]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[METRICS_RETENTION]='^[0-9]+[dhwmy]?$'
@@ -160,6 +162,9 @@ schema_init() {
 	_schema_add 'BIND_ADDR|free|auto||basic|access|access panel evebox ntopng metrics nodeexp grafana|light|no'
 	_schema_add 'LAN_CIDR|free|auto||advanced|access|access panel|light|no'
 	_schema_add 'PANEL_PORT|int|9800|1..65535|advanced|access|access panel|light|no'
+	_schema_add 'PANEL_TLS|enum|none|none,selfsigned,existing|advanced|access|access panel|light|no'
+	_schema_add 'PANEL_CERT|free|||advanced|access|access panel|light|no'
+	_schema_add 'PANEL_KEY|free|||advanced|access|access panel|light|no'
 	_schema_add 'NTOPNG_PORT|int|3000|1..65535|advanced|access|ntopng access|light|no'
 	_schema_add 'PANEL_SOURCE|enum|auto|auto,build,prebuilt|advanced|components|panel|heavy|no'
 	_schema_add 'PANEL_RUNTIME|enum|native|native,docker|basic|components|panel|heavy|no'
@@ -270,6 +275,8 @@ schema_depends_init() {
 	_schema_depend 'EVEBOX_ENABLE=yes EVEBOX_DB=elasticsearch' EVEBOX_ES_URL
 	_schema_depend 'EVEBOX_ENABLE=yes' 'EVEBOX_*'
 	_schema_depend 'NTOPNG_ENABLE=yes' 'NTOPNG_*'
+	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx' PANEL_TLS
+	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx PANEL_TLS=existing' PANEL_CERT PANEL_KEY
 	_schema_depend 'PANEL_ENABLE=yes' 'PANEL_*' METRICS_EXPORT
 	_schema_depend 'ACCESS_MODE=lan' LAN_CIDR
 	_schema_depend 'ACCESS_MODE=nginx' NGINX_MANAGE NGINX_TLS
@@ -628,6 +635,7 @@ SCHEMA_SINCE_TABLE="
 0.56.0: HISTORY_ENABLE HISTORY_DAYS DEVICE_NEW_NOTIFY
 0.57.0: ALERT_INDEX ALERT_INDEX_DAYS
 0.59.0: BACKUP_SCHEDULE BACKUP_KEEP BACKUP_DIR BACKUP_AGE_RECIPIENT
+0.60.0: PANEL_TLS PANEL_CERT PANEL_KEY
 "
 
 # schema_since <key> - the release that brought the key, or nothing.

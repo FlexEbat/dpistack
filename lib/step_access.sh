@@ -145,9 +145,7 @@ access_ensure_selfsigned_cert() {
 	cert=$(access_tls_cert_path "$name")
 	key=$(access_tls_key_path "$name")
 	[[ -f "$cert" && -f "$key" ]] && return 0
-	run mkdir -p "$(access_tls_dir)" || return 1
-	run openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
-		-keyout "$key" -out "$cert" -subj "/CN=dpistack-${name}" || return 1
+	tls_make_selfsigned "$cert" "$key" "dpistack-${name}" || return 1
 }
 
 # access_services - the web services that are switched on, one per line

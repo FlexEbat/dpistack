@@ -7,9 +7,10 @@ global:
 scrape_configs:
   - job_name: dpistack
     metrics_path: /metrics
-    scheme: http
+    scheme: @@SCHEME@@
     authorization:
       type: Bearer
       credentials_file: @@TOKEN_FILE@@
+@@TLS_CONFIG@@
     static_configs:
       - targets: ['@@TARGET@@']

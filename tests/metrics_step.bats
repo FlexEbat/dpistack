@@ -105,6 +105,21 @@ token_value() { sed -n 's/^METRICS_TOKEN=//p' "$DPISTACK_ROOT/etc/dpistack/secre
 	grep -q 'scheme: http' "$SCRAPE"
 }
 
+@test "task 64: a panel that serves HTTPS is scraped over https without checking the name" {
+	run with_vm --set PANEL_TLS=selfsigned
+	[ "$status" -eq 0 ]
+	grep -q 'scheme: https' "$SCRAPE"
+	grep -q 'insecure_skip_verify: true' "$SCRAPE"
+	grep -q "targets: \\['127.0.0.1:9800'\\]" "$SCRAPE"
+}
+
+@test "task 64: a plain panel is scraped over http with no tls_config" {
+	run with_vm
+	[ "$status" -eq 0 ]
+	grep -q 'scheme: http$' "$SCRAPE"
+	! grep -q 'tls_config' "$SCRAPE"
+}
+
 @test "criterion 5: the tarball's sha256 is checked, a mismatch installs nothing" {
 	DPISTACK_METRICS_SHA256_VM_AMD64="0000000000000000000000000000000000000000000000000000000000000000" run with_vm
 	[ "$status" -ne 0 ]

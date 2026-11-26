@@ -82,6 +82,7 @@ Usage: dpistack <command> [arguments]
   test bittorrent|https|all [--json] check tests (section 10)
   health [--json]                    one watchdog run
   users list|add|passwd|role|disable|enable|remove  users of the panel (passwords on stdin)
+  tls show [--json]|renew [--force]   the self-signed certificates of the panel and nginx: expiry, SHA-256, new one
   backup create [--out FILE]|list [--json]|run|verify FILE|restore FILE [--dry-run]  configs in one tar.gz
                                       run: the scheduled archive (BACKUP_DIR, age, BACKUP_KEEP); an encrypted
                                       archive needs --identity KEY (the age key file) for verify and restore
@@ -2915,6 +2916,99 @@ backup_run() {
 	echo "backup run: kept the newest $keep of $dir"
 }
 
+# tls_known - the certificates dpistack makes or points at, one per line:
+# name|cert|key|kind. kind is selfsigned (renewed here) or existing (renewed
+# by whoever issued it; the panel and nginx read the new file).
+tls_known() {
+	local mode name
+	mode=$(conf_get ACCESS_MODE localhost)
+	if [[ "$mode" != "nginx" ]]; then
+		case "$(conf_get PANEL_TLS none)" in
+		selfsigned) echo "panel|$(path_panel_tls_cert)|$(path_panel_tls_key)|selfsigned" ;;
+		existing) echo "panel|$(conf_get PANEL_CERT "")|$(conf_get PANEL_KEY "")|existing" ;;
+		esac
+	elif [[ "$(conf_get NGINX_TLS none)" == "selfsigned" ]]; then
+		for name in ntopng evebox panel; do
+			[[ "$(conf_get "${name^^}_ENABLE" yes)" == "yes" ]] || continue
+			echo "nginx-$name|$(access_tls_cert_path "$name")|$(access_tls_key_path "$name")|selfsigned"
+		done
+	fi
+}
+
+tls_show() {
+	local json=0 row name cert key kind days fp end rows=()
+	[[ "${1:-}" == "--json" ]] && json=1
+	while IFS='|' read -r name cert key kind; do
+		[[ -n "$name" ]] || continue
+		if [[ -f "$cert" ]]; then
+			days=$(tls_days_left "$cert") || days=""
+			fp=$(tls_fingerprint "$cert") || fp=""
+			end=$(openssl x509 -in "$cert" -noout -enddate 2>/dev/null | sed 's/^notAfter=//')
+		else
+			days="" fp="" end=""
+		fi
+		rows+=("$name|$kind|$cert|${end}|${days}|${fp}")
+	done < <(tls_known)
+	if ((json)); then
+		printf '%s\n' "${rows[@]}" | jq -R 'select(length > 0) | split("|") | {name: .[0], kind: .[1], cert: .[2], expires: .[3], days_left: (.[4] | tonumber? // null), sha256: .[5]}' | jq -sc '.'
+		return 0
+	fi
+	if ((${#rows[@]} == 0)); then
+		echo "No certificate of dpistack's own: PANEL_TLS=none and NGINX_TLS is not selfsigned."
+		return 0
+	fi
+	for row in "${rows[@]}"; do
+		IFS='|' read -r name kind cert end days fp <<<"$row"
+		echo "$name ($kind): $cert"
+		if [[ -z "$fp" ]]; then
+			echo "  not found or not readable"
+			continue
+		fi
+		echo "  expires $end (${days} days)"
+		echo "  SHA-256 $fp"
+	done
+}
+
+# tls_renew - makes a new self-signed pair for each certificate that is due,
+# or for all of them with --force (a new address of the host is in the new
+# certificate). Certificates that were issued elsewhere are left alone.
+tls_renew() {
+	local force=0 name cert key kind group renewed=0 nginx_done=0
+	case "${1:-}" in
+	"") ;;
+	--force) force=1 ;;
+	*) fail 2 "tls renew [--force]" ;;
+	esac
+	while IFS='|' read -r name cert key kind; do
+		[[ -n "$name" && "$kind" == "selfsigned" ]] || continue
+		if ((!force)) && ! tls_due "$cert"; then
+			continue
+		fi
+		group=""
+		[[ "$name" == "panel" ]] && group="dpistack"
+		tls_make_selfsigned "$cert" "$key" "dpistack-${name#nginx-}" "$group" || fail 1 "tls: $name: the certificate could not be made"
+		echo "renewed $name: $(tls_fingerprint "$cert")"
+		renewed=$((renewed + 1))
+		[[ "$name" == nginx-* ]] && nginx_done=1
+	done < <(tls_known)
+	if ((nginx_done)) && [[ "$(systemctl is-active nginx 2>/dev/null)" == "active" ]]; then
+		run systemctl reload nginx
+	fi
+	((renewed > 0)) || echo "nothing to renew"
+	return 0
+}
+
+cmd_tls() {
+	restricted_caller && fail 5 "tls: not for the panel"
+	local sub="${1:-show}"
+	shift || true
+	case "$sub" in
+	show) tls_show "$@" ;;
+	renew) tls_renew "$@" ;;
+	*) fail 2 "tls: show [--json] | renew [--force]" ;;
+	esac
+}
+
 cmd_backup() {
 	local sub="${1:-}"
 	[[ $# -ge 1 ]] && shift
@@ -3038,7 +3132,11 @@ cmd_info() {
 		ntopng) port=$(conf_get NTOPNG_PORT 3000) enabled=$(conf_get NTOPNG_ENABLE yes) ;;
 		esac
 		[[ "$enabled" == "yes" ]] || continue
-		rows+=("$name|${scheme}://${host}:${port}")
+		if [[ "$name" == panel && "$mode" != "nginx" && "$(conf_get PANEL_TLS none)" != "none" ]]; then
+			rows+=("$name|https://${host}:${port}")
+		else
+			rows+=("$name|${scheme}://${host}:${port}")
+		fi
 	done
 	if ((json)); then
 		printf '%s\n' "${rows[@]}" | jq -R 'split("|") | {id: .[0], url: .[1]}' | jq -sc --arg mode "$mode" --arg note "$note" '{access: $mode, note: $note, screens: .}'
@@ -3248,6 +3346,7 @@ ctl_dispatch() {
 	runtime) cmd_runtime "$@" ;;
 	users) cmd_users "$@" ;;
 	backup) cmd_backup "$@" ;;
+	tls) cmd_tls "$@" ;;
 	version) echo "$DPISTACK_VERSION" ;;
 	help) ctl_cmd_help "$@" ;;
 	info) cmd_info "$@" ;;
