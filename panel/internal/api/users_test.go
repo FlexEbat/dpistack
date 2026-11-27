@@ -167,6 +167,7 @@ var routePerms = []struct {
 	{"POST", "/api/users", auth.PermUsersManage, false},
 	{"PUT", "/api/users/vi", auth.PermUsersManage, false},
 	{"DELETE", "/api/users/vi", auth.PermUsersManage, false},
+	{"POST", "/api/users/vi/totp/reset", auth.PermUsersManage, false},
 }
 
 func TestEveryRouteAndEveryRole(t *testing.T) {
@@ -201,7 +202,9 @@ func TestNoRouteIsWithoutAPermission(t *testing.T) {
 		t.Fatal(err)
 	}
 	re := regexp.MustCompile(`s\.authed\(s\.(\w+)\)`)
-	allowed := map[string]bool{"logout": true, "me": true, "mePassword": true}
+	allowed := map[string]bool{"logout": true, "me": true, "mePassword": true,
+		// A person changes their own second factor, with the password.
+		"totpSetup": true, "totpEnable": true, "totpRecovery": true, "totpDisable": true}
 	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
 		if !allowed[m[1]] {
 			t.Errorf("route handler %s uses authed without a permission", m[1])

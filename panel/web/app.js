@@ -21,6 +21,7 @@ import { start as startHistory } from "./modules/history.js";
 import * as topbar from "./modules/topbar.js";
 import { start as startSettings } from "./modules/settings.js";
 import * as account from "./modules/account.js";
+import * as login from "./modules/login.js";
 import * as security from "./modules/security.js";
 import { start as startAudit } from "./modules/audit.js";
 import { start as startBackups } from "./modules/backups.js";
@@ -347,6 +348,22 @@ const SCREENS = {
         newRole: $("account-new-role"),
         newPerms: $("account-new-perms"),
         newPassword: $("account-new-password"),
+        tfStatus: $("account-2fa-status"),
+        tfStart: $("account-2fa-start"),
+        tfStartPassword: $("account-2fa-start-password"),
+        tfSetup: $("account-2fa-setup"),
+        tfQr: $("account-2fa-qr"),
+        tfSecret: $("account-2fa-secret"),
+        tfConfirm: $("account-2fa-confirm"),
+        tfConfirmCode: $("account-2fa-confirm-code"),
+        tfCodes: $("account-2fa-codes"),
+        tfCodeList: $("account-2fa-codelist"),
+        tfCopy: $("account-2fa-copy"),
+        tfSaved: $("account-2fa-saved"),
+        tfManage: $("account-2fa-manage"),
+        tfPassword: $("account-2fa-password"),
+        tfCode: $("account-2fa-code"),
+        tfNewCodes: $("account-2fa-newcodes"),
       },
       showLogin,
       me,
@@ -479,17 +496,85 @@ $("login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   $("login-error").textContent = "";
   try {
-    await api("/api/login", {
+    const res = await api("/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: $("username").value.trim(), password: $("password").value }),
     });
     $("password").value = "";
+    if (login.needsSecondFactor(res)) {
+      secondFactor.start(res.ticket);
+      return;
+    }
     await boot();
   } catch (err) {
     $("login-error").textContent = err.message;
   }
 });
+
+// The second step of a sign-in whose password was right: the code of the
+// authenticator app, or a recovery code. The ticket from the first step is
+// kept here only, in memory, until the code is accepted.
+const secondFactor = (() => {
+  let ticket = "";
+  let recovery = false;
+  const form = $("login-totp-form");
+  const input = $("login-totp-code");
+  function paint() {
+    const m = login.fieldFor(recovery);
+    $("login-totp-label").textContent = m.label;
+    input.pattern = m.pattern;
+    input.maxLength = m.maxLength;
+    input.inputMode = m.inputMode;
+    input.value = "";
+    $("login-totp-mode").textContent = m.switchText;
+    $("login-totp-error").textContent = "";
+  }
+  function back() {
+    ticket = "";
+    recovery = false;
+    form.hidden = true;
+    $("login-form").hidden = false;
+    $("password").focus();
+  }
+  $("login-totp-mode").addEventListener("click", () => {
+    recovery = !recovery;
+    paint();
+    input.focus();
+  });
+  $("login-totp-back").addEventListener("click", back);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    $("login-totp-error").textContent = "";
+    try {
+      await api("/api/login/totp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(login.secondFactorBody(ticket, recovery, input.value)),
+      });
+      ticket = "";
+      input.value = "";
+      form.hidden = true;
+      $("login-form").hidden = false;
+      await boot();
+    } catch (err) {
+      $("login-totp-error").textContent = err.message;
+      // A ticket that ended or was used up cannot be tried again.
+      if (login.ticketIsGone(err)) back();
+      else input.select();
+    }
+  });
+  return {
+    start(t) {
+      ticket = t;
+      recovery = false;
+      $("login-form").hidden = true;
+      form.hidden = false;
+      paint();
+      input.focus();
+    },
+  };
+})();
 
 const navMenu = menu();
 noteHeight();

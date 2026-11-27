@@ -25,6 +25,15 @@
     <button type="submit">Sign in</button>
     <p id="login-error" class="error" role="alert"></p>
   </form>
+  <form id="login-totp-form" hidden>
+    <p class="muted">Two factor sign in is on for this account.</p>
+    <label for="login-totp-code" id="login-totp-label">Code from your authenticator app</label>
+    <input id="login-totp-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required>
+    <button type="submit">Sign in</button>
+    <button id="login-totp-mode" type="button">Use a recovery code instead</button>
+    <button id="login-totp-back" type="button">Back</button>
+    <p id="login-totp-error" class="error" role="alert"></p>
+  </form>
 </main>
 <main id="overview" hidden>
   <p class="devnote devnote-top" role="note">Under development: dpistack is still being developed. Settings, commands and screens can change between releases.</p>
@@ -543,6 +552,35 @@
       <input id="account-current" type="password" autocomplete="current-password" placeholder="current password" aria-label="Current password" required>
       <input id="account-next" type="password" autocomplete="new-password" placeholder="new password (8 or more characters)" aria-label="New password" minlength="8" required>
       <button type="submit">Change my password</button>
+    </form>
+    <h2>Two factor sign in</h2>
+    <p id="account-2fa-status" class="muted"></p>
+    <form id="account-2fa-start" class="toolbar" hidden>
+      <input id="account-2fa-start-password" type="password" autocomplete="current-password" placeholder="your password" aria-label="Your password" required>
+      <button type="submit">Set up two factor sign in</button>
+    </form>
+    <section id="account-2fa-setup" hidden>
+      <p>Scan this code with an authenticator app, or type the secret into it, then enter the first code the app shows.</p>
+      <img id="account-2fa-qr" alt="QR code for the authenticator app" width="220" height="220">
+      <p>Secret: <code id="account-2fa-secret"></code></p>
+      <form id="account-2fa-confirm" class="toolbar">
+        <input id="account-2fa-confirm-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" placeholder="6 digit code" aria-label="First code of the app" required>
+        <button type="submit">Turn on</button>
+      </form>
+    </section>
+    <section id="account-2fa-codes" hidden>
+      <p><strong>Recovery codes.</strong> Each works once, instead of the app, when the phone is lost. They are shown only now: keep them somewhere safe.</p>
+      <pre id="account-2fa-codelist"></pre>
+      <div class="toolbar">
+        <button id="account-2fa-copy" type="button">Copy</button>
+        <button id="account-2fa-saved" type="button">I have saved them</button>
+      </div>
+    </section>
+    <form id="account-2fa-manage" class="toolbar" hidden>
+      <input id="account-2fa-password" type="password" autocomplete="current-password" placeholder="your password" aria-label="Your password" required>
+      <input id="account-2fa-code" type="text" autocomplete="one-time-code" placeholder="code of the app or a recovery code" aria-label="Code of the app or a recovery code" maxlength="12" required>
+      <button type="submit">Turn off</button>
+      <button id="account-2fa-newcodes" type="button">New recovery codes (needs the code of the app)</button>
     </form>
     <section id="account-manage" hidden>
       <h2>Users</h2>

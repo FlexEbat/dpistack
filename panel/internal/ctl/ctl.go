@@ -358,6 +358,31 @@ func (r *Runner) UsersPasswd(ctx context.Context, name, password string) (string
 	return strings.TrimSpace(string(out)), err
 }
 
+// UsersTOTPSet runs `users totp-set <n>`: the Base32 secret and the SHA-256
+// hashes of the recovery codes go on stdin as JSON, never in an argument
+// (an argument is in the process list and in the sudo log).
+func (r *Runner) UsersTOTPSet(ctx context.Context, name, secret string, recoveryHashes []string) (string, error) {
+	in, err := json.Marshal(map[string]any{"secret": secret, "recovery": recoveryHashes})
+	if err != nil {
+		return "", err
+	}
+	out, err := r.runWith(ctx, maxOutput, writeTimeout, append(in, '\n'), "users", "totp-set", name)
+	return strings.TrimSpace(string(out)), err
+}
+
+// UsersTOTPReset runs `users totp-reset <n>`: the account has no second factor.
+func (r *Runner) UsersTOTPReset(ctx context.Context, name string) (string, error) {
+	out, err := r.runWith(ctx, maxOutput, writeTimeout, nil, "users", "totp-reset", name)
+	return strings.TrimSpace(string(out)), err
+}
+
+// UsersTOTPUsed runs `users totp-used <n>` with the hash of a recovery code
+// on stdin: the code is used up.
+func (r *Runner) UsersTOTPUsed(ctx context.Context, name, hash string) (string, error) {
+	out, err := r.runWith(ctx, maxOutput, writeTimeout, []byte(hash+"\n"), "users", "totp-used", name)
+	return strings.TrimSpace(string(out)), err
+}
+
 // UsersRole runs `users role <name> <role> [--perms a,b]`.
 func (r *Runner) UsersRole(ctx context.Context, name, role string, perms []string) (string, error) {
 	args := []string{"users", "role", name, role}

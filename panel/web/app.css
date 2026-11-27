@@ -430,3 +430,7 @@ input[aria-invalid="true"] { border-color: var(--red); }
 .form-grid > button { justify-self: start; }
 #ev-filters { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s3) var(--s4); }
 .card > h2 + p, .card > h2 + div { margin-top: var(--s2); }
+
+/* Two-factor sign-in (account): the QR code needs a light ground to be read. */
+#account-2fa-qr { display: block; background: #fff; padding: var(--s3); border-radius: var(--r-sm); max-width: 100%; height: auto; }
+#account-2fa-codelist { font-family: var(--mono, ui-monospace, monospace); line-height: 1.6; user-select: all; }
