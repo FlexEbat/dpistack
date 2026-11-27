@@ -2978,7 +2978,9 @@ tls_show() {
 		fi
 		echo "  expires $end (${days} days)"
 		echo "  SHA-256 $fp"
-		[[ "$kind" == "caddy-local-ca" ]] && echo "  this is the root of the CA of Caddy: trust it once in the browser (the certificates it signs are renewed by Caddy by itself)"
+		if [[ "$kind" == "caddy-local-ca" ]]; then
+			echo "  this is the root of the CA of Caddy: trust it once in the browser (the certificates it signs are renewed by Caddy by itself)"
+		fi
 	done
 }
 
