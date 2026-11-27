@@ -53,10 +53,12 @@ type userView struct {
 	Perms    []string `json:"perms"`
 	Disabled bool     `json:"disabled"`
 	Created  string   `json:"created,omitempty"`
+	// TwoFactor says whether the account has a second factor; never what it is.
+	TwoFactor bool `json:"two_factor"`
 }
 
 func viewOf(u auth.User) userView {
-	return userView{Name: u.Name, Role: u.Role, Perms: u.Effective(), Disabled: u.Disabled, Created: u.Created}
+	return userView{Name: u.Name, Role: u.Role, Perms: u.Effective(), Disabled: u.Disabled, Created: u.Created, TwoFactor: hasTOTP(u)}
 }
 
 // me handles GET /api/me.

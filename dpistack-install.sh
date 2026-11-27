@@ -2736,7 +2736,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.62.0"
+DPISTACK_VERSION="0.63.0"
 
 : "${DRY_RUN:=0}"
 
@@ -3739,6 +3739,7 @@ Usage: dpistack <command> [arguments]
   test bittorrent|https|all [--json] check tests (section 10)
   health [--json]                    one watchdog run
   users list|add|passwd|role|disable|enable|remove  users of the panel (passwords on stdin)
+  users totp-set|totp-reset|totp-used  the second factor of a user (what the panel stores; totp-reset when the device is lost)
   tls show [--json]|renew [--force]|import CERT KEY   the certificates of the panel and nginx: expiry, SHA-256, a new self-signed one, one from Certbot or Cloudflare
   backup create [--out FILE]|list [--json]|run|verify FILE|restore FILE [--dry-run]  configs in one tar.gz
                                       run: the scheduled archive (BACKUP_DIR, age, BACKUP_KEEP); an encrypted
@@ -5861,7 +5862,7 @@ cmd_users() {
 		esac
 		cur=$(users_load) || fail 1 "users: could not read users.json"
 		if ((json)); then
-			jq -c --argjson pre "$(users_presets)" '{users:[.users[] | {name,role,disabled:(.disabled==true),created,
+			jq -c --argjson pre "$(users_presets)" '{users:[.users[] | {name,role,disabled:(.disabled==true),created,two_factor:(.totp != null),
 				perms:(if .role=="custom" then (.perms // []) else $pre[.role] end)}]}' <<<"$cur"
 		else
 			jq -r --argjson pre "$(users_presets)" '.users[] | "\(.name)\t\(.role)\t\(if .disabled==true then "disabled" else "enabled" end)\t\((if .role=="custom" then (.perms // []) else $pre[.role] end) | join(","))"' <<<"$cur"
@@ -5937,7 +5938,45 @@ cmd_users() {
 		esac
 		echo "user $name: $sub done"
 		;;
-	*) fail 2 "users: list | add | passwd | role | disable | enable | remove" ;;
+	totp-set)
+		# The second factor of an account (task 65). JSON on stdin, never in an
+		# argument: {"secret":"BASE32","recovery":["<sha256 hex>", ...]}. The
+		# panel makes both and shows the recovery codes once; this only stores.
+		local name="${1:-}" payload
+		[[ $# -eq 1 ]] || fail 2 "users totp-set <name>: {\"secret\":...,\"recovery\":[...]} on stdin"
+		users_check_name "$name"
+		payload=$(head -c 8192)
+		jq -e '(.secret | type == "string" and test("^[A-Z2-7]{16,128}$"))
+			and (.recovery | type == "array" and length >= 1 and length <= 20 and all(.[]; type == "string" and test("^[0-9a-f]{64}$")))' <<<"$payload" >/dev/null 2>&1 ||
+			fail 2 "users totp-set: the secret is Base32 (16 to 128 characters) and recovery is 1 to 20 SHA-256 hashes"
+		cur=$(users_load) || fail 1 "users: could not read users.json"
+		users_exists "$cur" "$name" || fail 4 "users: no user $name"
+		users_commit "$(jq --arg n "$name" --arg t "$(date -u +%FT%TZ)" --argjson p "$payload" \
+			'.users |= map(if .name==$n then .totp={secret:$p.secret,enabled:$t,recovery:$p.recovery} else . end)' <<<"$cur")"
+		echo "two-factor sign-in of $name is on"
+		;;
+	totp-reset)
+		local name="${1:-}"
+		[[ $# -eq 1 ]] || fail 2 "users totp-reset <name>"
+		users_check_name "$name"
+		cur=$(users_load) || fail 1 "users: could not read users.json"
+		users_exists "$cur" "$name" || fail 4 "users: no user $name"
+		users_commit "$(jq --arg n "$name" '.users |= map(if .name==$n then del(.totp) else . end)' <<<"$cur")"
+		echo "two-factor sign-in of $name is off"
+		;;
+	totp-used)
+		# A recovery code was used: its hash (stdin) is removed, so it is good once.
+		local name="${1:-}" h=""
+		[[ $# -eq 1 ]] || fail 2 "users totp-used <name>: the hash of the recovery code on stdin"
+		users_check_name "$name"
+		IFS= read -r h || true
+		[[ "$h" =~ ^[0-9a-f]{64}$ ]] || fail 2 "users totp-used: the hash (stdin) is 64 hex characters"
+		cur=$(users_load) || fail 1 "users: could not read users.json"
+		jq -e --arg n "$name" --arg h "$h" 'any(.users[]; .name==$n and ((.totp.recovery // []) | index($h)))' <<<"$cur" >/dev/null || fail 4 "users: $name has no such recovery code"
+		users_commit "$(jq --arg n "$name" --arg h "$h" '.users |= map(if .name==$n then .totp.recovery |= map(select(. != $h)) else . end)' <<<"$cur")"
+		echo "a recovery code of $name is used up"
+		;;
+	*) fail 2 "users: list | add | passwd | role | disable | enable | remove | totp-set | totp-reset | totp-used" ;;
 	esac
 }
 

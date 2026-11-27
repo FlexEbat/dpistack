@@ -18,6 +18,23 @@ export function refusal(body) {
   return "";
 }
 
+// The words of the two factor section.
+export function twoFactorText(on) {
+  return on
+    ? "Two factor sign in is on: after the password you enter a code from your authenticator app."
+    : "Two factor sign in is off. With it, the password alone does not sign anyone in.";
+}
+
+// The recovery codes as the text that is shown and copied: one per line.
+export function recoveryText(codes) {
+  return (Array.isArray(codes) ? codes : []).join("\n");
+}
+
+// What a person types into a code field: spaces around and inside are dropped.
+export function cleanCode(text) {
+  return String(text || "").replace(/\s+/g, "");
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -65,6 +82,100 @@ export function start(api, els, onError, me) {
     );
     if (ok) onError({ status: 401 });
   };
+
+  // Two factor sign in of the own account. The panel keeps nothing until the
+  // first code proves that the app has the secret; the recovery codes are
+  // shown once and are not kept here after "I have saved them".
+  let on = Boolean(me.two_factor);
+  const post = (path, body) =>
+    api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+  function showTwoFactor() {
+    els.tfStatus.textContent = twoFactorText(on);
+    els.tfStart.hidden = on || !els.tfSetup.hidden;
+    els.tfManage.hidden = !on || !els.tfCodes.hidden;
+  }
+
+  function showCodes(codes) {
+    els.tfCodeList.textContent = recoveryText(codes);
+    els.tfCodes.hidden = false;
+    els.tfManage.hidden = true;
+  }
+
+  els.tfStart.onsubmit = async (event) => {
+    event.preventDefault();
+    let res;
+    const ok = await run(async () => {
+      res = await post("/api/me/totp/setup", { password: els.tfStartPassword.value });
+    });
+    if (!ok) return;
+    els.tfStartPassword.value = "";
+    els.tfQr.src = res.qr || "";
+    els.tfQr.hidden = !res.qr;
+    els.tfSecret.textContent = res.secret;
+    els.tfSetup.hidden = false;
+    els.tfStart.hidden = true;
+    els.tfConfirmCode.focus();
+  };
+
+  els.tfConfirm.onsubmit = async (event) => {
+    event.preventDefault();
+    let res;
+    const ok = await run(async () => {
+      res = await post("/api/me/totp/enable", { code: cleanCode(els.tfConfirmCode.value) });
+    });
+    if (!ok) return;
+    on = true;
+    els.tfConfirmCode.value = "";
+    els.tfSecret.textContent = "";
+    els.tfQr.src = "";
+    els.tfSetup.hidden = true;
+    showCodes(res.recovery);
+    showTwoFactor();
+    say("Two factor sign in is on. Save the recovery codes now.", false);
+  };
+
+  els.tfManage.onsubmit = async (event) => {
+    event.preventDefault();
+    if (!confirm("Turn off two factor sign in? Your other sessions end.")) return;
+    const ok = await run(() => post("/api/me/totp/disable", { password: els.tfPassword.value, code: cleanCode(els.tfCode.value) }));
+    if (!ok) return;
+    on = false;
+    els.tfPassword.value = "";
+    els.tfCode.value = "";
+    showTwoFactor();
+    say("Two factor sign in is off.", false);
+  };
+
+  els.tfNewCodes.onclick = async () => {
+    if (!confirm("Make new recovery codes? The old ones stop working.")) return;
+    let res;
+    const ok = await run(async () => {
+      res = await post("/api/me/totp/recovery", { password: els.tfPassword.value, code: cleanCode(els.tfCode.value) });
+    });
+    if (!ok) return;
+    els.tfPassword.value = "";
+    els.tfCode.value = "";
+    showCodes(res.recovery);
+    say("New recovery codes. The old ones no longer work.", false);
+  };
+
+  els.tfCopy.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(els.tfCodeList.textContent);
+      say("Recovery codes copied.", false);
+    } catch {
+      say("Could not copy: select the codes and copy them by hand.", true);
+    }
+  };
+
+  els.tfSaved.onclick = () => {
+    els.tfCodeList.textContent = "";
+    els.tfCodes.hidden = true;
+    showTwoFactor();
+  };
+
+  showTwoFactor();
 
   const manage = me.perms.includes("users.manage");
   els.manage.hidden = !manage;
@@ -132,14 +243,25 @@ export function start(api, els, onError, me) {
         say("Password of " + u.name + " changed.", false);
       }
     };
+    const tf = el("td", "", u.two_factor ? "on" : "off");
+    const resetTf = el("button", "", "Reset two factor");
+    resetTf.type = "button";
+    resetTf.hidden = !u.two_factor;
+    resetTf.onclick = async () => {
+      if (!confirm("Turn off two factor sign in of " + u.name + "? Their sessions end; they can set it up again.")) return;
+      if (await run(() => api("/api/users/" + encodeURIComponent(u.name) + "/totp/reset", { method: "POST" }))) {
+        say("Two factor sign in of " + u.name + " is off.", false);
+        await load();
+      }
+    };
     const name = el("td", "", u.name + (u.disabled ? " (disabled)" : ""));
     const rcell = el("td");
     rcell.append(role, boxes);
     const pcell = el("td");
     pcell.append(pw, setPw);
     const acell = el("td");
-    acell.append(save, toggle, remove);
-    tr.append(name, rcell, pcell, acell);
+    acell.append(save, toggle, resetTf, remove);
+    tr.append(name, rcell, pcell, tf, acell);
     return tr;
   }
 
@@ -171,7 +293,7 @@ export function start(api, els, onError, me) {
     els.newPerms.hidden = els.newRole.value !== "custom";
     const t = el("table");
     const head = el("tr");
-    for (const h of ["User", "Role", "Password", ""]) head.append(el("th", "", h));
+    for (const h of ["User", "Role", "Password", "Two factor", ""]) head.append(el("th", "", h));
     t.append(head);
     for (const u of res.users) t.append(row(u));
     els.list.replaceChildren(t);

@@ -4,3 +4,11 @@
 # A made-up bearer token in a Go test (the /metrics export). It was written out as a
 # literal in this commit and has been built at run time since.
 76a0b946cb37f99f6204b2b78fe6a78e14d56296:panel/internal/api/metrics_export_test.go:generic-api-key:21
+
+# The public test secret of RFC 6238 (appendix B) as a literal in the tests of
+# task 65, in commit 9d0bcb9: a published test vector, not a key. The tests
+# build it at run time since the next commit. A new entry needs the same
+# reason: section 12.1.
+9d0bcb91faebd30ef7dd904ced625242621fb470:panel/internal/auth/totp_test.go:generic-api-key:10
+9d0bcb91faebd30ef7dd904ced625242621fb470:panel/internal/api/totp_test.go:generic-api-key:20
+9d0bcb91faebd30ef7dd904ced625242621fb470:tests/users.bats:generic-api-key:152

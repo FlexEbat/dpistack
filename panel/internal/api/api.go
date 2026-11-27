@@ -77,6 +77,7 @@ type server struct {
 	sessions *auth.Sessions
 	users    *auth.Users
 	limiter  *auth.Limiter
+	totp     *totpState
 	tokens   *auth.Tokens
 	// tokenLimiter counts wrong API tokens per address (a right one is not
 	// counted), lastUsed is when each token was last used since this panel
@@ -102,15 +103,22 @@ func New(cfg Config) http.Handler {
 		sessions: auth.NewSessions(sessionTTL, cfg.Now),
 		users:    &auth.Users{File: cfg.UsersFile, Legacy: cfg.AuthFile},
 		limiter:  auth.NewLimiter(loginMax, loginWindow, cfg.Now),
+		totp:     newTOTPState(cfg.Now),
 		tokens:   &auth.Tokens{File: cfg.TokensFile, Now: cfg.Now},
 
 		tokenLimiter: auth.NewLimiter(tokenFailMax, loginWindow, cfg.Now),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/login", s.login)
+	mux.HandleFunc("POST /api/login/totp", s.loginTOTP)
 	mux.HandleFunc("POST /api/logout", s.authed(s.logout))
 	mux.HandleFunc("GET /api/me", s.authed(s.me))
 	mux.HandleFunc("POST /api/me/password", s.authed(s.mePassword))
+	mux.HandleFunc("POST /api/me/totp/setup", s.authed(s.totpSetup))
+	mux.HandleFunc("POST /api/me/totp/enable", s.authed(s.totpEnable))
+	mux.HandleFunc("POST /api/me/totp/recovery", s.authed(s.totpRecovery))
+	mux.HandleFunc("POST /api/me/totp/disable", s.authed(s.totpDisable))
+	mux.HandleFunc("POST /api/users/{name}/totp/reset", s.need(auth.PermUsersManage, s.usersTOTPReset))
 	mux.HandleFunc("GET /api/users", s.need(auth.PermUsersManage, s.usersList))
 	mux.HandleFunc("POST /api/users", s.need(auth.PermUsersManage, s.usersCreate))
 	mux.HandleFunc("PUT /api/users/{name}", s.need(auth.PermUsersManage, s.usersChange))
@@ -231,7 +239,7 @@ func static(next http.Handler) http.Handler {
 func (s *server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
@@ -343,6 +351,16 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.limiter.Reset(o.client)
+	if hasTOTP(user) {
+		// The password was right; the session waits for the second factor.
+		auditDetail(r, "password ok, second factor needed")
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":            false,
+			"totp_required": true,
+			"ticket":        s.totp.tickets.Create(user.Name, o.client.String()),
+		})
+		return
+	}
 	id, csrf := s.sessions.CreateMeta(user.Name, o.client.String(), r.UserAgent())
 	secure := r.TLS != nil || (o.peer.IsLoopback() && r.Header.Get("X-Forwarded-Proto") == "https")
 	setCookie(w, sessionCookie, id, true, secure)

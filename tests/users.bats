@@ -144,3 +144,95 @@ seed_admin() {
 	[ "$status" -eq 2 ]
 	grep -q 'runtime users' "$REPO_DIR/install.sh"
 }
+
+# ---- two factor sign in (task 65): what the panel stores through the CLI ----
+
+H1="$(printf 'a%.0s' $(seq 1 64))"
+H2="$(printf 'b%.0s' $(seq 1 64))"
+# The secret of RFC 6238 appendix B, built here and not written out (a scanner
+# takes a public test vector for a key).
+SECRET="$(printf %s 12345678901234567890 | base32 -w0)"
+
+totp_set() {
+	printf '{"secret":"%s","recovery":["%s","%s"]}' "$SECRET" "$H1" "$H2" | "$CTL" users totp-set "$1"
+}
+
+@test "totp-set stores the secret and the recovery hashes, and list says who has it but never what it is" {
+	seed_admin
+	run totp_set admin
+	[ "$status" -eq 0 ]
+	[ "$(jq -r '.users[0].totp.secret' "$USERS")" = "$SECRET" ]
+	[ "$(jq -r '.users[0].totp.recovery | length' "$USERS")" -eq 2 ]
+	[ -n "$(jq -r '.users[0].totp.enabled' "$USERS")" ]
+	[ "$(stat -c %a "$USERS")" = "640" ]
+	run "$CTL" users list --json
+	[ "$(jq -r '.users[0].two_factor' <<<"$output")" = "true" ]
+	[[ "$output" != *"$SECRET"* ]]
+	[[ "$output" != *"$H1"* ]]
+	run "$CTL" users list
+	[[ "$output" != *"$SECRET"* ]]
+}
+
+@test "an account without a second factor says two_factor false" {
+	seed_admin
+	run "$CTL" users list --json
+	[ "$(jq -r '.users[0].two_factor' <<<"$output")" = "false" ]
+}
+
+@test "totp-set refuses what is not a Base32 secret and hashes, and an unknown user" {
+	seed_admin
+	run bash -c "printf '{\"secret\":\"not base32!\",\"recovery\":[\"$H1\"]}' | '$CTL' users totp-set admin"
+	[ "$status" -eq 2 ]
+	run bash -c "printf '{\"secret\":\"$SECRET\",\"recovery\":[\"short\"]}' | '$CTL' users totp-set admin"
+	[ "$status" -eq 2 ]
+	run bash -c "printf '{\"secret\":\"$SECRET\",\"recovery\":[]}' | '$CTL' users totp-set admin"
+	[ "$status" -eq 2 ]
+	run bash -c "printf 'not json' | '$CTL' users totp-set admin"
+	[ "$status" -eq 2 ]
+	run totp_set nobody
+	[ "$status" -eq 4 ]
+	[ "$(jq -r '.users[0].totp' "$USERS")" = "null" ]
+}
+
+@test "the secret is read from stdin, not from an argument" {
+	seed_admin
+	run "$CTL" users totp-set admin "$SECRET"
+	[ "$status" -eq 2 ]
+}
+
+@test "totp-used removes one recovery hash, once" {
+	seed_admin
+	totp_set admin >/dev/null
+	run bash -c "printf '%s\n' '$H1' | '$CTL' users totp-used admin"
+	[ "$status" -eq 0 ]
+	[ "$(jq -r '.users[0].totp.recovery | length' "$USERS")" -eq 1 ]
+	[ "$(jq -r '.users[0].totp.recovery[0]' "$USERS")" = "$H2" ]
+	run bash -c "printf '%s\n' '$H1' | '$CTL' users totp-used admin"
+	[ "$status" -eq 4 ]
+	run bash -c "printf 'nothex\n' | '$CTL' users totp-used admin"
+	[ "$status" -eq 2 ]
+}
+
+@test "totp-reset takes the second factor off and leaves the rest of the account" {
+	seed_admin
+	totp_set admin >/dev/null
+	hash_before=$(jq -r '.users[0].hash' "$USERS")
+	run "$CTL" users totp-reset admin
+	[ "$status" -eq 0 ]
+	[ "$(jq -r '.users[0].totp' "$USERS")" = "null" ]
+	[ "$(jq -r '.users[0].hash' "$USERS")" = "$hash_before" ]
+	[ "$(jq -r '.users[0].role' "$USERS")" = "admin" ]
+	run "$CTL" users totp-reset nobody
+	[ "$status" -eq 4 ]
+}
+
+@test "a new password keeps the second factor, removing the user removes it" {
+	seed_admin
+	"$CTL" users add ann viewer <<<"$PW" >/dev/null
+	totp_set ann >/dev/null
+	"$CTL" users passwd ann <<<"another password" >/dev/null
+	[ "$(jq -r '.users[] | select(.name=="ann") | .totp.secret' "$USERS")" = "$SECRET" ]
+	"$CTL" users remove ann >/dev/null
+	[ "$(jq -r '[.users[] | select(.name=="ann")] | length' "$USERS")" -eq 0 ]
+	[[ "$(cat "$USERS")" != *"$SECRET"* ]]
+}

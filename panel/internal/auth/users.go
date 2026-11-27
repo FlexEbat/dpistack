@@ -59,6 +59,9 @@ type User struct {
 	Hash     string   `json:"hash"`
 	Created  string   `json:"created,omitempty"`
 	Disabled bool     `json:"disabled,omitempty"`
+	// TOTP is the second factor, nil while the account has none. It is never
+	// part of an API answer (api.userView names what leaves the panel).
+	TOTP *TOTP `json:"totp,omitempty"`
 }
 
 // Effective returns what the user may do: the preset of the role, or the own
