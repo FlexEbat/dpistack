@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base32"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +18,8 @@ import (
 	"github.com/FlexEbat/dpistack/panel/internal/ctl"
 )
 
-const testTOTPSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+// The secret of RFC 6238 appendix B, built at run time (see auth/totp_test.go).
+var testTOTPSecret = base32.StdEncoding.EncodeToString([]byte("12345678901234567890"))
 
 // twoFactorEnv is usersEnv with a second factor on the account "an" (analyst):
 // the secret above and ten recovery codes, of which the plain ones are

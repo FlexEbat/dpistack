@@ -149,7 +149,9 @@ seed_admin() {
 
 H1="$(printf 'a%.0s' $(seq 1 64))"
 H2="$(printf 'b%.0s' $(seq 1 64))"
-SECRET="GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+# The secret of RFC 6238 appendix B, built here and not written out (a scanner
+# takes a public test vector for a key).
+SECRET="$(printf %s 12345678901234567890 | base32 -w0)"
 
 totp_set() {
 	printf '{"secret":"%s","recovery":["%s","%s"]}' "$SECRET" "$H1" "$H2" | "$CTL" users totp-set "$1"

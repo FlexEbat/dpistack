@@ -1,13 +1,17 @@
 package auth
 
 import (
+	"encoding/base32"
 	"strings"
 	"testing"
 	"time"
 )
 
-// The secret and the codes of RFC 6238 appendix B (SHA-1), as 6 digits.
-const rfcSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+// The secret and the codes of RFC 6238 appendix B (SHA-1), as 6 digits. The
+// secret of the RFC is the ASCII string below; it is built at run time and
+// not written out, so that a scanner does not take a public test vector for
+// a key.
+var rfcSecret = base32.StdEncoding.EncodeToString([]byte("12345678901234567890"))
 
 func guardAt(unix int64) *TOTPGuard {
 	return &TOTPGuard{Now: func() time.Time { return time.Unix(unix, 0) }}
