@@ -791,6 +791,8 @@ cmd_uninstall() {
 		rm -f "$(path_ntopng_conf)" "$(path_evebox_yaml)"
 		rm -rf "$(access_tls_dir)" 2>/dev/null || true
 		rm -rf "$(path_panel_tls_dir)" 2>/dev/null || true
+		rm -f "$(path_caddyfile)"
+		rm -rf "$(path_caddy_data_dir)" 2>/dev/null || true
 		rm -rf "$(path_metrics_data_dir)"
 		if id "$METRICS_USER" >/dev/null 2>&1; then
 			run userdel "$METRICS_USER" || true
@@ -812,6 +814,11 @@ cmd_uninstall() {
 
 	run systemctl disable --now "$WATCH_TIMER" 2>/dev/null || true
 	run systemctl disable --now "$BACKUP_TIMER" 2>/dev/null || true
+	if [[ -f "$(path_caddy_unit)" ]]; then
+		run systemctl disable --now dpistack-caddy.service 2>/dev/null || true
+		rm -f "$(path_caddy_unit)"
+		run systemctl daemon-reload
+	fi
 	rm -f "$(path_watch_timer_unit)" "$(path_watch_service_unit)" "$(path_backup_timer_unit)" "$(path_backup_service_unit)" "$(path_sudoers)"
 	run systemctl disable --now "$PANEL_SERVICE" 2>/dev/null || true
 	# every container of the docker runtime, not only the panel
@@ -1177,7 +1184,7 @@ check_process() {
 # on <public>+10000 behind nginx (section 7, same rule as access_backend_port
 # in the installer); the check must look at the service, not at nginx.
 backend_port() {
-	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+	if [[ "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]]; then
 		echo $(($1 + 10000))
 	else
 		echo "$1"
@@ -2729,7 +2736,7 @@ put lib/common.sh 644 <<'DPISTACK_BUNDLE_END'
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.61.0"
+DPISTACK_VERSION="0.62.0"
 
 : "${DRY_RUN:=0}"
 
@@ -3128,6 +3135,13 @@ tls_due() {
 	days=$(tls_days_left "$1") || return 0
 	((days < TLS_RENEW_BEFORE_DAYS))
 }
+
+# access_proxied - 0 when a reverse proxy (nginx or Caddy) stands in front of
+# the web interfaces: they listen on 127.0.0.1 at the public port plus 10000
+# and the proxy takes the public port.
+access_proxied() {
+	[[ "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]]
+}
 DPISTACK_BUNDLE_END
 put lib/config.sh 644 <<'DPISTACK_BUNDLE_END'
 #!/usr/bin/env bash
@@ -3234,11 +3248,11 @@ config_validate() {
 	done
 
 	# nginx takes the public port, the service moves to <public>+10000.
-	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+	if [[ "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]]; then
 		local port_key
 		for port_key in NTOPNG_PORT EVEBOX_PORT PANEL_PORT; do
 			if [[ "${CONF[$port_key]:-0}" =~ ^[0-9]+$ ]] && ((${CONF[$port_key]:-0} > 55535)); then
-				echo "ACCESS_MODE=nginx needs $port_key not above 55535 (the service listens on the port plus 10000)"
+				echo "ACCESS_MODE=${CONF[ACCESS_MODE]} needs $port_key not above 55535 (the service listens on the port plus 10000)"
 				errors=$((errors + 1))
 			fi
 		done
@@ -3300,7 +3314,7 @@ config_validate() {
 			bind_open=1
 		fi
 	fi
-	if [[ "${CONF[ACCESS_MODE]:-}" == "nginx" ]]; then
+	if access_proxied; then
 		bind_open=0
 	fi
 	if { [[ "${CONF[ACCESS_MODE]:-}" != "localhost" ]] || ((bind_open)); } && [[ "${ACCESS_CONFIRM:-}" != "yes" && "${NON_INTERACTIVE:-0}" == "1" ]]; then
@@ -5622,6 +5636,7 @@ RUNTIME_MATRIX=(
 	"panel|yes|an image built on the host from the panel binary; it runs privileged with pid host and reaches dpistack through nsenter"
 	"watch|no|a systemd timer that calls the dpistack of the host"
 	"nginx|no|a package of the host, used only with ACCESS_MODE=nginx"
+	"caddy|no|a package of the host, run by dpistack as its own service (dpistack-caddy), used only with ACCESS_MODE=caddy"
 	"firewall|no|rules of the host kernel (iptables, nft, ufw, firewalld), they also guard the containers that use the host network"
 	"installer|no|install.sh and the dpistack command are scripts of the host"
 )
@@ -6563,9 +6578,18 @@ backup_run() {
 # name|cert|key|kind. kind is selfsigned (renewed here) or existing (renewed
 # by whoever issued it; the panel and nginx read the new file).
 tls_known() {
-	local mode name kind
+	local mode name kind domain found
 	mode=$(conf_get ACCESS_MODE localhost)
-	if [[ "$mode" != "nginx" ]]; then
+	if [[ "$mode" == "caddy" ]]; then
+		# Caddy looks after its certificates: only shown, never renewed here.
+		domain=$(conf_get CADDY_DOMAIN "")
+		if [[ -n "$domain" ]]; then
+			found=$(find "$(path_caddy_data_dir)/caddy/certificates" -name "${domain}.crt" 2>/dev/null | head -n 1)
+			echo "caddy-${domain}|${found:-$(path_caddy_data_dir)/caddy/certificates/${domain}.crt}||caddy-public"
+		else
+			echo "caddy-local-ca|$(path_caddy_data_dir)/caddy/pki/authorities/local/root.crt||caddy-local-ca"
+		fi
+	elif [[ "$mode" != "nginx" ]]; then
 		case "$(conf_get PANEL_TLS selfsigned)" in
 		selfsigned) echo "panel|$(path_panel_tls_cert)|$(path_panel_tls_key)|selfsigned" ;;
 		existing) echo "panel|$(conf_get PANEL_CERT "")|$(conf_get PANEL_KEY "")|existing" ;;
@@ -6611,6 +6635,9 @@ tls_show() {
 		fi
 		echo "  expires $end (${days} days)"
 		echo "  SHA-256 $fp"
+		if [[ "$kind" == "caddy-local-ca" ]]; then
+			echo "  this is the root of the CA of Caddy: trust it once in the browser (the certificates it signs are renewed by Caddy by itself)"
+		fi
 	done
 }
 
@@ -6655,6 +6682,7 @@ tls_renew() {
 tls_import() {
 	local cert="${1:-}" key="${2:-}" dir c k pub1 pub2 days mode
 	[[ -n "$cert" && -n "$key" && $# -eq 2 ]] || fail 2 "tls import CERT KEY"
+	[[ "$(conf_get ACCESS_MODE localhost)" != "caddy" ]] || fail 3 "tls import: ACCESS_MODE=caddy: Caddy looks after the certificate by itself (CADDY_DOMAIN for a public one)"
 	[[ -r "$cert" ]] || fail 4 "tls import: $cert cannot be read"
 	[[ -r "$key" ]] || fail 4 "tls import: $key cannot be read"
 	openssl x509 -in "$cert" -noout >/dev/null 2>&1 || fail 3 "tls import: $cert is not a PEM certificate"
@@ -6824,7 +6852,7 @@ cmd_info() {
 	esac
 	mode=$(conf_get ACCESS_MODE localhost)
 	host=$(ctl_info_host)
-	[[ "$mode" == "nginx" ]] && scheme=https
+	[[ "$mode" =~ ^(nginx|caddy)$ ]] && scheme=https
 	[[ "$mode" == "localhost" ]] && note="this machine only; from another one use an SSH tunnel: ssh -L <port>:127.0.0.1:<port> <this-host>"
 	for name in panel evebox ntopng; do
 		case "$name" in
@@ -6833,7 +6861,7 @@ cmd_info() {
 		ntopng) port=$(conf_get NTOPNG_PORT 3000) enabled=$(conf_get NTOPNG_ENABLE yes) ;;
 		esac
 		[[ "$enabled" == "yes" ]] || continue
-		if [[ "$name" == panel && "$mode" != "nginx" ]]; then
+		if [[ "$name" == panel && ! "$mode" =~ ^(nginx|caddy)$ ]]; then
 			rows+=("$name|https://${host}:${port}")
 		else
 			rows+=("$name|${scheme}://${host}:${port}")
@@ -8138,7 +8166,7 @@ declare -gA KEY_HINT=(
 	[EVEBOX_ES_URL]='Elasticsearch address for the elasticsearch mode.'
 	[EVEBOX_PORT]='EveBox port.'
 	[EVEBOX_RETENTION_DAYS]='How many days EveBox keeps events (0: no limit).'
-	[ACCESS_MODE]='Who can open the panels: localhost, the local network or through nginx.'
+	[ACCESS_MODE]='Who can open the panels: localhost, the local network, or through a reverse proxy: nginx (you choose the certificate, NGINX_TLS) or caddy (its own service, which makes and renews the certificate by itself).'
 	[BIND_ADDR]='Address the web services listen on: auto (127.0.0.1, or every address in lan mode) or one IPv4 address of this host, for example 192.168.1.156. An address that is not loopback opens the panels to LAN_CIDR.'
 	[LAN_CIDR]='The network allowed in lan mode, or auto; several networks may be given separated by commas (auto stands for the network of the default route), for example auto,172.18.0.0/16.'
 	[PANEL_PORT]='Port of this panel.'
@@ -8148,6 +8176,7 @@ declare -gA KEY_HINT=(
 	[NTOPNG_PORT]='ntopng port.'
 	[PANEL_SOURCE]='How to get the panel program: build it, take a ready one or choose automatically.'
 	[PANEL_RUNTIME]='Where the panel runs: as a service on the host or as a Docker container (host commands go through nsenter).'
+	[CADDY_DOMAIN]='With ACCESS_MODE=caddy: a domain name that points at this host, for a public certificate that Caddy gets and renews (ports 80 and 443 must reach the host). Empty: Caddy'\''s own local CA signs the certificate and the browser trusts its root once (dpistack tls show).'
 	[NGINX_MANAGE]='How to manage nginx: replace the configuration or only drop in a fragment.'
 	[NGINX_TLS]='The certificate nginx serves, which is always TLS: selfsigned (made and renewed here) or existing (NGINX_CERT and NGINX_KEY, from Cloudflare, Certbot or another authority; dpistack tls import).'
 	[NGINX_CERT]='Path to the certificate for the existing mode.'
@@ -8837,7 +8866,7 @@ menu_quick_install() {
 		fi
 	fi
 
-	if [[ "${CONF[ACCESS_MODE]}" != "nginx" ]]; then
+	if ! access_proxied; then
 		menu_pick_bind
 	fi
 
@@ -9020,10 +9049,11 @@ menu_key_skipped() {
 	NTOPNG_ENABLE) ;;
 	NTOPNG_*) [[ "${CONF[NTOPNG_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
 	PANEL_ENABLE) ;;
-	PANEL_TLS) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] && return 0 ;;
-	PANEL_CERT | PANEL_KEY) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" || "${CONF[PANEL_TLS]:-none}" != "existing" ]] && return 0 ;;
+	PANEL_TLS) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" ]] || access_proxied && return 0 ;;
+	PANEL_CERT | PANEL_KEY) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" || "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ || "${CONF[PANEL_TLS]:-none}" != "existing" ]] && return 0 ;;
 	PANEL_* | METRICS_EXPORT) [[ "${CONF[PANEL_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
 	LAN_CIDR) [[ "${CONF[ACCESS_MODE]:-localhost}" != "lan" ]] && return 0 ;;
+	CADDY_DOMAIN) [[ "${CONF[ACCESS_MODE]:-localhost}" != "caddy" ]] && return 0 ;;
 	NGINX_MANAGE | NGINX_TLS) [[ "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]] && return 0 ;;
 	NGINX_CERT | NGINX_KEY) [[ "${CONF[ACCESS_MODE]:-localhost}" != "nginx" || "${CONF[NGINX_TLS]:-none}" != "existing" ]] && return 0 ;;
 	METRICS_BACKEND_RUNTIME | METRICS_BACKEND_PORT | METRICS_RETENTION) [[ "${CONF[METRICS_BACKEND]:-none}" == "none" ]] && return 0 ;;
@@ -9275,7 +9305,7 @@ menu_saved_access_confirm() {
 	mode="${CONF[ACCESS_MODE]:-localhost}"
 	bind="${CONF[BIND_ADDR]:-auto}"
 	[[ "$mode" != "localhost" ]] && need=1
-	[[ "$mode" != "nginx" && "$bind" != "auto" && "$bind" != 127.* ]] && need=1
+	[[ ! "$mode" =~ ^(nginx|caddy)$ && "$bind" != "auto" && "$bind" != 127.* ]] && need=1
 	((need)) || return 0
 	if [[ "$(state_read_value "applied.ACCESS_MODE")" == "$mode" &&
 	"$(state_read_value "applied.BIND_ADDR")" == "$bind" ]]; then
@@ -10815,6 +10845,9 @@ path_watch_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-wat
 path_panel_tls_dir() { echo "$(path_etc)/tls"; }
 path_panel_tls_cert() { echo "$(path_panel_tls_dir)/panel.crt"; }
 path_panel_tls_key() { echo "$(path_panel_tls_dir)/panel.key"; }
+path_caddyfile() { echo "$(path_etc)/Caddyfile"; }
+path_caddy_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-caddy.service"; }
+path_caddy_data_dir() { echo "${DPISTACK_ROOT}/var/lib/dpistack-caddy"; }
 path_backup_service_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-backup.service"; }
 path_backup_timer_unit() { echo "${DPISTACK_ROOT}/etc/systemd/system/dpistack-backup.timer"; }
 path_evebox_data_dir() { echo "${DPISTACK_ROOT}/var/lib/evebox"; }
@@ -12486,6 +12519,7 @@ SCHEMA_PATTERN[RULES_UPDATE_CALENDAR]='^[A-Za-z0-9*:/,. -]+$'
 SCHEMA_PATTERN[EVEBOX_ES_URL]="^https?://${_url}\$"
 SCHEMA_PATTERN[TEST_HTTPS_URL]="^https?://${_url}\$"
 SCHEMA_PATTERN[LAN_CIDR]="^(auto|${_cidr})(,(auto|${_cidr}))*\$"
+SCHEMA_PATTERN[CADDY_DOMAIN]='^([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)?$'
 SCHEMA_PATTERN[PANEL_CERT]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[PANEL_KEY]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[NGINX_CERT]='^/[A-Za-z0-9._/@+-]+$'
@@ -12584,7 +12618,7 @@ schema_init() {
 	_schema_add 'EVEBOX_PORT|int|5636|1..65535|advanced|access|evebox access|light|no'
 	_schema_add 'EVEBOX_RETENTION_DAYS|int|30|0..36500|advanced|eve|evebox access|light|no'
 
-	_schema_add 'ACCESS_MODE|enum|localhost|localhost,lan,nginx|basic|access|access panel nodeexp grafana|light|no'
+	_schema_add 'ACCESS_MODE|enum|localhost|localhost,lan,nginx,caddy|basic|access|access panel nodeexp grafana|light|no'
 	_schema_add 'BIND_ADDR|free|auto||basic|access|access panel evebox ntopng metrics nodeexp grafana|light|no'
 	_schema_add 'LAN_CIDR|free|auto||advanced|access|access panel|light|no'
 	_schema_add 'PANEL_PORT|int|9800|1..65535|advanced|access|access panel|light|no'
@@ -12594,6 +12628,7 @@ schema_init() {
 	_schema_add 'NTOPNG_PORT|int|3000|1..65535|advanced|access|ntopng access|light|no'
 	_schema_add 'PANEL_SOURCE|enum|auto|auto,build,prebuilt|advanced|components|panel|heavy|no'
 	_schema_add 'PANEL_RUNTIME|enum|native|native,docker|basic|components|panel|heavy|no'
+	_schema_add 'CADDY_DOMAIN|free|||advanced|access|access panel|light|no'
 	_schema_add 'NGINX_MANAGE|enum|snippet|yes,snippet|advanced|access|access panel|light|no'
 	_schema_add 'NGINX_TLS|enum|selfsigned|selfsigned,existing|advanced|access|access panel|light|no'
 	_schema_add 'NGINX_CERT|free|||advanced|access|access panel|light|no'
@@ -12701,11 +12736,12 @@ schema_depends_init() {
 	_schema_depend 'EVEBOX_ENABLE=yes EVEBOX_DB=elasticsearch' EVEBOX_ES_URL
 	_schema_depend 'EVEBOX_ENABLE=yes' 'EVEBOX_*'
 	_schema_depend 'NTOPNG_ENABLE=yes' 'NTOPNG_*'
-	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx' PANEL_TLS
-	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx PANEL_TLS=existing' PANEL_CERT PANEL_KEY
+	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx ACCESS_MODE!=caddy' PANEL_TLS
+	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx ACCESS_MODE!=caddy PANEL_TLS=existing' PANEL_CERT PANEL_KEY
 	_schema_depend 'PANEL_ENABLE=yes' 'PANEL_*' METRICS_EXPORT
 	_schema_depend 'ACCESS_MODE=lan' LAN_CIDR
 	_schema_depend 'ACCESS_MODE=nginx' NGINX_MANAGE NGINX_TLS
+	_schema_depend 'ACCESS_MODE=caddy' CADDY_DOMAIN
 	_schema_depend 'ACCESS_MODE=nginx NGINX_TLS=existing' NGINX_CERT NGINX_KEY
 	_schema_depend 'METRICS_BACKEND!=none' METRICS_BACKEND_RUNTIME METRICS_BACKEND_PORT METRICS_RETENTION
 	_schema_depend 'NODE_EXPORTER_ENABLE=yes' 'NODE_EXPORTER_*'
@@ -13062,6 +13098,7 @@ SCHEMA_SINCE_TABLE="
 0.57.0: ALERT_INDEX ALERT_INDEX_DAYS
 0.59.0: BACKUP_SCHEDULE BACKUP_KEEP BACKUP_DIR BACKUP_AGE_RECIPIENT
 0.60.0: PANEL_TLS PANEL_CERT PANEL_KEY
+0.62.0: CADDY_DOMAIN
 "
 
 # schema_since <key> - the release that brought the key, or nothing.
@@ -13125,6 +13162,7 @@ security_check_access() {
 	localhost) security_row access-mode ok "Who can reach the panel" "Only this machine: the panel and the components listen on 127.0.0.1." "" ;;
 	lan) security_row access-mode warn "Who can reach the panel" "The panel is open to the local network ($(security_val LAN_CIDR))." "dpistack settings set ACCESS_MODE=localhost, or ACCESS_MODE=nginx with NGINX_TLS set" ;;
 	nginx) security_row access-mode ok "Who can reach the panel" "Through nginx, which is where the access rules and the TLS are." "" ;;
+	caddy) security_row access-mode ok "Who can reach the panel" "Through Caddy, which is where the access rules and the certificate are." "" ;;
 	*) security_row access-mode warn "Who can reach the panel" "ACCESS_MODE is $mode, which this check does not know." "dpistack settings set ACCESS_MODE=localhost" ;;
 	esac
 }
@@ -13136,7 +13174,9 @@ security_check_tls() {
 	mode=$(security_val ACCESS_MODE)
 	tls=$(security_val NGINX_TLS)
 	ptls=$(security_val PANEL_TLS)
-	if [[ "$mode" == nginx ]]; then
+	if [[ "$mode" == caddy ]]; then
+		security_row tls ok "Encryption of the panel connection" "Caddy serves the panel over TLS and looks after its certificate; the certificate: dpistack tls show." ""
+	elif [[ "$mode" == nginx ]]; then
 		security_row tls ok "Encryption of the panel connection" "nginx serves the panel over TLS (${tls:-selfsigned}); the certificate: dpistack tls show." ""
 	else
 		security_row tls ok "Encryption of the panel connection" "The panel serves HTTPS itself (${ptls:-selfsigned}); the certificate: dpistack tls show." ""
@@ -13383,7 +13423,7 @@ NGINX_UNIT="nginx.service"
 # fail with EADDRINUSE.
 access_backend_port() {
 	local port="$1"
-	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+	if access_proxied; then
 		echo $((port + 10000))
 	else
 		echo "$port"
@@ -13428,6 +13468,9 @@ access_policy() {
 		host=$(access_effective_bind_host)
 		[[ "$host" == 127.* ]] || mode="lan"
 	fi
+	# Caddy is a reverse proxy like nginx: the policy of the panel and of the
+	# firewall is the same, so the name nginx stands for "behind a proxy".
+	[[ "$mode" == "caddy" ]] && mode="nginx"
 	echo "$mode"
 }
 
@@ -13562,7 +13605,7 @@ access_selinux_notice() {
 	if [[ "$mode" == "Enforcing" ]]; then
 		# nginx may not open connections to the local ntopng, EveBox and
 		# panel ports until this boolean is on.
-		if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+		if access_proxied; then
 			run setsebool -P httpd_can_network_connect 1 ||
 				echo "access: SELinux Enforcing, setsebool httpd_can_network_connect failed: nginx cannot proxy to the local ports" >&2
 		else
@@ -13575,7 +13618,7 @@ access_selinux_notice() {
 # ports (3000, 5636, 9800 by default), which SELinux only lets httpd_t use
 # when they carry http_port_t.
 access_selinux_ports() {
-	[[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] || return 0
+	access_proxied || return 0
 	local port
 	local name
 	for name in $(access_services); do
@@ -13769,6 +13812,10 @@ step_access_check() {
 		fi
 	fi
 
+	if [[ "$mode" == "caddy" ]]; then
+		access_caddy_check || return 1
+	fi
+
 	[[ "$(state_read_value step.access.status)" == "done" ]] || return 1
 	return 0
 }
@@ -13816,6 +13863,10 @@ step_access_apply() {
 		fi
 	fi
 
+	if [[ "$mode" == "caddy" ]]; then
+		access_caddy_apply || return 1
+	fi
+
 	access_firewall_apply || return 1
 
 	state_write_value "step.access.status" "done"
@@ -13827,6 +13878,13 @@ step_access_plan() {
 	echo "access: ACCESS_MODE=$mode, bind $(access_effective_bind_host)"
 	if [[ "$mode" == "nginx" ]]; then
 		echo "access: nginx (NGINX_MANAGE=${CONF[NGINX_MANAGE]:-snippet}, TLS=${CONF[NGINX_TLS]:-selfsigned})"
+	fi
+	if [[ "$mode" == "caddy" ]]; then
+		if [[ -n "${CONF[CADDY_DOMAIN]:-}" ]]; then
+			echo "access: Caddy as its own service (dpistack-caddy), a public certificate for ${CONF[CADDY_DOMAIN]} (ports 80 and 443 must reach this host)"
+		else
+			echo "access: Caddy as its own service (dpistack-caddy), a certificate from its local CA"
+		fi
 	fi
 	if [[ "${CONF[FIREWALL_MANAGE]:-no}" == "auto" ]]; then
 		echo "access: ufw allow from $(access_effective_lan_cidr 2>/dev/null || echo "?")"
@@ -13857,6 +13915,137 @@ EOF_CONF
 	nginx -t -c "$test_dir/nginx.conf" -p "$test_dir/" >/dev/null 2>&1 || ok=1
 	rm -rf "$test_dir"
 	return "$ok"
+}
+
+# ---- Caddy (ACCESS_MODE=caddy) ----------------------------------------------
+# Caddy is the other reverse proxy. It takes the public ports like nginx does,
+# and gets its own certificate by itself, so nothing is asked about one:
+#   CADDY_DOMAIN empty: Caddy's own local CA signs a certificate for the names
+#                       and the IPv4 addresses of this host (browsers trust
+#                       its root certificate once: dpistack tls show);
+#   CADDY_DOMAIN=name:  Caddy gets a public certificate for that name from
+#                       Let's Encrypt or ZeroSSL and renews it (ports 80 and
+#                       443 must reach this host for that).
+# dpistack runs its own instance (dpistack-caddy.service, /etc/dpistack/Caddyfile)
+# and never touches the Caddyfile or the service of the host.
+
+# access_caddy_names - the host names and IPv4 addresses a certificate of the
+# local CA is made for, one per line.
+access_caddy_names() {
+	local item
+	for item in $(tls_san | tr ',' ' '); do
+		item="${item#DNS:}"
+		item="${item#IP:}"
+		[[ "$item" == *:* ]] && continue
+		echo "$item"
+	done
+}
+
+# access_caddy_site <name> <public-port> <upstream-port> <cidr-list>
+access_caddy_site() {
+	local name="$1" port="$2" upstream="$3" cidr="$4" addrs="" host nets="" net
+	if [[ -n "${CONF[CADDY_DOMAIN]:-}" ]]; then
+		addrs="https://${CONF[CADDY_DOMAIN]}:${port}"
+	else
+		while IFS= read -r host; do
+			addrs+="${addrs:+, }https://${host}:${port}"
+		done < <(access_caddy_names)
+	fi
+	while IFS= read -r net; do
+		nets+="${nets:+ }${net}"
+	done < <(access_cidr_each "$cidr")
+	local tls_line=""
+	[[ -n "${CONF[CADDY_DOMAIN]:-}" ]] || tls_line=$'\n\ttls internal'
+	cat <<SITE
+# ${name}
+${addrs} {${tls_line}
+	@allowed remote_ip ${nets}
+	handle @allowed {
+		reverse_proxy 127.0.0.1:${upstream} {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+	handle {
+		respond 403
+	}
+}
+SITE
+}
+
+access_render_caddyfile() {
+	local cidr name port
+	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
+	cat <<'GLOBAL'
+# Managed by dpistack (ACCESS_MODE=caddy). Do not edit: it is written again.
+{
+	# No admin endpoint: a change is applied by restarting the service.
+	admin off
+	# The services listen on their own ports; nothing is wanted on port 80
+	# except the challenge of a public certificate.
+	auto_https disable_redirects
+	# The service runs as a transient user and cannot add the root of its
+	# local CA to the trust store of the host; browsers trust it by hand.
+	skip_install_trust
+}
+GLOBAL
+	for name in $(access_services); do
+		echo
+		port=$(access_service_port "$name")
+		access_caddy_site "$name" "$port" "$(access_backend_port "$port")" "$cidr"
+	done
+}
+
+access_render_caddy_unit() {
+	render_template "$SCRIPT_DIR/templates/dpistack-caddy.service.tpl" \
+		"CADDY_BIN=$(command -v caddy 2>/dev/null || echo /usr/bin/caddy)" \
+		"CADDYFILE=$(path_caddyfile)" \
+		"DATA_DIR=/var/lib/dpistack-caddy"
+}
+
+# access_caddy_test_ok <file> - caddy validate on the rendered file, so that a
+# bad Caddyfile never reaches the running service.
+access_caddy_test_ok() {
+	caddy validate --config "$1" --adapter caddyfile >/dev/null 2>&1
+}
+
+access_caddy_check() {
+	[[ -f "$(path_caddyfile)" && -f "$(path_caddy_unit)" ]] || return 1
+	[[ "$(state_hash_content <"$(path_caddyfile)")" == "$(access_render_caddyfile | state_hash_content)" ]] || return 1
+	[[ "$(state_hash_content <"$(path_caddy_unit)")" == "$(access_render_caddy_unit | state_hash_content)" ]] || return 1
+	systemctl is-active --quiet dpistack-caddy.service || return 1
+}
+
+access_caddy_apply() {
+	local tmp
+	command -v caddy >/dev/null 2>&1 || pkg_install caddy || {
+		echo "access: Caddy cannot be installed from the packages of this system; install it (https://caddyserver.com/docs/install) or use ACCESS_MODE=nginx" >&2
+		return 1
+	}
+	# The package starts its own caddy.service with a sample page on port 80.
+	# It is not ours to keep: dpistack runs its own instance. A caddy that
+	# was already on the host and configured is left alone.
+	if [[ -z "$(state_read_value access.caddy.pkg)" ]] && [[ "${DRY_RUN:-0}" != "1" ]]; then
+		if ! systemctl is-enabled --quiet caddy.service 2>/dev/null || [[ ! -s "${DPISTACK_ROOT}/etc/caddy/Caddyfile" ]] ||
+			grep -q 'caddyserver.com/docs/\|Set this path to your site' "${DPISTACK_ROOT}/etc/caddy/Caddyfile" 2>/dev/null; then
+			run systemctl disable --now caddy.service 2>/dev/null || true
+		fi
+		state_write_value access.caddy.pkg "seen"
+	fi
+	tmp=$(mktemp) || return 1
+	access_render_caddyfile >"$tmp"
+	if ! access_caddy_test_ok "$tmp"; then
+		rm -f "$tmp"
+		echo "access: caddy validate failed on the rendered Caddyfile, the changes are not applied" >&2
+		return 1
+	fi
+	rm -f "$tmp"
+	write_rendered_file "$(path_caddyfile)" "$(access_render_caddyfile)"
+	chmod 0644 "$(path_caddyfile)" 2>/dev/null || true
+	write_rendered_file "$(path_caddy_unit)" "$(access_render_caddy_unit)"
+	run systemctl daemon-reload || return 1
+	run systemctl enable dpistack-caddy.service || return 1
+	run systemctl restart dpistack-caddy.service || return 1
 }
 DPISTACK_BUNDLE_END
 put lib/step_evebox.sh 644 <<'DPISTACK_BUNDLE_END'
@@ -15071,7 +15260,7 @@ panel_token_matches() {
 # The panel serves HTTPS itself (tasks 64 and 66): always, except behind
 # nginx, which holds the certificate then (NGINX_TLS).
 panel_tls_wanted() {
-	[[ "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]]
+	! access_proxied
 }
 
 panel_tls_cert() {
@@ -15493,7 +15682,7 @@ panel_report_metrics() {
 	panel_token_wanted || return 0
 	local mode="${CONF[ACCESS_MODE]:-localhost}" port="${CONF[PANEL_PORT]:-9800}" scheme="http" host
 	host=$(access_effective_bind_host)
-	if [[ "$mode" == "lan" && "$host" == "0.0.0.0" ]] || [[ "$mode" == "nginx" ]]; then
+	if [[ "$mode" == "lan" && "$host" == "0.0.0.0" ]] || [[ "$mode" =~ ^(nginx|caddy)$ ]]; then
 		host="<server-address>"
 	fi
 	scheme="https"
@@ -15555,7 +15744,7 @@ preflight_port_taken_by_conf() {
 		value="${CONF[$key]:-}"
 		[[ -z "$value" ]] && continue
 		[[ "$value" == "$port" ]] && return 0
-		if [[ "$key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] &&
+		if [[ "$key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]] &&
 			[[ "$(access_backend_port "$value")" == "$port" ]]; then
 			return 0
 		fi
@@ -15570,7 +15759,7 @@ preflight_free_port() {
 	local key="$1" candidate="$2" backend
 	while ((candidate <= 65535)); do
 		if ! preflight_port_busy "$candidate" && ! preflight_port_taken_by_conf "$candidate" "$key"; then
-			if [[ "$key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+			if [[ "$key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]]; then
 				backend=$(access_backend_port "$candidate")
 				if ((backend <= 65535)) && ! preflight_port_busy "$backend" && ! preflight_port_taken_by_conf "$backend" "$key"; then
 					echo "$candidate"
@@ -15614,7 +15803,7 @@ preflight_port_conflicts() {
 		step_component_enabled "$owner_step" || continue
 		public="${CONF[$port_key]:-}"
 		[[ -z "$public" ]] && continue
-		if [[ "$port_key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+		if [[ "$port_key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]]; then
 			if ! step_access_check && preflight_port_busy "$public"; then
 				who=$(preflight_port_owner "$public")
 				echo "$port_key|$public|${who:-unknown process}|$(preflight_free_port "$port_key" "$((public + 1))")|nginx"
@@ -15663,7 +15852,7 @@ preflight_resolve_ports_interactive() {
 				echo "  port $answer is busy too, choose another" >&2
 				continue
 			fi
-			if [[ "$kind" == "nginx" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] && [[ "$key" != "METRICS_BACKEND_PORT" ]]; then
+			if [[ "$kind" == "nginx" || "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]] && [[ "$key" != "METRICS_BACKEND_PORT" ]]; then
 				local behind
 				behind=$(access_backend_port "$answer")
 				if ((behind > 65535)) || preflight_port_busy "$behind" || preflight_port_taken_by_conf "$behind" "$key"; then
@@ -15789,7 +15978,7 @@ step_preflight_reasons() {
 	done
 
 	local bind_addr="${CONF[BIND_ADDR]:-auto}"
-	if [[ "$bind_addr" != "auto" && "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]] && [[ "$bind_addr" != 127.* ]]; then
+	if [[ "$bind_addr" != "auto" && ! "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]] && [[ "$bind_addr" != 127.* ]]; then
 		if ! access_local_addresses | awk -v a="$bind_addr" '$2 == a {found = 1} END {exit !found}'; then
 			reasons+=("BIND_ADDR=$bind_addr is not an address of this host")
 		fi
@@ -17744,6 +17933,33 @@ RandomizedDelaySec=300
 
 [Install]
 WantedBy=timers.target
+DPISTACK_BUNDLE_END
+put templates/dpistack-caddy.service.tpl 644 <<'DPISTACK_BUNDLE_END'
+[Unit]
+Description=dpistack Caddy reverse proxy (HTTPS in front of ntopng, EveBox and the panel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=@@CADDY_BIN@@ run --environ --config @@CADDYFILE@@ --adapter caddyfile
+Restart=on-failure
+RestartSec=5
+# Its own transient user, with a state directory of its own: the keys of its
+# local CA (or of the certificates it gets) are not readable by anyone else.
+DynamicUser=yes
+StateDirectory=dpistack-caddy
+Environment=XDG_DATA_HOME=@@DATA_DIR@@ XDG_CONFIG_HOME=@@DATA_DIR@@
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
 DPISTACK_BUNDLE_END
 put templates/dpistack-fw.service.tpl 644 <<'DPISTACK_BUNDLE_END'
 # Managed by dpistack. Puts the NFQUEUE rules (the DPISTACK iptables chain or

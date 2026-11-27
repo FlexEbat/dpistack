@@ -60,6 +60,7 @@ SCHEMA_PATTERN[RULES_UPDATE_CALENDAR]='^[A-Za-z0-9*:/,. -]+$'
 SCHEMA_PATTERN[EVEBOX_ES_URL]="^https?://${_url}\$"
 SCHEMA_PATTERN[TEST_HTTPS_URL]="^https?://${_url}\$"
 SCHEMA_PATTERN[LAN_CIDR]="^(auto|${_cidr})(,(auto|${_cidr}))*\$"
+SCHEMA_PATTERN[CADDY_DOMAIN]='^([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)?$'
 SCHEMA_PATTERN[PANEL_CERT]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[PANEL_KEY]='^/[A-Za-z0-9._/@+-]+$'
 SCHEMA_PATTERN[NGINX_CERT]='^/[A-Za-z0-9._/@+-]+$'
@@ -158,7 +159,7 @@ schema_init() {
 	_schema_add 'EVEBOX_PORT|int|5636|1..65535|advanced|access|evebox access|light|no'
 	_schema_add 'EVEBOX_RETENTION_DAYS|int|30|0..36500|advanced|eve|evebox access|light|no'
 
-	_schema_add 'ACCESS_MODE|enum|localhost|localhost,lan,nginx|basic|access|access panel nodeexp grafana|light|no'
+	_schema_add 'ACCESS_MODE|enum|localhost|localhost,lan,nginx,caddy|basic|access|access panel nodeexp grafana|light|no'
 	_schema_add 'BIND_ADDR|free|auto||basic|access|access panel evebox ntopng metrics nodeexp grafana|light|no'
 	_schema_add 'LAN_CIDR|free|auto||advanced|access|access panel|light|no'
 	_schema_add 'PANEL_PORT|int|9800|1..65535|advanced|access|access panel|light|no'
@@ -168,6 +169,7 @@ schema_init() {
 	_schema_add 'NTOPNG_PORT|int|3000|1..65535|advanced|access|ntopng access|light|no'
 	_schema_add 'PANEL_SOURCE|enum|auto|auto,build,prebuilt|advanced|components|panel|heavy|no'
 	_schema_add 'PANEL_RUNTIME|enum|native|native,docker|basic|components|panel|heavy|no'
+	_schema_add 'CADDY_DOMAIN|free|||advanced|access|access panel|light|no'
 	_schema_add 'NGINX_MANAGE|enum|snippet|yes,snippet|advanced|access|access panel|light|no'
 	_schema_add 'NGINX_TLS|enum|selfsigned|selfsigned,existing|advanced|access|access panel|light|no'
 	_schema_add 'NGINX_CERT|free|||advanced|access|access panel|light|no'
@@ -275,11 +277,12 @@ schema_depends_init() {
 	_schema_depend 'EVEBOX_ENABLE=yes EVEBOX_DB=elasticsearch' EVEBOX_ES_URL
 	_schema_depend 'EVEBOX_ENABLE=yes' 'EVEBOX_*'
 	_schema_depend 'NTOPNG_ENABLE=yes' 'NTOPNG_*'
-	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx' PANEL_TLS
-	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx PANEL_TLS=existing' PANEL_CERT PANEL_KEY
+	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx ACCESS_MODE!=caddy' PANEL_TLS
+	_schema_depend 'PANEL_ENABLE=yes ACCESS_MODE!=nginx ACCESS_MODE!=caddy PANEL_TLS=existing' PANEL_CERT PANEL_KEY
 	_schema_depend 'PANEL_ENABLE=yes' 'PANEL_*' METRICS_EXPORT
 	_schema_depend 'ACCESS_MODE=lan' LAN_CIDR
 	_schema_depend 'ACCESS_MODE=nginx' NGINX_MANAGE NGINX_TLS
+	_schema_depend 'ACCESS_MODE=caddy' CADDY_DOMAIN
 	_schema_depend 'ACCESS_MODE=nginx NGINX_TLS=existing' NGINX_CERT NGINX_KEY
 	_schema_depend 'METRICS_BACKEND!=none' METRICS_BACKEND_RUNTIME METRICS_BACKEND_PORT METRICS_RETENTION
 	_schema_depend 'NODE_EXPORTER_ENABLE=yes' 'NODE_EXPORTER_*'
@@ -636,6 +639,7 @@ SCHEMA_SINCE_TABLE="
 0.57.0: ALERT_INDEX ALERT_INDEX_DAYS
 0.59.0: BACKUP_SCHEDULE BACKUP_KEEP BACKUP_DIR BACKUP_AGE_RECIPIENT
 0.60.0: PANEL_TLS PANEL_CERT PANEL_KEY
+0.62.0: CADDY_DOMAIN
 "
 
 # schema_since <key> - the release that brought the key, or nothing.

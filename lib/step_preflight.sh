@@ -41,7 +41,7 @@ preflight_port_taken_by_conf() {
 		value="${CONF[$key]:-}"
 		[[ -z "$value" ]] && continue
 		[[ "$value" == "$port" ]] && return 0
-		if [[ "$key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] &&
+		if [[ "$key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]] &&
 			[[ "$(access_backend_port "$value")" == "$port" ]]; then
 			return 0
 		fi
@@ -56,7 +56,7 @@ preflight_free_port() {
 	local key="$1" candidate="$2" backend
 	while ((candidate <= 65535)); do
 		if ! preflight_port_busy "$candidate" && ! preflight_port_taken_by_conf "$candidate" "$key"; then
-			if [[ "$key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+			if [[ "$key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]]; then
 				backend=$(access_backend_port "$candidate")
 				if ((backend <= 65535)) && ! preflight_port_busy "$backend" && ! preflight_port_taken_by_conf "$backend" "$key"; then
 					echo "$candidate"
@@ -100,7 +100,7 @@ preflight_port_conflicts() {
 		step_component_enabled "$owner_step" || continue
 		public="${CONF[$port_key]:-}"
 		[[ -z "$public" ]] && continue
-		if [[ "$port_key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+		if [[ "$port_key" != "METRICS_BACKEND_PORT" && "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]]; then
 			if ! step_access_check && preflight_port_busy "$public"; then
 				who=$(preflight_port_owner "$public")
 				echo "$port_key|$public|${who:-unknown process}|$(preflight_free_port "$port_key" "$((public + 1))")|nginx"
@@ -149,7 +149,7 @@ preflight_resolve_ports_interactive() {
 				echo "  port $answer is busy too, choose another" >&2
 				continue
 			fi
-			if [[ "$kind" == "nginx" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] && [[ "$key" != "METRICS_BACKEND_PORT" ]]; then
+			if [[ "$kind" == "nginx" || "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]] && [[ "$key" != "METRICS_BACKEND_PORT" ]]; then
 				local behind
 				behind=$(access_backend_port "$answer")
 				if ((behind > 65535)) || preflight_port_busy "$behind" || preflight_port_taken_by_conf "$behind" "$key"; then
@@ -275,7 +275,7 @@ step_preflight_reasons() {
 	done
 
 	local bind_addr="${CONF[BIND_ADDR]:-auto}"
-	if [[ "$bind_addr" != "auto" && "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]] && [[ "$bind_addr" != 127.* ]]; then
+	if [[ "$bind_addr" != "auto" && ! "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]] && [[ "$bind_addr" != 127.* ]]; then
 		if ! access_local_addresses | awk -v a="$bind_addr" '$2 == a {found = 1} END {exit !found}'; then
 			reasons+=("BIND_ADDR=$bind_addr is not an address of this host")
 		fi

@@ -629,7 +629,7 @@ menu_quick_install() {
 		fi
 	fi
 
-	if [[ "${CONF[ACCESS_MODE]}" != "nginx" ]]; then
+	if ! access_proxied; then
 		menu_pick_bind
 	fi
 
@@ -812,10 +812,11 @@ menu_key_skipped() {
 	NTOPNG_ENABLE) ;;
 	NTOPNG_*) [[ "${CONF[NTOPNG_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
 	PANEL_ENABLE) ;;
-	PANEL_TLS) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] && return 0 ;;
-	PANEL_CERT | PANEL_KEY) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" || "${CONF[ACCESS_MODE]:-localhost}" == "nginx" || "${CONF[PANEL_TLS]:-none}" != "existing" ]] && return 0 ;;
+	PANEL_TLS) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" ]] || access_proxied && return 0 ;;
+	PANEL_CERT | PANEL_KEY) [[ "${CONF[PANEL_ENABLE]:-yes}" != "yes" || "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ || "${CONF[PANEL_TLS]:-none}" != "existing" ]] && return 0 ;;
 	PANEL_* | METRICS_EXPORT) [[ "${CONF[PANEL_ENABLE]:-yes}" == "$n" ]] && return 0 ;;
 	LAN_CIDR) [[ "${CONF[ACCESS_MODE]:-localhost}" != "lan" ]] && return 0 ;;
+	CADDY_DOMAIN) [[ "${CONF[ACCESS_MODE]:-localhost}" != "caddy" ]] && return 0 ;;
 	NGINX_MANAGE | NGINX_TLS) [[ "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]] && return 0 ;;
 	NGINX_CERT | NGINX_KEY) [[ "${CONF[ACCESS_MODE]:-localhost}" != "nginx" || "${CONF[NGINX_TLS]:-none}" != "existing" ]] && return 0 ;;
 	METRICS_BACKEND_RUNTIME | METRICS_BACKEND_PORT | METRICS_RETENTION) [[ "${CONF[METRICS_BACKEND]:-none}" == "none" ]] && return 0 ;;
@@ -1067,7 +1068,7 @@ menu_saved_access_confirm() {
 	mode="${CONF[ACCESS_MODE]:-localhost}"
 	bind="${CONF[BIND_ADDR]:-auto}"
 	[[ "$mode" != "localhost" ]] && need=1
-	[[ "$mode" != "nginx" && "$bind" != "auto" && "$bind" != 127.* ]] && need=1
+	[[ ! "$mode" =~ ^(nginx|caddy)$ && "$bind" != "auto" && "$bind" != 127.* ]] && need=1
 	((need)) || return 0
 	if [[ "$(state_read_value "applied.ACCESS_MODE")" == "$mode" &&
 	"$(state_read_value "applied.BIND_ADDR")" == "$bind" ]]; then

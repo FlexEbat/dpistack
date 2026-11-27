@@ -16,7 +16,7 @@ NGINX_UNIT="nginx.service"
 # fail with EADDRINUSE.
 access_backend_port() {
 	local port="$1"
-	if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+	if access_proxied; then
 		echo $((port + 10000))
 	else
 		echo "$port"
@@ -61,6 +61,9 @@ access_policy() {
 		host=$(access_effective_bind_host)
 		[[ "$host" == 127.* ]] || mode="lan"
 	fi
+	# Caddy is a reverse proxy like nginx: the policy of the panel and of the
+	# firewall is the same, so the name nginx stands for "behind a proxy".
+	[[ "$mode" == "caddy" ]] && mode="nginx"
 	echo "$mode"
 }
 
@@ -195,7 +198,7 @@ access_selinux_notice() {
 	if [[ "$mode" == "Enforcing" ]]; then
 		# nginx may not open connections to the local ntopng, EveBox and
 		# panel ports until this boolean is on.
-		if [[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]]; then
+		if access_proxied; then
 			run setsebool -P httpd_can_network_connect 1 ||
 				echo "access: SELinux Enforcing, setsebool httpd_can_network_connect failed: nginx cannot proxy to the local ports" >&2
 		else
@@ -208,7 +211,7 @@ access_selinux_notice() {
 # ports (3000, 5636, 9800 by default), which SELinux only lets httpd_t use
 # when they carry http_port_t.
 access_selinux_ports() {
-	[[ "${CONF[ACCESS_MODE]:-localhost}" == "nginx" ]] || return 0
+	access_proxied || return 0
 	local port
 	local name
 	for name in $(access_services); do
@@ -402,6 +405,10 @@ step_access_check() {
 		fi
 	fi
 
+	if [[ "$mode" == "caddy" ]]; then
+		access_caddy_check || return 1
+	fi
+
 	[[ "$(state_read_value step.access.status)" == "done" ]] || return 1
 	return 0
 }
@@ -449,6 +456,10 @@ step_access_apply() {
 		fi
 	fi
 
+	if [[ "$mode" == "caddy" ]]; then
+		access_caddy_apply || return 1
+	fi
+
 	access_firewall_apply || return 1
 
 	state_write_value "step.access.status" "done"
@@ -460,6 +471,13 @@ step_access_plan() {
 	echo "access: ACCESS_MODE=$mode, bind $(access_effective_bind_host)"
 	if [[ "$mode" == "nginx" ]]; then
 		echo "access: nginx (NGINX_MANAGE=${CONF[NGINX_MANAGE]:-snippet}, TLS=${CONF[NGINX_TLS]:-selfsigned})"
+	fi
+	if [[ "$mode" == "caddy" ]]; then
+		if [[ -n "${CONF[CADDY_DOMAIN]:-}" ]]; then
+			echo "access: Caddy as its own service (dpistack-caddy), a public certificate for ${CONF[CADDY_DOMAIN]} (ports 80 and 443 must reach this host)"
+		else
+			echo "access: Caddy as its own service (dpistack-caddy), a certificate from its local CA"
+		fi
 	fi
 	if [[ "${CONF[FIREWALL_MANAGE]:-no}" == "auto" ]]; then
 		echo "access: ufw allow from $(access_effective_lan_cidr 2>/dev/null || echo "?")"
@@ -490,4 +508,135 @@ EOF_CONF
 	nginx -t -c "$test_dir/nginx.conf" -p "$test_dir/" >/dev/null 2>&1 || ok=1
 	rm -rf "$test_dir"
 	return "$ok"
+}
+
+# ---- Caddy (ACCESS_MODE=caddy) ----------------------------------------------
+# Caddy is the other reverse proxy. It takes the public ports like nginx does,
+# and gets its own certificate by itself, so nothing is asked about one:
+#   CADDY_DOMAIN empty: Caddy's own local CA signs a certificate for the names
+#                       and the IPv4 addresses of this host (browsers trust
+#                       its root certificate once: dpistack tls show);
+#   CADDY_DOMAIN=name:  Caddy gets a public certificate for that name from
+#                       Let's Encrypt or ZeroSSL and renews it (ports 80 and
+#                       443 must reach this host for that).
+# dpistack runs its own instance (dpistack-caddy.service, /etc/dpistack/Caddyfile)
+# and never touches the Caddyfile or the service of the host.
+
+# access_caddy_names - the host names and IPv4 addresses a certificate of the
+# local CA is made for, one per line.
+access_caddy_names() {
+	local item
+	for item in $(tls_san | tr ',' ' '); do
+		item="${item#DNS:}"
+		item="${item#IP:}"
+		[[ "$item" == *:* ]] && continue
+		echo "$item"
+	done
+}
+
+# access_caddy_site <name> <public-port> <upstream-port> <cidr-list>
+access_caddy_site() {
+	local name="$1" port="$2" upstream="$3" cidr="$4" addrs="" host nets="" net
+	if [[ -n "${CONF[CADDY_DOMAIN]:-}" ]]; then
+		addrs="https://${CONF[CADDY_DOMAIN]}:${port}"
+	else
+		while IFS= read -r host; do
+			addrs+="${addrs:+, }https://${host}:${port}"
+		done < <(access_caddy_names)
+	fi
+	while IFS= read -r net; do
+		nets+="${nets:+ }${net}"
+	done < <(access_cidr_each "$cidr")
+	local tls_line=""
+	[[ -n "${CONF[CADDY_DOMAIN]:-}" ]] || tls_line=$'\n\ttls internal'
+	cat <<SITE
+# ${name}
+${addrs} {${tls_line}
+	@allowed remote_ip ${nets}
+	handle @allowed {
+		reverse_proxy 127.0.0.1:${upstream} {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+	handle {
+		respond 403
+	}
+}
+SITE
+}
+
+access_render_caddyfile() {
+	local cidr name port
+	cidr=$(access_effective_lan_cidr) || cidr="127.0.0.1/32"
+	cat <<'GLOBAL'
+# Managed by dpistack (ACCESS_MODE=caddy). Do not edit: it is written again.
+{
+	# No admin endpoint: a change is applied by restarting the service.
+	admin off
+	# The services listen on their own ports; nothing is wanted on port 80
+	# except the challenge of a public certificate.
+	auto_https disable_redirects
+	# The service runs as a transient user and cannot add the root of its
+	# local CA to the trust store of the host; browsers trust it by hand.
+	skip_install_trust
+}
+GLOBAL
+	for name in $(access_services); do
+		echo
+		port=$(access_service_port "$name")
+		access_caddy_site "$name" "$port" "$(access_backend_port "$port")" "$cidr"
+	done
+}
+
+access_render_caddy_unit() {
+	render_template "$SCRIPT_DIR/templates/dpistack-caddy.service.tpl" \
+		"CADDY_BIN=$(command -v caddy 2>/dev/null || echo /usr/bin/caddy)" \
+		"CADDYFILE=$(path_caddyfile)" \
+		"DATA_DIR=/var/lib/dpistack-caddy"
+}
+
+# access_caddy_test_ok <file> - caddy validate on the rendered file, so that a
+# bad Caddyfile never reaches the running service.
+access_caddy_test_ok() {
+	caddy validate --config "$1" --adapter caddyfile >/dev/null 2>&1
+}
+
+access_caddy_check() {
+	[[ -f "$(path_caddyfile)" && -f "$(path_caddy_unit)" ]] || return 1
+	[[ "$(state_hash_content <"$(path_caddyfile)")" == "$(access_render_caddyfile | state_hash_content)" ]] || return 1
+	[[ "$(state_hash_content <"$(path_caddy_unit)")" == "$(access_render_caddy_unit | state_hash_content)" ]] || return 1
+	systemctl is-active --quiet dpistack-caddy.service || return 1
+}
+
+access_caddy_apply() {
+	local tmp
+	command -v caddy >/dev/null 2>&1 || pkg_install caddy || {
+		echo "access: Caddy cannot be installed from the packages of this system; install it (https://caddyserver.com/docs/install) or use ACCESS_MODE=nginx" >&2
+		return 1
+	}
+	# The package starts its own caddy.service with a sample page on port 80.
+	# It is not ours to keep: dpistack runs its own instance. A caddy that
+	# was already on the host and configured is left alone.
+	if [[ -z "$(state_read_value access.caddy.pkg)" ]] && [[ "${DRY_RUN:-0}" != "1" ]]; then
+		if ! systemctl is-enabled --quiet caddy.service 2>/dev/null || [[ ! -s "${DPISTACK_ROOT}/etc/caddy/Caddyfile" ]] ||
+			grep -q 'caddyserver.com/docs/\|Set this path to your site' "${DPISTACK_ROOT}/etc/caddy/Caddyfile" 2>/dev/null; then
+			run systemctl disable --now caddy.service 2>/dev/null || true
+		fi
+		state_write_value access.caddy.pkg "seen"
+	fi
+	tmp=$(mktemp) || return 1
+	access_render_caddyfile >"$tmp"
+	if ! access_caddy_test_ok "$tmp"; then
+		rm -f "$tmp"
+		echo "access: caddy validate failed on the rendered Caddyfile, the changes are not applied" >&2
+		return 1
+	fi
+	rm -f "$tmp"
+	write_rendered_file "$(path_caddyfile)" "$(access_render_caddyfile)"
+	chmod 0644 "$(path_caddyfile)" 2>/dev/null || true
+	write_rendered_file "$(path_caddy_unit)" "$(access_render_caddy_unit)"
+	run systemctl daemon-reload || return 1
+	run systemctl enable dpistack-caddy.service || return 1
+	run systemctl restart dpistack-caddy.service || return 1
 }

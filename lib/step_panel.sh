@@ -75,7 +75,7 @@ panel_token_matches() {
 # The panel serves HTTPS itself (tasks 64 and 66): always, except behind
 # nginx, which holds the certificate then (NGINX_TLS).
 panel_tls_wanted() {
-	[[ "${CONF[ACCESS_MODE]:-localhost}" != "nginx" ]]
+	! access_proxied
 }
 
 panel_tls_cert() {
@@ -497,7 +497,7 @@ panel_report_metrics() {
 	panel_token_wanted || return 0
 	local mode="${CONF[ACCESS_MODE]:-localhost}" port="${CONF[PANEL_PORT]:-9800}" scheme="http" host
 	host=$(access_effective_bind_host)
-	if [[ "$mode" == "lan" && "$host" == "0.0.0.0" ]] || [[ "$mode" == "nginx" ]]; then
+	if [[ "$mode" == "lan" && "$host" == "0.0.0.0" ]] || [[ "$mode" =~ ^(nginx|caddy)$ ]]; then
 		host="<server-address>"
 	fi
 	scheme="https"

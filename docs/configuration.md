@@ -86,7 +86,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | Key | Values | Default | Change | Description |
 | --- | --- | --- | --- | --- |
 | `EVEBOX_PORT` | integer 1..65535 | `5636` | light | EveBox port. (advanced) |
-| `ACCESS_MODE` | localhost \| lan \| nginx | `localhost` | light | Who can open the panels: localhost, the local network or through nginx. |
+| `ACCESS_MODE` | localhost \| lan \| nginx \| caddy | `localhost` | light | Who can open the panels: localhost, the local network, or through a reverse proxy: nginx (you choose the certificate, NGINX_TLS) or caddy (its own service, which makes and renews the certificate by itself). |
 | `BIND_ADDR` | string | `auto` | light | Address the web services listen on: auto (127.0.0.1, or every address in lan mode) or one IPv4 address of this host, for example 192.168.1.156. An address that is not loopback opens the panels to LAN_CIDR. |
 | `LAN_CIDR` | string | `auto` | light | The network allowed in lan mode, or auto; several networks may be given separated by commas (auto stands for the network of the default route), for example auto,172.18.0.0/16. (advanced) |
 | `PANEL_PORT` | integer 1..65535 | `9800` | light | Port of this panel. (advanced) |
@@ -94,6 +94,7 @@ The file is made by `scripts/gen-config-doc.sh` from the key schema; do not edit
 | `PANEL_CERT` | string | empty | light | Path of the PEM certificate the panel serves when PANEL_TLS=existing. The user dpistack must be able to read it; it is read again when the file changes. (advanced) |
 | `PANEL_KEY` | string | empty | light | Path of the PEM private key of PANEL_CERT. (advanced) |
 | `NTOPNG_PORT` | integer 1..65535 | `3000` | light | ntopng port. (advanced) |
+| `CADDY_DOMAIN` | string | empty | light | With ACCESS_MODE=caddy: a domain name that points at this host, for a public certificate that Caddy gets and renews (ports 80 and 443 must reach the host). Empty: Caddy's own local CA signs the certificate and the browser trusts its root once (dpistack tls show). (advanced) |
 | `NGINX_MANAGE` | yes \| snippet | `snippet` | light | How to manage nginx: replace the configuration or only drop in a fragment. (advanced) |
 | `NGINX_TLS` | selfsigned \| existing | `selfsigned` | light | The certificate nginx serves, which is always TLS: selfsigned (made and renewed here) or existing (NGINX_CERT and NGINX_KEY, from Cloudflare, Certbot or another authority; dpistack tls import). (advanced) |
 | `NGINX_CERT` | string | empty | light | Path to the certificate for the existing mode. (advanced) |

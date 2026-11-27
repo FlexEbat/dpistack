@@ -5,7 +5,7 @@
 # Single source of the program version; the menu header, usage and
 # dpistack version all print it.
 # shellcheck disable=SC2034 # read by menu.sh, install.sh and dpistack
-DPISTACK_VERSION="0.61.0"
+DPISTACK_VERSION="0.62.0"
 
 : "${DRY_RUN:=0}"
 
@@ -403,4 +403,11 @@ tls_due() {
 	[[ -f "$1" ]] || return 0
 	days=$(tls_days_left "$1") || return 0
 	((days < TLS_RENEW_BEFORE_DAYS))
+}
+
+# access_proxied - 0 when a reverse proxy (nginx or Caddy) stands in front of
+# the web interfaces: they listen on 127.0.0.1 at the public port plus 10000
+# and the proxy takes the public port.
+access_proxied() {
+	[[ "${CONF[ACCESS_MODE]:-localhost}" =~ ^(nginx|caddy)$ ]]
 }

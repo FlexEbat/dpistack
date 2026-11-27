@@ -1,23 +1,23 @@
 # dpistack (nDPI + Suricata + EveBox + ntopng)
 
 **Document version: v104** (2026-11-24)
-**Program version: v0.61.0** (tasks 0-56 are done (18.58), 57 to 64 and 66 are done, 65 is planned (18.73); a certificate is mandatory (18.78); the panel serves HTTPS itself (18.77); scheduled, retained and encrypted backups (18.76); settings that an update brings are asked for (18.75); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
+**Program version: v0.62.0** (tasks 0-56 are done (18.58), 57 to 64, 66 and 67 are done, 65 is planned (18.73); Caddy as the other reverse proxy (18.79); a certificate is mandatory (18.78); the panel serves HTTPS itself (18.77); scheduled, retained and encrypted backups (18.76); settings that an update brings are asked for (18.75); the index of tasks, with what is done and what remains, is 18.0; the assumptions are in section 17)
 
 This is the source of truth of the project: the names of config keys, paths, commands, metrics, fields and endpoints come from here. Each change of a contract raises the version above. The file is English only (the README and the guides in `docs/` also come in Russian). It holds the whole history of the project: the changelog below, the results of the tasks (17) and the logs of the reviews (18). The Russian original of v31 is in the git history (`02929a8`); v32 removed the history, v33 restored it in English and brought the contracts of sections 4-12 up to date with v0.24.0.
 
 Program changelog. Only the last five entries are kept; older ones are deleted (they stay in the git history). Add the new entry on top and delete the oldest when there are more than five:
+- v0.62.0: task 67 (18.79): `ACCESS_MODE=caddy`, Caddy as the other reverse proxy, run as its own service `dpistack-caddy`; it makes and renews its certificate by itself, so none is chosen; `CADDY_DOMAIN` for a public certificate; `dpistack tls show` shows the root of its local CA.
 - v0.61.0: task 66 (18.78): a certificate is mandatory. `PANEL_TLS` and `NGINX_TLS` have no `none` any more and default to `selfsigned`; a saved `none` is migrated; `existing` works for nginx too (it ignored `NGINX_CERT`); `dpistack tls import CERT KEY` for a certificate from Cloudflare, Certbot or another authority; the panel in a container serves TLS.
 - v0.60.0: task 64 (18.77): `PANEL_TLS`, `PANEL_CERT`, `PANEL_KEY`, the panel serves HTTPS itself and reads a renewed certificate without a restart, `dpistack tls show|renew`, the watchdog renews a self-signed certificate 30 days before the end, one way of making self-signed certificates for the panel and for nginx (EC P-256, 825 days, subjectAltName).
 - v0.59.0: task 63 (18.76): scheduled backups (`BACKUP_SCHEDULE`, `BACKUP_KEEP`, `BACKUP_DIR`, `BACKUP_AGE_RECIPIENT`), `dpistack backup run`, encryption with age and `--identity` for verify and restore, a backup timer that `uninstall` removes and whose archives it keeps.
 - v0.58.1: the check for settings finds two more kinds (a saved value that is not valid, a feature added since the settings were last reviewed and still at its default), and the History screen says when history is off (18.75).
-- v0.58.0: task 61 is done (the History screen, `/api/history/*`) and an update asks for the settings it adds or finds empty: `dpistack update-keys`, the questions in `dpistack update`, a box and marks in the panel (18.75).
 
 Changelog of this document. Only the last five entries are kept; older ones are deleted (they stay in the git history):
+- v108: v0.62.0. The owner asked for Caddy as an alternative to nginx (task 67), 18.79 written (decisions D213 to D219).
 - v107: v0.61.0. The owner asked for a mandatory certificate (task 66), 18.78 written (decisions D208 to D212), `tls import` in 4.5.
 - v106: v0.60.0. Task 64 done, 18.77 written (decisions D203 to D207), `tls` verb in 4.5, three keys in 4.3.
 - v105: v0.59.0. Task 63 done, 18.76 written (decisions D200 to D202), `backup run` and `--identity` in 4.5, four keys in 4.3.
 - v104: v0.58.1. 18.75 extended (decision D199).
-- v103: v0.58.0. Task 61 done, 18.75 written (decisions D197, D198), the verb `update-keys` in 4.5, the History routes in section 5.
 - v99: v0.54.0. Task 59 done (decision D191), keys in 4.3, the Capture bullet of the Suricata section.
 - v98: v0.53.1. 18.74 written (decision D190).
 - v97: v0.53.0. Task 58 done (D187 to D189), the API rows of 5 and the verbs of 4.5 name the lists.
@@ -286,7 +286,8 @@ The format is `KEY=value`, one per line, no quotes and no substitutions. The che
 | `EVEBOX_ES_URL` | empty | a URL, needed with `elasticsearch` |
 | `EVEBOX_PORT` | `5636` | 1..65535 |
 | `EVEBOX_RETENTION_DAYS` | `30` | number of days, `0` = no limit; the mechanism is by assumption A9 |
-| `ACCESS_MODE` | `localhost` | `localhost` `lan` `nginx` |
+| `ACCESS_MODE` | `localhost` | `localhost` `lan` `nginx` `caddy`: nginx and Caddy are the two reverse proxies (18.79); with `caddy` no certificate is chosen |
+| `CADDY_DOMAIN` | empty | with `ACCESS_MODE=caddy`: a domain name for a public certificate that Caddy gets and renews; empty means the local CA of Caddy |
 | `BIND_ADDR` | `auto` | `auto` or one IPv4 address of this host (checked by `preflight`). `auto` = `127.0.0.1` in `localhost` mode and `0.0.0.0` in `lan` mode; an address makes ntopng, EveBox, the panel, the metrics backend, Grafana and node_exporter listen there. A non-loopback address with `ACCESS_MODE=localhost` opens the panels to `LAN_CIDR`: the panel runs with `-access lan` and the access confirmation is needed. Ignored with `nginx` (the services stay on `127.0.0.1`) |
 | `LAN_CIDR` | auto | the CIDR of the network of the default-route interface, or a comma-separated list of CIDRs (v0.31.0); `auto` inside a list stands for that network, for example `auto,172.18.0.0/16` |
 | `PANEL_PORT` | `9800` | 1..65535 |
@@ -2849,3 +2850,23 @@ Open: the state of triage (acknowledged, snoozed) does not silence a delivery (d
 | D210 | **One import verb for every authority.** Cloudflare, Certbot and a company CA all produce a PEM certificate and a key; checking them and copying them to a place the panel can read is the same work for each, and a deploy hook can call it |
 | D211 | **Imported files are copies in the managed directory, not the originals.** The Certbot live directory is 0700 for root and the container mounts only `etc/dpistack`; a copy that the panel reads works in both, at the price of running the import again after each renewal (the hook does) |
 | D212 | **Nothing else is made mandatory here.** ntopng and EveBox keep their own ports and protocols outside nginx; stating that in the notice is better than a half-done TLS for products dpistack does not build |
+
+### 18.79 Task 67: Caddy instead of nginx (v0.62.0)
+
+**Asked for on 2026-11-26:** "it should also be possible to use Caddy instead of nginx; if Caddy is selected, there is no need to choose a certificate."
+
+**What changed.** `ACCESS_MODE=caddy` is the second reverse proxy. Everything that holds for `nginx` holds for it: the proxy takes the public ports (3000, 5636, 9800 by default), ntopng, EveBox and the panel move to `127.0.0.1:<port>+10000`, access is limited to `LAN_CIDR`, the firewall rules are those of `nginx`, the panel sees the real client address and is not given a certificate of its own, and the ports are not above 55535. Nothing is asked about a certificate: `NGINX_TLS`, `NGINX_CERT`, `NGINX_KEY`, `PANEL_TLS` and its files are not used and are not asked for. One optional key, `CADDY_DOMAIN`: empty, Caddy's own local CA signs a certificate for the names and IPv4 addresses of the host (`tls internal`; the root certificate is trusted once in the browser, and `dpistack tls show` prints its path and fingerprint); a domain, Caddy gets a public certificate for it from Let's Encrypt or ZeroSSL and renews it (ports 80 and 443 must reach the host for the challenge). `dpistack tls show` lists the certificate of Caddy; `tls renew` leaves it (Caddy renews), and `tls import` says that Caddy looks after the certificate.
+
+**How it runs.** dpistack installs the package `caddy` of the system if there is none, writes `/etc/dpistack/Caddyfile` and `dpistack-caddy.service` (a transient user, a state directory of its own, only `CAP_NET_BIND_SERVICE`, `admin off`, `auto_https disable_redirects`, `skip_install_trust`), checks the rendered file with `caddy validate` before it replaces the live one, and restarts the service on a change. It never touches `/etc/caddy/Caddyfile` or the `caddy.service` of the host, except that the sample `caddy.service` that the package starts on port 80 is stopped and disabled when the host had no configured Caddy of its own. `uninstall` removes the unit, and with `--purge` the Caddyfile and the state directory (the keys of the local CA), never the package. X-Forwarded-For is set to the real client address and a header sent by a client is ignored, as it is with nginx; a request from outside `LAN_CIDR` gets 403.
+
+**Tried for real, not only mocked.** The rendered file was run with Caddy 2.6.2 in front of a dummy backend: a request from the allowed network is proxied with `X-Forwarded-Proto: https` and the real client address, a client-sent X-Forwarded-For is ignored, another network gets 403, and the certificate is signed by "Caddy Local Authority" with the address in its subjectAltName. The tests run `caddy validate` on the rendered file when Caddy is installed (CI installs it).
+
+| id | decision |
+| --- | --- |
+| D213 | **A new `ACCESS_MODE` value, not a switch inside `nginx`.** The mode already means "which proxy stands in front"; a second key would allow `ACCESS_MODE=nginx` with Caddy behind it. `access_proxied` (`lib/common.sh`) is the one question the rest of the code asks; the policy of the panel and of the firewall is still named `nginx` for both, in one place (`access_policy`), because it means "behind a proxy" |
+| D214 | **Caddy runs as its own service, not through the system one.** The Caddyfile and `caddy.service` of the host belong to the administrator who may use Caddy for other sites; dpistack must not rewrite or restart them. The price is a second Caddy process |
+| D215 | **A transient user and `admin off`.** The service needs nothing but a port below 1024 for the challenge; it has no admin endpoint to protect, and a change is a restart (a second of interruption), not a reload |
+| D216 | **The local CA for names and IPv4 addresses listed at apply time.** The certificate is made for `localhost`, the host name and the addresses the host has when it is applied; a new address needs `dpistack reconfigure`. On-demand issuance for any name would follow address changes, but lets any client make Caddy sign a certificate |
+| D217 | **`CADDY_DOMAIN` is the only choice.** A public certificate needs a name that points here; nothing else can be guessed. DNS-challenge providers (Cloudflare and others) need a Caddy built with the plugin and are not covered: the owner who wants them uses `ACCESS_MODE=nginx` with `NGINX_TLS=existing` or runs Caddy by hand |
+| D218 | **No `existing` certificate for Caddy.** A mode in which "there is no need to choose a certificate" has no certificate files to point at; for a certificate from elsewhere nginx stays |
+| D219 | **The package of the system, not the vendor repository.** The distribution package is a ready-made solution that needs no new apt source or key; it is older than the latest release (2.6 on Ubuntu 24.04), which is why only the directives that old versions have are used |
